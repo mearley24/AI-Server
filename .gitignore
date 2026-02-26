@@ -1,0 +1,12 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+logs/
+*.log
+**/.env
+orchestrator/state/api_key.txt
+knowledge/Extracted_Knowledge/
+knowledge/state/
+knowledge/manual_vault/
+knowledge/reports/manual_fetch_queue.csv
