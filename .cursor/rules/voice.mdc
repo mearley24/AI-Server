@@ -1,0 +1,68 @@
+---
+description: Voice receptionist development rules — Twilio, OpenAI Realtime, and Bob-specific patterns
+globs:
+  - "voice_receptionist/**"
+alwaysApply: false
+---
+
+# Voice Receptionist Rules
+
+## Stack
+
+- **Twilio Media Streams** — delivers G.711 µ-law audio over WebSocket to the server.
+- **OpenAI Realtime API** — `gpt-4o-realtime-preview`; bidirectional audio + tool calling.
+- **Node.js** — the bridge between Twilio and OpenAI.
+
+## Audio Format Rules
+
+- Twilio sends and expects **G.711 µ-law (mulaw), 8 kHz mono**.
+- OpenAI Realtime API input/output must be configured as `g711_ulaw`.
+- Do NOT transcode audio — pass raw base64 payloads directly between the two WebSockets.
+- Never buffer more than 200 ms of audio on the server — pass through in real time.
+
+## WebSocket Message Patterns
+
+### Twilio → Server
+```json
+{ "event": "start",  "start":  { "streamSid": "...", "callSid": "...", "customParameters": {} } }
+{ "event": "media",  "media":  { "payload": "<base64 mulaw>" } }
+{ "event": "stop"  }
+```
+
+### Server → OpenAI
+```json
+{ "type": "input_audio_buffer.append", "audio": "<base64 mulaw>" }
+{ "type": "session.update", "session": { ... } }
+{ "type": "conversation.item.create", "item": { ... } }
+{ "type": "response.create" }
+```
+
+### OpenAI → Server → Twilio
+```json
+// OpenAI sends:
+{ "type": "response.audio.delta", "delta": "<base64 mulaw>" }
+// Server forwards to Twilio:
+{ "event": "media", "streamSid": "...", "media": { "payload": "<base64 mulaw>" } }
+```
+
+## Tool Call Rules
+
+1. All tool calls must be handled in `server.js` inside `handleToolCall()`.
+2. Tool results must be sent back as `conversation.item.create` with `type: function_call_output`.
+3. Always follow a tool result with `response.create` to prompt the model to continue speaking.
+4. Keep tool execution synchronous where possible — async tools (e.g., Google Calendar) must resolve within 3 seconds or Bob should say "give me one moment".
+
+## Error Handling
+
+- If OpenAI WebSocket drops, close the Twilio WebSocket immediately — do not leave the caller in silence.
+- Log all errors with `[bob]` prefix for easy grep.
+- Never expose internal error messages to the caller — use a generic "I'm having a technical difficulty" fallback.
+
+## Testing Without a Real Phone
+
+```bash
+# Use Twilio's TwiML Bin to simulate a call with a static audio file
+# Or use the Twilio CLI:
+twilio phone-numbers:update +13035550100 --voice-url https://YOUR_NGROK_URL/incoming-call
+twilio api:core:calls:create --from +13035550100 --to +1YOUR_TEST_NUMBER --url https://YOUR_NGROK_URL/incoming-call
+```

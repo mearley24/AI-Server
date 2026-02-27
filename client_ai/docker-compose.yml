@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: symphony-concierge-ollama
+    restart: unless-stopped
+    # Bind to localhost ONLY — never expose Ollama publicly
+    ports:
+      - '127.0.0.1:11434:11434'
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:11434/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: '5m'
+        max-file: '3'
+
+  nginx:
+    image: nginx:alpine
+    container_name: symphony-concierge-nginx
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    volumes:
+      - ./client_ui:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - ollama
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost/']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: '5m'
+        max-file: '3'
+
+volumes:
+  ollama_models:

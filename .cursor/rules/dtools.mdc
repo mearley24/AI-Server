@@ -1,0 +1,59 @@
+---
+description: D-Tools integration rules — data structures, import patterns, and field mappings
+globs:
+  - "**/*dtools*"
+  - "**/*d_tools*"
+  - "client_ai/client_knowledge_builder.py"
+alwaysApply: false
+---
+
+# D-Tools Integration Rules
+
+## What Is D-Tools?
+
+D-Tools SI (System Integrator) is the project-management and equipment-tracking software used by Symphony Smart Homes. Every installed system — AV, lighting, networking, cameras — is documented in D-Tools with room assignments, model numbers, serial numbers, and wiring diagrams.
+
+## Export Format
+
+D-Tools exports data as XML or CSV. The knowledge builder currently consumes CSV exports with the following expected columns:
+
+```
+Project, Room, Category, Manufacturer, Model, SerialNumber, InstallDate, Notes
+```
+
+## Field Mapping Rules
+
+| D-Tools Field | Internal Name | Notes |
+|---|---|---|
+| `Project` | `client_name` | Maps to client registry |
+| `Room` | `location` | Normalise to lowercase, replace spaces with underscores |
+| `Category` | `system_type` | One of: audio, video, lighting, networking, cameras, control |
+| `Manufacturer` | `make` | Preserve original casing |
+| `Model` | `model` | Preserve original casing |
+| `SerialNumber` | `serial` | Strip leading/trailing whitespace |
+| `InstallDate` | `installed_at` | Parse to ISO 8601 |
+| `Notes` | `notes` | Preserve as-is |
+
+## Validation Rules
+
+1. Skip rows where `Project` or `Model` is blank.
+2. Log a warning (don't abort) for unknown `Category` values — store as `unknown`.
+3. `SerialNumber` must be unique per `(Project, Model)` pair — warn on duplicates.
+
+## Modelfile Generation
+
+The knowledge builder converts D-Tools rows into a Modelfile `SYSTEM` block using this template:
+
+```
+You are the home assistant for [client_name].
+Installed systems:
+[for each room]
+  [room]: [category] — [make] [model] (s/n [serial], installed [installed_at])
+[end]
+```
+
+## Adding New Categories
+
+1. Add the category string to the `VALID_CATEGORIES` list in `client_knowledge_builder.py`.
+2. Create a corresponding troubleshooting template in `client_ai/troubleshooting_templates/<category>.md`.
+3. Update this rule file with the new category.

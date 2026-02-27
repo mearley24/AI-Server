@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+  bob:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bob-receptionist
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    volumes:
+      # Persist SQLite database across container rebuilds
+      - bob_data:/app/data
+      # Mount Google service-account key (read-only)
+      - ./config/google-service-account.json:/app/config/google-service-account.json:ro
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '5'
+
+volumes:
+  bob_data:

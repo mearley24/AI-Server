@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Symphony AI Server — Mission Control</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <div class="brand-name">Symphony AI Server</div>
+          <div class="brand-sub">Mission Control</div>
+        </div>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span id="progress-count">0 / 19 steps</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main layout -->
+  <div class="layout">
+
+    <!-- Deployment steps -->
+    <main class="main">
+      <div id="steps-container"></div>
+    </main>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+      <!-- Node provisioner -->
+      <section class="widget">
+        <h3 class="widget-title">Node Provisioner</h3>
+        <p class="widget-desc">Generate the provisioning command for a new client Concierge node.</p>
+        <label class="field-label" for="node-client-name">Client Name</label>
+        <input id="node-client-name" class="field-input" type="text" placeholder="The Andersons" />
+        <label class="field-label" for="node-ts-key">Tailscale Auth Key</label>
+        <input id="node-ts-key" class="field-input" type="text" placeholder="tskey-auth-xxxx" />
+        <button id="gen-cmd-btn" class="btn-primary">Generate Command</button>
+        <pre id="provision-cmd-output" class="cmd-output">Fill in fields above and click Generate.</pre>
+        <button id="copy-provision-btn" class="btn-secondary">Copy</button>
+      </section>
+
+      <!-- Quick reference -->
+      <section class="widget">
+        <h3 class="widget-title">Quick Reference</h3>
+        <ul class="ref-list">
+          <li><strong>Bob health:</strong> <code>curl localhost:3000/health</code></li>
+          <li><strong>Ollama status:</strong> <code>curl localhost:11434/</code></li>
+          <li><strong>Docker status:</strong> <code>docker compose ps</code></li>
+          <li><strong>Bob logs:</strong> <code>docker compose logs -f bob</code></li>
+          <li><strong>Tailscale IP:</strong> <code>tailscale ip -4</code></li>
+          <li><strong>Ngrok (dev):</strong> <code>ngrok http 3000</code></li>
+        </ul>
+      </section>
+
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

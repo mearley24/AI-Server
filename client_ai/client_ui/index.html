@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Symphony Concierge</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="logo-wrap">
+        <div class="logo-icon">♪</div>
+        <div class="logo-text">
+          <span class="brand">Symphony</span>
+          <span class="product">Concierge</span>
+        </div>
+      </div>
+      <div class="status-wrap">
+        <span id="status-dot" class="dot dot-green"></span>
+        <span id="status-text" class="status-label">Online</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Chat area -->
+  <main class="chat-container">
+    <div id="chat-log" class="chat-log"></div>
+  </main>
+
+  <!-- Input bar -->
+  <footer class="input-bar">
+    <div class="input-inner">
+      <textarea
+        id="message-input"
+        class="message-input"
+        placeholder="Ask about your home systems…"
+        rows="1"
+        autocomplete="off"
+        autocorrect="on"
+        spellcheck="true"
+      ></textarea>
+      <button id="send-btn" class="send-btn" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

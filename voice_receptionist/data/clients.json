@@ -1,0 +1,82 @@
+[
+  {
+    "name": "The Anderson Family",
+    "phone": "+13035550101",
+    "address": "4821 S Vine Street, Greenwood Village, CO 80111",
+    "email": "j.anderson@example.com",
+    "tier": "premium",
+    "notes": "Control4 whole-home automation, 12-zone audio, outdoor cameras. Annual maintenance contract."
+  },
+  {
+    "name": "Riverside Retreat — Martinez",
+    "phone": "+13035550102",
+    "address": "7 Riverside Court, Castle Rock, CO 80108",
+    "email": "cmartinez@example.com",
+    "tier": "enterprise",
+    "notes": "Full Crestron system, Lutron RadioRA3, Luma 4K camera array, Araknis networking. VIP — escalate immediately."
+  },
+  {
+    "name": "Thornwood Estate — Chen",
+    "phone": "+13035550103",
+    "address": "2200 Thornwood Drive, Parker, CO 80134",
+    "email": "david.chen@example.com",
+    "tier": "premium",
+    "notes": "Sonos whole-home audio, 4 displays, Lutron dimmers. Prefer morning service calls."
+  },
+  {
+    "name": "James & Priya Whitfield",
+    "phone": "+13035550104",
+    "address": "510 Mountain View Blvd, Littleton, CO 80127",
+    "email": "pwhitfield@example.com",
+    "tier": "standard",
+    "notes": "Basic AV setup, 2-zone audio, single outdoor camera. Recently upgraded router."
+  },
+  {
+    "name": "Summit View — Okafor",
+    "phone": "+13035550105",
+    "address": "9901 Summit Ridge Road, Highlands Ranch, CO 80129",
+    "email": "nokafor@example.com",
+    "tier": "premium",
+    "notes": "Control4, Araknis mesh Wi-Fi (8 APs), Luma cameras, motorized shading. Annual service plan."
+  },
+  {
+    "name": "Dr. Lisa Harmon",
+    "phone": "+13035550106",
+    "address": "3315 E Quincy Ave, Centennial, CO 80122",
+    "email": "lharmon@example.com",
+    "tier": "standard",
+    "notes": "Apple TV + Sonos. Occasional Wi-Fi support calls. Do not call before 10 AM."
+  },
+  {
+    "name": "The Kowalski Residence",
+    "phone": "+13035550107",
+    "address": "88 Birchwood Lane, Lone Tree, CO 80124",
+    "email": "t.kowalski@example.com",
+    "tier": "enterprise",
+    "notes": "Custom home theater (4K laser projector, Dolby Atmos, 11.4 audio), Control4, Lutron, full camera system. Annual contract — priority dispatch."
+  },
+  {
+    "name": "Park Meadows — Nguyen",
+    "phone": "+13035550108",
+    "address": "620 Park Meadows Drive, Englewood, CO 80111",
+    "email": "bnguyen@example.com",
+    "tier": "standard",
+    "notes": "Starter package: 1 TV, 2-zone Sonos, Ring doorbell. Good DIY skills."
+  },
+  {
+    "name": "Fairview Manor — Blackwell",
+    "phone": "+13035550109",
+    "address": "1122 Fairview Lane, Aurora, CO 80016",
+    "email": "sblackwell@example.com",
+    "tier": "premium",
+    "notes": "Lutron HomeWorks, 6-zone Sonos, 3 displays. Prefers text updates from technicians."
+  },
+  {
+    "name": "Alex Drummond",
+    "phone": "+13035550110",
+    "address": "475 E Orchard Road, Greenwood Village, CO 80111",
+    "email": "adrummond@example.com",
+    "tier": "standard",
+    "notes": "New client (2024). Single-room setup: Samsung Frame TV, Sonos Beam, Nest thermostat. Still in warranty period."
+  }
+]

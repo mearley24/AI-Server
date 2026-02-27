@@ -1,0 +1,153 @@
+{
+  "name": "openclaw",
+  "version": "1.0",
+  "description": "OpenClaw — Claude Code tool definition for the Symphony AI Server. Provides scoped access to read files, run commands, and manage Docker services.",
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read the contents of a file in the repository.",
+      "scope": "read_only",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative path to the file from the repository root."
+          }
+        },
+        "required": ["path"]
+      }
+    },
+    {
+      "name": "list_files",
+      "description": "List files and directories at the given path.",
+      "scope": "read_only",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative directory path. Defaults to repository root."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "If true, list recursively. Default: false."
+          }
+        }
+      }
+    },
+    {
+      "name": "search_code",
+      "description": "Search for a regex pattern across all files (grep).",
+      "scope": "read_only",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "Regex pattern to search for."
+          },
+          "path": {
+            "type": "string",
+            "description": "Directory to search in. Defaults to repository root."
+          },
+          "file_glob": {
+            "type": "string",
+            "description": "Glob pattern to filter files, e.g. '*.js'."
+          }
+        },
+        "required": ["pattern"]
+      }
+    },
+    {
+      "name": "write_file",
+      "description": "Write or overwrite a file. Requires dev or admin scope.",
+      "scope": "dev",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Relative path to the file from the repository root."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full file content to write."
+          }
+        },
+        "required": ["path", "content"]
+      }
+    },
+    {
+      "name": "run_command",
+      "description": "Run a shell command. Dev scope: build/test/lint commands. Admin scope: Docker and git push.",
+      "scope": "dev",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "The shell command to run."
+          },
+          "working_directory": {
+            "type": "string",
+            "description": "Working directory (relative to repo root). Defaults to repo root."
+          }
+        },
+        "required": ["command"]
+      }
+    },
+    {
+      "name": "docker_status",
+      "description": "Run docker compose ps to show service health. Requires admin scope.",
+      "scope": "admin",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "service_dir": {
+            "type": "string",
+            "description": "Directory containing the docker-compose.yml. Relative to repo root."
+          }
+        },
+        "required": ["service_dir"]
+      }
+    },
+    {
+      "name": "docker_restart",
+      "description": "Restart a Docker Compose service. Requires admin scope. Always runs docker_status first.",
+      "scope": "admin",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "service_dir": {
+            "type": "string",
+            "description": "Directory containing the docker-compose.yml."
+          },
+          "service_name": {
+            "type": "string",
+            "description": "Name of the service to restart. Leave blank to restart all."
+          }
+        },
+        "required": ["service_dir"]
+      }
+    },
+    {
+      "name": "git_push",
+      "description": "Push to the remote repository. Always runs git fetch && git status first. Requires admin scope.",
+      "scope": "admin",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "description": "Branch to push to. Defaults to current branch."
+          },
+          "message": {
+            "type": "string",
+            "description": "Commit message for any staged changes before push."
+          }
+        }
+      }
+    }
+  ]
+}

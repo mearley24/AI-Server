@@ -1,0 +1,56 @@
+---
+description: Client AI Appliance rules — Symphony Concierge local LLM development
+globs:
+  - "client_ai/**"
+alwaysApply: false
+---
+
+# Symphony Concierge — Client AI Appliance Rules
+
+## Product Concept
+
+Symphony Concierge is a private, local LLM appliance installed in high-end client homes. It runs on a Mac Mini M4 with zero cloud dependency (Ollama + Llama 3 or Mistral). Clients interact via a browser-based chat UI on a dedicated tablet.
+
+## Core Constraints
+
+- **Zero external API calls** — all inference runs locally on the Mac Mini. No OpenAI, no Anthropic, no cloud.
+- **Offline-first** — must work with no internet. Tailscale is the only allowed external dependency (for admin updates).
+- **No telemetry** — client conversations stay on-device. No logging to external services.
+- **Single-tenant** — one Concierge per household; models are custom-trained per client.
+
+## Knowledge Base
+
+The knowledge builder (`client_knowledge_builder.py`) ingests:
+
+1. D-Tools project data (equipment lists, room configurations)
+2. Custom troubleshooting templates (Markdown files in `troubleshooting_templates/`)
+3. Client-specific notes added during provisioning
+
+Output: a Modelfile + GGUF adapter that becomes the Ollama model for that home.
+
+## UI Rules
+
+- Deep navy (`#0a1628`) background with gold (`#c9a84c`) accents — match the Symphony brand.
+- Chat bubbles: user messages right-aligned, assistant left-aligned.
+- No markdown rendering in chat — plain text only (Ollama responses can include markdown; strip it).
+- Tablet-optimised: minimum 18 px body font, large tap targets.
+
+## Update Pipeline
+
+- All updates delivered over Tailscale SSH — no USB, no physical access required.
+- `update_pipeline.py` pulls the latest Modelfile, re-creates the Ollama model, and restarts the Ollama service.
+- Never interrupt an active chat session during an update — check for active connections first.
+
+## File Ownership
+
+| File | Purpose |
+|---|---|
+| `client_knowledge_builder.py` | Ingests D-Tools data → Ollama Modelfile |
+| `client_registry.json` | Master list of deployed nodes |
+| `client_system_prompt.md` | Base system prompt for all Concierge instances |
+| `docker-compose.yml` | Ollama + Nginx stack for Mac Mini |
+| `pricing_model.md` | Hardware + subscription pricing reference |
+| `provision_client_node.sh` | Zero-touch provisioning script |
+| `update_pipeline.py` | Remote model update via Tailscale |
+| `client_ui/` | Browser-based chat interface |
+| `troubleshooting_templates/` | Per-system Markdown guides |

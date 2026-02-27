@@ -1,0 +1,43 @@
+---
+description: Proposal and quote generation rules for Symphony Smart Homes
+globs:
+  - "**/*proposal*"
+  - "**/*quote*"
+  - "**/*estimate*"
+alwaysApply: false
+---
+
+# Proposal & Quote Rules
+
+## Purpose
+
+These rules govern how Claude assists with writing client proposals, generating equipment quotes, and structuring project estimates for Symphony Smart Homes.
+
+## Proposal Structure
+
+Every Symphony proposal must follow this structure:
+
+1. **Executive Summary** — 1 paragraph, non-technical, benefit-focused.
+2. **Scope of Work** — bullet list of deliverables, room by room if applicable.
+3. **Equipment List** — table with columns: Item, Make/Model, Qty, Unit Price, Total.
+4. **Labor Estimate** — hours by task category (design, installation, programming, training).
+5. **Total Investment** — hardware + labor + tax (8.81% for Colorado) + optional annual service plan.
+6. **Timeline** — milestone table with estimated dates.
+7. **Terms** — standard 50% deposit, balance on completion; 1-year warranty on labor.
+
+## Pricing Guidelines
+
+- Equipment: street price × 1.35 (35% margin) unless the client has a negotiated rate.
+- Labor: $185/hr for standard, $245/hr for programming/design.
+- Annual service plan: 12% of total hardware value per year.
+- Always show prices ex-tax and then a separate tax line.
+
+## Tone
+
+- Professional and confident — this is a premium service.
+- Avoid the word "cheap" — use "cost-effective" or "value-optimised".
+- Avoid overpromising — "typically" and "estimated" are fine; absolute guarantees are not.
+
+## D-Tools Integration
+
+When a D-Tools project export is available, pull equipment lists and room data directly from the CSV rather than entering manually. Validate model numbers against the D-Tools export before including in a proposal.

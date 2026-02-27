@@ -1,0 +1,56 @@
+---
+description: OpenClaw tool rules — how to define, call, and expand Claude Code tools
+globs:
+  - "setup/claude_code/**"
+  - "**/*openclaw*"
+  - "**/*claude_code*"
+alwaysApply: false
+---
+
+# OpenClaw — Claude Code Tool Rules
+
+## What Is OpenClaw?
+
+OpenClaw is the Claude Code tool definition for the Symphony AI Server. It gives Claude the ability to read files, run shell commands, and interact with the project — all within a defined scope.
+
+## Tool Definition File
+
+`setup/claude_code/openclaw_claude_code_tool.json` contains the MCP tool schema. It defines three scope profiles:
+
+| Profile | What it can do |
+|---|---|
+| `read_only` | List files, read file contents, run safe read commands (`ls`, `cat`, `grep`, `find`) |
+| `dev` | Everything in `read_only` + write files, run build/test commands |
+| `admin` | Everything in `dev` + Docker operations, service restarts, git push |
+
+## When to Use Each Profile
+
+- Use `read_only` by default for code review, analysis, and Q&A.
+- Use `dev` when writing or modifying code.
+- Use `admin` only for deployment operations — always confirm before running.
+
+## Adding New Tools
+
+1. Add the tool definition to `openclaw_claude_code_tool.json` under `tools[]`.
+2. Document the tool in `claude_code_config.json` under `available_tools`.
+3. Add a workflow example to `claude_code_workflows.md`.
+4. Update the scope table above if the tool requires elevated permissions.
+
+## Safety Rules
+
+- Never run `rm -rf` without an explicit user confirmation step in the workflow.
+- Docker restart commands must always be preceded by a `docker compose ps` health check.
+- Git push to `main` requires branch to be up-to-date with remote (`git fetch && git status` first).
+- Never expose Ollama or internal ports in tool output — treat them as internal secrets.
+
+## Workflow Templates
+
+The 7 pre-built workflows in `claude_code_workflows.md` cover:
+
+1. Code review & diff analysis
+2. Add a new feature end-to-end
+3. Debug a failing service
+4. Deploy a Docker service update
+5. Onboard a new client node
+6. Run a D-Tools data import
+7. Generate a client knowledge model

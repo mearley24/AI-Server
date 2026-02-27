@@ -1,0 +1,55 @@
+{
+  "project": "Symphony AI Server",
+  "version": "1.0",
+  "description": "Claude Code configuration for the Symphony AI Server repository",
+  "default_scope": "read_only",
+  "tool_definition": "./openclaw_claude_code_tool.json",
+  "available_tools": [
+    {
+      "name": "read_file",
+      "scope": "read_only",
+      "description": "Read a file from the repository"
+    },
+    {
+      "name": "list_files",
+      "scope": "read_only",
+      "description": "List files in a directory"
+    },
+    {
+      "name": "search_code",
+      "scope": "read_only",
+      "description": "Search for a pattern across all files (grep)"
+    },
+    {
+      "name": "write_file",
+      "scope": "dev",
+      "description": "Write or modify a file"
+    },
+    {
+      "name": "run_command",
+      "scope": "dev",
+      "description": "Run a shell command (build, test, lint)"
+    },
+    {
+      "name": "docker_status",
+      "scope": "admin",
+      "description": "Check Docker Compose service status"
+    },
+    {
+      "name": "docker_restart",
+      "scope": "admin",
+      "description": "Restart a Docker Compose service"
+    },
+    {
+      "name": "git_push",
+      "scope": "admin",
+      "description": "Push to the remote repository (always fetch first)"
+    }
+  ],
+  "safety_rules": [
+    "Never run rm -rf without explicit user confirmation",
+    "Docker restarts must be preceded by docker compose ps health check",
+    "git push to main requires branch to be up-to-date with remote",
+    "Never expose Ollama port 11434 in tool output"
+  ]
+}

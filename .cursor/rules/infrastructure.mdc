@@ -1,0 +1,57 @@
+---
+description: Infrastructure and deployment rules for the Symphony AI Server stack
+globs:
+  - "docker-compose.yml"
+  - "**/Dockerfile"
+  - "**/nginx.conf"
+  - "dashboard/**"
+alwaysApply: false
+---
+
+# Infrastructure & Deployment Rules
+
+## Server Architecture
+
+```
+Mac Mini M4 (AI Server)
+├── Bob the Conductor          (Node.js, port 3000)
+├── Symphony Concierge (client nodes — separate Mac Minis per home)
+├── Nginx reverse proxy        (ports 80/443)
+├── Ollama                     (port 11434, localhost only)
+└── Tailscale                  (admin tunnel for SSH + updates)
+```
+
+## Networking Rules
+
+- Ollama must NEVER be exposed on a public interface — bind to `127.0.0.1:11434` only.
+- Bob's Express server listens on `0.0.0.0:3000` but is reverse-proxied behind Nginx with TLS.
+- Tailscale MagicDNS is used for inter-node communication (e.g., `bob.tail1234.ts.net`).
+- All external traffic must be HTTPS. HTTP → HTTPS redirect enforced at Nginx level.
+
+## Docker Rules
+
+- Every service must have a `healthcheck` defined.
+- Use `restart: unless-stopped` for production services.
+- Mount secrets via Docker Secrets or `env_file` — never bake credentials into images.
+- Use multi-stage builds to keep images small.
+- Log driver: `json-file` with `max-size: 10m` and `max-file: 5`.
+
+## Deployment Checklist (per service)
+
+1. `docker compose build --no-cache`
+2. `docker compose up -d`
+3. Check `docker compose ps` — all services must show `(healthy)`.
+4. Run smoke test against the health endpoint.
+5. Tail logs for 60 seconds: `docker compose logs -f`.
+
+## Backup Rules
+
+- SQLite databases (`bob.db`) must be backed up daily via `sqlite3 bob.db .backup`.
+- Back up to `/Volumes/Backup/symphony/` (external drive) and to Backblaze B2.
+- Retain 30 days of daily backups, 12 months of monthly backups.
+
+## Environment Variables
+
+- All secrets in `.env` files — never committed to git.
+- `.env.example` with placeholder values must always be kept up-to-date.
+- Production `.env` files stored in 1Password vault "Symphony Server".

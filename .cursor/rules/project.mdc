@@ -1,0 +1,59 @@
+---
+description: Top-level project rules for the Symphony AI Server — always loaded
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Symphony AI Server — Project Rules
+
+## What This Project Is
+
+This is the AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration company in Denver, Colorado. The repository contains:
+
+- **Bob the Conductor** — AI voice receptionist (Twilio + OpenAI Realtime API)
+- **Symphony Concierge** — private local LLM appliance for client homes (Ollama)
+- **OpenClaw / Claude Code** — developer tooling and automation
+- **Deployment Dashboard** — single-page Mission Control UI
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
+| Client AI | Python 3.12, Ollama, Llama 3 / Mistral |
+| Database | SQLite (better-sqlite3) |
+| Infrastructure | Docker, Nginx, Tailscale, Mac Mini M4 |
+| Frontend | Vanilla JS / HTML / CSS (no framework) |
+| Dev tooling | Claude Code (OpenClaw), Cursor |
+
+## Coding Standards
+
+- **JavaScript**: `'use strict'`; CommonJS modules; 2-space indent; single quotes.
+- **Python**: PEP 8; type hints where practical; docstrings on public functions.
+- **Shell scripts**: `#!/usr/bin/env bash`; `set -euo pipefail`; comment every non-obvious step.
+- **No TypeScript** — plain JS only; the codebase is small enough that types add friction.
+- **No npm frameworks** (React, Vue, etc.) for the dashboard or client UI — vanilla only.
+
+## File & Folder Conventions
+
+```
+voice_receptionist/   Bob the Conductor source
+client_ai/            Symphony Concierge source
+setup/claude_code/    Claude Code tooling
+.cursor/rules/        Cursor rule files (*.mdc)
+dashboard/            Mission Control deployment UI
+```
+
+## Git Rules
+
+- Commit messages: imperative mood, ≤72 chars subject, blank line before body.
+- Never commit `.env` files, API keys, or SQLite databases.
+- Feature branches: `feature/<short-description>`; PRs target `main`.
+- Tag releases: `v<major>.<minor>.<patch>`.
+
+## Security Rules
+
+- All API keys and secrets via environment variables — never hardcoded.
+- Validate and sanitise all external input (Twilio webhooks, caller data).
+- Principle of least privilege for service accounts and Docker containers.
