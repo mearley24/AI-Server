@@ -1,75 +1,1164 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Symphony AI Server — Mission Control</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Symphony Smart Homes — Mission Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
 
-  <!-- Header -->
+  <!-- Toast notification -->
+  <div id="toast" class="toast">Copied to clipboard!</div>
+
+  <!-- ========== HEADER ========== -->
   <header class="header">
     <div class="header-inner">
-      <div class="brand">
-        <span class="brand-icon">⚡</span>
+      <div class="header-brand">
+        <div class="logo-mark">
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+            <circle cx="20" cy="20" r="18" stroke="#c9a84c" stroke-width="1.5" opacity="0.4"/>
+            <circle cx="20" cy="20" r="12" stroke="#c9a84c" stroke-width="1"/>
+            <circle cx="20" cy="20" r="6" fill="#c9a84c" opacity="0.8"/>
+            <line x1="20" y1="2" x2="20" y2="8" stroke="#c9a84c" stroke-width="1.5"/>
+            <line x1="20" y1="32" x2="20" y2="38" stroke="#c9a84c" stroke-width="1.5"/>
+            <line x1="2" y1="20" x2="8" y2="20" stroke="#c9a84c" stroke-width="1.5"/>
+            <line x1="32" y1="20" x2="38" y2="20" stroke="#c9a84c" stroke-width="1.5"/>
+          </svg>
+        </div>
         <div>
-          <div class="brand-name">Symphony AI Server</div>
-          <div class="brand-sub">Mission Control</div>
+          <h1 class="logo-text">Symphony <span class="gold">Smart Homes</span></h1>
+          <p class="subtitle">MISSION CONTROL</p>
         </div>
       </div>
-      <div class="progress-wrap">
-        <div class="progress-label">
-          <span id="progress-count">0 / 19 steps</span>
-          <span id="progress-pct">0%</span>
+      <div class="header-status">
+        <div class="status-text">
+          <span class="status-label">DEPLOYMENT STATUS</span>
+          <span class="status-count" id="statusCount">0 / 34 STEPS COMPLETE</span>
         </div>
-        <div class="progress-track">
-          <div id="progress-bar" class="progress-bar"></div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progressBar" style="width: 0%"></div>
         </div>
       </div>
     </div>
+    <nav class="nav-bar">
+      <a href="#infrastructure" class="nav-link active" data-section="infrastructure">Infrastructure</a>
+      <a href="#agents" class="nav-link" data-section="agents">Agents</a>
+      <a href="#client-ai" class="nav-link" data-section="client-ai">Client AI</a>
+      <a href="#new-node" class="nav-link" data-section="new-node">New Node</a>
+      <a href="#voice" class="nav-link" data-section="voice">Voice</a>
+      <a href="#homeassistant" class="nav-link" data-section="homeassistant">Home Assistant</a>
+      <a href="#telegram" class="nav-link" data-section="telegram">Telegram</a>
+      <a href="#clawwork" class="nav-link" data-section="clawwork">ClawWork</a>
+      <a href="#reference" class="nav-link" data-section="reference">Reference</a>
+    </nav>
   </header>
 
-  <!-- Main layout -->
-  <div class="layout">
+  <main class="main">
 
-    <!-- Deployment steps -->
-    <main class="main">
-      <div id="steps-container"></div>
-    </main>
+    <!-- ========== SECTION 1: INFRASTRUCTURE ========== -->
+    <section id="infrastructure" class="section">
+      <div class="section-header">
+        <div class="section-marker">01</div>
+        <h2 class="section-title">Infrastructure Status</h2>
+        <div class="section-line"></div>
+      </div>
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
+      <div class="machine-grid">
 
-      <!-- Node provisioner -->
-      <section class="widget">
-        <h3 class="widget-title">Node Provisioner</h3>
-        <p class="widget-desc">Generate the provisioning command for a new client Concierge node.</p>
-        <label class="field-label" for="node-client-name">Client Name</label>
-        <input id="node-client-name" class="field-input" type="text" placeholder="The Andersons" />
-        <label class="field-label" for="node-ts-key">Tailscale Auth Key</label>
-        <input id="node-ts-key" class="field-input" type="text" placeholder="tskey-auth-xxxx" />
-        <button id="gen-cmd-btn" class="btn-primary">Generate Command</button>
-        <pre id="provision-cmd-output" class="cmd-output">Fill in fields above and click Generate.</pre>
-        <button id="copy-provision-btn" class="btn-secondary">Copy</button>
-      </section>
+        <!-- BOB -->
+        <div class="machine-card" data-machine="bob">
+          <div class="card-header">
+            <div class="status-dot green pulse" title="Online"></div>
+            <h3 class="machine-name">Bob</h3>
+            <span class="machine-badge">HQ</span>
+          </div>
+          <div class="machine-subtitle">Mac Mini M4 — Primary Orchestrator</div>
+          <div class="machine-specs">
+            <span class="spec-tag">Apple Silicon M4</span>
+            <span class="spec-tag">Docker</span>
+          </div>
+          <div class="machine-services">
+            <span class="service-chip">OpenClaw</span>
+            <span class="service-chip">Voice Receptionist</span>
+            <span class="service-chip">Telegram</span>
+            <span class="service-chip">Claude Code</span>
+          </div>
+          <div class="steps-list">
+            <div class="step" data-step="bob-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Install OpenClaw</div>
+                <code class="step-cmd">cd ~/AI-Server && bash setup/openclaw/install_openclaw.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server && bash setup/openclaw/install_openclaw.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="bob-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Set up Telegram Bot</div>
+                <code class="step-cmd">cd ~/AI-Server && bash setup/telegram/setup_telegram_bot.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server && bash setup/telegram/setup_telegram_bot.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="bob-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Install Claude Code</div>
+                <code class="step-cmd">cd ~/AI-Server && bash setup/claude_code/install_claude_code.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server && bash setup/claude_code/install_claude_code.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="bob-4">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Start Voice Receptionist</div>
+                <code class="step-cmd">cd ~/AI-Server/voice_receptionist && docker-compose up -d</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/voice_receptionist && docker-compose up -d')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="bob-5">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Run Health Monitor</div>
+                <code class="step-cmd">python3 ~/AI-Server/setup/nodes/node_health_monitor.py --watch 60</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'python3 ~/AI-Server/setup/nodes/node_health_monitor.py --watch 60')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-      <!-- Quick reference -->
-      <section class="widget">
-        <h3 class="widget-title">Quick Reference</h3>
-        <ul class="ref-list">
-          <li><strong>Bob health:</strong> <code>curl localhost:3000/health</code></li>
-          <li><strong>Ollama status:</strong> <code>curl localhost:11434/</code></li>
-          <li><strong>Docker status:</strong> <code>docker compose ps</code></li>
-          <li><strong>Bob logs:</strong> <code>docker compose logs -f bob</code></li>
-          <li><strong>Tailscale IP:</strong> <code>tailscale ip -4</code></li>
-          <li><strong>Ngrok (dev):</strong> <code>ngrok http 3000</code></li>
-        </ul>
-      </section>
+        <!-- MAESTRO -->
+        <div class="machine-card" data-machine="maestro">
+          <div class="card-header">
+            <div class="status-dot green pulse" title="Online"></div>
+            <h3 class="machine-name">Maestro</h3>
+            <span class="machine-badge">LLM WORKER</span>
+          </div>
+          <div class="machine-subtitle">64GB iMac — Language Model Processing</div>
+          <div class="machine-specs">
+            <span class="spec-tag">Intel i3</span>
+            <span class="spec-tag">64GB RAM</span>
+            <span class="spec-tag">macOS 15.7.4</span>
+          </div>
+          <div class="machine-services">
+            <span class="service-chip">Ollama</span>
+            <span class="service-chip">HARPA</span>
+          </div>
+          <div class="steps-list">
+            <div class="step" data-step="maestro-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Reset & Rename</div>
+                <div class="step-note">Follow imac_reset_guide.md instructions</div>
+              </div>
+              <a href="#reference" class="btn-link" onclick="openReference('imac-reset')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 3H3v10h10v-3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8L14 2M14 2v4M14 2h-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Guide</span>
+              </a>
+            </div>
+            <div class="step" data-step="maestro-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Provision Node</div>
+                <code class="step-cmd">bash setup/nodes/provision_node.sh --hostname Maestro --role llm_worker --bob-ip &lt;BOB_IP&gt;</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash setup/nodes/provision_node.sh --hostname Maestro --role llm_worker --bob-ip <BOB_IP>')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="maestro-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Install Ollama Models</div>
+                <code class="step-cmd">bash setup/ollama_worker/setup_ollama_worker.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash setup/ollama_worker/setup_ollama_worker.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="maestro-4">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Set up HARPA</div>
+                <code class="step-cmd">bash setup/harpa/setup_imac_harpa.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash setup/harpa/setup_imac_harpa.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="maestro-5">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Test Ollama</div>
+                <code class="step-cmd">bash setup/ollama_worker/test_ollama_worker.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash setup/ollama_worker/test_ollama_worker.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-    </aside>
-  </div>
+        <!-- STAGEHAND -->
+        <div class="machine-card" data-machine="stagehand">
+          <div class="card-header">
+            <div class="status-dot green pulse" title="Online"></div>
+            <h3 class="machine-name">Stagehand</h3>
+            <span class="machine-badge">BROWSER NODE</span>
+          </div>
+          <div class="machine-subtitle">8GB iMac — Browser Automation</div>
+          <div class="machine-specs">
+            <span class="spec-tag">Intel</span>
+            <span class="spec-tag">8GB RAM</span>
+          </div>
+          <div class="machine-services">
+            <span class="service-chip">HARPA</span>
+          </div>
+          <div class="steps-list">
+            <div class="step" data-step="stagehand-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Reset & Rename</div>
+                <div class="step-note">Follow imac_reset_guide.md instructions</div>
+              </div>
+              <a href="#reference" class="btn-link" onclick="openReference('imac-reset')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 3H3v10h10v-3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 8L14 2M14 2v4M14 2h-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Guide</span>
+              </a>
+            </div>
+            <div class="step" data-step="stagehand-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Provision Node</div>
+                <code class="step-cmd">bash setup/nodes/provision_node.sh --hostname Stagehand --role browser_node --bob-ip &lt;BOB_IP&gt;</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash setup/nodes/provision_node.sh --hostname Stagehand --role browser_node --bob-ip <BOB_IP>')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="stagehand-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Set up HARPA</div>
+                <code class="step-cmd">bash setup/harpa/setup_imac_browser_only.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash setup/harpa/setup_imac_browser_only.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-  <script src="app.js"></script>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 2: AGENTS ========== -->
+    <section id="agents" class="section">
+      <div class="section-header">
+        <div class="section-marker">02</div>
+        <h2 class="section-title">Agent Configuration</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="agent-grid">
+        <div class="agent-card">
+          <div class="agent-icon conductor">
+            <svg viewBox="0 0 24 24" width="28" height="28"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          </div>
+          <div class="agent-details">
+            <h4 class="agent-name">Bob <span class="agent-role">(Conductor)</span></h4>
+            <div class="agent-model">claude-sonnet-4-5</div>
+            <p class="agent-desc">Primary orchestrator. Routes tasks, manages context across all agents, handles complex reasoning and multi-step workflows.</p>
+          </div>
+          <div class="agent-status-toggle">
+            <label class="toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-label">Active</span>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-icon proposals">
+            <svg viewBox="0 0 24 24" width="28" height="28"><rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="16" x2="12" y2="16" stroke="currentColor" stroke-width="1.5"/></svg>
+          </div>
+          <div class="agent-details">
+            <h4 class="agent-name">@proposals <span class="agent-role">(Drafter)</span></h4>
+            <div class="agent-model">claude-haiku-3-5</div>
+            <p class="agent-desc">Proposal drafting agent. Generates client proposals, scope documents, and project estimates from templates and project data.</p>
+          </div>
+          <div class="agent-status-toggle">
+            <label class="toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-label">Active</span>
+          </div>
+        </div>
+
+        <div class="agent-card">
+          <div class="agent-icon dtools">
+            <svg viewBox="0 0 24 24" width="28" height="28"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+          </div>
+          <div class="agent-details">
+            <h4 class="agent-name">@dtools <span class="agent-role">(Automation)</span></h4>
+            <div class="agent-model">gpt-4o-mini</div>
+            <p class="agent-desc">D-Tools Cloud automation agent. Manages product catalog, generates line items, syncs project data with D-Tools Cloud API.</p>
+          </div>
+          <div class="agent-status-toggle">
+            <label class="toggle">
+              <input type="checkbox" checked>
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-label">Active</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 3: CLIENT AI ========== -->
+    <section id="client-ai" class="section">
+      <div class="section-header">
+        <div class="section-marker">03</div>
+        <h2 class="section-title">Client AI Deployment</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="client-ai-layout">
+        <div class="client-deploy-card">
+          <h3 class="card-title">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="#c9a84c" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            Symphony Concierge AI
+          </h3>
+          <p class="card-description">Deploy a personalized AI concierge for a new client. Each step builds and pushes a tailored knowledge package to the client's smart home system.</p>
+
+          <div class="steps-list">
+            <div class="step" data-step="client-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Build Knowledge Package</div>
+                <code class="step-cmd">python3 client_ai/client_knowledge_builder.py --client CLIENT_ID</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'python3 client_ai/client_knowledge_builder.py --client CLIENT_ID')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="client-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Provision Client Node</div>
+                <code class="step-cmd">bash client_ai/provision_client_node.sh --hostname CLIENTNAME --bob-ip &lt;BOB_IP&gt;</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash client_ai/provision_client_node.sh --hostname CLIENTNAME --bob-ip <BOB_IP>')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="client-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Push Update</div>
+                <code class="step-cmd">python3 client_ai/update_pipeline.py push --client CLIENT_ID</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'python3 client_ai/update_pipeline.py push --client CLIENT_ID')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="client-stats-card">
+          <h3 class="card-title">Client Registry</h3>
+          <div class="stat-grid">
+            <div class="stat-item">
+              <div class="stat-value gold-text">12</div>
+              <div class="stat-label">Total Deployed</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value green-text">9</div>
+              <div class="stat-label">Active</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value yellow-text">3</div>
+              <div class="stat-label">Trial</div>
+            </div>
+          </div>
+          <div class="stat-bar-wrap">
+            <div class="stat-bar active" style="width: 75%"></div>
+            <div class="stat-bar trial" style="width: 25%"></div>
+          </div>
+          <div class="stat-legend">
+            <span class="legend-item"><span class="legend-dot green"></span> Active</span>
+            <span class="legend-item"><span class="legend-dot yellow"></span> Trial</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 4: NEW NODE ========== -->
+    <section id="new-node" class="section">
+      <div class="section-header">
+        <div class="section-marker">04</div>
+        <h2 class="section-title">Add New Employee Node</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="new-node-layout">
+        <div class="node-form-card">
+          <h3 class="card-title">
+            <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="10" fill="none" stroke="#c9a84c" stroke-width="1.5"/><line x1="12" y1="8" x2="12" y2="16" stroke="#c9a84c" stroke-width="1.5"/><line x1="8" y1="12" x2="16" y2="12" stroke="#c9a84c" stroke-width="1.5"/></svg>
+            Provision New Node
+          </h3>
+
+          <div class="form-group">
+            <label class="form-label">Hostname</label>
+            <input type="text" id="nodeHostname" class="form-input" placeholder="e.g., Virtuoso">
+            <div class="form-hint">
+              Orchestra name suggestions: Virtuoso, Crescendo, Fortissimo, Allegro, Cadenza, Prelude, Tempo, Aria, Encore, Overture
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Role</label>
+            <select id="nodeRole" class="form-select">
+              <option value="">Select a role...</option>
+              <option value="llm_worker">LLM Worker — Local model inference</option>
+              <option value="full_worker">Full Worker — LLM + browser + services</option>
+              <option value="browser_node">Browser Node — HARPA browser automation</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Bob IP Address</label>
+            <input type="text" id="nodeBobIp" class="form-input" placeholder="e.g., 192.168.1.100">
+          </div>
+
+          <button class="btn-generate" id="generateBtn" onclick="generateCommand()">
+            <svg viewBox="0 0 24 24" width="18" height="18"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            Generate Command
+          </button>
+
+          <div class="generated-output" id="generatedOutput" style="display:none">
+            <label class="form-label">Generated Command</label>
+            <div class="output-cmd-wrap">
+              <code class="output-cmd" id="generatedCmd"></code>
+              <button class="btn-copy small" id="copyGeneratedBtn">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ram-reference-card">
+          <h3 class="card-title">RAM Tier Reference</h3>
+          <p class="card-description">Recommended model sizes based on available unified / system memory.</p>
+          <table class="ram-table">
+            <thead>
+              <tr>
+                <th>RAM</th>
+                <th>Model Capacity</th>
+                <th>Examples</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="ram-badge">16 GB</span></td>
+                <td>7B – 13B parameters</td>
+                <td>Llama 3.1 8B, Mistral 7B, Phi-3</td>
+              </tr>
+              <tr>
+                <td><span class="ram-badge">24 GB</span></td>
+                <td>Up to 20B parameters</td>
+                <td>Mistral Small, CodeLlama 13B</td>
+              </tr>
+              <tr>
+                <td><span class="ram-badge">32 GB</span></td>
+                <td>Up to 30B parameters</td>
+                <td>Llama 3.1 70B (Q4), Mixtral 8x7B</td>
+              </tr>
+              <tr>
+                <td><span class="ram-badge">64 GB</span></td>
+                <td>Up to 70B parameters</td>
+                <td>Llama 3.1 70B, DeepSeek 67B</td>
+              </tr>
+              <tr>
+                <td><span class="ram-badge gold">96–192 GB</span></td>
+                <td>Multiple large models</td>
+                <td>Llama 3.1 405B (quantized), multi-model</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 5: QUICK REFERENCE ========== -->
+    <section id="reference" class="section">
+      <div class="section-header">
+        <div class="section-marker">05</div>
+        <h2 class="section-title">Quick Reference</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="reference-grid">
+        <div class="collapsible-panel" id="panel-commands">
+          <button class="panel-trigger" onclick="togglePanel('panel-commands')">
+            <svg class="panel-icon" viewBox="0 0 24 24" width="20" height="20"><polyline points="4,7 12,15 20,7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            <span>Key Commands</span>
+          </button>
+          <div class="panel-content">
+            <div class="cmd-row">
+              <span class="cmd-label">Pull latest code</span>
+              <code class="cmd-value">cd ~/AI-Server && git pull origin main</code>
+              <button class="btn-copy micro" onclick="copyCmd(this, 'cd ~/AI-Server && git pull origin main')">Copy</button>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-label">Restart all Docker services</span>
+              <code class="cmd-value">cd ~/AI-Server && docker-compose restart</code>
+              <button class="btn-copy micro" onclick="copyCmd(this, 'cd ~/AI-Server && docker-compose restart')">Copy</button>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-label">Health check (all nodes)</span>
+              <code class="cmd-value">python3 ~/AI-Server/setup/nodes/node_health_monitor.py --all</code>
+              <button class="btn-copy micro" onclick="copyCmd(this, 'python3 ~/AI-Server/setup/nodes/node_health_monitor.py --all')">Copy</button>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-label">View Docker logs</span>
+              <code class="cmd-value">docker logs -f --tail 100 &lt;container_name&gt;</code>
+              <button class="btn-copy micro" onclick="copyCmd(this, 'docker logs -f --tail 100 <container_name>')">Copy</button>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-label">Ollama status</span>
+              <code class="cmd-value">curl http://localhost:11434/api/tags</code>
+              <button class="btn-copy micro" onclick="copyCmd(this, 'curl http://localhost:11434/api/tags')">Copy</button>
+            </div>
+            <div class="cmd-row">
+              <span class="cmd-label">Restart Ollama</span>
+              <code class="cmd-value">brew services restart ollama</code>
+              <button class="btn-copy micro" onclick="copyCmd(this, 'brew services restart ollama')">Copy</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="collapsible-panel" id="panel-filemap">
+          <button class="panel-trigger" onclick="togglePanel('panel-filemap')">
+            <svg class="panel-icon" viewBox="0 0 24 24" width="20" height="20"><polyline points="4,7 12,15 20,7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            <span>File Map</span>
+          </button>
+          <div class="panel-content">
+            <pre class="file-tree">AI-Server/
+├── setup/
+│   ├── openclaw/          # OpenClaw installation
+│   ├── claude_code/       # Claude Code setup
+│   ├── telegram/          # Telegram bot config
+│   ├── harpa/             # HARPA browser automation
+│   ├── ollama_worker/     # Ollama model management
+│   └── nodes/             # Node provisioning & health
+│       ├── provision_node.sh
+│       ├── node_health_monitor.py
+│       └── imac_reset_guide.md
+├── voice_receptionist/    # Twilio voice service
+│   ├── docker-compose.yml
+│   └── app/
+├── integrations/
+│   ├── homeassistant/     # Home Assistant bridge (MQTT, cameras, devices)
+│   │   ├── setup_ha_integration.sh
+│   │   ├── docker-compose.ha.yml
+│   │   └── .env.example
+│   └── telegram/          # Telegram bot for remote management
+│       ├── docker-compose.telegram.yml
+│       └── .env.example
+├── clawwork/              # ClawWork 24/7 side hustle earnings system
+│   ├── install_clawwork.sh
+│   ├── clawwork_config.json
+│   ├── docker-compose.clawwork.yml
+│   ├── bob_side_hustle.py
+│   └── earnings_tracker.py
+├── client_ai/             # Client deployment tools
+│   ├── client_knowledge_builder.py
+│   ├── provision_client_node.sh
+│   └── update_pipeline.py
+├── agents/                # OpenClaw agent configs
+│   ├── bob_conductor.yml
+│   ├── proposals_agent.yml
+│   └── dtools_agent.yml
+└── docker-compose.yml     # Root orchestration</pre>
+          </div>
+        </div>
+
+        <div class="collapsible-panel" id="panel-vendors">
+          <button class="panel-trigger" onclick="togglePanel('panel-vendors')">
+            <svg class="panel-icon" viewBox="0 0 24 24" width="20" height="20"><polyline points="4,7 12,15 20,7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            <span>Vendor Stack Reference</span>
+          </button>
+          <div class="panel-content">
+            <div class="vendor-grid">
+              <div class="vendor-item">
+                <strong>Control4</strong>
+                <span>Primary automation platform</span>
+              </div>
+              <div class="vendor-item">
+                <strong>Lutron</strong>
+                <span>Lighting & shade control</span>
+              </div>
+              <div class="vendor-item">
+                <strong>Araknis</strong>
+                <span>Networking infrastructure</span>
+              </div>
+              <div class="vendor-item">
+                <strong>Snap One / OvrC</strong>
+                <span>Remote management & monitoring</span>
+              </div>
+              <div class="vendor-item">
+                <strong>Sonos</strong>
+                <span>Distributed audio</span>
+              </div>
+              <div class="vendor-item">
+                <strong>Sony / Samsung</strong>
+                <span>Display & video distribution</span>
+              </div>
+              <div class="vendor-item">
+                <strong>Luma / Alarm.com</strong>
+                <span>Surveillance & security</span>
+              </div>
+              <div class="vendor-item">
+                <strong>D-Tools Cloud</strong>
+                <span>Project management & proposals</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="collapsible-panel" id="panel-troubleshoot">
+          <button class="panel-trigger" onclick="togglePanel('panel-troubleshoot')">
+            <svg class="panel-icon" viewBox="0 0 24 24" width="20" height="20"><polyline points="4,7 12,15 20,7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            <span>Troubleshooting</span>
+          </button>
+          <div class="panel-content">
+            <div class="troubleshoot-list">
+              <div class="troubleshoot-item">
+                <div class="ts-problem">Ollama not responding</div>
+                <div class="ts-solution">
+                  <code>brew services restart ollama</code> — if still failing, check <code>~/.ollama/logs</code> and ensure port 11434 is free.
+                </div>
+              </div>
+              <div class="troubleshoot-item">
+                <div class="ts-problem">Docker containers won't start</div>
+                <div class="ts-solution">
+                  Run <code>docker system prune -f</code> to free disk, then <code>docker-compose up -d --force-recreate</code>.
+                </div>
+              </div>
+              <div class="troubleshoot-item">
+                <div class="ts-problem">Node unreachable from Bob</div>
+                <div class="ts-solution">
+                  Verify SSH keys with <code>ssh -v user@&lt;NODE_IP&gt;</code>. Check firewall: <code>sudo pfctl -sr</code> on macOS.
+                </div>
+              </div>
+              <div class="troubleshoot-item">
+                <div class="ts-problem">Voice receptionist calls failing</div>
+                <div class="ts-solution">
+                  Check Twilio webhook URL in console. Verify Docker: <code>docker logs voice_receptionist</code>. Ensure port 5000 is exposed.
+                </div>
+              </div>
+              <div class="troubleshoot-item">
+                <div class="ts-problem">HARPA extension not connecting</div>
+                <div class="ts-solution">
+                  Re-enable in Chrome extensions. Clear extension cache. Verify API key in HARPA settings matches <code>.env</code> file.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 6: VOICE RECEPTIONIST ========== -->
+    <section id="voice" class="section">
+      <div class="section-header">
+        <div class="section-marker">06</div>
+        <h2 class="section-title">Voice Receptionist</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="voice-layout">
+        <div class="voice-status-card">
+          <div class="voice-header-row">
+            <h3 class="card-title">
+              <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" fill="none" stroke="#c9a84c" stroke-width="1.5"/><path d="M19 10v2a7 7 0 01-14 0v-2" fill="none" stroke="#c9a84c" stroke-width="1.5"/><line x1="12" y1="19" x2="12" y2="23" stroke="#c9a84c" stroke-width="1.5"/></svg>
+              Service Status
+            </h3>
+            <div class="voice-status-badge online">
+              <span class="status-dot green mini-pulse"></span> ONLINE
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Twilio Phone Number</label>
+            <input type="text" class="form-input" placeholder="+1 (555) 000-0000" id="twilioNumber">
+          </div>
+
+          <div class="voice-stats">
+            <div class="voice-stat">
+              <div class="voice-stat-value">—</div>
+              <div class="voice-stat-label">Calls Today</div>
+            </div>
+            <div class="voice-stat">
+              <div class="voice-stat-value">—</div>
+              <div class="voice-stat-label">Avg Duration</div>
+            </div>
+            <div class="voice-stat">
+              <div class="voice-stat-value">—</div>
+              <div class="voice-stat-label">Success Rate</div>
+            </div>
+          </div>
+
+          <div class="steps-list">
+            <div class="step" data-step="voice-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Configure Twilio</div>
+                <code class="step-cmd">Set webhook URL: https://&lt;BOB_IP&gt;:5000/voice/incoming</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'https://<BOB_IP>:5000/voice/incoming')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy URL</span>
+              </button>
+            </div>
+            <div class="step" data-step="voice-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Start Service</div>
+                <code class="step-cmd">cd ~/AI-Server/voice_receptionist && docker-compose up -d</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/voice_receptionist && docker-compose up -d')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="voice-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Test Call</div>
+                <div class="step-note">Call your Twilio number to verify the voice AI responds correctly</div>
+              </div>
+              <div class="btn-test">
+                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                Test
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="voice-calls-card">
+          <h3 class="card-title">Recent Calls</h3>
+          <table class="calls-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Caller</th>
+                <th>Duration</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="placeholder-row">
+                <td colspan="4">
+                  <div class="empty-state">
+                    <svg viewBox="0 0 24 24" width="32" height="32"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" fill="none" stroke="#6b7280" stroke-width="1.5"/></svg>
+                    <span>No calls recorded yet. Deploy the voice service to start.</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 7: HOME ASSISTANT ========== -->
+    <section id="homeassistant" class="section">
+      <div class="section-header">
+        <div class="section-marker">07</div>
+        <h2 class="section-title">Home Assistant Integration</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="machine-grid">
+        <div class="machine-card" data-machine="homeassistant">
+          <div class="card-header">
+            <div class="status-dot green pulse" title="Online"></div>
+            <h3 class="machine-name">Home Assistant — Raspberry Pi</h3>
+            <span class="machine-badge">IOT HUB</span>
+          </div>
+          <div class="machine-subtitle">Raspberry Pi — MQTT, Camera Feeds &amp; Device Control</div>
+          <div class="machine-specs">
+            <span class="spec-tag">Raspberry Pi</span>
+            <span class="spec-tag">Mosquitto MQTT</span>
+            <span class="spec-tag">Camera feeds</span>
+          </div>
+          <div class="machine-services">
+            <span class="service-chip">MQTT broker</span>
+            <span class="service-chip">REST API</span>
+            <span class="service-chip">WebSocket events</span>
+          </div>
+          <div class="steps-list">
+            <div class="step" data-step="ha-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Generate HA Long-Lived Access Token</div>
+                <code class="step-cmd">Go to http://PI_IP:8123/profile → Long-Lived Access Tokens → Create Token</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'Go to http://PI_IP:8123/profile → Long-Lived Access Tokens → Create Token')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="ha-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Configure .env</div>
+                <code class="step-cmd">cd ~/AI-Server/integrations/homeassistant && cp .env.example .env && nano .env</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/integrations/homeassistant && cp .env.example .env && nano .env')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="ha-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Run Setup Script</div>
+                <code class="step-cmd">bash ~/AI-Server/integrations/homeassistant/setup_ha_integration.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash ~/AI-Server/integrations/homeassistant/setup_ha_integration.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="ha-4">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Start Services</div>
+                <code class="step-cmd">cd ~/AI-Server/integrations/homeassistant && docker-compose -f docker-compose.ha.yml up -d</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/integrations/homeassistant && docker-compose -f docker-compose.ha.yml up -d')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="ha-5">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Test MQTT</div>
+                <code class="step-cmd">mosquitto_pub -h PI_IP -t symphony/test -m "hello from bob"</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'mosquitto_pub -h PI_IP -t symphony/test -m &quot;hello from bob&quot;')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 8: TELEGRAM BOT ========== -->
+    <section id="telegram" class="section">
+      <div class="section-header">
+        <div class="section-marker">08</div>
+        <h2 class="section-title">Telegram — Remote Management</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="machine-grid">
+        <div class="machine-card" data-machine="telegram">
+          <div class="card-header">
+            <div class="status-dot green pulse" title="Online"></div>
+            <h3 class="machine-name">Telegram — Remote Management</h3>
+            <span class="machine-badge">BOT</span>
+          </div>
+          <div class="machine-subtitle">Bob the Conductor — 13 Commands, Daily Digest &amp; Priority Alerts</div>
+          <div class="machine-specs">
+            <span class="spec-tag">Bot name: Bob the Conductor</span>
+            <span class="spec-tag">13 commands</span>
+            <span class="spec-tag">Daily digest</span>
+            <span class="spec-tag">Priority alerts</span>
+          </div>
+          <div class="machine-services">
+            <span class="service-chip">Telegram Bot API</span>
+            <span class="service-chip">Docker</span>
+          </div>
+          <div class="steps-list">
+            <div class="step" data-step="tg-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Create Bot</div>
+                <code class="step-cmd">Open Telegram → @BotFather → /newbot → Name: Bob the Conductor</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'Open Telegram → @BotFather → /newbot → Name: Bob the Conductor')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="tg-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Get Chat ID</div>
+                <code class="step-cmd">curl https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'curl https://api.telegram.org/bot<TOKEN>/getUpdates')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="tg-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Configure .env</div>
+                <code class="step-cmd">cd ~/AI-Server/integrations/telegram && cp .env.example .env && nano .env</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/integrations/telegram && cp .env.example .env && nano .env')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="tg-4">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Start Bot</div>
+                <code class="step-cmd">cd ~/AI-Server/integrations/telegram && docker-compose -f docker-compose.telegram.yml up -d</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/integrations/telegram && docker-compose -f docker-compose.telegram.yml up -d')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="tg-5">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Test</div>
+                <code class="step-cmd">Send /status to your bot in Telegram</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'Send /status to your bot in Telegram')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== SECTION 9: CLAWWORK ========== -->
+    <section id="clawwork" class="section">
+      <div class="section-header">
+        <div class="section-marker">09</div>
+        <h2 class="section-title">ClawWork — 24/7 Side Hustle</h2>
+        <div class="section-line"></div>
+      </div>
+
+      <div class="clawwork-layout">
+        <div class="machine-card" data-machine="clawwork" style="flex: 1;">
+          <div class="card-header">
+            <div class="status-dot green pulse" title="Online"></div>
+            <h3 class="machine-name">ClawWork — 24/7 Side Hustle</h3>
+            <span class="machine-badge">EARNINGS</span>
+          </div>
+          <div class="machine-subtitle">GDPVal Tasks — Adaptive Sector Selection, 50 Tasks/Day Max</div>
+          <div class="machine-specs">
+            <span class="spec-tag">GDPVal tasks</span>
+            <span class="spec-tag">50/day max</span>
+            <span class="spec-tag">Adaptive sector selection</span>
+          </div>
+          <div class="machine-services">
+            <span class="service-chip">Docker</span>
+            <span class="service-chip">Python daemon</span>
+            <span class="service-chip">Earnings tracker</span>
+          </div>
+
+          <div class="voice-stats" style="margin: 1rem 0;">
+            <div class="voice-stat">
+              <div class="voice-stat-value" id="cwBalance">—</div>
+              <div class="voice-stat-label">Balance</div>
+            </div>
+            <div class="voice-stat">
+              <div class="voice-stat-value" id="cwToday">—</div>
+              <div class="voice-stat-label">Today's Earnings</div>
+            </div>
+            <div class="voice-stat">
+              <div class="voice-stat-value" id="cwTasks">—</div>
+              <div class="voice-stat-label">Tasks Completed</div>
+            </div>
+          </div>
+
+          <div class="steps-list">
+            <div class="step" data-step="cw-1">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Install ClawWork</div>
+                <code class="step-cmd">bash ~/AI-Server/clawwork/install_clawwork.sh</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'bash ~/AI-Server/clawwork/install_clawwork.sh')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="cw-2">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Configure</div>
+                <code class="step-cmd">cd ~/AI-Server/clawwork && nano clawwork_config.json</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/clawwork && nano clawwork_config.json')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="cw-3">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Start Daemon</div>
+                <code class="step-cmd">cd ~/AI-Server/clawwork && docker-compose -f docker-compose.clawwork.yml up -d</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'cd ~/AI-Server/clawwork && docker-compose -f docker-compose.clawwork.yml up -d')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="cw-4">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">Check Status</div>
+                <code class="step-cmd">python3 ~/AI-Server/clawwork/bob_side_hustle.py --status</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'python3 ~/AI-Server/clawwork/bob_side_hustle.py --status')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <div class="step" data-step="cw-5">
+              <div class="step-check" onclick="toggleStep(this)">
+                <svg viewBox="0 0 16 16"><polyline points="3,8 7,12 13,4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              </div>
+              <div class="step-info">
+                <div class="step-name">View Earnings</div>
+                <code class="step-cmd">python3 ~/AI-Server/clawwork/earnings_tracker.py --report daily</code>
+              </div>
+              <button class="btn-copy" onclick="copyCmd(this, 'python3 ~/AI-Server/clawwork/earnings_tracker.py --report daily')">
+                <svg viewBox="0 0 16 16" width="14" height="14"><rect x="5" y="5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 011-1h8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-text">SYMPHONY SMART HOMES — AI INFRASTRUCTURE v1.0</span>
+      <span class="footer-text">MISSION CONTROL DASHBOARD</span>
+    </div>
+  </footer>
+
+  <script src="./app.js"></script>
 </body>
 </html>
