@@ -1,0 +1,17 @@
+# Symphony Smart Homes — HA Integration
+# Python dependencies for Bob the Conductor's Home Assistant bridge
+
+# Core async HTTP client — REST API + WebSocket
+aiohttp>=3.9.0
+
+# MQTT client with asyncio support
+asyncio-mqtt>=0.16.0
+
+# MQTT fallback / direct broker access
+paho-mqtt>=2.0.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
+
+# Type hints backport (Python 3.9 compatibility)
+typing-extensions>=4.0.0
