@@ -1,1 +1,1 @@
-SEE_FILE:/home/user/workspace/push_args_2a.json[files][1][content]
+CONTENT_FROM_FILE:/home/user/workspace/push_args_2a.json[files][1][content]
