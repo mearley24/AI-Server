@@ -1,0 +1,280 @@
+# =============================================================================
+# OpenClaw Agent Registry
+# System:  Symphony Smart Homes — OpenClaw on Bob (Mac Mini M4)
+# Updated: 2026-02-27
+#
+# Master registry: agent discovery, routing rules, delegation hierarchy
+# =============================================================================
+
+registry_version: "1.0.0"
+system_name: "Symphony Smart Homes — OpenClaw"
+host: "bob-mac-mini-m4"
+openclaw_version: ">=0.9.0"
+config_base_path: "/var/openclaw/agents/"
+
+# ---------------------------------------------------------------------------
+# Agent Index
+# ---------------------------------------------------------------------------
+agents:
+
+  - agent_id: bob_conductor
+    display_name: "Bob — The Conductor"
+    config_file: agents/bob_conductor.yml
+    role: orchestrator
+    provider: anthropic
+    model: claude-sonnet-4-5
+    priority: 1
+    enabled: true
+    entrypoints:
+      - telegram_command
+      - telegram_message
+      - openclaw_api
+    capabilities:
+      - complex_reasoning
+      - multi_step_workflows
+      - agent_delegation
+      - client_communication
+      - system_orchestration
+    can_delegate_to:
+      - proposals_agent
+      - dtools_agent
+    health_check:
+      endpoint: null
+      interval_seconds: 60
+
+  - agent_id: proposals_agent
+    display_name: "Proposals Agent"
+    config_file: agents/proposals_agent.yml
+    role: specialist
+    provider: anthropic
+    model: claude-haiku-3-5
+    priority: 2
+    enabled: true
+    entrypoints:
+      - agent_delegation
+    capabilities:
+      - proposal_drafting
+      - scope_documents
+      - project_estimates
+      - change_orders
+    can_delegate_to: []
+    health_check:
+      endpoint: null
+      interval_seconds: 120
+
+  - agent_id: dtools_agent
+    display_name: "D-Tools Agent"
+    config_file: agents/dtools_agent.yml
+    role: specialist
+    provider: openai
+    model: gpt-4o-mini
+    priority: 2
+    enabled: true
+    entrypoints:
+      - agent_delegation
+      - agent_delegation_proposals
+    capabilities:
+      - catalog_lookup
+      - project_data
+      - client_records
+      - pipeline_reporting
+      - financial_summaries
+    can_delegate_to: []
+    health_check:
+      endpoint: "http://dtools-bridge:5050/health"
+      interval_seconds: 30
+      alert_on_failure: true
+
+  - agent_id: clawwork_agent
+    display_name: "ClawWork Agent"
+    config_file: agents/clawwork_agent.yml
+    role: autonomous_worker
+    provider: openai
+    model: gpt-4o-mini
+    priority: 3
+    enabled: true
+    entrypoints:
+      - scheduler
+    capabilities:
+      - task_selection
+      - quality_scoring
+      - earnings_tracking
+      - gdpval_automation
+    can_delegate_to: []
+    schedule:
+      type: continuous_with_poll
+      poll_interval_minutes: 0.5
+      off_peak_poll_minutes: 30
+    health_check:
+      endpoint: null
+      check_log_freshness: true
+      log_path: /var/openclaw/logs/clawwork_agent.log
+      interval_seconds: 300
+
+  - agent_id: voice_agent
+    display_name: "Symphony Voice Receptionist"
+    config_file: agents/voice_agent.yml
+    role: realtime_voice
+    provider: openai
+    model: gpt-4o
+    priority: 1
+    enabled: true
+    entrypoints:
+      - twilio_webhook
+    capabilities:
+      - voice_reception
+      - call_routing
+      - basic_troubleshooting
+      - lead_capture
+      - service_ticket_logging
+    can_delegate_to: []
+    health_check:
+      endpoint: "/webhooks/voice/health"
+      interval_seconds: 60
+      alert_on_failure: true
+
+# ---------------------------------------------------------------------------
+# Routing Rules (first match wins)
+# ---------------------------------------------------------------------------
+routing:
+  version: "1.0.0"
+  evaluation_order: top_down
+  default_agent: bob_conductor
+
+  rules:
+
+    - rule_id: voice_webhook
+      description: "Twilio voice webhooks go directly to voice_agent"
+      priority: 10
+      match:
+        entrypoint: twilio_webhook
+      route_to: voice_agent
+
+    - rule_id: proposals_delegation
+      description: "@proposals messages from Bob route to proposals_agent"
+      priority: 20
+      match:
+        message_starts_with: "@proposals"
+        sender: bob_conductor
+      route_to: proposals_agent
+      strip_prefix: true
+
+    - rule_id: dtools_delegation
+      description: "@dtools messages from Bob/proposals route to dtools_agent"
+      priority: 20
+      match:
+        message_starts_with: "@dtools"
+        sender:
+          - bob_conductor
+          - proposals_agent
+      route_to: dtools_agent
+      strip_prefix: true
+
+    - rule_id: clawwork_delegation_blocked
+      description: "Block direct delegation to clawwork_agent"
+      priority: 21
+      match:
+        message_starts_with: "@clawwork"
+      action: block
+      response: "ClawWork Agent runs autonomously and cannot be delegated to directly."
+
+    - rule_id: telegram_commands
+      description: "All Telegram /commands go to bob_conductor"
+      priority: 30
+      match:
+        entrypoint: telegram_command
+        message_starts_with: "/"
+        allowed_commands:
+          - /status
+          - /pipeline
+          - /earnings
+          - /client
+          - /proposal
+          - /dtools
+          - /health
+          - /schedule
+          - /help
+          - /digest
+          - /log
+          - /task
+          - /alert
+      route_to: bob_conductor
+
+    - rule_id: telegram_freeform
+      description: "All non-command Telegram messages go to bob_conductor"
+      priority: 40
+      match:
+        entrypoint: telegram_message
+      route_to: bob_conductor
+
+    - rule_id: default_to_bob
+      description: "Everything else goes to bob_conductor"
+      priority: 999
+      match: "*"
+      route_to: bob_conductor
+
+# ---------------------------------------------------------------------------
+# Delegation Hierarchy (enforced at kernel level)
+# ---------------------------------------------------------------------------
+delegation:
+  policy: hub_and_spoke
+  hub: bob_conductor
+  allowed_delegations:
+    bob_conductor:
+      - proposals_agent
+      - dtools_agent
+    proposals_agent:
+      - dtools_agent
+    dtools_agent: []
+    clawwork_agent: []
+    voice_agent: []
+  enforcement: strict
+  cross_agent_message_policy: deny_unless_whitelisted
+
+# ---------------------------------------------------------------------------
+# System-Wide Settings
+# ---------------------------------------------------------------------------
+system:
+  timezone: America/Denver
+  log_base_path: /var/openclaw/logs/
+  data_base_path: /var/openclaw/
+  env_file: /var/openclaw/.env
+
+  startup_sequence:
+    - dtools_agent
+    - proposals_agent
+    - clawwork_agent
+    - voice_agent
+    - bob_conductor
+
+  shutdown_sequence:
+    - bob_conductor
+    - voice_agent
+    - proposals_agent
+    - clawwork_agent
+    - dtools_agent
+
+  health_monitor:
+    enabled: true
+    check_interval_seconds: 60
+    alert_channel: telegram
+    alert_agent: bob_conductor
+    failure_threshold: 3
+
+# ---------------------------------------------------------------------------
+# Required Environment Variables (values in .env)
+# ---------------------------------------------------------------------------
+environment_variables:
+  required:
+    - ANTHROPIC_API_KEY
+    - OPENAI_API_KEY
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_OWNER_CHAT_ID
+    - TWILIO_ACCOUNT_SID
+    - TWILIO_AUTH_TOKEN
+    - TWILIO_PHONE_NUMBER
+  optional:
+    - DTOOLS_CLOUD_API_KEY
+    - OVRC_API_KEY
+    - ALARM_COM_API_KEY
+    - SONOS_API_KEY
