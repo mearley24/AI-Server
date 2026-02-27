@@ -1,0 +1,41 @@
+# =============================================================================
+# Symphony Smart Homes — Telegram Bot (standalone)
+# Run this to start JUST the Telegram bot without the full Symphony stack.
+# Usage: docker compose -f docker-compose.telegram.yml up -d
+# =============================================================================
+
+name: symphony-telegram
+
+services:
+  telegram-bot:
+    build:
+      context: ./telegram-interface
+      dockerfile: Dockerfile
+    image: symphony/telegram-bot:latest
+    container_name: symphony_telegram_bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID}
+      - OPENWEBUI_BASE_URL=${OPENWEBUI_BASE_URL:-http://host.docker.internal:3000}
+      - OPENWEBUI_API_KEY=${OPENWEBUI_API_KEY:-}
+      - OPENWEBUI_MODEL=${OPENWEBUI_MODEL:-}
+      - SYSTEM_PROMPT=${SYSTEM_PROMPT:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - HEALTH_PORT=8081
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    labels:
+      com.symphony.role: "management"
+      com.symphony.description: "@ConductorBob_bot — Telegram remote management"
