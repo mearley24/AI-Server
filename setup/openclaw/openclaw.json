@@ -1,0 +1,337 @@
+{
+  // ============================================================================
+  // openclaw.json — OpenClaw main configuration
+  // Symphony Smart Homes | Bob the Conductor | Mac Mini M4 (hostname: Bob)
+  //
+  // FORMAT: JSONC (JSON with Comments). OpenClaw's config parser accepts // and
+  // /* */ comments natively. If you ever need to validate this file as strict
+  // JSON (e.g., in an online validator), strip comments first with:
+  //   npx strip-json-comments openclaw.json
+  //
+  // All YOUR_*_KEY and YOUR_*_ID placeholders must be replaced before starting.
+  // Run:  openclaw configure   (interactive editor)
+  //  or:  nano ~/.openclaw/openclaw.json
+  //
+  // OpenClaw docs: https://openclaw.dev/docs/config
+  // ============================================================================
+
+  // ── Instance identity ────────────────────────────────────────────────────────
+  "instance": {
+    "name": "Bob the Conductor",
+    "organization": "Symphony Smart Homes",
+    "hostname": "Bob",                      // Mac Mini M4 hostname
+    "timezone": "America/Denver",
+    "log_level": "info",                    // "debug" | "info" | "warn" | "error"
+    "log_dir": "~/.openclaw/logs"
+  },
+
+  // ── LLM providers ────────────────────────────────────────────────────────────
+  // OpenClaw supports multiple providers simultaneously.
+  // Each agent below specifies which model it uses.
+  "providers": {
+
+    // ── Primary: Anthropic (Claude) ───────────────────────────────────────────
+    "anthropic": {
+      "enabled": true,
+      "api_key": "YOUR_ANTHROPIC_API_KEY",  // sk-ant-...
+      "default_model": "claude-sonnet-4-5",
+      "max_tokens": 8192,
+      "timeout_ms": 60000
+    },
+
+    // ── Secondary: OpenAI ─────────────────────────────────────────────────────
+    // Used by the dtools agent (gpt-4o-mini) for cost efficiency on API work.
+    "openai": {
+      "enabled": true,
+      "api_key": "YOUR_OPENAI_API_KEY",     // sk-...
+      "default_model": "gpt-4o-mini",
+      "max_tokens": 4096,
+      "timeout_ms": 30000
+    },
+
+    // ── Ollama Worker: 64GB iMac (remote LLM node) ─────────────────────────────
+    // The 2019 iMac (Intel i3, 64GB RAM) runs Ollama in CPU-only mode.
+    // Models: llama3.2:3b (classifier), llama3.1:8b (summarizer), mistral:7b
+    // Custom models: bob-classifier, bob-summarizer
+    // Replace YOUR_IMAC_IP with the 64GB iMac's local IP (run setup script to find it)
+    "ollama": {
+      "enabled": true,
+      "base_url": "http://YOUR_IMAC_IP:11434",  // e.g., http://192.168.1.50:11434
+      "openai_compatible": true,                  // Ollama speaks OpenAI API at /v1/
+      "default_model": "llama3.1:8b",
+      "max_tokens": 4096,
+      "timeout_ms": 120000,                       // CPU inference is slower, give 2 min
+      "models": {
+        // Fast classifier — ~2GB RAM, single-word output
+        "bob-classifier": {
+          "description": "Document classification (Proposal, Manual, Drawing, etc.)",
+          "max_tokens": 32
+        },
+        // Summarizer — ~5GB RAM, concise technical summaries
+        "bob-summarizer": {
+          "description": "Technical document summarization for AV integration docs",
+          "max_tokens": 2048
+        },
+        // General purpose
+        "llama3.1:8b": { "description": "General tasks, medium quality" },
+        "llama3.2:3b": { "description": "Fast simple tasks" },
+        "mistral:7b":   { "description": "Structured output, JSON generation" }
+      }
+    },
+
+    // ── Optional: Open WebUI (local proxy) ────────────────────────────────────
+    // Your existing Open WebUI container can act as an OpenAI-compatible API
+    // endpoint. Keep as fallback — OpenClaw can route through it too.
+    "open_webui": {
+      "enabled": false,                     // flip to true to activate
+      "base_url": "http://localhost:3000/api",
+      "api_key": "YOUR_OPEN_WEBUI_API_KEY", // from Open WebUI profile → API keys
+      "default_model": "llama3.2:latest",   // any model loaded in Open WebUI
+      "openai_compatible": true,            // Open WebUI speaks the OpenAI API
+      "max_tokens": 4096,
+      "timeout_ms": 90000                   // local models can be slow
+    }
+  },
+
+  // ── Agents ───────────────────────────────────────────────────────────────────
+  // Each agent is a persistent, named persona with its own workspace, system
+  // prompt, model selection, and tool permissions.
+  "agents": [
+
+    // ── Bob the Conductor (main orchestrator) ─────────────────────────────────
+    {
+      "id": "bob",
+      "name": "Bob the Conductor",
+      "default": true,                      // receives all unrouted messages
+      "model": "anthropic/claude-sonnet-4-5",
+      "workspace": "~/.openclaw/workspace-bob",
+
+      // SOUL.md in the workspace directory is loaded as the base identity.
+      // The detailed system prompt lives in the knowledge base.
+      "system_prompt_file": "~/AI-Server/knowledge/standards/bob_system_prompt.md",
+
+      // Personality/identity layered on top of the system prompt.
+      // OpenClaw auto-loads SOUL.md from the workspace — this is explicit.
+      "soul_file": "~/.openclaw/workspace-bob/SOUL.md",
+
+      // Tool permissions for Bob (full access)
+      "tools": {
+        "exec": {
+          "enabled": true,
+          // Restrict exec to safe directories. Bob can run shell commands
+          // for proposal generation, D-Tools exports, and system checks.
+          "allowed_dirs": [
+            "~/AI-Server",
+            "~/.openclaw/workspace-bob",
+            "/tmp/openclaw"
+          ],
+          "blocked_commands": ["rm -rf", "sudo", "dd", "mkfs"]
+        },
+        "browse": {
+          "enabled": true                   // web search + URL fetch
+        },
+        "file_read": {
+          "enabled": true,
+          "allowed_dirs": ["~/AI-Server", "~/.openclaw"]
+        },
+        "file_write": {
+          "enabled": true,
+          "allowed_dirs": [
+            "~/.openclaw/workspace-bob",
+            "~/AI-Server/proposals/drafts",
+            "/tmp/openclaw"
+          ]
+        },
+        "agent_call": {
+          "enabled": true,
+          // Bob can delegate to the proposals and dtools agents
+          "allowed_agents": ["proposals", "dtools"]
+        }
+      },
+
+      // Context window management
+      "context": {
+        "max_history_messages": 50,
+        "summarize_after": 30,             // auto-summarize when history grows
+        "persist_sessions": true
+      }
+    },
+
+    // ── Proposals specialist ──────────────────────────────────────────────────
+    {
+      "id": "proposals",
+      "name": "Proposals",
+      // claude-haiku-3-5 is fast and cost-efficient for template/fill work
+      "model": "anthropic/claude-haiku-3-5",
+      "workspace": "~/.openclaw/workspace-proposals",
+
+      "system_prompt": "You are a proposal drafting specialist for Symphony Smart Homes. You have access to the proposal template library at ~/AI-Server/knowledge/proposal_library/. You draft proposals, select room configs, populate scope blocks, and generate D-Tools CSV exports. You follow the Symphony proposal standards exactly.",
+
+      "tools": {
+        "exec": {
+          "enabled": false                  // no shell access for proposals agent
+        },
+        "browse": {
+          "enabled": false
+        },
+        "file_read": {
+          "enabled": true,
+          "allowed_dirs": [
+            "~/AI-Server/knowledge/proposal_library",
+            "~/AI-Server/knowledge",
+            "~/.openclaw/workspace-proposals"
+          ]
+        },
+        "file_write": {
+          "enabled": true,
+          "allowed_dirs": [
+            "~/.openclaw/workspace-proposals",
+            "~/AI-Server/proposals/drafts",
+            "/tmp/openclaw"
+          ]
+        },
+        "agent_call": {
+          "enabled": false                  // proposals agent does not sub-delegate
+        }
+      },
+
+      "context": {
+        "max_history_messages": 20,
+        "persist_sessions": true
+      }
+    },
+
+    // ── D-Tools Cloud automation agent ────────────────────────────────────────
+    {
+      "id": "dtools",
+      "name": "D-Tools Agent",
+      // gpt-4o-mini is cost-efficient for structured API/data work
+      "model": "openai/gpt-4o-mini",
+      "workspace": "~/.openclaw/workspace-dtools",
+
+      "system_prompt": "You are the D-Tools Cloud automation agent for Symphony Smart Homes. You interact with the D-Tools Cloud API and HARPA browser automation to manage projects, equipment lists, and proposals in D-Tools. You can create projects, import CSVs, and pull reports.",
+
+      "tools": {
+        "exec": {
+          "enabled": false
+        },
+        "browse": {
+          // HARPA-assisted browser automation for D-Tools Cloud web UI
+          "enabled": true,
+          "allowed_domains": [
+            "portal.d-tools.com",
+            "api.d-tools.com"
+          ]
+        },
+        "file_read": {
+          "enabled": true,
+          "allowed_dirs": [
+            "~/.openclaw/workspace-dtools",
+            "~/AI-Server/proposals/drafts",
+            "/tmp/openclaw"
+          ]
+        },
+        "file_write": {
+          "enabled": true,
+          "allowed_dirs": [
+            "~/.openclaw/workspace-dtools",
+            "/tmp/openclaw"
+          ]
+        },
+        "agent_call": {
+          "enabled": false
+        }
+      },
+
+      "context": {
+        "max_history_messages": 20,
+        "persist_sessions": true
+      }
+    }
+  ],
+
+  // ── Channels ─────────────────────────────────────────────────────────────────
+  // Channels are the inbound interfaces OpenClaw listens on.
+  "channels": {
+
+    // ── Telegram ─────────────────────────────────────────────────────────────
+    "telegram": {
+      "enabled": true,
+      "bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+
+      // Only this user ID can interact with the bot.
+      // Get your ID from @userinfobot on Telegram.
+      "allowed_user_ids": ["YOUR_TELEGRAM_USER_ID"],
+
+      // Which agent handles Telegram messages by default?
+      "default_agent": "bob",
+
+      // Allow users to route to other agents by prefixing the message:
+      //   "@proposals Draft a proposal for..."
+      //   "@dtools Create a project in D-Tools for..."
+      "agent_routing": true,
+
+      // Auto-strip the @agent prefix before passing to the agent
+      "strip_routing_prefix": true,
+
+      // Typing indicator while the agent is processing
+      "send_typing_indicator": true,
+
+      // Split long responses into multiple messages (Telegram 4096-char limit)
+      "auto_split_messages": true,
+      "max_message_length": 4000
+    },
+
+    // ── HTTP API (disabled by default) ────────────────────────────────────────
+    // Uncomment and configure to enable a local REST API endpoint.
+    // Useful for integration with other services or testing without Telegram.
+    "http_api": {
+      "enabled": false,
+      "port": 4242,
+      "bind": "127.0.0.1",          // localhost only — do not expose externally
+      "auth_token": "YOUR_HTTP_API_TOKEN",
+      "default_agent": "bob"
+    }
+  },
+
+  // ── Memory ───────────────────────────────────────────────────────────────────
+  "memory": {
+    // Conversation history is saved per-agent per-session.
+    "persist_dir": "~/.openclaw/conversations",
+    "max_sessions_per_agent": 100,
+
+    // Session auto-naming: OpenClaw names sessions by date + first message summary
+    "auto_name_sessions": true,
+
+    // After this many turns, summarize old turns to save context space
+    "auto_summarize_threshold": 30,
+
+    // Use Anthropic for summarization (inherits api_key from providers.anthropic)
+    "summarize_model": "anthropic/claude-haiku-3-5"
+  },
+
+  // ── Execution sandbox ────────────────────────────────────────────────────────
+  // Global defaults for the exec tool (overridden per-agent above)
+  "exec_sandbox": {
+    "timeout_ms": 30000,
+    "max_output_bytes": 65536,
+    "shell": "/bin/zsh"
+  },
+
+  // ── Monitoring ───────────────────────────────────────────────────────────────
+  "monitoring": {
+    // Heartbeat: send a Telegram DM if OpenClaw hasn't processed a message in N minutes
+    // Useful to detect if the daemon silently died.
+    "heartbeat_enabled": false,
+    "heartbeat_interval_minutes": 60,
+    "heartbeat_notify_user_id": "YOUR_TELEGRAM_USER_ID",
+
+    // Token usage tracking
+    "track_token_usage": true,
+    "usage_log_file": "~/.openclaw/logs/token_usage.jsonl",
+
+    // Daily cost summary
+    "daily_cost_summary": false,
+    "cost_summary_notify_hour": 8   // 8am local time
+  }
+}
