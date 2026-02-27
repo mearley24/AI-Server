@@ -1,0 +1,125 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bob the Conductor — Telegram Bot Service
+#
+# Attach to the same Docker network as OpenClaw so the bot can call the
+# OpenClaw API directly by service name (http://openclaw:3000).
+#
+# Usage:
+#   docker compose -f docker-compose.telegram.yml up -d
+#   docker compose -f docker-compose.telegram.yml logs -f telegram-bot
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.telegram
+    image: bob-telegram-bot:latest
+    container_name: bob-telegram-bot
+    restart: unless-stopped
+
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID}
+      - OPENCLAW_API_URL=${OPENCLAW_API_URL:-http://openclaw:3000}
+      - BOB_API_URL=${BOB_API_URL:-http://bob-api:8080}
+      - HOME_ASSISTANT_URL=${HOME_ASSISTANT_URL:-http://homeassistant:8123}
+      - HOME_ASSISTANT_TOKEN=${HOME_ASSISTANT_TOKEN}
+      - CLAWWORK_DB_PATH=${CLAWWORK_DB_PATH:-/data/clawwork/earnings.db}
+      - VOICE_DB_PATH=${VOICE_DB_PATH:-/data/voice/calls.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - TZ=America/Denver
+
+    volumes:
+      - ./bot_config.json:/app/bot_config.json:ro
+      - bob-telegram-logs:/data/logs
+      - bob-clawwork-data:/data/clawwork:ro
+      - bob-voice-data:/data/voice:ro
+
+    networks:
+      - openclaw-net
+      - bob-internal
+
+    depends_on:
+      openclaw:
+        condition: service_healthy
+        required: false
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('https://api.telegram.org', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    labels:
+      com.bob.service: "telegram-bot"
+      com.bob.description: "Owner remote interface via Telegram"
+
+  telegram-digest:
+    build:
+      context: .
+      dockerfile: Dockerfile.telegram
+    image: bob-telegram-bot:latest
+    container_name: bob-telegram-digest
+    restart: unless-stopped
+
+    command: ["python", "/app/daily_digest.py", "--daemon"]
+
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID}
+      - OPENCLAW_API_URL=${OPENCLAW_API_URL:-http://openclaw:3000}
+      - BOB_API_URL=${BOB_API_URL:-http://bob-api:8080}
+      - CLAWWORK_DB_PATH=${CLAWWORK_DB_PATH:-/data/clawwork/earnings.db}
+      - VOICE_DB_PATH=${VOICE_DB_PATH:-/data/voice/calls.db}
+      - TZ=America/Denver
+
+    volumes:
+      - ./bot_config.json:/app/bot_config.json:ro
+      - bob-telegram-logs:/data/logs
+      - bob-clawwork-data:/data/clawwork:ro
+      - bob-voice-data:/data/voice:ro
+
+    networks:
+      - openclaw-net
+      - bob-internal
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+    labels:
+      com.bob.service: "telegram-digest"
+      com.bob.description: "Daily + weekly digest scheduler"
+
+networks:
+  openclaw-net:
+    external: true
+    name: openclaw_default
+
+  bob-internal:
+    driver: bridge
+
+volumes:
+  bob-telegram-logs:
+    driver: local
+
+  bob-clawwork-data:
+    external: true
+    name: openclaw_clawwork-data
+
+  bob-voice-data:
+    external: true
+    name: openclaw_voice-data
