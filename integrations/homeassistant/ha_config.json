@@ -1,0 +1,208 @@
+{
+  "_comment": "Symphony Smart Homes — Home Assistant Integration Configuration for Bob the Conductor",
+  "_version": "1.0.0",
+  "_note": "Sensitive values (tokens, passwords) are loaded from environment variables. See .env.example.",
+
+  "home_assistant": {
+    "url": "${HA_URL}",
+    "websocket_url": "${HA_WEBSOCKET_URL}",
+    "token": "${HA_TOKEN}",
+    "verify_ssl": false,
+    "timeout_seconds": 15,
+    "connection_check_interval": 30,
+    "api_base_path": "/api"
+  },
+
+  "mqtt": {
+    "broker": "${MQTT_BROKER}",
+    "port": 1883,
+    "tls_port": 8883,
+    "use_tls": false,
+    "username": "${MQTT_USER}",
+    "password": "${MQTT_PASSWORD}",
+    "client_id": "bob-conductor",
+    "keepalive": 60,
+    "qos_default": 0,
+    "reconnect_on_failure": true,
+    "subscriptions": [
+      { "topic": "homeassistant/#", "qos": 0, "description": "HA MQTT discovery and events" },
+      { "topic": "luma/+/status", "qos": 0, "description": "Luma camera status" },
+      { "topic": "luma/+/motion", "qos": 0, "description": "Luma motion detection" },
+      { "topic": "luma/+/recording", "qos": 0, "description": "Luma recording events" },
+      { "topic": "control4/+/event", "qos": 0, "description": "Control4 driver events" },
+      { "topic": "control4/+/status", "qos": 0, "description": "Control4 device status" },
+      { "topic": "lutron/+/state", "qos": 0, "description": "Lutron device state changes" },
+      { "topic": "lutron/+/event", "qos": 0, "description": "Lutron keypad button events" },
+      { "topic": "araknis/+/status", "qos": 0, "description": "Araknis network device status" },
+      { "topic": "araknis/+/alert", "qos": 0, "description": "Araknis network alerts" },
+      { "topic": "sonos/+/state", "qos": 0, "description": "Sonos player state" },
+      { "topic": "sonos/+/event", "qos": 0, "description": "Sonos events" },
+      { "topic": "snapone/+/status", "qos": 0, "description": "Snap One / Triad device status" },
+      { "topic": "symphony/bob/commands", "qos": 1, "description": "Commands directed at Bob (QoS 1)" },
+      { "topic": "symphony/+/request", "qos": 1, "description": "Service requests from any agent" }
+    ],
+    "publish_topics": {
+      "heartbeat": "symphony/bob/heartbeat",
+      "status": "symphony/bob/status",
+      "responses": "symphony/bob/responses"
+    }
+  },
+
+  "cameras": {
+    "snapshot_dir": "${CAMERA_SNAPSHOT_DIR}",
+    "poll_interval_seconds": 30,
+    "motion_snapshot_burst": 3,
+    "motion_snapshot_interval_seconds": 2.0,
+    "max_snapshot_age_days": 30,
+    "auto_discover": true,
+    "monitored_entities": [],
+    "luma_cameras": {
+      "_comment": "Populated at runtime during entity discovery. Example entries below.",
+      "examples": [
+        "camera.luma_front_door",
+        "camera.luma_driveway",
+        "camera.luma_backyard",
+        "camera.luma_garage",
+        "camera.luma_side_gate",
+        "camera.luma_pool"
+      ]
+    },
+    "nvr": {
+      "enabled": true,
+      "entity_id": "camera.luma_nvr",
+      "recording_history_hours": 24
+    }
+  },
+
+  "device_registry": {
+    "cache_file": "./cache/device_registry.json",
+    "refresh_interval_seconds": 300,
+    "cache_max_age_seconds": 600,
+    "vendor_detection": {
+      "enabled": true,
+      "vendors": ["control4", "lutron", "sonos", "luma", "araknis", "snap_one"]
+    },
+    "room_inference": {
+      "enabled": true
+    }
+  },
+
+  "state_cache": {
+    "ttl_seconds": 5,
+    "max_entries": 10000
+  },
+
+  "rate_limiting": {
+    "rest_api_rps": 10,
+    "burst_limit": 20,
+    "mqtt_publish_rps": 5
+  },
+
+  "event_subscriptions": {
+    "websocket_enabled": true,
+    "subscribed_event_types": [
+      "state_changed",
+      "call_service",
+      "automation_triggered",
+      "script_started",
+      "timer_finished",
+      "zone_entered",
+      "zone_exited",
+      "mqtt_message_received"
+    ]
+  },
+
+  "automations": {
+    "templates_enabled": true,
+    "require_validation": true,
+    "backup_before_update": true,
+    "session_rollback_on_error": true
+  },
+
+  "safety_rules": {
+    "_comment": "Services that require explicit owner confirmation before execution",
+    "requires_owner_approval": [
+      "alarm_control_panel.disarm",
+      "alarm_control_panel.arm_away",
+      "alarm_control_panel.arm_home",
+      "alarm_control_panel.arm_night",
+      "lock.unlock",
+      "cover.open_cover",
+      "homeassistant.restart",
+      "homeassistant.stop"
+    ],
+    "completely_blocked": [
+      "homeassistant.stop"
+    ],
+    "safety_delay_seconds": {
+      "lock.unlock": 30,
+      "alarm_control_panel.disarm": 0
+    }
+  },
+
+  "room_mappings": {
+    "_comment": "Maps HA area names or inferred room names to Symphony zone names",
+    "Living Room": "main_floor_living",
+    "Kitchen": "main_floor_kitchen",
+    "Master Bedroom": "upper_master",
+    "Garage": "garage_zone",
+    "Backyard": "outdoor_back",
+    "Front Yard": "outdoor_front",
+    "Media Room": "media_zone",
+    "Office": "office_zone"
+  },
+
+  "vendor_zones": {
+    "control4": {
+      "description": "Control4 controller and driver entities",
+      "typical_domains": ["switch", "media_player", "button", "sensor"],
+      "mqtt_prefix": "control4/"
+    },
+    "lutron": {
+      "description": "Lutron Caseta, RadioRA, or HomeWorks devices",
+      "typical_domains": ["light", "switch", "cover", "button"],
+      "mqtt_prefix": "lutron/"
+    },
+    "sonos": {
+      "description": "Sonos speakers and groups",
+      "typical_domains": ["media_player"],
+      "mqtt_prefix": "sonos/"
+    },
+    "luma": {
+      "description": "Luma cameras and NVR",
+      "typical_domains": ["camera"],
+      "mqtt_prefix": "luma/"
+    },
+    "araknis": {
+      "description": "Araknis managed network switches, APs, and routers",
+      "typical_domains": ["binary_sensor", "sensor", "switch"],
+      "mqtt_prefix": "araknis/"
+    },
+    "snap_one": {
+      "description": "Snap One / Triad AV equipment",
+      "typical_domains": ["media_player", "switch", "sensor"],
+      "mqtt_prefix": "snapone/"
+    }
+  },
+
+  "logging": {
+    "level": "INFO",
+    "log_dir": "./logs",
+    "max_size_mb": 50,
+    "backup_count": 5,
+    "format": "%(asctime)s [%(name)s] %(levelname)s — %(message)s"
+  },
+
+  "openclaw": {
+    "tool_registration": {
+      "auto_register": true,
+      "tool_definition_file": "./openclaw_ha_tool.json"
+    },
+    "workflows": {
+      "security_alert": "security.alert_handler",
+      "client_presence_workflow": "presence.arrival_handler",
+      "network_alert": "network.alert_handler",
+      "command_handler": "core.command_router"
+    }
+  }
+}

@@ -1,0 +1,170 @@
+version: "3.9"
+
+# Symphony Smart Homes — Home Assistant Integration
+# Docker Compose overlay for Bob the Conductor (Mac Mini M4)
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d
+#
+# Or standalone (dev/test):
+#   docker compose -f docker-compose.ha.yml up -d
+
+networks:
+  openclaw-net:
+    external: true
+    name: openclaw-net
+
+volumes:
+  ha-snapshots:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${CAMERA_SNAPSHOT_DIR:-./snapshots}
+  ha-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+  ha-cache:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./cache
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # ha-bridge — Main integration service
+  # Runs the HAClient, device registry, camera monitor, and automation manager
+  # ---------------------------------------------------------------------------
+  ha-bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.ha
+    container_name: symphony-ha-bridge
+    restart: unless-stopped
+    environment:
+      # Home Assistant
+      HA_URL: ${HA_URL:-http://homeassistant.local:8123}
+      HA_TOKEN: ${HA_TOKEN}
+      HA_WEBSOCKET_URL: ${HA_WEBSOCKET_URL:-ws://homeassistant.local:8123/api/websocket}
+      # MQTT
+      MQTT_BROKER: ${MQTT_BROKER:-homeassistant.local}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USER: ${MQTT_USER:-homeassistant}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      # Storage
+      CAMERA_SNAPSHOT_DIR: /data/snapshots
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # OpenClaw
+      OPENCLAW_TOOL_REGISTRATION: "true"
+    volumes:
+      - ha-snapshots:/data/snapshots
+      - ha-logs:/app/logs
+      - ha-cache:/app/cache
+      - ./ha_config.json:/app/ha_config.json:ro
+      - ./openclaw_ha_tool.json:/app/openclaw_ha_tool.json:ro
+    networks:
+      - openclaw-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import asyncio; from ha_bridge import HAClient; c=HAClient.from_env(); print('ok')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      com.symphony.service: "ha-bridge"
+      com.symphony.version: "1.0.0"
+      com.symphony.description: "Home Assistant bridge for Bob the Conductor"
+
+  # ---------------------------------------------------------------------------
+  # ha-mqtt-agent — Dedicated MQTT subscription service
+  # Runs continuously, subscribed to all vendor topics, dispatches to OpenClaw
+  # ---------------------------------------------------------------------------
+  ha-mqtt-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.ha
+    container_name: symphony-ha-mqtt
+    restart: unless-stopped
+    command: ["python", "ha_mqtt_agent.py"]
+    environment:
+      MQTT_BROKER: ${MQTT_BROKER:-homeassistant.local}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USER: ${MQTT_USER:-homeassistant}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      HA_URL: ${HA_URL:-http://homeassistant.local:8123}
+      HA_TOKEN: ${HA_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ha-logs:/app/logs
+      - ./ha_config.json:/app/ha_config.json:ro
+    networks:
+      - openclaw-net
+    depends_on:
+      ha-bridge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(3); s.connect(('${MQTT_BROKER:-homeassistant.local}', ${MQTT_PORT:-1883})); s.close(); print('ok')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      com.symphony.service: "ha-mqtt-agent"
+      com.symphony.description: "MQTT subscription agent for smart home events"
+
+  # ---------------------------------------------------------------------------
+  # ha-camera-monitor — Camera polling and motion detection service
+  # Runs the camera monitor, saves snapshots, handles motion events
+  # ---------------------------------------------------------------------------
+  ha-camera-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.ha
+    container_name: symphony-ha-camera
+    restart: unless-stopped
+    command: ["python", "-c", "
+import asyncio
+from ha_bridge import HAClient
+from ha_camera_monitor import create_camera_monitor
+import json, os
+
+async def main():
+    with open('ha_config.json') as f:
+        config = json.load(f)
+    async with HAClient.from_env() as client:
+        monitor = create_camera_monitor(client, config)
+        await monitor.start()
+        while True:
+            await asyncio.sleep(60)
+
+asyncio.run(main())
+"]
+    environment:
+      HA_URL: ${HA_URL:-http://homeassistant.local:8123}
+      HA_TOKEN: ${HA_TOKEN}
+      HA_WEBSOCKET_URL: ${HA_WEBSOCKET_URL:-ws://homeassistant.local:8123/api/websocket}
+      MQTT_BROKER: ${MQTT_BROKER:-homeassistant.local}
+      MQTT_PORT: ${MQTT_PORT:-1883}
+      MQTT_USER: ${MQTT_USER:-homeassistant}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      CAMERA_SNAPSHOT_DIR: /data/snapshots
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ha-snapshots:/data/snapshots
+      - ha-logs:/app/logs
+      - ha-cache:/app/cache
+      - ./ha_config.json:/app/ha_config.json:ro
+    networks:
+      - openclaw-net
+    depends_on:
+      ha-bridge:
+        condition: service_healthy
+    labels:
+      com.symphony.service: "ha-camera-monitor"
+      com.symphony.description: "Camera monitoring and motion detection"
