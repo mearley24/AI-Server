@@ -1,0 +1,170 @@
+{
+  "name": "home_assistant",
+  "version": "1.0.0",
+  "description": "Symphony Smart Homes — Home Assistant integration for Bob the Conductor. Provides full access to the smart home infrastructure including device control, camera feeds, MQTT messaging, automation management, and real-time event streams.",
+  "module": "ha_bridge",
+  "class": "HAClient",
+  "icon": "🏠",
+  "tags": ["smart_home", "iot", "cameras", "automation", "mqtt", "lutron", "control4", "sonos", "luma"],
+  "rate_limit": {"requests_per_second": 10, "burst": 20},
+  "actions": {
+    "get_state": {
+      "description": "Get the current state of a specific Home Assistant entity (light, switch, camera, sensor, etc.)",
+      "input": {
+        "type": "object",
+        "required": ["entity_id"],
+        "properties": {
+          "entity_id": {
+            "type": "string",
+            "description": "The HA entity ID to query, e.g. 'light.living_room', 'sensor.front_door_temperature', 'lock.front_door'",
+            "examples": ["light.living_room", "lock.front_door", "climate.main_floor", "camera.luma_driveway"]
+          }
+        }
+      },
+      "output": {
+        "type": "object",
+        "properties": {
+          "entity_id": {"type": "string"},
+          "state": {"type": "string"},
+          "attributes": {"type": "object"},
+          "last_changed": {"type": "string", "format": "date-time"},
+          "last_updated": {"type": "string", "format": "date-time"}
+        }
+      },
+      "safety": "read_only",
+      "cacheable": true,
+      "cache_ttl_seconds": 5
+    },
+    "get_states": {
+      "description": "Get the current state of ALL Home Assistant entities at once.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "domain_filter": {"type": "string", "description": "Optional domain to filter results", "examples": ["light", "lock", "camera", "media_player", "climate"]}
+        }
+      },
+      "output": {"type": "array", "items": {"type": "object"}},
+      "safety": "read_only",
+      "cacheable": true,
+      "cache_ttl_seconds": 5
+    },
+    "call_service": {
+      "description": "Call any Home Assistant service to control devices.",
+      "input": {
+        "type": "object",
+        "required": ["domain", "service"],
+        "properties": {
+          "domain": {"type": "string", "examples": ["light", "switch", "lock", "climate", "media_player", "scene"]},
+          "service": {"type": "string", "examples": ["turn_on", "turn_off", "toggle", "lock", "unlock", "set_temperature"]},
+          "data": {"type": "object", "description": "Service call parameters including entity_id"}
+        }
+      },
+      "output": {"type": "object", "properties": {"success": {"type": "boolean"}, "changed_states": {"type": "array"}, "error": {"type": "string"}}},
+      "safety": "requires_confirmation_for",
+      "requires_owner_approval": ["alarm_control_panel.disarm", "alarm_control_panel.arm_away", "lock.unlock", "cover.open_cover", "homeassistant.restart"],
+      "blocked_services": ["homeassistant.stop"]
+    },
+    "camera_snapshot": {
+      "description": "Capture a live JPEG snapshot from a camera.",
+      "input": {
+        "type": "object",
+        "required": ["camera_entity"],
+        "properties": {
+          "camera_entity": {"type": "string", "examples": ["camera.luma_front_door", "camera.luma_driveway"]},
+          "return_format": {"type": "string", "enum": ["base64", "file_path", "bytes"], "default": "base64"},
+          "save_path": {"type": "string", "default": "./snapshots/auto_{camera}_{timestamp}.jpg"}
+        }
+      },
+      "output": {"type": "object"},
+      "safety": "read_only"
+    },
+    "mqtt_publish": {
+      "description": "Publish a message to an MQTT topic on the Mosquitto broker.",
+      "input": {
+        "type": "object",
+        "required": ["topic", "payload"],
+        "properties": {
+          "topic": {"type": "string"},
+          "payload": {"description": "Message payload", "oneOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "object"}]},
+          "retain": {"type": "boolean", "default": false},
+          "qos": {"type": "integer", "enum": [0, 1, 2], "default": 0}
+        }
+      },
+      "output": {"type": "object"},
+      "safety": "standard"
+    },
+    "get_history": {
+      "description": "Get historical state data for an entity.",
+      "input": {
+        "type": "object",
+        "required": ["entity_id"],
+        "properties": {
+          "entity_id": {"type": "string"},
+          "hours_back": {"type": "number", "default": 24}
+        }
+      },
+      "output": {"type": "array"},
+      "safety": "read_only"
+    },
+    "get_logbook": {
+      "description": "Get the human-readable activity log for an entity or the whole system.",
+      "input": {"type": "object", "properties": {"entity_id": {"type": "string"}, "hours": {"type": "integer", "default": 24}}},
+      "output": {"type": "array"},
+      "safety": "read_only"
+    },
+    "create_automation": {
+      "description": "Create a new Home Assistant automation.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "description": {"type": "string"},
+          "template_name": {"type": "string", "enum": ["welcome_scene", "night_motion_alert", "network_device_offline", "morning_routine", "av_scene_trigger", "security_arm_departure", "bob_command_relay"]},
+          "variables": {"type": "object"},
+          "raw_config": {"type": "object"},
+          "dry_run": {"type": "boolean", "default": false}
+        }
+      },
+      "output": {"type": "object"},
+      "safety": "requires_owner_approval_for_security_automations"
+    },
+    "trigger_automation": {
+      "description": "Manually trigger a Home Assistant automation by ID.",
+      "input": {"type": "object", "required": ["automation_id"], "properties": {"automation_id": {"type": "string"}}},
+      "output": {"type": "object"},
+      "safety": "standard"
+    },
+    "get_devices": {
+      "description": "Get the full device registry — all entities categorized by vendor and room.",
+      "input": {
+        "type": "object",
+        "properties": {
+          "vendor": {"type": "string", "enum": ["control4", "lutron", "sonos", "luma", "araknis", "snap_one", "home_assistant"]},
+          "room": {"type": "string"},
+          "domain": {"type": "string"},
+          "topology_report": {"type": "boolean", "default": false}
+        }
+      },
+      "output": {"type": "object"},
+      "safety": "read_only"
+    },
+    "render_template": {
+      "description": "Render a Home Assistant Jinja2 template.",
+      "input": {"type": "object", "required": ["template"], "properties": {"template": {"type": "string"}}},
+      "output": {"type": "object"},
+      "safety": "read_only"
+    }
+  },
+  "context_injection": {
+    "description": "Bob should include this context when calling HA tools",
+    "variables": {"HA_URL": "${HA_URL}", "LOCAL_NETWORK": "192.168.x.x subnet"}
+  },
+  "safety_rules": {
+    "description": "Rules enforced by the HA integration regardless of agent request",
+    "rules": [
+      {"rule": "no_unauthorized_security_changes", "description": "Disarming alarm or unlocking doors requires explicit owner confirmation", "applies_to": ["alarm_control_panel.disarm", "lock.unlock"]},
+      {"rule": "no_ha_restart_without_confirmation", "description": "HA restart requires owner approval", "applies_to": ["homeassistant.restart"]},
+      {"rule": "rate_limit_enforcement", "description": "No more than 10 REST API calls/second to protect the Pi", "max_rps": 10},
+      {"rule": "camera_images_not_logged", "description": "Camera snapshot base64 data must not be written to agent logs", "applies_to": ["camera_snapshot"]}
+    ]
+  }
+}
