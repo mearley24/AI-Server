@@ -1,1 +1,577 @@
-placeholder_b1_f9
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0d0f14">
+  <title>Symphony Concierge</title>
+
+  <!--
+    Symphony Concierge Web UI — v2.0
+    Fully offline-capable: no CDN dependencies, all styles/scripts inline.
+    No external fonts, no external libraries, no tracking.
+    Everything runs from the local appliance.
+  -->
+
+  <style>
+    /* ═══════════════════════════════════════════════════════
+       DESIGN SYSTEM — Custom Properties
+    ═══════════════════════════════════════════════════════ */
+    :root {
+      /* Core palette */
+      --bg-0: #0d0f14;
+      --bg-1: #131720;
+      --bg-2: #1a2030;
+      --bg-3: #232a38;
+      --border: rgba(255,255,255,0.07);
+      --border-active: rgba(201,168,76,0.35);
+
+      /* Typography */
+      --text-primary: #f0ece4;
+      --text-secondary: #8a8fa8;
+      --text-tertiary: #52566a;
+
+      /* Brand gold */
+      --gold: #c9a84c;
+      --gold-dim: rgba(201,168,76,0.15);
+      --gold-glow: rgba(201,168,76,0.08);
+
+      /* Semantic */
+      --green: #5cb87a;
+      --red: #e05c5c;
+      --blue: #5c8fe0;
+
+      /* Layout */
+      --sidebar-w: 280px;
+      --input-h: 64px;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-lg: 16px;
+
+      /* Transitions */
+      --t-fast: 120ms ease;
+      --t-base: 200ms ease;
+      --t-slow: 350ms ease;
+    }
+
+    [data-theme="light"] {
+      --bg-0: #f4f1eb;
+      --bg-1: #ffffff;
+      --bg-2: #f0ece3;
+      --bg-3: #e8e3d8;
+      --border: rgba(0,0,0,0.08);
+      --border-active: rgba(160,110,20,0.35);
+      --text-primary: #1a1a2e;
+      --text-secondary: #555870;
+      --text-tertiary: #9090a8;
+      --gold: #a06e14;
+      --gold-dim: rgba(160,110,20,0.12);
+      --gold-glow: rgba(160,110,20,0.05);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { height: 100%; font-size: 16px; }
+
+    body {
+      height: 100%;
+      font-family: -apple-system, "SF Pro Text", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+      background: var(--bg-0);
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    .app {
+      display: flex;
+      height: 100vh;
+      height: 100dvh;
+    }
+
+    .sidebar {
+      width: var(--sidebar-w);
+      min-width: var(--sidebar-w);
+      background: var(--bg-1);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: transform var(--t-slow), width var(--t-slow);
+      z-index: 100;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand-icon svg { display: block; }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.2; }
+    .brand-name { font-size: 14px; font-weight: 600; letter-spacing: 0.04em; color: var(--text-primary); }
+    .brand-tagline { font-size: 10px; color: var(--text-tertiary); letter-spacing: 0.06em; text-transform: uppercase; }
+
+    .ai-card {
+      margin: 16px 16px 8px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .ai-avatar {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--gold-dim); border: 1px solid var(--border-active);
+      display: flex; align-items: center; justify-content: center;
+      position: relative; flex-shrink: 0;
+    }
+    .ai-avatar.thinking .avatar-ring { animation: ring-pulse 1.4s ease-in-out infinite; }
+    .avatar-ring { position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--gold); opacity: 0; }
+    @keyframes ring-pulse { 0%, 100% { opacity: 0; transform: scale(1); } 50% { opacity: 0.6; transform: scale(1.08); } }
+
+    .ai-details { flex: 1; min-width: 0; }
+    .ai-name-label { font-size: 15px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ai-status-row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); transition: background var(--t-base); }
+    .status-dot.online { background: var(--green); box-shadow: 0 0 6px rgba(92,184,122,0.5); }
+    .status-dot.offline { background: var(--red); }
+    .ai-status-text { font-size: 12px; color: var(--text-secondary); }
+
+    .sidebar-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 8px 0; scrollbar-width: thin; scrollbar-color: var(--bg-3) transparent; }
+    .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+    .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
+    .sidebar-section { padding: 8px 16px 4px; }
+    .section-title { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary); padding: 8px 4px 6px; }
+
+    .status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .status-item { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; transition: border-color var(--t-base); }
+    .status-item.healthy { border-color: rgba(92,184,122,0.25); }
+    .status-item.warning { border-color: rgba(201,168,76,0.3); }
+    .status-item-name { font-size: 10px; color: var(--text-tertiary); font-weight: 500; letter-spacing: 0.04em; }
+    .status-badge { font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+    .status-badge.ok { color: var(--green); }
+    .status-badge.down { color: var(--red); }
+    .status-badge.checking { color: var(--text-tertiary); }
+    .status-badge::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+    .quick-actions { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+    .quick-btn { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 13px; cursor: pointer; text-align: left; transition: all var(--t-fast); width: 100%; }
+    .quick-btn:hover { background: var(--bg-2); border-color: var(--border); color: var(--text-primary); }
+    .quick-btn .q-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+
+    .sidebar-footer { border-top: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; gap: 8px; }
+    .icon-btn { width: 32px; height: 32px; border-radius: var(--radius-sm); background: transparent; border: 1px solid var(--border); color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all var(--t-fast); }
+    .icon-btn:hover { background: var(--bg-2); color: var(--text-primary); }
+    .version-tag { margin-left: auto; font-size: 10px; color: var(--text-tertiary); background: var(--bg-2); padding: 2px 7px; border-radius: 20px; border: 1px solid var(--border); }
+
+    .main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg-0); position: relative; }
+
+    .mobile-header { display: none; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg-1); border-bottom: 1px solid var(--border); min-height: 52px; }
+    .hamburger { background: none; border: none; cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 4px; }
+    .hamburger span { display: block; width: 20px; height: 1.5px; background: var(--text-secondary); border-radius: 1px; transition: all var(--t-fast); }
+    .mobile-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+    .mobile-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-tertiary); }
+    .mobile-dot.online { background: var(--green); }
+
+    .chat-area { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0; display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: var(--bg-3) transparent; position: relative; }
+    .chat-area::-webkit-scrollbar { width: 4px; }
+    .chat-area::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 2px; }
+
+    .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; animation: fade-up 0.4s ease both; }
+    @keyframes fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    .welcome-logo { margin-bottom: 24px; opacity: 0.9; }
+    .welcome-greeting { font-size: 28px; font-weight: 300; color: var(--text-primary); letter-spacing: -0.01em; margin-bottom: 10px; }
+    .welcome-greeting strong { font-weight: 600; }
+    .welcome-sub { font-size: 15px; color: var(--text-secondary); max-width: 380px; line-height: 1.6; margin-bottom: 32px; }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 480px; }
+    .chip { padding: 8px 16px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 24px; font-size: 13px; color: var(--text-secondary); cursor: pointer; transition: all var(--t-fast); white-space: nowrap; }
+    .chip:hover { background: var(--gold-dim); border-color: var(--border-active); color: var(--gold); }
+
+    .messages { flex: 1; padding: 24px 0 8px; display: flex; flex-direction: column; }
+    .message { display: flex; gap: 12px; padding: 6px 24px; animation: msg-in 0.2s ease both; }
+    @keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .message.user { flex-direction: row-reverse; }
+    .msg-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0; margin-top: 2px; }
+    .message.user .msg-avatar { background: var(--gold-dim); border: 1px solid var(--border-active); color: var(--gold); }
+    .message.assistant .msg-avatar { background: var(--bg-2); border: 1px solid var(--border); color: var(--text-tertiary); }
+    .msg-content { flex: 1; min-width: 0; max-width: 680px; }
+    .message.user .msg-content { display: flex; justify-content: flex-end; }
+    .msg-bubble { padding: 10px 14px; border-radius: var(--radius); font-size: 14px; line-height: 1.6; max-width: 100%; word-wrap: break-word; }
+    .message.user .msg-bubble { background: var(--gold-dim); border: 1px solid var(--border-active); color: var(--text-primary); border-bottom-right-radius: 4px; }
+    .message.assistant .msg-bubble { background: var(--bg-2); border: 1px solid var(--border); color: var(--text-primary); border-bottom-left-radius: 4px; }
+    .msg-bubble strong { font-weight: 600; }
+    .msg-bubble em { font-style: italic; }
+    .msg-bubble code { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; background: var(--bg-3); padding: 1px 5px; border-radius: 3px; }
+    .msg-bubble ol, .msg-bubble ul { padding-left: 20px; margin: 6px 0; }
+    .msg-bubble li { margin: 4px 0; }
+    .msg-bubble h3 { font-size: 14px; font-weight: 600; margin: 10px 0 4px; }
+    .msg-bubble p { margin: 4px 0; }
+
+    .typing-dots { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+    .typing-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); animation: dot-bounce 1.2s ease infinite; }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dot-bounce { 0%, 80%, 100% { transform: scale(0.8); opacity: 0.4; } 40% { transform: scale(1.2); opacity: 1; } }
+    .streaming-cursor { display: inline-block; width: 2px; height: 14px; background: var(--gold); vertical-align: text-bottom; margin-left: 2px; animation: blink 0.7s ease infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .input-bar { border-top: 1px solid var(--border); background: var(--bg-0); padding: 12px 24px 16px; }
+    .input-wrapper { display: flex; align-items: flex-end; gap: 10px; background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 10px 10px 16px; transition: border-color var(--t-fast); }
+    .input-wrapper:focus-within { border-color: var(--border-active); box-shadow: 0 0 0 3px var(--gold-glow); }
+    .chat-input { flex: 1; background: transparent; border: none; outline: none; color: var(--text-primary); font-size: 14px; line-height: 1.5; resize: none; max-height: 160px; overflow-y: auto; font-family: inherit; }
+    .chat-input::placeholder { color: var(--text-tertiary); }
+    .send-btn { width: 36px; height: 36px; border-radius: 10px; background: var(--gold); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all var(--t-fast); }
+    .send-btn:disabled { background: var(--bg-3); cursor: not-allowed; opacity: 0.5; }
+    .send-btn:not(:disabled):hover { background: #e0bb5a; transform: scale(1.05); }
+    .send-btn svg { width: 16px; height: 16px; color: #1a1a2e; }
+    .input-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding: 0 4px; }
+    .input-hint { font-size: 11px; color: var(--text-tertiary); }
+    .privacy-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-tertiary); }
+    .privacy-badge svg { width: 12px; height: 12px; opacity: 0.6; }
+
+    .sidebar-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 90; backdrop-filter: blur(2px); }
+    .toast { position: fixed; top: 20px; right: 20px; background: var(--bg-2); border: 1px solid var(--border); border-left: 3px solid var(--red); padding: 12px 16px; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); z-index: 999; max-width: 320px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); animation: toast-in 0.25s ease; }
+    @keyframes toast-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; top: 0; left: 0; height: 100%; transform: translateX(-100%); box-shadow: 4px 0 24px rgba(0,0,0,0.3); }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-overlay { display: block; opacity: 0; pointer-events: none; transition: opacity var(--t-base); }
+      .sidebar-overlay.visible { opacity: 1; pointer-events: all; }
+      .mobile-header { display: flex; }
+      .chat-area { padding-top: 0; }
+      .message { padding: 6px 16px; }
+      .input-bar { padding: 10px 16px 20px; }
+      .input-footer { display: none; }
+      .welcome { padding: 32px 16px; }
+      .welcome-greeting { font-size: 22px; }
+      .chip-row { gap: 6px; }
+      .chip { font-size: 12px; padding: 7px 13px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar" role="complementary" aria-label="Navigation">
+    <div class="sidebar-brand">
+      <div class="brand-icon">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <path d="M16 2L28 9V23L16 30L4 23V9L16 2Z" stroke="var(--gold)" stroke-width="1.5" fill="none"/>
+          <path d="M16 8L23 12.5V21.5L16 26L9 21.5V12.5L16 8Z" fill="var(--gold)" opacity="0.15"/>
+          <circle cx="16" cy="16" r="3" fill="var(--gold)"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">Symphony</span>
+        <span class="brand-tagline">Smart Homes</span>
+      </div>
+    </div>
+
+    <div class="ai-card" id="aiCard">
+      <div class="ai-avatar" id="aiAvatar">
+        <div class="avatar-ring"></div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 4C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 10c-4.41 0-8 1.79-8 4v1h16v-1c0-2.21-3.59-4-8-4z" fill="var(--gold)" opacity="0.85"/>
+        </svg>
+      </div>
+      <div class="ai-details">
+        <div class="ai-name-label" id="aiNameLabel">Aria</div>
+        <div class="ai-status-row">
+          <div class="status-dot" id="statusDot"></div>
+          <span class="ai-status-text" id="aiStatusText">Connecting...</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-scroll">
+      <div class="sidebar-section">
+        <div class="section-title">System Status</div>
+        <div class="status-grid" id="statusGrid">
+          <div class="status-item" id="svc-ollama"><div class="status-item-name">AI Engine</div><div class="status-badge checking" id="badge-ollama">Checking</div></div>
+          <div class="status-item" id="svc-chroma"><div class="status-item-name">Knowledge</div><div class="status-badge checking" id="badge-chroma">Checking</div></div>
+          <div class="status-item" id="svc-control4"><div class="status-item-name">Control4</div><div class="status-badge checking" id="badge-control4">--</div></div>
+          <div class="status-item" id="svc-network"><div class="status-item-name">Network</div><div class="status-badge checking" id="badge-network">--</div></div>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-title">Quick Actions</div>
+        <div class="quick-actions" id="quickActions">
+          <button class="quick-btn" data-prompt="Show me an overview of my home system -- what's installed and what does it all do?"><span class="q-icon">&#127968;</span> System overview</button>
+          <button class="quick-btn" data-prompt="How do I activate Movie Time in my home theater? Walk me through it step by step."><span class="q-icon">&#127916;</span> Start movie time</button>
+          <button class="quick-btn" data-prompt="Can you walk me through the Good Night scene and what exactly happens when I activate it?"><span class="q-icon">&#127769;</span> Good night routine</button>
+          <button class="quick-btn" data-prompt="How do I play music in one room? I want Sonos audio only in the kitchen."><span class="q-icon">&#127925;</span> Room audio help</button>
+          <button class="quick-btn" data-prompt="My lights aren't responding. Help me troubleshoot step by step."><span class="q-icon">&#128161;</span> Troubleshoot lights</button>
+          <button class="quick-btn" data-prompt="I need to contact Symphony for a service visit. What information should I have ready?"><span class="q-icon">&#128222;</span> Contact Symphony</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle light/dark mode">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path id="themeIcon" d="M14 10.5A6.5 6.5 0 015.5 2 6.5 6.5 0 1014 10.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/></svg>
+      </button>
+      <button class="icon-btn" id="clearChat" title="Clear conversation" aria-label="Clear chat history">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5 4V2.5h6V4M5 7v5m3-5v5m3-5v5M3 4l.75 9.5h8.5L13 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="version-tag" id="versionTag">v2.0</div>
+    </div>
+  </aside>
+
+  <main class="main" id="main" role="main">
+    <header class="mobile-header" id="mobileHeader">
+      <button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <span class="mobile-title" id="mobileName">Aria</span>
+      <div class="mobile-dot" id="mobileDot"></div>
+    </header>
+
+    <div class="chat-area" id="chatArea" role="log" aria-live="polite" aria-label="Conversation">
+      <div class="welcome" id="welcomeScreen" aria-hidden="false">
+        <div class="welcome-logo">
+          <svg width="56" height="56" viewBox="0 0 64 64" fill="none">
+            <path d="M32 4L56 18V46L32 60L8 46V18L32 4Z" stroke="var(--gold)" stroke-width="1.5" fill="none" opacity="0.5"/>
+            <path d="M32 14L48 24V44L32 54L16 44V24L32 14Z" stroke="var(--gold)" stroke-width="1" fill="none" opacity="0.3"/>
+            <circle cx="32" cy="32" r="7" fill="none" stroke="var(--gold)" stroke-width="1.5"/>
+            <circle cx="32" cy="32" r="2.5" fill="var(--gold)"/>
+          </svg>
+        </div>
+        <h1 class="welcome-greeting">Good <span id="timeOfDay">evening</span>.</h1>
+        <p class="welcome-sub">I'm <strong id="welcomeName">Aria</strong> -- I know everything about your home. What can I help you with?</p>
+        <div class="chip-row">
+          <button class="chip" data-prompt="What can you help me with?">What can you do?</button>
+          <button class="chip" data-prompt="Walk me through my home's main systems.">Tour my systems</button>
+          <button class="chip" data-prompt="Something isn't working right. Can you help me troubleshoot?">Troubleshoot something</button>
+          <button class="chip" data-prompt="Tell me about all the scenes programmed in my home.">My scenes</button>
+        </div>
+      </div>
+      <div class="messages" id="messages" hidden></div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-wrapper">
+        <textarea id="chatInput" class="chat-input" placeholder="Ask anything about your home..." rows="1" aria-label="Message input" autocomplete="off" spellcheck="true"></textarea>
+        <button class="send-btn" id="sendBtn" disabled aria-label="Send message">
+          <svg viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="input-footer">
+        <span class="input-hint">Enter to send · Shift+Enter for new line</span>
+        <span class="privacy-badge">
+          <svg viewBox="0 0 12 12" fill="none"><path d="M6 1L2 3v3c0 2.5 1.7 4.2 4 4.9C8.3 10.2 10 8.5 10 6V3L6 1z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+          Responses stay in your home
+        </span>
+      </div>
+    </div>
+  </main>
+
+  <div class="sidebar-overlay" id="overlay" role="presentation"></div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  let CONFIG = { aiName: 'Aria', clientId: '', model: '', version: '2.0', ragEnabled: false };
+  const SESSION_ID = 'session_' + Math.random().toString(36).slice(2, 10);
+  let isGenerating = false;
+
+  const $ = id => document.getElementById(id);
+  const sidebar = $('sidebar'), overlay = $('overlay'), hamburger = $('hamburger');
+  const chatArea = $('chatArea'), welcomeScreen = $('welcomeScreen'), messages = $('messages');
+  const chatInput = $('chatInput'), sendBtn = $('sendBtn');
+  const aiNameLabel = $('aiNameLabel'), aiStatusText = $('aiStatusText'), statusDot = $('statusDot');
+  const welcomeName = $('welcomeName'), mobileName = $('mobileName'), mobileDot = $('mobileDot');
+  const aiAvatar = $('aiAvatar'), versionTag = $('versionTag');
+
+  async function init() {
+    setTimeGreeting();
+    await loadConfig();
+    await checkStatus();
+    setInterval(checkStatus, 60000);
+    bindEvents();
+  }
+
+  function setTimeGreeting() {
+    const h = new Date().getHours();
+    $('timeOfDay').textContent = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+  }
+
+  async function loadConfig() {
+    try {
+      const r = await fetch('/config', { signal: AbortSignal.timeout(4000) });
+      if (r.ok) { const data = await r.json(); CONFIG = { ...CONFIG, ...data }; updateAIIdentity(CONFIG.aiName, CONFIG.version); }
+    } catch (_) { updateAIIdentity(CONFIG.aiName, CONFIG.version); }
+  }
+
+  function updateAIIdentity(name, version) {
+    aiNameLabel.textContent = name; welcomeName.textContent = name; mobileName.textContent = name;
+    versionTag.textContent = 'v' + (version || '2.0');
+    document.title = name + ' -- Symphony Concierge';
+  }
+
+  async function checkStatus() {
+    try {
+      const r = await fetch('/status', { signal: AbortSignal.timeout(5000) });
+      if (r.ok) {
+        const data = await r.json();
+        setOnlineStatus(data.ollama_online && data.chroma_ready);
+        updateStatusBadge('ollama', data.ollama_online);
+        updateStatusBadge('chroma', data.chroma_ready);
+      } else { setOnlineStatus(false); }
+    } catch (_) { setOnlineStatus(false); }
+  }
+
+  function setOnlineStatus(online) {
+    statusDot.className = 'status-dot ' + (online ? 'online' : 'offline');
+    aiStatusText.textContent = online ? 'Online · Your home' : 'Reconnecting...';
+    mobileDot.className = 'mobile-dot ' + (online ? 'online' : '');
+    sendBtn.disabled = !online || isGenerating;
+  }
+
+  function updateStatusBadge(service, ok) {
+    const badge = $('badge-' + service), item = $('svc-' + service);
+    if (!badge) return;
+    badge.textContent = ok ? 'Online' : 'Offline';
+    badge.className = 'status-badge ' + (ok ? 'ok' : 'down');
+    if (item) item.className = 'status-item ' + (ok ? 'healthy' : 'warning');
+  }
+
+  function bindEvents() {
+    sendBtn.addEventListener('click', sendMessage);
+    chatInput.addEventListener('input', () => {
+      chatInput.style.height = 'auto';
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
+      sendBtn.disabled = !chatInput.value.trim() || isGenerating;
+    });
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled) sendMessage(); }
+    });
+    document.addEventListener('click', e => {
+      const btn = e.target.closest('[data-prompt]');
+      if (btn) { chatInput.value = btn.getAttribute('data-prompt'); chatInput.dispatchEvent(new Event('input')); sendMessage(); closeSidebar(); }
+    });
+    $('themeToggle').addEventListener('click', toggleTheme);
+    $('clearChat').addEventListener('click', () => {
+      messages.innerHTML = ''; messages.hidden = true;
+      welcomeScreen.hidden = false; welcomeScreen.setAttribute('aria-hidden', 'false');
+      fetch('/chat/history/' + SESSION_ID, { method: 'DELETE' }).catch(() => {});
+    });
+    hamburger.addEventListener('click', toggleSidebar);
+    overlay.addEventListener('click', closeSidebar);
+  }
+
+  function toggleSidebar() { sidebar.classList.toggle('open'); overlay.classList.toggle('visible'); hamburger.setAttribute('aria-expanded', sidebar.classList.contains('open')); }
+  function closeSidebar() { sidebar.classList.remove('open'); overlay.classList.remove('visible'); hamburger.setAttribute('aria-expanded', 'false'); }
+  function toggleTheme() { const html = document.documentElement; html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
+
+  async function sendMessage() {
+    const text = chatInput.value.trim();
+    if (!text || isGenerating) return;
+    if (welcomeScreen && !welcomeScreen.hidden) { welcomeScreen.hidden = true; welcomeScreen.setAttribute('aria-hidden', 'true'); messages.hidden = false; }
+    appendMessage('user', text);
+    chatInput.value = ''; chatInput.style.height = 'auto';
+    sendBtn.disabled = true; isGenerating = true; aiAvatar.classList.add('thinking');
+    const thinkingId = appendTyping();
+    try { await streamChat(text, thinkingId); }
+    catch (err) {
+      removeMessage(thinkingId);
+      appendMessage('assistant', 'I encountered an error. Please try again. If this persists, check that the Concierge service is running.');
+      showToast('Connection error -- is the Concierge service running?');
+    } finally {
+      isGenerating = false; aiAvatar.classList.remove('thinking');
+      sendBtn.disabled = !chatInput.value.trim(); scrollToBottom();
+    }
+  }
+
+  async function streamChat(userMessage, thinkingId) {
+    const response = await fetch('/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: userMessage, session_id: SESSION_ID, stream: true })
+    });
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    removeMessage(thinkingId);
+    const { bubble } = appendMessage('assistant', '');
+    let fullText = '';
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n'); buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim(); if (!raw) continue;
+        try {
+          const data = JSON.parse(raw);
+          if (data.token) { fullText += data.token; bubble.innerHTML = renderMarkdown(fullText) + '<span class="streaming-cursor"></span>'; scrollToBottom(); }
+          if (data.done) { bubble.innerHTML = renderMarkdown(data.full || fullText); }
+        } catch (_) {}
+      }
+    }
+    if (bubble) bubble.innerHTML = renderMarkdown(fullText);
+  }
+
+  function appendMessage(role, text) {
+    const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const div = document.createElement('div');
+    div.className = 'message ' + role; div.id = id;
+    const avatarContent = role === 'user' ? 'You' : '<svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M12 4C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 10c-4.41 0-8 1.79-8 4v1h16v-1c0-2.21-3.59-4-8-4z" fill="var(--gold)" opacity="0.7"/></svg>';
+    const bubbleContent = role === 'user' ? escapeHtml(text) : renderMarkdown(text);
+    div.innerHTML = '<div class="msg-avatar" aria-hidden="true">' + avatarContent + '</div><div class="msg-content"><div class="msg-bubble">' + bubbleContent + '</div></div>';
+    messages.appendChild(div); scrollToBottom();
+    return { id, bubble: div.querySelector('.msg-bubble') };
+  }
+
+  function appendTyping() {
+    const id = 'typing_' + Date.now();
+    const div = document.createElement('div');
+    div.className = 'message assistant'; div.id = id;
+    div.innerHTML = '<div class="msg-avatar" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M12 4C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 10c-4.41 0-8 1.79-8 4v1h16v-1c0-2.21-3.59-4-8-4z" fill="var(--gold)" opacity="0.7"/></svg></div><div class="msg-content"><div class="msg-bubble"><div class="typing-dots" aria-label="Thinking"><span></span><span></span><span></span></div></div></div>';
+    messages.appendChild(div); scrollToBottom(); return id;
+  }
+
+  function removeMessage(id) { const el = document.getElementById(id); if (el) el.remove(); }
+  function scrollToBottom() { requestAnimationFrame(() => { chatArea.scrollTop = chatArea.scrollHeight; }); }
+
+  function renderMarkdown(text) {
+    if (!text) return '';
+    let html = escapeHtml(text);
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ol>$1</ol>');
+    html = html.replace(/^[-]\s+(.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = html.replace(/\n/g, '<br>');
+    return '<p>' + html + '</p>';
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'toast'; toast.textContent = msg;
+    document.body.appendChild(toast); setTimeout(() => toast.remove(), 4000);
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>
