@@ -1,0 +1,84 @@
+{
+  "_comment": "Bob the Conductor — Telegram Bot Configuration. Sensitive values go in .env, not here.",
+
+  "bot": {
+    "token_env_var": "TELEGRAM_BOT_TOKEN",
+    "polling_interval_seconds": 1,
+    "drop_pending_on_start": true,
+    "timeout_seconds": 30
+  },
+
+  "access": {
+    "owner_chat_id_env_var": "TELEGRAM_OWNER_CHAT_ID",
+    "allowed_user_ids": [],
+    "_comment_allowed": "Add additional numeric chat IDs here for read-only access. Owner ID always has full access."
+  },
+
+  "rate_limiting": {
+    "max_commands_per_window": 30,
+    "window_seconds": 60
+  },
+
+  "quiet_hours": {
+    "enabled": true,
+    "start": "22:00",
+    "end": "07:00",
+    "timezone": "America/Denver",
+    "_comment": "CRITICAL priority always bypasses quiet hours. LOW/NORMAL are batched and sent when quiet hours end."
+  },
+
+  "dedupe_ttl_seconds": 300,
+  "retry_attempts": 3,
+  "retry_delay_seconds": 5,
+
+  "notification_preferences": {
+    "task_complete": {"enabled": true, "priority": "NORMAL"},
+    "task_failed": {"enabled": true, "priority": "HIGH"},
+    "clawwork_earnings": {"enabled": true, "priority": "LOW", "min_amount_usd": 1.00},
+    "call_received": {"enabled": true, "priority": "HIGH"},
+    "call_missed": {"enabled": true, "priority": "HIGH"},
+    "node_offline": {"enabled": true, "priority": "CRITICAL"},
+    "node_online": {"enabled": true, "priority": "NORMAL"},
+    "health_warning": {"enabled": true, "priority": "HIGH", "disk_threshold_percent": 85, "cpu_threshold_percent": 90, "ram_threshold_percent": 90},
+    "security_event": {"enabled": true, "priority": "CRITICAL"},
+    "motion_detected": {"enabled": true, "priority": "HIGH", "attach_snapshot": true},
+    "daily_digest": {"enabled": true, "send_time": "07:30", "timezone": "America/Denver"},
+    "weekly_summary": {"enabled": true, "send_day": "monday", "send_time": "08:00", "timezone": "America/Denver"}
+  },
+
+  "message_templates": {
+    "task_complete": "✅ {task_name} — done{client_suffix}",
+    "task_failed": "❌ {task_name} failed: {error}",
+    "earnings": "💰 Earned ${amount:.2f} from {task_name}. Running total: ${total:.2f}",
+    "call_received": "📞 Call from {caller} ({number}) — {outcome}",
+    "node_offline": "🔴 {node} is offline. Last seen: {last_seen}",
+    "node_online": "🟢 {node} is back online.",
+    "health_warning": "⚠️ {node}: {metric} at {value} (threshold: {threshold})",
+    "motion_detected": "👀 Motion at {camera} ({time})"
+  },
+
+  "openclaw": {
+    "api_url_env_var": "OPENCLAW_API_URL",
+    "chat_endpoint": "/api/chat",
+    "vision_endpoint": "/api/vision",
+    "status_endpoint": "/api/status",
+    "health_endpoint": "/api/health",
+    "tasks_endpoint": "/api/tasks",
+    "logs_endpoint": "/api/logs",
+    "clawwork_pause_endpoint": "/api/clawwork/pause",
+    "clawwork_resume_endpoint": "/api/clawwork/resume",
+    "clawwork_earnings_endpoint": "/api/clawwork/earnings"
+  },
+
+  "home_assistant": {
+    "url_env_var": "HOME_ASSISTANT_URL",
+    "token_env_var": "HOME_ASSISTANT_TOKEN"
+  },
+
+  "logging": {
+    "level": "INFO",
+    "log_file": "/data/logs/telegram_bot.log",
+    "max_bytes": 10485760,
+    "backup_count": 5
+  }
+}
