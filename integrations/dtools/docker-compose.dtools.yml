@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  dtools-bridge:
+    build: .
+    container_name: dtools_bridge
+    restart: unless-stopped
+    ports:
+      - "${DTOOLS_BRIDGE_PORT:-5050}:5050"
+    env_file:
+      - .env
+    environment:
+      - DTOOLS_API_KEY=${DTOOLS_API_KEY}
+      - DTOOLS_BRIDGE_PORT=5050
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5050/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    networks:
+      - symphony
+
+networks:
+  symphony:
+    external: true
