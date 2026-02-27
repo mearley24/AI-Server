@@ -1,0 +1,10 @@
+# OpenClaw — Python dependencies
+# Pinned for reproducible builds on Mac Mini M4 (arm64)
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pyyaml==6.0.2
+httpx==0.28.1
+python-dotenv==1.0.1
+redis==5.2.1
+pydantic==2.10.4

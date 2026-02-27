@@ -62,7 +62,7 @@ services:
     container_name: symphony_redis
     <<: *default-restart
     ports:
-      - "127.0.0.1:6379:6379"         # Bind to loopback only — not exposed externally
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     command: >
@@ -93,10 +93,8 @@ services:
   # ---------------------------------------------------------------------------
   openclaw:
     build:
-      context: ./setup/openclaw
+      context: ./openclaw
       dockerfile: Dockerfile
-      args:
-        BUILDPLATFORM: linux/arm64
     image: symphony/openclaw:latest
     container_name: symphony_openclaw
     <<: *default-restart
@@ -104,16 +102,18 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - openclaw_data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro   # Allow agent to inspect containers
+      - ./agents:/app/agents:ro
+      - ./setup/openclaw/SOUL.md:/app/SOUL.md:ro
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-3-5-sonnet-20241022}
+      - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
       - OLLAMA_HOST=${OLLAMA_HOST}
       - REDIS_URL=redis://redis:6379
-      - NODE_ENV=${NODE_ENV:-production}
       - LOG_LEVEL=${OPENCLAW_LOG_LEVEL:-info}
       - PORT=3000
+      - AGENTS_DIR=/app/agents
+      - DATA_DIR=/app/data
     depends_on:
       redis:
         condition: service_healthy
@@ -144,7 +144,7 @@ services:
     container_name: symphony_voice_receptionist
     <<: *default-restart
     ports:
-      - "5000:5000"                    # Exposed externally — Twilio webhooks POST here
+      - "5000:5000"
     environment:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
@@ -222,7 +222,6 @@ services:
     image: symphony/telegram-bot:latest
     container_name: symphony_telegram_bot
     <<: *default-restart
-    # No exposed ports — bot uses Telegram long-polling, no inbound webhooks
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID}
