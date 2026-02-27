@@ -1,0 +1,184 @@
+# =============================================================================
+# OpenClaw Agent Configuration
+# Agent:   clawwork_agent
+# Role:    ClawWork Side Hustle — GDPVal Task Automation
+# Host:    Bob (Mac Mini M4)
+# Updated: 2026-02-27
+# =============================================================================
+
+agent_id: clawwork_agent
+display_name: "ClawWork Agent"
+version: "1.0.0"
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Model Configuration
+# ---------------------------------------------------------------------------
+model:
+  provider: openai
+  model_id: gpt-4o-mini
+  max_context_tokens: 128000
+  max_output_tokens: 2048
+  temperature: 0.2
+  top_p: 1.0
+  stream: false
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+memory:
+  enabled: true
+  persistence: true
+  backend: sqlite
+  db_path: /var/openclaw/memory/clawwork_agent.db
+  session_window_hours: 168
+  long_term_summarize: true
+
+# ---------------------------------------------------------------------------
+# System Prompt
+# ---------------------------------------------------------------------------
+system_prompt: |
+  You are the ClawWork Agent — an autonomous side-hustle income engine running
+  24/7 on Bob (Mac Mini M4) for Symphony Smart Homes. Your job is to intelligently
+  select, complete, score, and track tasks on the GDPVal platform to maximize
+  quality earnings with minimal wasted effort.
+
+  ## Your Mission
+  Generate consistent passive income through GDPVal microtasks by:
+  1. Selecting the highest-value, highest-quality tasks available
+  2. Completing tasks accurately to maximize acceptance rate
+  3. Scoring completed work before submission to catch errors
+  4. Tracking daily earnings, acceptance rates, and task performance
+  5. Reporting daily summaries to your earnings log
+
+  ## Task Selection Criteria
+  Prioritize tasks using this scoring formula:
+  task_score = (payout_usd / estimated_minutes) * quality_multiplier * category_bonus
+
+  Where:
+  - quality_multiplier: 1.5 for categories with >95% historical acceptance
+  - category_bonus: Apply bonuses from category preference list
+  - Minimum acceptable task_score: 0.15
+
+  ### Category Preference
+  1. Data validation and verification tasks
+  2. Content classification and labeling
+  3. Sentiment analysis and text annotation
+  4. Image tagging and description
+  5. Audio transcription snippets
+  6. Survey and research tasks (lowest priority)
+
+  ### Reject These Task Types
+  - Tasks requiring real personal information or login credentials
+  - Tasks flagged as potentially misleading or unethical
+  - Tasks with payout < $0.05
+  - Tasks with unclear or ambiguous instructions
+
+  ## Daily Limits
+  - Maximum tasks per day: 50
+  - Target: 35–45 tasks per day
+  - Hard stop if acceptance rate drops below 85%
+  - Pause 2 hours if 3 consecutive tasks are rejected
+
+  ## Quality Self-Scoring
+  Before submitting any task, evaluate 1–10:
+  - Score >= 8: Submit immediately
+  - Score 6–7: Review once and revise, then submit
+  - Score <= 5: Discard and skip
+
+  ## Operational Schedule
+  - Runs 24/7
+  - Peak windows: 6 AM – 10 AM and 8 PM – midnight MST
+  - Off-peak: check availability every 30 minutes
+
+  ## Ethical Constraints
+  - Only complete tasks honestly and accurately
+  - Do not fabricate data or game metrics
+  - Skip misinformation tasks and log the reason
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+tools:
+  - name: file_read
+    description: Read task logs, earnings history, and category data
+    enabled: true
+    allowed_paths:
+      - /var/openclaw/clawwork/
+      - /var/openclaw/logs/
+
+  - name: file_write
+    description: Write earnings logs and performance summaries
+    enabled: true
+    allowed_paths:
+      - /var/openclaw/clawwork/
+      - /tmp/openclaw/clawwork/
+
+  - name: shell_exec
+    description: Run scripts for GDPVal automation
+    enabled: true
+    timeout_seconds: 60
+    allowed_commands:
+      - python3
+      - node
+      - curl
+      - jq
+    disallow_interactive: true
+
+  - name: web_search
+    description: Research task topics for accurate completion
+    enabled: true
+    max_results: 5
+    rate_limit_per_hour: 30
+
+# ---------------------------------------------------------------------------
+# Scheduler
+# ---------------------------------------------------------------------------
+scheduler:
+  enabled: true
+  runs_24_7: true
+  poll_interval_minutes:
+    peak_hours: 0.5
+    off_peak_hours: 30
+  peak_windows_mst:
+    - start: "06:00"
+      end: "10:00"
+    - start: "20:00"
+      end: "23:59"
+  daily_reset_time_mst: "00:01"
+
+# ---------------------------------------------------------------------------
+# Restrictions
+# ---------------------------------------------------------------------------
+restrictions:
+  can_delegate: false
+  can_send_telegram: false
+  autonomous: true
+  require_invocation_by: []
+
+# ---------------------------------------------------------------------------
+# Rate Limits
+# ---------------------------------------------------------------------------
+rate_limits:
+  max_invocations_per_hour: 120
+  max_output_tokens_per_day: 100000
+  cost_alert_threshold_usd: 1.00
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  file: /var/openclaw/logs/clawwork_agent.log
+  max_size_mb: 50
+  rotate_daily: true
+  include_tool_calls: false
+
+# ---------------------------------------------------------------------------
+# Error Handling
+# ---------------------------------------------------------------------------
+error_handling:
+  on_platform_unavailable: "Log unavailability, retry in 15 minutes"
+  on_daily_limit_reached: "Stop task selection, write final daily summary, go idle"
+  on_acceptance_rate_drop: "Pause submission, log warning, retry after 2 hour cooldown"
+  fallback_message: "ClawWork session ended due to error. Partial earnings logged."

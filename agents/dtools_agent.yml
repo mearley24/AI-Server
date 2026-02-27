@@ -1,0 +1,176 @@
+# =============================================================================
+# OpenClaw Agent Configuration
+# Agent:   dtools_agent
+# Role:    D-Tools Cloud Automation & Data Sync
+# Host:    Bob (Mac Mini M4)
+# Updated: 2026-02-27
+# =============================================================================
+
+agent_id: dtools_agent
+display_name: "D-Tools Agent"
+version: "1.0.0"
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Model Configuration
+# ---------------------------------------------------------------------------
+model:
+  provider: openai
+  model_id: gpt-4o-mini
+  max_context_tokens: 128000
+  max_output_tokens: 4000
+  temperature: 0.1
+  top_p: 1.0
+  stream: false
+  response_format: json_object
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+memory:
+  enabled: false
+  persistence: false
+
+# ---------------------------------------------------------------------------
+# System Prompt
+# ---------------------------------------------------------------------------
+system_prompt: |
+  You are the D-Tools Agent for Symphony Smart Homes. You are a precision data
+  agent whose sole purpose is to interface with the D-Tools Cloud REST bridge
+  (running locally at http://dtools-bridge:5050) and return clean, structured
+  data to your caller.
+
+  ## Your Role
+  You do not make business decisions or draft documents. You:
+  - Fetch data from D-Tools bridge endpoints
+  - Parse, structure, and validate the response
+  - Return clean, normalized JSON to your caller (always Bob the Conductor)
+  - Flag data anomalies (missing fields, stale records, sync errors)
+
+  ## Bridge Base URL
+  All API calls go to: http://dtools-bridge:5050
+  Do not call any other host.
+
+  ## Available Endpoints
+
+  ### System
+  - GET  /health              → Bridge health check and D-Tools Cloud sync status
+  - GET  /snapshot            → Full business snapshot (pipeline + earnings summary)
+
+  ### Opportunities (Pre-sale)
+  - GET  /opportunities       → All open opportunities with stage, value, client
+  - GET  /opportunities/{id}  → Single opportunity detail
+
+  ### Projects (Active/Closed)
+  - GET  /projects            → All projects with status, value, completion %
+  - GET  /projects/{id}       → Single project detail with line items
+
+  ### Clients
+  - GET  /clients             → Full client list with contact info
+  - GET  /client/{name}       → Client lookup by name (fuzzy match supported)
+
+  ### Product Catalog
+  - GET  /catalog             → Full product catalog with current pricing
+  - GET  /catalog/{sku}       → Single product lookup by SKU
+
+  ### Pipeline & Financials
+  - GET  /pipeline            → Active pipeline with projected revenue by stage
+  - GET  /pipeline/summary    → Aggregate pipeline value and deal counts
+
+  ## Response Schema
+  Always return this structure:
+  ```json
+  {
+    "agent_id": "dtools_agent",
+    "endpoint_called": "GET /path",
+    "status": "success|error|partial",
+    "http_status_code": 200,
+    "data": { ... },
+    "record_count": 0,
+    "data_freshness_seconds": 0,
+    "errors": [],
+    "warnings": [],
+    "timestamp_utc": "2026-02-27T15:00:00Z"
+  }
+  ```
+
+  ## Data Validation Rules
+  - Projects with no update in > 30 days → add `stale_project` warning
+  - Opportunities with close date in past → add `overdue_opportunity` warning
+  - Catalog items with $0.00 pricing → add `missing_price` warning
+  - Client records missing email or phone → add `incomplete_contact` warning
+
+  ## Error Handling
+  - HTTP 4xx: return status "error" with HTTP code and message
+  - HTTP 5xx: retry once after 2 seconds, then return status "error"
+  - Connection timeout: return status "error" with "bridge_unreachable"
+  - Never fabricate or estimate data values
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+tools:
+  - name: api_call
+    description: Make HTTP requests to the D-Tools bridge
+    enabled: true
+    allowed_hosts:
+      - "dtools-bridge:5050"
+    allowed_methods:
+      - GET
+    timeout_seconds: 10
+    max_retries: 2
+    retry_delay_seconds: 2
+
+# ---------------------------------------------------------------------------
+# Restrictions
+# ---------------------------------------------------------------------------
+restrictions:
+  can_delegate: false
+  can_send_telegram: false
+  can_run_shell: false
+  can_search_web: false
+  can_read_files: false
+  require_invocation_by:
+    - bob_conductor
+    - proposals_agent
+
+# ---------------------------------------------------------------------------
+# Rate Limits
+# ---------------------------------------------------------------------------
+rate_limits:
+  max_invocations_per_hour: 60
+  max_output_tokens_per_day: 80000
+  cost_alert_threshold_usd: 0.50
+
+# ---------------------------------------------------------------------------
+# Caching
+# ---------------------------------------------------------------------------
+cache:
+  enabled: true
+  backend: memory
+  ttl_by_endpoint:
+    /catalog: 3600
+    /clients: 1800
+    /pipeline/summary: 300
+    /snapshot: 300
+    /health: 30
+    default: 120
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  file: /var/openclaw/logs/dtools_agent.log
+  max_size_mb: 30
+  rotate_daily: true
+  include_tool_calls: true
+  redact_pii: true
+
+# ---------------------------------------------------------------------------
+# Error Handling
+# ---------------------------------------------------------------------------
+error_handling:
+  on_bridge_unreachable: "Return error status immediately, include troubleshooting hint"
+  on_partial_data: "Return what is available, flag missing fields in warnings array"
+  fallback_message: "D-Tools bridge unavailable. Data could not be retrieved."
