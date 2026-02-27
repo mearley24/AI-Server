@@ -1,0 +1,108 @@
+{
+  "_comment": "ClawWork configuration for Bob the Conductor (side-hustle mode)",
+  "_version": "1.0.0",
+  "_updated": "2026-02-26",
+
+  "agent": {
+    "signature": "bob-conductor",
+    "display_name": "Bob the Conductor (Side Hustle Mode)",
+    "base_model": "claude-sonnet-4-5",
+    "model_provider": "anthropic",
+    "agent_id": "side-hustle",
+    "persona": "professional_freelancer",
+    "description": "Symphony Smart Homes AI running ClawWork tasks during idle time",
+    "openclaw_agent_ref": "side-hustle"
+  },
+
+  "economic": {
+    "initial_balance": 10.00,
+    "currency": "USD",
+    "pause_threshold": 5.00,
+    "resume_threshold": 7.00,
+    "max_daily_spend": 25.00,
+    "min_task_profit_margin": 0.80,
+    "token_pricing": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "input_per_million": 3.00,
+      "output_per_million": 15.00,
+      "cache_read_per_million": 0.30,
+      "cache_write_per_million": 3.75
+    },
+    "evaluation_model": {
+      "provider": "openai",
+      "model": "gpt-4o",
+      "cost_per_evaluation": 0.05,
+      "_note": "Use gpt-4o as approximation for GPT-5.2 rubric scoring"
+    },
+    "payment_formula": "quality_score * (estimated_hours * bls_hourly_wage)",
+    "target_quality_score": 0.85,
+    "expected_hourly_equivalent": 1200.00
+  },
+
+  "schedule": {
+    "timezone": "America/Denver",
+    "mode": "24/7",
+    "_comment": "Bob never sleeps. ClawWork runs anytime the Symphony queue is empty.",
+    "symphony_always_priority": true,
+    "poll_interval_seconds": 300,
+    "max_task_duration_minutes": 45,
+    "cooldown_between_tasks_seconds": 30,
+    "daily_task_limit": 50,
+    "symphony_queue_check": {
+      "enabled": true,
+      "endpoint": "http://openclaw:3000/api/agents/bob/queue",
+      "empty_if_count_below": 1
+    }
+  },
+
+  "task_selection": {
+    "strategy": "weighted_roi",
+    "sector_priorities": {
+      "tier_1_weight": 0.60,
+      "tier_2_weight": 0.30,
+      "tier_3_weight": 0.10,
+      "randomization_factor": 0.10
+    },
+    "preferred_sectors": [
+      {"id": "information_technology", "tier": 1, "base_weight": 0.30},
+      {"id": "real_estate", "tier": 1, "base_weight": 0.20},
+      {"id": "professional_services", "tier": 1, "base_weight": 0.20},
+      {"id": "finance_insurance", "tier": 1, "base_weight": 0.10}
+    ],
+    "adaptive_learning": {
+      "enabled": true,
+      "min_samples_before_adjustment": 5,
+      "adjustment_factor": 0.15
+    }
+  },
+
+  "gdpval": {
+    "dataset_path": "~/.symphony/clawwork/gdpval",
+    "gold_set_only": true,
+    "deliverable_dir": "~/.symphony/clawwork/deliverables"
+  },
+
+  "earnings_tracking": {
+    "database_path": "~/.symphony/data/earnings.db",
+    "log_path": "~/.symphony/logs/clawwork.log",
+    "export_csv_dir": "~/.symphony/reports/clawwork"
+  },
+
+  "system_health": {
+    "check_before_task": true,
+    "health_endpoint": "http://localhost:8080/health",
+    "min_cpu_free_percent": 20,
+    "min_memory_free_mb": 512,
+    "min_disk_free_gb": 1
+  },
+
+  "notifications": {
+    "telegram": {
+      "enabled": true,
+      "daily_goal_usd": 200.00,
+      "balance_warning_threshold": 6.00,
+      "balance_critical_threshold": 5.00
+    }
+  }
+}

@@ -1,0 +1,35 @@
+version: "3.8"
+
+# ClawWork Docker overlay — extends the main OpenClaw stack
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.clawwork.yml up -d
+
+services:
+  side-hustle:
+    build:
+      context: ./clawwork
+      dockerfile: Dockerfile.clawwork
+    container_name: bob-side-hustle
+    restart: unless-stopped
+    env_file:
+      - ~/.symphony/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Denver
+    volumes:
+      - ~/.symphony:/root/.symphony
+      - ./clawwork:/app
+    networks:
+      - openclaw-net
+    depends_on:
+      - openclaw
+    command: ["python", "/app/bob_side_hustle.py", "--daemon"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json; f=open('/root/.symphony/data/clawwork_state.json'); d=json.load(f); print('ok')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  openclaw-net:
+    external: true
