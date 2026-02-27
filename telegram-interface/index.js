@@ -1,11 +1,12 @@
 import express from "express";
 import { Telegraf } from "telegraf";
 
+// ---------------------------------------------------------------------------
+// Environment validation
+// ---------------------------------------------------------------------------
 const requiredEnv = [
   "TELEGRAM_BOT_TOKEN",
-  "OPENWEBUI_BASE_URL",
-  "OPENWEBUI_API_KEY",
-  "OPENWEBUI_MODEL"
+  "OPENCLAW_URL",
 ];
 
 for (const k of requiredEnv) {
@@ -16,34 +17,23 @@ for (const k of requiredEnv) {
 }
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN.trim();
-const OPENWEBUI_BASE_URL = process.env.OPENWEBUI_BASE_URL.trim().replace(/\/+$/, "");
-const OPENWEBUI_API_KEY = process.env.OPENWEBUI_API_KEY.trim();
-const OPENWEBUI_MODEL = process.env.OPENWEBUI_MODEL.trim();
-const DEFAULT_SYSTEM_PROMPT =
-  (process.env.SYSTEM_PROMPT || "You are a helpful, concise assistant.").trim();
-
-const MAX_TURNS = Number(process.env.MAX_TURNS || 8);
+const OPENCLAW_URL = process.env.OPENCLAW_URL.trim().replace(/\/+$/, "");
+const REDIS_URL = (process.env.REDIS_URL || "").trim();
+const LOG_LEVEL = (process.env.LOG_LEVEL || "info").trim();
 const HEALTH_PORT = Number(process.env.HEALTH_PORT || 8081);
 
-// Admins: comma-separated Telegram user IDs (from @userinfobot)
-const ADMIN_USER_IDS = String(process.env.ADMIN_USER_IDS || "")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean)
-  .map(s => Number(s))
-  .filter(n => Number.isFinite(n));
+// Owner chat ID — restricts admin commands to the business owner
+const OWNER_CHAT_ID = Number(
+  (process.env.TELEGRAM_OWNER_CHAT_ID || "0").trim()
+);
+
+const MAX_TURNS = Number(process.env.MAX_TURNS || 12);
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-
-// Cache bot username once we have it
 let BOT_USERNAME = null;
 
-// Memory per-user-per-chat so groups don’t share one blob
-// key: `${chatId}:${userId}` -> [{role, content}, ...]
+// Per-user-per-chat conversation memory
 const memory = new Map();
-
-// Optional per-chat prompt overrides (admin-only)
-const promptByChat = new Map();
 
 function memKey(chatId, userId) {
   return `${chatId}:${userId}`;
@@ -53,19 +43,13 @@ function isGroup(chatType) {
   return chatType === "group" || chatType === "supergroup";
 }
 
-function isAdmin(ctx) {
-  const uid = ctx.from?.id;
-  return Boolean(uid && ADMIN_USER_IDS.includes(uid));
-}
-
-function getSystemPrompt(chatId) {
-  return (promptByChat.get(chatId) || DEFAULT_SYSTEM_PROMPT).trim();
+function isOwner(ctx) {
+  return OWNER_CHAT_ID > 0 && ctx.from?.id === OWNER_CHAT_ID;
 }
 
 function getHistory(chatId, userId) {
   const key = memKey(chatId, userId);
-  const arr = memory.get(key) || [];
-  return arr.slice(-MAX_TURNS * 2);
+  return (memory.get(key) || []).slice(-MAX_TURNS * 2);
 }
 
 function pushHistory(chatId, userId, role, content) {
@@ -80,7 +64,6 @@ function clearUserMemory(chatId, userId) {
 }
 
 function clearChatMemory(chatId) {
-  // wipe all keys starting with `${chatId}:`
   const prefix = `${chatId}:`;
   for (const k of memory.keys()) {
     if (k.startsWith(prefix)) memory.delete(k);
@@ -94,51 +77,69 @@ function stripMention(text) {
 }
 
 function shouldRespondInGroup(ctx, text) {
-  // In groups: respond only if
-  // 1) mentioned by @username OR
-  // 2) replying to a message from the bot OR
-  // 3) command (starts with /)
   if (!isGroup(ctx.chat?.type)) return true;
-
   if (!text) return false;
   if (text.startsWith("/")) return true;
-
   const lowered = text.toLowerCase();
-  if (BOT_USERNAME && lowered.includes(`@${BOT_USERNAME.toLowerCase()}`)) return true;
-
+  if (BOT_USERNAME && lowered.includes(`@${BOT_USERNAME.toLowerCase()}`))
+    return true;
   const replyTo = ctx.message?.reply_to_message;
   const replyFrom = replyTo?.from;
-  if (replyFrom?.is_bot && BOT_USERNAME && replyFrom?.username?.toLowerCase() === BOT_USERNAME.toLowerCase()) {
+  if (
+    replyFrom?.is_bot &&
+    BOT_USERNAME &&
+    replyFrom?.username?.toLowerCase() === BOT_USERNAME.toLowerCase()
+  ) {
     return true;
   }
-
   return false;
 }
 
-async function callOpenWebUI(chatId, userId, userText) {
-  const url = `${OPENWEBUI_BASE_URL}/api/chat/completions`;
+function log(level, ...args) {
+  const levels = { error: 0, warn: 1, info: 2, debug: 3 };
+  if ((levels[level] ?? 2) <= (levels[LOG_LEVEL] ?? 2)) {
+    const ts = new Date().toISOString();
+    console[level === "error" ? "error" : "log"](`[${ts}] [${level}]`, ...args);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// OpenClaw API call
+// ---------------------------------------------------------------------------
+async function callOpenClaw(chatId, userId, userText, meta = {}) {
+  const url = `${OPENCLAW_URL}/api/chat/completions`;
+
   const messages = [
-    { role: "system", content: getSystemPrompt(chatId) },
     ...getHistory(chatId, userId),
-    { role: "user", content: userText }
+    { role: "user", content: userText },
   ];
+
+  const payload = {
+    model: "bob_conductor",
+    messages,
+    stream: false,
+    metadata: {
+      source: "telegram",
+      chat_id: chatId,
+      user_id: userId,
+      is_owner: OWNER_CHAT_ID > 0 && userId === OWNER_CHAT_ID,
+      ...meta,
+    },
+  };
+
+  log("debug", `OpenClaw request: ${userText.substring(0, 100)}`);
 
   const resp = await fetch(url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${OPENWEBUI_API_KEY}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model: OPENWEBUI_MODEL,
-      messages,
-      stream: false
-    })
+    body: JSON.stringify(payload),
   });
 
   if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(`OpenWebUI error ${resp.status}: ${text}`);
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`OpenClaw error ${resp.status}: ${errText}`);
   }
 
   const data = await resp.json();
@@ -151,6 +152,9 @@ async function callOpenWebUI(chatId, userId, userText) {
   return String(content).trim();
 }
 
+// ---------------------------------------------------------------------------
+// Telegram message chunking (max 4096 chars per message)
+// ---------------------------------------------------------------------------
 function chunkTelegram(text) {
   const chunks = [];
   const maxLen = 3500;
@@ -160,37 +164,38 @@ function chunkTelegram(text) {
   return chunks.length ? chunks : ["(empty response)"];
 }
 
-// ---- Commands ----
-
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
 bot.start(async (ctx) => {
   const chatType = ctx.chat?.type || "unknown";
+  const owner = isOwner(ctx) ? " (Owner)" : "";
   await ctx.reply(
-    `Online.\nModel: ${OPENWEBUI_MODEL}\nChat type: ${chatType}\n` +
-    (isGroup(chatType)
-      ? `Group mode: mention @${BOT_USERNAME || "this_bot"} or reply to me.`
-      : `Send a message to chat.`)
+    `Bob \u2014 The Conductor is online.\n` +
+      `Routed through: OpenClaw\n` +
+      `Chat type: ${chatType}${owner}\n\n` +
+      (isGroup(chatType)
+        ? `Group mode: mention @${BOT_USERNAME || "ConductorBob_bot"} or reply to me.`
+        : `Send a message or use /help for commands.`)
   );
 });
 
-// /id — helpful in groups
 bot.command("id", async (ctx) => {
   const chatId = ctx.chat?.id;
   const userId = ctx.from?.id;
   await ctx.reply(`chat_id: ${chatId}\nuser_id: ${userId}`);
 });
 
-// /reset — clears memory for YOU in this chat
 bot.command("reset", async (ctx) => {
   const chatId = ctx.chat?.id;
   const userId = ctx.from?.id;
   if (chatId == null || userId == null) return;
   clearUserMemory(chatId, userId);
-  await ctx.reply("Your memory is cleared for this chat.");
+  await ctx.reply("Conversation memory cleared.");
 });
 
-// /reset_chat — ADMIN ONLY — clears memory for everyone in this chat
 bot.command("reset_chat", async (ctx) => {
-  if (!isAdmin(ctx)) {
+  if (!isOwner(ctx)) {
     await ctx.reply("Not authorized.");
     return;
   }
@@ -200,48 +205,60 @@ bot.command("reset_chat", async (ctx) => {
   await ctx.reply("Chat memory cleared for everyone.");
 });
 
-// /setprompt <text> — ADMIN ONLY — overrides system prompt for this chat
-bot.command("setprompt", async (ctx) => {
-  if (!isAdmin(ctx)) {
-    await ctx.reply("Not authorized.");
-    return;
-  }
-  const chatId = ctx.chat?.id;
-  if (chatId == null) return;
+// All other /commands get forwarded to OpenClaw (Bob handles them)
+const PASSTHROUGH_COMMANDS = [
+  "status",
+  "pipeline",
+  "earnings",
+  "client",
+  "proposal",
+  "dtools",
+  "health",
+  "schedule",
+  "help",
+  "digest",
+  "log",
+  "task",
+  "alert",
+  "model",
+];
 
-  const text = ctx.message?.text || "";
-  const parts = text.split(" ").slice(1);
-  const newPrompt = parts.join(" ").trim();
+for (const cmd of PASSTHROUGH_COMMANDS) {
+  bot.command(cmd, async (ctx) => {
+    const chatId = ctx.chat?.id;
+    const userId = ctx.from?.id;
+    const text = ctx.message?.text?.trim();
+    if (chatId == null || userId == null || !text) return;
 
-  if (!newPrompt) {
-    await ctx.reply("Usage: /setprompt <new system prompt>");
-    return;
-  }
+    try {
+      await ctx.sendChatAction("typing");
+    } catch {}
 
-  promptByChat.set(chatId, newPrompt);
-  await ctx.reply("System prompt updated for this chat.");
-});
+    try {
+      const reply = await callOpenClaw(chatId, userId, text, {
+        is_command: true,
+        command: `/${cmd}`,
+      });
 
-// /prompt — show current prompt (admin only, to avoid leaking)
-bot.command("prompt", async (ctx) => {
-  if (!isAdmin(ctx)) {
-    await ctx.reply("Not authorized.");
-    return;
-  }
-  const chatId = ctx.chat?.id;
-  if (chatId == null) return;
-  await ctx.reply(`Current system prompt:\n${getSystemPrompt(chatId)}`);
-});
+      pushHistory(chatId, userId, "user", text);
+      pushHistory(chatId, userId, "assistant", reply || "(no response)");
 
-// /model — show model
-bot.command("model", async (ctx) => {
-  await ctx.reply(`Model: ${OPENWEBUI_MODEL}`);
-});
+      for (const c of chunkTelegram(reply)) {
+        await ctx.reply(c);
+      }
+    } catch (err) {
+      log("error", `Command /${cmd} error:`, err.message);
+      await ctx.reply(
+        `Error processing /${cmd}. Check Bob's logs: docker logs symphony_telegram_bot`
+      );
+    }
+  });
+}
 
-// ---- Main message handler ----
-
+// ---------------------------------------------------------------------------
+// Main text message handler
+// ---------------------------------------------------------------------------
 bot.on("text", async (ctx) => {
-  // ignore bot messages
   if (ctx.from?.is_bot) return;
 
   const chatId = ctx.chat?.id;
@@ -254,16 +271,16 @@ bot.on("text", async (ctx) => {
   if (isGroup(ctx.chat?.type)) {
     if (!shouldRespondInGroup(ctx, text)) return;
     text = stripMention(text);
-    // If they only said "@bot" and nothing else, ignore
     if (!text || text.length < 1) return;
   }
 
-  try { await ctx.sendChatAction("typing"); } catch {}
+  try {
+    await ctx.sendChatAction("typing");
+  } catch {}
 
   try {
-    const reply = await callOpenWebUI(chatId, userId, text);
+    const reply = await callOpenClaw(chatId, userId, text);
 
-    // Save memory per user per chat
     pushHistory(chatId, userId, "user", text);
     pushHistory(chatId, userId, "assistant", reply || "(no response)");
 
@@ -271,25 +288,45 @@ bot.on("text", async (ctx) => {
       await ctx.reply(c);
     }
   } catch (err) {
-    console.error(err);
-    await ctx.reply("AI server error. Check logs: docker logs -n 200 telegram-interface");
+    log("error", "Message handling error:", err.message);
+    await ctx.reply(
+      "OpenClaw is not responding. Check logs: docker logs symphony_openclaw"
+    );
   }
 });
 
-// Health endpoint for Kuma
+// ---------------------------------------------------------------------------
+// Health endpoint (Docker healthcheck)
+// ---------------------------------------------------------------------------
 const app = express();
-app.get("/health", (req, res) => res.status(200).send("ok"));
-app.listen(HEALTH_PORT, "0.0.0.0", () => console.log(`Health listening on :${HEALTH_PORT}`));
 
-// Launch + capture bot username
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    bot: BOT_USERNAME || "starting",
+    openclaw_url: OPENCLAW_URL,
+    owner_configured: OWNER_CHAT_ID > 0,
+    uptime_seconds: Math.floor(process.uptime()),
+  });
+});
+
+app.listen(HEALTH_PORT, "0.0.0.0", () =>
+  log("info", `Health endpoint listening on :${HEALTH_PORT}`)
+);
+
+// ---------------------------------------------------------------------------
+// Launch
+// ---------------------------------------------------------------------------
 (async () => {
   try {
     await bot.launch();
     const me = await bot.telegram.getMe();
     BOT_USERNAME = me?.username || null;
-    console.log(`Telegram bot launched as @${BOT_USERNAME || "unknown"}`);
+    log("info", `Telegram bot launched as @${BOT_USERNAME || "unknown"}`);
+    log("info", `OpenClaw endpoint: ${OPENCLAW_URL}`);
+    log("info", `Owner chat ID: ${OWNER_CHAT_ID || "not configured"}`);
   } catch (e) {
-    console.error("Bot launch failed:", e);
+    log("error", "Bot launch failed:", e);
     process.exit(1);
   }
 })();
