@@ -1,0 +1,136 @@
+{
+  "_comment": "OpenClaw channel configuration for Telegram. Drop this into setup/openclaw/openclaw.json under the 'channels' key.",
+
+  "channel": {
+    "id": "telegram",
+    "type": "telegram",
+    "display_name": "Telegram — Bob the Conductor",
+    "enabled": true,
+
+    "connection": {
+      "mode": "polling",
+      "_comment_mode": "Use 'polling' for Mac Mini (no public IP needed). Use 'webhook' if Bob is publicly accessible.",
+      "bot_token_env": "TELEGRAM_BOT_TOKEN",
+      "polling_interval_ms": 1000,
+      "polling_timeout_s": 30,
+      "drop_pending_on_start": true,
+
+      "webhook": {
+        "_comment": "Only used when mode=webhook",
+        "url": "https://your-domain.com/telegram/webhook",
+        "port": 8443,
+        "cert_path": "/certs/telegram.crt",
+        "key_path": "/certs/telegram.key"
+      }
+    },
+
+    "access": {
+      "owner_chat_id_env": "TELEGRAM_OWNER_CHAT_ID",
+      "allowed_chat_ids": [],
+      "reject_unknown": true
+    },
+
+    "message_routing": {
+      "_comment": "Rules for directing incoming Telegram messages to the right OpenClaw agent.",
+
+      "routes": [
+        {
+          "match": "command",
+          "commands": ["/status", "/health", "/nodes"],
+          "agent": "system-monitor",
+          "description": "System status queries to system monitoring agent"
+        },
+        {
+          "match": "command",
+          "commands": ["/tasks", "/logs"],
+          "agent": "task-manager",
+          "description": "Task queue + log queries to task manager agent"
+        },
+        {
+          "match": "command",
+          "commands": ["/earnings"],
+          "agent": "clawwork",
+          "description": "Earnings queries to ClawWork agent"
+        },
+        {
+          "match": "command",
+          "commands": ["/ask", "/chat"],
+          "agent": "general",
+          "description": "Free-form questions to general-purpose agent"
+        },
+        {
+          "match": "default",
+          "agent": "general",
+          "description": "Any unmatched message to general-purpose agent"
+        }
+      ]
+    },
+
+    "response_formatting": {
+      "max_message_length": 4096,
+      "split_long_messages": true,
+      "parse_mode": "Markdown",
+      "disable_web_page_preview": true
+    },
+
+    "rate_limiting": {
+      "enabled": true,
+      "max_requests_per_minute": 30,
+      "burst_limit": 5
+    },
+
+    "typing_indicator": {
+      "enabled": true,
+      "send_while_processing": true
+    },
+
+    "persistence": {
+      "conversation_history": true,
+      "history_db": "data/telegram_history.db",
+      "max_history_turns": 20
+    },
+
+    "notifications": {
+      "_comment": "Proactive messages Bob can send to the owner.",
+      "enabled": true,
+      "events": [
+        {
+          "event": "task_completed",
+          "notify": true,
+          "template": "Task {task_name} completed in {duration}."
+        },
+        {
+          "event": "task_failed",
+          "notify": true,
+          "template": "Task {task_name} failed: {error_message}"
+        },
+        {
+          "event": "node_down",
+          "notify": true,
+          "template": "Node {node_id} went offline at {timestamp}."
+        },
+        {
+          "event": "earnings_milestone",
+          "notify": true,
+          "template": "Earnings milestone: ${amount} reached!"
+        }
+      ]
+    },
+
+    "commands_registered": [
+      {"command": "start",    "description": "Introduce Bob and list commands"},
+      {"command": "help",     "description": "Show available commands"},
+      {"command": "status",   "description": "Overall system health"},
+      {"command": "health",   "description": "Detailed health check"},
+      {"command": "nodes",    "description": "List worker nodes"},
+      {"command": "tasks",    "description": "Current task queue"},
+      {"command": "logs",     "description": "Recent log entries"},
+      {"command": "earnings", "description": "Earnings summary"},
+      {"command": "ask",      "description": "Ask Bob anything"},
+      {"command": "chat",     "description": "Free-form conversation"},
+      {"command": "restart",  "description": "Restart a service (owner only)"},
+      {"command": "silence",  "description": "Mute notifications"},
+      {"command": "unsilence","description": "Re-enable notifications"}
+    ]
+  }
+}
