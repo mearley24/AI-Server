@@ -1,0 +1,245 @@
+{
+  // Symphony Smart Homes — Proposals OpenClaw Agent Definition
+  // Add this agent to setup/openclaw/openclaw.json under the "agents" array.
+  //
+  // Trigger via Telegram: @proposals [message]
+  // Or Bob delegates: agent_call("proposals", task_dict)
+  //
+  // Model: claude-haiku-3-5 — cost-efficient for template generation and structured work
+  // Cost rationale: Proposals agent handles template filling and scope generation;
+  //   doesn't need Sonnet-level reasoning for most tasks. Budget accordingly.
+
+  "id": "proposals",
+  "name": "Proposals Specialist",
+  "model": "anthropic/claude-haiku-3-5",
+
+  // Telegram routing: messages prefixed with @proposals route here
+  "trigger_prefix": "@proposals",
+
+  // Workspace for this agent's scratch files
+  "workspace": "~/.openclaw/workspace-proposals",
+
+  // Tool permissions — exec disabled for safety (no shell access needed)
+  "tools": {
+    "exec": {
+      "enabled": false
+    },
+    "browse": {
+      "enabled": false
+    },
+    "file_read": {
+      "enabled": true,
+      "allowed_dirs": [
+        "~/AI-Server/knowledge/proposal_library/",
+        "~/AI-Server/phase2/proposals/",
+        "~/.openclaw/workspace-proposals",
+        "/tmp/openclaw"
+      ]
+    },
+    "file_write": {
+      "enabled": true,
+      "allowed_dirs": [
+        "~/.openclaw/workspace-proposals",
+        "~/AI-Server/proposals/drafts",
+        "/tmp/openclaw"
+      ]
+    },
+    "agent_call": {
+      "enabled": false
+    },
+    "python_tools": {
+      "enabled": true,
+      "allowed_modules": [
+        "proposal_engine",
+        "scope_builder",
+        "pricing_calculator",
+        "dtool_cloud_client"
+      ],
+      "base_path": "~/AI-Server/phase2/proposals/"
+    }
+  },
+
+  // Context / memory settings
+  "context": {
+    "max_history_messages": 20,
+    "persistent_sessions": true,
+    "auto_summarize_threshold": 20,
+    "summarize_model": "anthropic/claude-haiku-3-5"
+  },
+
+  // Full system prompt — defines the agent's identity, capabilities, and behavior
+  "system_prompt": "You are the Proposals Specialist for Symphony Smart Homes — a sub-agent of Bob the Conductor.\n\nYour job is to generate professional, accurate smart home proposals. You are not a generic assistant. You are a technically fluent AV integrator who knows the Symphony Smart Homes template library inside and out.\n\n## Your Core Responsibilities\n\n1. **Draft proposals** using the proposal_engine.py engine and the knowledge base at ~/AI-Server/knowledge/proposal_library/\n2. **Build scope of work** using scope_builder.py — room by room, system by system, at the correct Good/Better/Best tier\n3. **Generate D-Tools CSV exports** for every proposal — ready for import into D-Tools Cloud\n4. **Run coverage gap checks** before delivering any draft — flag errors loudly, flag warnings quietly\n5. **Select the right proposal template** — basic_av, full_automation, retrofit, or commercial — based on the project\n\n## Your Workflow\n\nWhen asked to generate a proposal:\n\n```\n1. Parse the project requirements (rooms, systems, tier, budget, template type)\n2. Load the applicable room configs from ~/AI-Server/knowledge/proposal_library/room_configs/\n3. Load the applicable scope blocks from ~/AI-Server/knowledge/proposal_library/scope_blocks/\n4. Run proposal_engine.generate() with the parsed requirements\n5. Run scope_builder.build() for room-by-room scope detail\n6. Check coverage gaps — report any errors immediately\n7. Generate D-Tools CSV\n8. Return: proposal JSON + coverage gap report + D-Tools CSV\n```\n\n## Vendor Knowledge\n\nYou know the Symphony Smart Homes vendor stack at a professional integrator level:\n\n- **Control4**: CORE 3 controller (flagship), T4 touchscreens, SR-260 remote. Driver-based architecture — always verify driver compatibility for third-party devices.\n- **Lutron**: RadioRA 3 (flagship residential, 200-device limit). HomeWorks QS for estates. Caseta Pro for budget/retrofit. Every room with Lutron needs a scene keypad — not just app control. Theaters REQUIRE blackout shades.\n- **Araknis**: AN-310-RT router, AN-310-SW-8-2P PoE switch, AN-510-AP-I WAP. 1 WAP per 1,500 sq ft minimum. OvrC Pro mandatory on every project.\n- **Triad**: TS-PAMP-8 for whole-home audio. Triad One for single zones. Bronze in-ceiling as standard; Silver for Better/Best.\n- **Luma**: x20/x30 IP cameras. PoE only — no batteries, no Wi-Fi cameras on integrated projects. NVR for recording.\n- **DoorBird**: D2101V door station — preferred for Control4 projects. Control4 driver available.\n- **WattBox**: Intelligent power management — required in every rack.\n- **APC**: UPS on network rack — non-negotiable.\n\n## Equipment Naming Rules\n\nAlways use exact manufacturer model numbers. Never abbreviate.\n\nCORRECT: Lutron RRD-6ND-WH (Dimmer, White)\nWRONG: Lutron dimmer\n\nCORRECT: Control4 CORE 3 Home Controller\nWRONG: C4 controller\n\n## Pricing Rules\n\nNEVER hardcode equipment prices. Equipment pricing comes from D-Tools Cloud.\n\nIn JSON/Python: set unit_price and extended_price to null, price_source to 'dtools'.\nIn markdown templates: use [PRICE] as placeholder.\n\nLabor rates and markups are calculated by pricing_calculator.py, not hardcoded in templates.\n\n## Coverage Gap Checks — MANDATORY\n\nBefore delivering ANY proposal draft, run and report on these checks:\n\n1. every_ip_device_has_ethernet_drop\n2. amp_channel_count_matches_speaker_count\n3. theater_has_blackout_shades\n4. network_rack_has_ups\n5. all_fixtures_are_dimmer_compatible\n6. outdoor_devices_have_ip_ratings\n7. programming_hours_budgeted\n8. keypad_locations_on_floor_plan\n9. all_equipment_in_dtools_has_room_assignment\n10. control4_drivers_verified_for_third_party_devices\n\nERROR-level gaps: DO NOT deliver the proposal — fix first.\nWARNING-level gaps: Deliver with explicit flag to owner.\n\n## D-Tools CSV Format\n\nEvery proposal generates a D-Tools import CSV:\n\n```\nModel,Manufacturer,Category,Quantity,Room,Notes\n```\n\nValid categories (exact strings):\nAudio, Video, Lighting, Networking, Control, Security, Climate, Power, Cabling, Rack, Labor\n\nEvery item needs a room assignment. Unassigned items = downstream problems.\n\n## Communication Style\n\n- Direct, efficient, technically precise\n- Lead with the answer, then context\n- Use tables and bullets — not walls of prose\n- Flag problems explicitly — don't bury them\n- When something is non-negotiable (UPS, blackout shades, Ethernet drops), say so clearly\n\n## What You Don't Do\n\n- You do not browse the internet\n- You do not execute shell commands\n- You do not delegate to sub-agents\n- You do not create D-Tools projects directly — that's the dtools agent's job\n- You do not hardcode prices\n- You do not deliver proposals with unresolved ERROR-level coverage gaps",
+
+  // Response configuration
+  "response": {
+    "max_tokens": 8192,
+    "temperature": 0.2,     // Low temperature for consistent, accurate template work
+    "top_p": 0.9
+  },
+
+  // Tool definitions — these are the functions the agent can call
+  "tool_definitions": [
+    {
+      "name": "generate_proposal",
+      "description": "Generate a complete proposal JSON using proposal_engine.py. Pass client info, rooms, tier, template type, and systems.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_name": {"type": "string", "description": "Client last name (e.g. 'Smith')"},
+          "address": {"type": "string", "description": "Full street address"},
+          "city": {"type": "string"},
+          "state": {"type": "string", "description": "Two-letter state code"},
+          "zip_code": {"type": "string"},
+          "template": {
+            "type": "string",
+            "enum": ["basic_av", "full_automation", "retrofit", "commercial", "maintenance_agreement"]
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["good", "better", "best"]
+          },
+          "rooms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string"},
+                "tier": {"type": "string"},
+                "systems": {"type": "array", "items": {"type": "string"}}
+              }
+            }
+          },
+          "budget_low": {"type": "number", "description": "Low end of client budget (optional)"},
+          "budget_high": {"type": "number", "description": "High end of client budget (optional)"},
+          "is_new_construction": {"type": "boolean", "default": true}
+        },
+        "required": ["client_name", "address", "template", "tier", "rooms"]
+      }
+    },
+    {
+      "name": "build_scope",
+      "description": "Build room-by-room scope of work using scope_builder.py. Returns scope package with dependencies and upsell suggestions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "rooms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string"},
+                "tier": {"type": "string"}
+              }
+            }
+          },
+          "tier": {"type": "string", "enum": ["good", "better", "best"]},
+          "systems": {"type": "array", "items": {"type": "string"}},
+          "budget": {"type": "number"}
+        },
+        "required": ["rooms", "tier", "systems"]
+      }
+    },
+    {
+      "name": "read_scope_block",
+      "description": "Read a scope block from the knowledge base. Returns the markdown content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "string",
+            "enum": ["lighting_shades", "audio_video", "networking", "security_surveillance", "control_automation", "climate"]
+          }
+        },
+        "required": ["system"]
+      }
+    },
+    {
+      "name": "read_room_config",
+      "description": "Read a room configuration from the knowledge base (Good/Better/Best tiers).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room": {
+            "type": "string",
+            "description": "Room name — e.g. 'master_bedroom', 'theater_media_room', 'kitchen'"
+          }
+        },
+        "required": ["room"]
+      }
+    },
+    {
+      "name": "calculate_pricing",
+      "description": "Calculate project pricing using pricing_calculator.py. Returns labor totals, markup, payment schedule, and margin analysis.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "markup_tier": {
+            "type": "string",
+            "enum": ["residential_standard", "residential_high_end", "commercial"]
+          },
+          "state": {"type": "string", "description": "Two-letter state code for tax"},
+          "labor_hours_by_phase": {
+            "type": "object",
+            "description": "Phase → {skill_level: hours} mapping"
+          },
+          "system_count": {"type": "integer"},
+          "discounts": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["bundle", "loyalty", "referral", "builder", "seasonal"]}
+          }
+        },
+        "required": ["markup_tier", "state"]
+      }
+    },
+    {
+      "name": "generate_dtools_csv",
+      "description": "Generate a D-Tools Cloud import CSV from an equipment list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "equipment": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {"type": "string"},
+                "manufacturer": {"type": "string"},
+                "category": {"type": "string"},
+                "quantity": {"type": "integer"},
+                "room": {"type": "string"},
+                "notes": {"type": "string"}
+              },
+              "required": ["model", "manufacturer", "category", "quantity", "room"]
+            }
+          }
+        },
+        "required": ["equipment"]
+      }
+    },
+    {
+      "name": "estimate_budget",
+      "description": "Generate a rough budget estimate for a project (ballpark ranges for initial client conversations). Not a substitute for a real proposal.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "room_count": {"type": "integer"},
+          "tier": {"type": "string", "enum": ["good", "better", "best"]},
+          "systems": {"type": "array", "items": {"type": "string"}},
+          "state": {"type": "string"}
+        },
+        "required": ["room_count", "tier"]
+      }
+    }
+  ],
+
+  // Example prompts to help test the agent
+  "example_prompts": [
+    "@proposals Draft a full automation proposal for the Johnson residence — 7 rooms, Better tier, new construction in Denver CO. Rooms: Living Room, Master Bedroom, Kitchen, Theater, 2 Bedrooms, Outdoor Patio, Mechanical Room.",
+    "@proposals Build the scope of work for a 4-room Basic AV project — Living Room, Master Bedroom, Office, Mechanical Room. Good tier. No Control4, just AV and networking.",
+    "@proposals Generate a D-Tools CSV for the Smith Residence — standard Better tier equipment list, 6 rooms.",
+    "@proposals What's a rough budget estimate for a 10-room Better tier full automation project in Colorado?",
+    "@proposals Read the theater_media_room config at Best tier.",
+    "@proposals Build scope for a retrofit project — existing Sonos, need to add Control4, Lutron lighting, and new Araknis network. 8 rooms."
+  ]
+}
+
