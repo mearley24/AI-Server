@@ -1,0 +1,144 @@
+{
+  "_meta": {
+    "description": "Symphony Smart Homes AI Network - Node Registry",
+    "version": "1.0.0",
+    "managed_by": "Bob (HQ node)",
+    "last_updated": "2025-02-01",
+    "notes": "Update 'ip' fields with real IPs after provisioning. Use provision_node.sh to add new nodes."
+  },
+  "nodes": [
+    {
+      "node_id": "bob",
+      "display_name": "Bob",
+      "role": "hq",
+      "hardware": {
+        "model": "Mac Mini M4",
+        "cpu": "Apple M4",
+        "ram_gb": 16,
+        "storage_gb": 512,
+        "architecture": "arm64"
+      },
+      "network": {
+        "ip": "192.168.1.10",
+        "hostname": "bob.local",
+        "mac_address": ""
+      },
+      "services": {
+        "ollama": true,
+        "ollama_port": 11434,
+        "ollama_host": "0.0.0.0",
+        "docker": true,
+        "registry_api": true,
+        "registry_api_port": 8765,
+        "harpa": true,
+        "openclaw": true
+      },
+      "models_loaded": [
+        "llama3.2:3b",
+        "nomic-embed-text"
+      ],
+      "status": "active",
+      "notes": "HQ node. Runs OpenClaw conductor, node registry API, health monitor. Low-power routing model only (3B). Heavy inference delegated to Maestro.",
+      "added_date": "2025-02-01"
+    },
+    {
+      "node_id": "maestro",
+      "display_name": "Maestro",
+      "role": "llm_worker",
+      "hardware": {
+        "model": "Intel iMac 27-inch 2019",
+        "cpu": "Intel Core i9-9900K",
+        "ram_gb": 64,
+        "storage_gb": 2000,
+        "architecture": "x86_64",
+        "notes": "No Apple Metal GPU acceleration. CPU-only inference. Large RAM allows 70B models."
+      },
+      "network": {
+        "ip": "192.168.1.20",
+        "hostname": "maestro.local",
+        "mac_address": ""
+      },
+      "services": {
+        "ollama": true,
+        "ollama_port": 11434,
+        "ollama_host": "0.0.0.0",
+        "docker": false,
+        "registry_api": false,
+        "harpa": true,
+        "openclaw": false
+      },
+      "models_loaded": [
+        "llama3.1:8b",
+        "llama3.1:70b",
+        "mistral:7b",
+        "nomic-embed-text"
+      ],
+      "status": "active",
+      "notes": "64GB Intel iMac. CPU-only inference (no Metal). Slow for interactive tasks (~8 tok/s on 8B) but can load 70B due to large RAM. Priority 40 in routing (lower than Apple Silicon). Good for batch/overnight tasks.",
+      "added_date": "2025-02-01"
+    },
+    {
+      "node_id": "stagehand",
+      "display_name": "Stagehand",
+      "role": "browser_node",
+      "hardware": {
+        "model": "Intel iMac",
+        "cpu": "Intel Core i5",
+        "ram_gb": 8,
+        "storage_gb": 500,
+        "architecture": "x86_64",
+        "notes": "8GB RAM - insufficient for any LLM inference. Chrome + HARPA only."
+      },
+      "network": {
+        "ip": "192.168.1.30",
+        "hostname": "stagehand.local",
+        "mac_address": ""
+      },
+      "services": {
+        "ollama": false,
+        "docker": false,
+        "registry_api": false,
+        "harpa": true,
+        "openclaw": false
+      },
+      "models_loaded": [],
+      "status": "active",
+      "notes": "Browser automation only. HARPA AI Chrome extension for D-Tools Cloud and browser-based tasks. No LLM capability.",
+      "added_date": "2025-02-01"
+    },
+    {
+      "node_id": "_template_new_node",
+      "display_name": "[NODE NAME]",
+      "role": "full_worker",
+      "hardware": {
+        "model": "Mac Mini M4",
+        "cpu": "Apple M4",
+        "ram_gb": 24,
+        "storage_gb": 512,
+        "architecture": "arm64"
+      },
+      "network": {
+        "ip": "192.168.1.XX",
+        "hostname": "[nodename].local",
+        "mac_address": ""
+      },
+      "services": {
+        "ollama": true,
+        "ollama_port": 11434,
+        "ollama_host": "0.0.0.0",
+        "docker": true,
+        "registry_api": false,
+        "harpa": false,
+        "openclaw": false
+      },
+      "models_loaded": [
+        "llama3.2:3b",
+        "llama3.1:8b",
+        "nomic-embed-text"
+      ],
+      "status": "template",
+      "notes": "TEMPLATE — copy this entry and fill in real values when adding a new node. Delete this template entry when done.",
+      "added_date": ""
+    }
+  ]
+}

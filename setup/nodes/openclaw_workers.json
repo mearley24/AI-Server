@@ -1,0 +1,170 @@
+{
+  "_meta": {
+    "description": "OpenClaw Worker Configuration — Symphony Smart Homes AI Network",
+    "version": "1.0.0",
+    "managed_by": "Bob (HQ node)",
+    "last_updated": "2025-02-01",
+    "notes": "OpenClaw reads this on startup and on SIGHUP (hot reload). Edit workers array to add/remove nodes. Routing rules in 'routing_rules' section."
+  },
+  "workers": [
+    {
+      "worker_id": "bob_local",
+      "display_name": "Bob (local)",
+      "node_id": "bob",
+      "type": "ollama_local",
+      "endpoint": "http://localhost:11434",
+      "priority": 100,
+      "max_concurrent": 3,
+      "models_available": [
+        "llama3.2:3b",
+        "nomic-embed-text"
+      ],
+      "task_types": ["route", "classify", "embed"],
+      "enabled": true,
+      "notes": "Bob's local Ollama. Only for routing/classification (3B model). Never send heavy inference here."
+    },
+    {
+      "worker_id": "maestro_ollama",
+      "display_name": "Maestro (LLM)",
+      "node_id": "maestro",
+      "type": "ollama_remote",
+      "endpoint": "http://192.168.1.20:11434",
+      "priority": 40,
+      "max_concurrent": 2,
+      "models_available": [
+        "llama3.1:8b",
+        "llama3.1:70b",
+        "mistral:7b",
+        "nomic-embed-text"
+      ],
+      "task_types": ["reason", "summarize", "write", "analyze", "code", "qa"],
+      "enabled": true,
+      "notes": "64GB Intel iMac. CPU-only (no Metal). Lower priority due to slow tok/s. Best for 70B tasks (only node that can handle them currently). 8B tasks should prefer Apple Silicon when available."
+    },
+    {
+      "worker_id": "stagehand_harpa",
+      "display_name": "Stagehand (HARPA)",
+      "node_id": "stagehand",
+      "type": "harpa_grid",
+      "endpoint": "harpa_grid",
+      "priority": 70,
+      "max_concurrent": 1,
+      "models_available": [],
+      "task_types": ["browser", "scrape", "dtools", "form_fill"],
+      "enabled": true,
+      "notes": "Browser automation only via HARPA AI Chrome extension. Handles D-Tools Cloud tasks, web form filling, screenshot capture."
+    },
+    {
+      "worker_id": "maestro_harpa",
+      "display_name": "Maestro (HARPA)",
+      "node_id": "maestro",
+      "type": "harpa_grid",
+      "endpoint": "harpa_grid",
+      "priority": 60,
+      "max_concurrent": 1,
+      "models_available": [],
+      "task_types": ["browser", "scrape", "dtools"],
+      "enabled": true,
+      "notes": "Secondary HARPA worker on Maestro. Lower priority than Stagehand for browser tasks."
+    },
+    {
+      "worker_id": "cloud_api",
+      "display_name": "Cloud API (Fallback)",
+      "node_id": null,
+      "type": "openai_api",
+      "endpoint": "https://api.openai.com/v1",
+      "priority": 10,
+      "max_concurrent": 5,
+      "models_available": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4-turbo",
+        "gpt-3.5-turbo"
+      ],
+      "task_types": ["reason", "summarize", "write", "analyze", "code", "qa", "route", "classify"],
+      "enabled": true,
+      "notes": "Cloud API fallback. Used when all local workers are busy or offline. Priority 10 = always last resort."
+    },
+    {
+      "worker_id": "_template_new_apple_silicon_worker",
+      "display_name": "[NODE NAME] (LLM)",
+      "node_id": "[node_id from nodes_registry.json]",
+      "type": "ollama_remote",
+      "endpoint": "http://192.168.1.XX:11434",
+      "priority": 90,
+      "max_concurrent": 2,
+      "models_available": [
+        "llama3.2:3b",
+        "llama3.1:8b",
+        "nomic-embed-text"
+      ],
+      "task_types": ["reason", "summarize", "write", "analyze", "code", "qa"],
+      "enabled": false,
+      "notes": "TEMPLATE for Apple Silicon worker (M4 Mac Mini or Mac Studio). Set enabled=true and update endpoint/node_id after provisioning. Priority 90 = strongly preferred over Maestro (40) and cloud (10)."
+    }
+  ],
+  "routing_rules": [
+    {
+      "rule_id": "classify_route",
+      "description": "Fast classification and routing tasks",
+      "task_types": ["classify", "route"],
+      "preferred_workers": ["bob_local"],
+      "fallback": ["maestro_ollama", "cloud_api"],
+      "model_preference": "llama3.2:3b",
+      "notes": "Bob handles routing locally to minimize latency. No need to send to remote workers."
+    },
+    {
+      "rule_id": "embed_route",
+      "description": "Embedding generation",
+      "task_types": ["embed"],
+      "preferred_workers": ["bob_local"],
+      "fallback": ["maestro_ollama"],
+      "model_preference": "nomic-embed-text",
+      "notes": "Embeddings are lightweight; Bob handles them locally."
+    },
+    {
+      "rule_id": "general_llm_route",
+      "description": "General LLM tasks (summarize, write, analyze, qa)",
+      "task_types": ["summarize", "write", "analyze", "qa"],
+      "preferred_workers": ["maestro_ollama"],
+      "fallback": ["cloud_api"],
+      "model_preference": "llama3.1:8b",
+      "notes": "Current network: Maestro is the only heavy LLM worker. Future Apple Silicon workers will be added here at priority 90+."
+    },
+    {
+      "rule_id": "reasoning_route",
+      "description": "Complex reasoning and long-form generation",
+      "task_types": ["reason"],
+      "preferred_workers": ["maestro_ollama"],
+      "fallback": ["cloud_api"],
+      "model_preference": "llama3.1:70b",
+      "notes": "70B model preferred for complex reasoning. Only Maestro can run 70B currently."
+    },
+    {
+      "rule_id": "code_route",
+      "description": "Code generation and review",
+      "task_types": ["code"],
+      "preferred_workers": ["maestro_ollama"],
+      "fallback": ["cloud_api"],
+      "model_preference": "llama3.1:8b",
+      "notes": "Code tasks. Will prefer Apple Silicon workers when added (faster tok/s)."
+    },
+    {
+      "rule_id": "browser_route",
+      "description": "Browser automation and D-Tools Cloud tasks",
+      "task_types": ["browser", "scrape", "dtools", "form_fill"],
+      "preferred_workers": ["stagehand_harpa", "maestro_harpa"],
+      "fallback": [],
+      "model_preference": null,
+      "notes": "Browser tasks must go to HARPA Grid workers. No cloud fallback (HARPA is browser-only)."
+    }
+  ],
+  "global_settings": {
+    "default_timeout_s": 120,
+    "max_retries": 2,
+    "worker_selection_strategy": "priority_with_availability",
+    "health_check_interval_s": 60,
+    "offline_worker_retry_after_s": 300,
+    "log_all_routing_decisions": true
+  }
+}
