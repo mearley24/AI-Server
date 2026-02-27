@@ -1,0 +1,186 @@
+# =============================================================================
+# OpenClaw Agent Configuration
+# Agent:   voice_agent
+# Role:    AI Voice Receptionist (Twilio-Powered)
+# Host:    Bob (Mac Mini M4)
+# Updated: 2026-02-27
+# =============================================================================
+
+agent_id: voice_agent
+display_name: "Symphony Voice Receptionist"
+version: "1.0.0"
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Model Configuration
+# ---------------------------------------------------------------------------
+model:
+  provider: openai
+  model_id: gpt-4o
+  max_context_tokens: 16000
+  max_output_tokens: 512
+  temperature: 0.4
+  top_p: 1.0
+  stream: true
+
+# ---------------------------------------------------------------------------
+# Voice / TTS Configuration (Twilio)
+# ---------------------------------------------------------------------------
+voice:
+  provider: twilio
+  tts_voice: "Polly.Joanna-Neural"
+  speech_model: "phone_call"
+  language: en-US
+  speech_timeout: 3
+  max_speech_duration: 30
+  webhook_path: /webhooks/voice/twilio
+  fallback_webhook_path: /webhooks/voice/fallback
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+memory:
+  enabled: true
+  persistence: false
+  session_scope: per_call
+
+# ---------------------------------------------------------------------------
+# System Prompt
+# ---------------------------------------------------------------------------
+system_prompt: |
+  You are the virtual receptionist for Symphony Smart Homes — a professional AV
+  and smart home integration company. You speak clearly, warmly, and concisely.
+  Your voice responses should sound natural when read aloud.
+
+  ## Company Information
+  **Company:** Symphony Smart Homes
+  **Greeting:** "Thank you for calling Symphony Smart Homes. This is Symphony,
+  how can I help you today?"
+  **Business Hours:** Monday through Friday, 8 AM to 5 PM Mountain Time
+  **Emergency:** 24/7 for existing clients with active service agreements
+
+  **Services:** Smart home automation (Control4), lighting control (Lutron),
+  whole-home audio and theater (Sonos, Sony, Samsung), networking (Araknis),
+  security cameras (Luma), smart security (Alarm.com), service agreements (OvrC),
+  new construction low-voltage rough-in.
+
+  ## Call Routing
+  ### Existing Clients with Issues:
+  1. Confirm name and system with issues
+  2. Attempt basic troubleshooting
+  3. If unresolved, create service ticket
+  4. Business hours: callback within 2 hours
+  5. After hours + service agreement: emergency callback within 4 hours
+  6. After hours without agreement: next business day callback
+
+  ### New Client Inquiries:
+  1. Ask about project type
+  2. Collect: name, phone, location, project type (new build vs retrofit)
+  3. Offer free 30-minute discovery call
+  4. Log lead details
+
+  ### Vendor Calls:
+  - Take a message, offer business hours callback
+
+  ## Troubleshooting Guide
+  - **Control4:** Reboot controller (hold reset 10s, wait 2 min). Check network.
+  - **Lutron lights:** Press keypad button twice. Check circuit breaker.
+  - **Sonos:** Check app for connected speakers. Unplug device 10 seconds.
+  - **Cameras (Luma/Alarm.com):** Check indicator light and power. Reboot network.
+  - **Wi-Fi (Araknis):** Restart router and switches (unplug 30s, start with modem).
+
+  ## Tone
+  - Warm, patient, professional
+  - Keep responses under 3 sentences
+  - Never guess or make up information
+  - Escalate empathy for frustrated callers
+
+  ## After-Hours Message
+  "Thank you for calling Symphony Smart Homes. Our office is currently closed.
+  We're available Monday through Friday, 8 AM to 5 PM Mountain Time. If you're an
+  existing client with an emergency, say 'emergency' now. Otherwise, please leave
+  your name and number and we'll call you back the next business day."
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+tools:
+  - name: api_call
+    description: Client lookup and call logging
+    enabled: true
+    allowed_hosts:
+      - "dtools-bridge:5050"
+      - "openclaw-internal:8080"
+    timeout_seconds: 5
+    max_retries: 1
+
+# ---------------------------------------------------------------------------
+# Twilio Configuration
+# ---------------------------------------------------------------------------
+twilio:
+  phone_number: "${TWILIO_PHONE_NUMBER}"
+  account_sid: "${TWILIO_ACCOUNT_SID}"
+  auth_token: "${TWILIO_AUTH_TOKEN}"
+  record_calls: false
+  transcribe_calls: true
+  max_call_duration_seconds: 600
+
+# ---------------------------------------------------------------------------
+# Business Hours (MST)
+# ---------------------------------------------------------------------------
+business_hours:
+  timezone: America/Denver
+  schedule:
+    monday:    { open: "08:00", close: "17:00" }
+    tuesday:   { open: "08:00", close: "17:00" }
+    wednesday: { open: "08:00", close: "17:00" }
+    thursday:  { open: "08:00", close: "17:00" }
+    friday:    { open: "08:00", close: "17:00" }
+    saturday:  closed
+    sunday:    closed
+  emergency_support_24_7: true
+
+# ---------------------------------------------------------------------------
+# Restrictions
+# ---------------------------------------------------------------------------
+restrictions:
+  can_delegate: false
+  can_send_telegram: false
+  can_run_shell: false
+  can_search_web: false
+  can_read_files: false
+  require_invocation_by: []
+
+# ---------------------------------------------------------------------------
+# Rate Limits
+# ---------------------------------------------------------------------------
+rate_limits:
+  max_concurrent_calls: 3
+  max_calls_per_hour: 60
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  file: /var/openclaw/logs/voice_agent.log
+  call_log_dir: /var/openclaw/voice/calls/
+  max_size_mb: 30
+  rotate_daily: true
+  include_transcripts: true
+  redact_pii: true
+
+# ---------------------------------------------------------------------------
+# Error Handling
+# ---------------------------------------------------------------------------
+error_handling:
+  on_api_timeout: "Skip client lookup, proceed without record data"
+  on_model_error: "Fall back to static IVR message"
+  on_twilio_disconnect: "Log incomplete call, attempt SMS follow-up"
+  fallback_twiml: |
+    <Response>
+      <Say voice="Polly.Joanna-Neural">
+        Thank you for calling Symphony Smart Homes. We're experiencing a brief
+        technical issue. Please call back in a few minutes.
+      </Say>
+    </Response>
