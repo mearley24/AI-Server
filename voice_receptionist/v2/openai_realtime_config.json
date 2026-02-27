@@ -1,0 +1,366 @@
+{
+  "_comment": "OpenAI Realtime API configuration for Bob the Conductor — Symphony Smart Homes",
+  "_version": "2.0",
+  "_last_updated": "2026-02",
+
+  "session": {
+    "model": "gpt-4o-realtime-preview",
+    "modalities": ["text", "audio"],
+
+    "voice": "alloy",
+
+    "input_audio_format": "g711_ulaw",
+    "output_audio_format": "g711_ulaw",
+
+    "input_audio_transcription": {
+      "model": "whisper-1"
+    },
+
+    "turn_detection": {
+      "type": "server_vad",
+      "threshold": 0.5,
+      "prefix_padding_ms": 300,
+      "silence_duration_ms": 500
+    },
+
+    "temperature": 0.7,
+    "max_response_output_tokens": 1024
+  },
+
+  "tools": [
+    {
+      "type": "function",
+      "name": "transfer_to_owner",
+      "description": "Transfer the call to the owner's cell phone. Use when the caller needs to speak directly with Mike, or when an escalation is required.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Brief reason for the transfer (1-2 sentences). Will be sent as an SMS to the owner before the transfer."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": ["routine", "urgent", "emergency"],
+            "description": "How urgently the owner needs to take this call."
+          }
+        },
+        "required": ["reason", "urgency"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "schedule_callback",
+      "description": "Schedule a callback from the owner or a technician. Use when the caller can't reach who they need right now and prefers a return call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caller_name": {
+            "type": "string",
+            "description": "Caller's name as they gave it."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Best callback number (E.164 or 10-digit)."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why they're calling and what they need from the callback."
+          },
+          "preferred_time": {
+            "type": "string",
+            "description": "When they'd like to be called back. Free text (e.g., 'tomorrow morning', 'Tuesday after 2pm')."
+          },
+          "priority": {
+            "type": "integer",
+            "enum": [1, 2, 3],
+            "description": "1 = urgent (same day), 2 = soon (within 24h), 3 = routine (next business day)."
+          }
+        },
+        "required": ["caller_name", "phone_number", "reason"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "send_sms_summary",
+      "description": "Send the caller an SMS recap of the call. Use after any call where you gathered information, confirmed an appointment, or took a message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_number": {
+            "type": "string",
+            "description": "Caller's phone number to send the SMS to."
+          },
+          "template_key": {
+            "type": "string",
+            "enum": [
+              "callback_confirmation",
+              "appointment_confirmation",
+              "service_ticket_opened",
+              "lead_follow_up",
+              "after_hours_acknowledgment",
+              "escalation_notification",
+              "general_follow_up"
+            ],
+            "description": "Which SMS template to use."
+          },
+          "template_vars": {
+            "type": "object",
+            "description": "Variables to fill in the template (e.g., caller_name, callback_time, appt_date)."
+          }
+        },
+        "required": ["to_number", "template_key"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "log_caller_info",
+      "description": "Save caller information to the CRM database. Call this at the end of any call to capture what was discussed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone_number": {
+            "type": "string",
+            "description": "Caller's phone number."
+          },
+          "name": {
+            "type": "string",
+            "description": "Caller's name if provided."
+          },
+          "company": {
+            "type": "string",
+            "description": "Caller's company if provided."
+          },
+          "intent": {
+            "type": "string",
+            "description": "What the caller wanted (e.g., 'new home theater', 'service call', 'pricing inquiry')."
+          },
+          "summary": {
+            "type": "string",
+            "description": "1-3 sentence summary of the call."
+          },
+          "sentiment": {
+            "type": "string",
+            "enum": ["positive", "neutral", "negative"],
+            "description": "Caller's emotional tone."
+          },
+          "topics": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of topics discussed (e.g., ['home theater', 'Lutron lighting', 'pricing'])."
+          },
+          "next_steps": {
+            "type": "string",
+            "description": "What happens next (e.g., 'Owner will call back Tuesday', 'Consultation scheduled for March 5')."
+          }
+        },
+        "required": ["phone_number", "intent", "summary"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "check_appointment_availability",
+      "description": "Check available appointment slots for a consultation or service call. Use when a caller wants to schedule something.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_type": {
+            "type": "string",
+            "enum": ["consultation", "service_call", "installation", "walkthrough"],
+            "description": "Type of appointment needed."
+          },
+          "preferred_days": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Caller's preferred days or time windows (free text, e.g., ['Tuesday afternoon', 'any day next week'])."
+          }
+        },
+        "required": ["appointment_type"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "schedule_consultation",
+      "description": "Book a consultation with the owner. This is the primary goal for new sales inquiries.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caller_name": {
+            "type": "string",
+            "description": "Client's name."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Client's phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Client's email address if provided."
+          },
+          "project_type": {
+            "type": "string",
+            "description": "Type of project (e.g., 'new construction', 'renovation', 'upgrade')."
+          },
+          "systems_interested": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Systems the client is interested in."
+          },
+          "preferred_time": {
+            "type": "string",
+            "description": "Preferred consultation time."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Any additional notes about the project or client."
+          }
+        },
+        "required": ["caller_name", "phone_number", "project_type"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "schedule_service_call",
+      "description": "Book a technician service call for an existing client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_name": {
+            "type": "string",
+            "description": "Client's name."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Client's phone number."
+          },
+          "issue_description": {
+            "type": "string",
+            "description": "Description of the issue requiring service."
+          },
+          "system_affected": {
+            "type": "string",
+            "description": "Which system is having the issue (e.g., 'Control4', 'Lutron lighting', 'home theater')."
+          },
+          "urgency": {
+            "type": "string",
+            "enum": ["routine", "soon", "urgent"],
+            "description": "How urgent the service call is."
+          },
+          "preferred_time": {
+            "type": "string",
+            "description": "Client's preferred service window."
+          }
+        },
+        "required": ["client_name", "phone_number", "issue_description", "urgency"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "log_support_ticket",
+      "description": "Create a support ticket for an existing client's issue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_phone": {
+            "type": "string",
+            "description": "Client's phone number."
+          },
+          "issue": {
+            "type": "string",
+            "description": "Full description of the issue."
+          },
+          "system": {
+            "type": "string",
+            "description": "Affected system."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "critical"],
+            "description": "Ticket severity."
+          },
+          "troubleshooting_done": {
+            "type": "string",
+            "description": "Any troubleshooting already attempted."
+          }
+        },
+        "required": ["client_phone", "issue", "severity"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "send_owner_emergency_text",
+      "description": "Send an immediate emergency SMS to the owner's cell. Use ONLY for genuine emergencies (safety, security, major system failure).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caller_number": {
+            "type": "string",
+            "description": "Caller's phone number."
+          },
+          "caller_name": {
+            "type": "string",
+            "description": "Caller's name if known."
+          },
+          "situation": {
+            "type": "string",
+            "description": "Brief description of the emergency situation."
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["P1", "P2"],
+            "description": "P1 = life/safety or total failure. P2 = major functional failure."
+          }
+        },
+        "required": ["caller_number", "situation", "severity"]
+      }
+    },
+    {
+      "type": "function",
+      "name": "log_vendor_call",
+      "description": "Log a call from a vendor or sales representative.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_name": {
+            "type": "string",
+            "description": "Vendor contact's name."
+          },
+          "company": {
+            "type": "string",
+            "description": "Vendor's company name."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Vendor's callback number."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Reason for the call."
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "Whether this is time-sensitive (e.g., order issue)."
+          }
+        },
+        "required": ["company", "purpose"]
+      }
+    }
+  ],
+
+  "tool_choice": "auto",
+
+  "behavior_notes": {
+    "tool_usage_policy": "Always call log_caller_info at the end of every call. Call send_sms_summary when the caller has given their number and there's useful information to send. Use transfer_to_owner sparingly — only when the caller explicitly asks or the situation requires immediate human intervention.",
+    "pricing_policy": "Never quote prices. Pricing is always handled during the consultation with the owner.",
+    "emergency_policy": "If any P1 emergency keywords are detected, call send_owner_emergency_text immediately — do not wait for the caller to confirm.",
+    "recording_consent": "Bob does not need to announce call recording unless the deployment state requires it. Check local law for your state."
+  },
+
+  "websocket": {
+    "url": "wss://api.openai.com/v1/realtime",
+    "reconnect": {
+      "max_attempts": 3,
+      "backoff_seconds": [1, 2, 4]
+    }
+  }
+}
