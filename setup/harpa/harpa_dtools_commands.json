@@ -1,0 +1,627 @@
+{
+  "_meta": {
+    "description": "Symphony Smart Homes — HARPA AI custom commands for D-Tools Cloud automation",
+    "version": "1.0.0",
+    "updated": "2024-01",
+    "author": "Bob the Conductor",
+    "usage": "Import this file into HARPA AI: HARPA sidebar > Commands > Import",
+    "target_url": "https://portal.d-tools.com",
+    "commands": 6
+  },
+  "commands": [
+    {
+      "id": "dtools_create_project",
+      "name": "D-Tools: Create Project",
+      "description": "Creates a new project in D-Tools Cloud with client name, address, and type",
+      "trigger": {
+        "type": "api",
+        "requires_page": "https://portal.d-tools.com"
+      },
+      "variables": [
+        {
+          "name": "client_name",
+          "type": "string",
+          "description": "Client last name, first name (e.g., 'Smith, John')",
+          "required": true
+        },
+        {
+          "name": "project_name",
+          "type": "string",
+          "description": "Full project name (e.g., 'Smith Residence - 2024')",
+          "required": true
+        },
+        {
+          "name": "address",
+          "type": "string",
+          "description": "Project address (e.g., '123 Main St, Denver CO 80201')",
+          "required": false,
+          "default": ""
+        },
+        {
+          "name": "project_type",
+          "type": "string",
+          "description": "Project type",
+          "required": false,
+          "default": "Residential",
+          "options": ["Residential", "Commercial", "Service", "Other"]
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "description": "Optional notes for the project",
+          "required": false,
+          "default": ""
+        }
+      ],
+      "steps": [
+        {
+          "type": "navigate",
+          "url": "https://portal.d-tools.com/projects",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='new-project-button'], button:contains('New Project'), a:contains('New Project')",
+          "timeout_ms": 10000
+        },
+        {
+          "type": "click",
+          "selector": "[data-testid='new-project-button'], button:contains('New Project')",
+          "description": "Click New Project button"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "input[name='projectName'], input[placeholder*='project name'], input[placeholder*='Project Name']",
+          "timeout_ms": 5000
+        },
+        {
+          "type": "fill",
+          "selector": "input[name='projectName'], input[placeholder*='project name']",
+          "value": "{{project_name}}",
+          "description": "Enter project name"
+        },
+        {
+          "type": "fill_if_exists",
+          "selector": "input[name='clientName'], input[placeholder*='client']",
+          "value": "{{client_name}}",
+          "description": "Enter client name (if separate field)"
+        },
+        {
+          "type": "fill_if_exists",
+          "selector": "input[name='address'], input[placeholder*='address']",
+          "value": "{{address}}",
+          "description": "Enter address"
+        },
+        {
+          "type": "select_if_exists",
+          "selector": "select[name='projectType'], [data-testid='project-type-select']",
+          "value": "{{project_type}}",
+          "description": "Select project type"
+        },
+        {
+          "type": "fill_if_exists",
+          "selector": "textarea[name='notes'], textarea[placeholder*='notes']",
+          "value": "{{notes}}",
+          "description": "Enter notes"
+        },
+        {
+          "type": "click",
+          "selector": "button[type='submit'], button:contains('Create'), button:contains('Save')",
+          "description": "Submit form"
+        },
+        {
+          "type": "wait",
+          "wait_for": "url_contains",
+          "url_pattern": "/projects/",
+          "timeout_ms": 10000,
+          "description": "Wait for redirect to project page"
+        },
+        {
+          "type": "extract",
+          "extract": {
+            "project_id": {
+              "selector": "[data-project-id]",
+              "attribute": "data-project-id"
+            },
+            "project_url": {
+              "source": "url"
+            },
+            "project_status": {
+              "selector": "[data-testid='project-status'], .project-status",
+              "text": true
+            }
+          },
+          "description": "Extract created project details"
+        }
+      ],
+      "on_success": {
+        "return": {
+          "created": true,
+          "project_name": "{{project_name}}",
+          "client_name": "{{client_name}}",
+          "project_id": "{{extracted.project_id}}",
+          "project_url": "{{extracted.project_url}}",
+          "status": "{{extracted.project_status}}"
+        }
+      },
+      "on_error": {
+        "return": {
+          "created": false,
+          "error": "{{error_message}}",
+          "project_name": "{{project_name}}"
+        }
+      }
+    },
+
+    {
+      "id": "dtools_import_equipment_csv",
+      "name": "D-Tools: Import Equipment CSV",
+      "description": "Imports an equipment list CSV into an existing D-Tools Cloud project",
+      "trigger": {
+        "type": "api",
+        "requires_page": "https://portal.d-tools.com"
+      },
+      "variables": [
+        {
+          "name": "project_name",
+          "type": "string",
+          "description": "Project name to search for and import into",
+          "required": true
+        },
+        {
+          "name": "csv_content",
+          "type": "string",
+          "description": "CSV content as a string (will be saved as temp file)",
+          "required": true
+        },
+        {
+          "name": "csv_filename",
+          "type": "string",
+          "description": "Filename for the CSV (used in UI)",
+          "required": false,
+          "default": "equipment.csv"
+        }
+      ],
+      "steps": [
+        {
+          "type": "navigate",
+          "url": "https://portal.d-tools.com/projects",
+          "wait_for": "selector",
+          "wait_selector": "input[placeholder*='search'], input[type='search']",
+          "timeout_ms": 10000
+        },
+        {
+          "type": "fill",
+          "selector": "input[placeholder*='search'], input[type='search']",
+          "value": "{{project_name}}",
+          "description": "Search for project"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='project-row'], tr:contains('{{project_name}}')",
+          "timeout_ms": 5000
+        },
+        {
+          "type": "click",
+          "selector": "tr:contains('{{project_name}}') a, [data-testid='project-row']:contains('{{project_name}}')",
+          "description": "Open project"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='import-button'], button:contains('Import')",
+          "timeout_ms": 8000
+        },
+        {
+          "type": "click",
+          "selector": "[data-testid='import-button'], button:contains('Import')",
+          "description": "Click Import button"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='import-csv-option'], button:contains('CSV'), a:contains('CSV')",
+          "timeout_ms": 3000
+        },
+        {
+          "type": "click",
+          "selector": "[data-testid='import-csv-option'], button:contains('CSV')",
+          "description": "Select CSV import option"
+        },
+        {
+          "type": "file_upload_from_string",
+          "selector": "input[type='file']",
+          "content": "{{csv_content}}",
+          "filename": "{{csv_filename}}",
+          "mime_type": "text/csv",
+          "description": "Upload CSV content"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='confirm-import'], button:contains('Confirm'), button:contains('Import Items')",
+          "timeout_ms": 5000
+        },
+        {
+          "type": "click",
+          "selector": "[data-testid='confirm-import'], button:contains('Confirm')",
+          "description": "Confirm import"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='import-success'], .import-success, [role='alert']:contains('success')",
+          "timeout_ms": 15000,
+          "description": "Wait for import confirmation"
+        },
+        {
+          "type": "extract",
+          "extract": {
+            "items_imported": {
+              "selector": "[data-testid='import-count'], .import-count",
+              "text": true
+            }
+          }
+        }
+      ],
+      "on_success": {
+        "return": {
+          "imported": true,
+          "project_name": "{{project_name}}",
+          "items_count": "{{extracted.items_imported}}"
+        }
+      },
+      "on_error": {
+        "return": {
+          "imported": false,
+          "error": "{{error_message}}",
+          "project_name": "{{project_name}}"
+        }
+      }
+    },
+
+    {
+      "id": "dtools_get_project_status",
+      "name": "D-Tools: Get Project Status",
+      "description": "Fetches the current status and phase of a D-Tools Cloud project",
+      "trigger": {
+        "type": "api",
+        "requires_page": "https://portal.d-tools.com"
+      },
+      "variables": [
+        {
+          "name": "project_name",
+          "type": "string",
+          "description": "Project name to look up",
+          "required": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "navigate",
+          "url": "https://portal.d-tools.com/projects",
+          "wait_for": "selector",
+          "wait_selector": "input[placeholder*='search'], input[type='search']",
+          "timeout_ms": 10000
+        },
+        {
+          "type": "fill",
+          "selector": "input[placeholder*='search'], input[type='search']",
+          "value": "{{project_name}}"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='project-row'], tr:contains('{{project_name}}')",
+          "timeout_ms": 5000
+        },
+        {
+          "type": "extract",
+          "extract": {
+            "status": {
+              "selector": "tr:contains('{{project_name}}') [data-testid='project-status'], tr:contains('{{project_name}}') .status-badge",
+              "text": true
+            },
+            "phase": {
+              "selector": "tr:contains('{{project_name}}') [data-testid='project-phase'], tr:contains('{{project_name}}') .phase",
+              "text": true
+            },
+            "last_modified": {
+              "selector": "tr:contains('{{project_name}}') [data-testid='last-modified'], tr:contains('{{project_name}}') .modified-date",
+              "text": true
+            },
+            "total_value": {
+              "selector": "tr:contains('{{project_name}}') [data-testid='project-value'], tr:contains('{{project_name}}') .project-value",
+              "text": true
+            }
+          }
+        }
+      ],
+      "on_success": {
+        "return": {
+          "found": true,
+          "project_name": "{{project_name}}",
+          "status": "{{extracted.status}}",
+          "phase": "{{extracted.phase}}",
+          "last_modified": "{{extracted.last_modified}}",
+          "total_value": "{{extracted.total_value}}"
+        }
+      },
+      "on_error": {
+        "return": {
+          "found": false,
+          "error": "{{error_message}}",
+          "project_name": "{{project_name}}"
+        }
+      }
+    },
+
+    {
+      "id": "dtools_export_proposal",
+      "name": "D-Tools: Export Proposal",
+      "description": "Triggers a proposal export from D-Tools Cloud and returns the download URL",
+      "trigger": {
+        "type": "api",
+        "requires_page": "https://portal.d-tools.com"
+      },
+      "variables": [
+        {
+          "name": "project_name",
+          "type": "string",
+          "description": "Project name to export proposal for",
+          "required": true
+        },
+        {
+          "name": "export_format",
+          "type": "string",
+          "description": "Export format",
+          "required": false,
+          "default": "PDF",
+          "options": ["PDF", "Word", "Excel"]
+        }
+      ],
+      "steps": [
+        {
+          "type": "navigate",
+          "url": "https://portal.d-tools.com/projects",
+          "wait_for": "selector",
+          "wait_selector": "input[placeholder*='search']",
+          "timeout_ms": 10000
+        },
+        {
+          "type": "fill",
+          "selector": "input[placeholder*='search']",
+          "value": "{{project_name}}"
+        },
+        {
+          "type": "click",
+          "selector": "tr:contains('{{project_name}}') a"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='export-button'], button:contains('Export'), button:contains('Print')",
+          "timeout_ms": 8000
+        },
+        {
+          "type": "click",
+          "selector": "[data-testid='export-button'], button:contains('Export')"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='export-pdf'], button:contains('{{export_format}}')",
+          "timeout_ms": 3000
+        },
+        {
+          "type": "click",
+          "selector": "[data-testid='export-pdf'], button:contains('{{export_format}}')"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='download-link'], a[href*='.pdf'], a[href*='download']",
+          "timeout_ms": 20000,
+          "description": "Wait for export to complete"
+        },
+        {
+          "type": "extract",
+          "extract": {
+            "download_url": {
+              "selector": "[data-testid='download-link'], a[href*='.pdf'], a[href*='download']",
+              "attribute": "href"
+            }
+          }
+        }
+      ],
+      "on_success": {
+        "return": {
+          "exported": true,
+          "project_name": "{{project_name}}",
+          "format": "{{export_format}}",
+          "download_url": "{{extracted.download_url}}"
+        }
+      },
+      "on_error": {
+        "return": {
+          "exported": false,
+          "error": "{{error_message}}",
+          "project_name": "{{project_name}}"
+        }
+      }
+    },
+
+    {
+      "id": "dtools_update_project_phase",
+      "name": "D-Tools: Update Project Phase",
+      "description": "Advances a D-Tools Cloud project to a new phase",
+      "trigger": {
+        "type": "api",
+        "requires_page": "https://portal.d-tools.com"
+      },
+      "variables": [
+        {
+          "name": "project_name",
+          "type": "string",
+          "description": "Project name",
+          "required": true
+        },
+        {
+          "name": "new_phase",
+          "type": "string",
+          "description": "New phase to set",
+          "required": true,
+          "options": ["Proposal", "Sold", "Design", "Installation", "Punch List", "Complete", "On Hold", "Cancelled"]
+        },
+        {
+          "name": "notes",
+          "type": "string",
+          "description": "Optional notes for the phase change",
+          "required": false,
+          "default": ""
+        }
+      ],
+      "steps": [
+        {
+          "type": "navigate",
+          "url": "https://portal.d-tools.com/projects",
+          "wait_for": "selector",
+          "wait_selector": "input[placeholder*='search']",
+          "timeout_ms": 10000
+        },
+        {
+          "type": "fill",
+          "selector": "input[placeholder*='search']",
+          "value": "{{project_name}}"
+        },
+        {
+          "type": "click",
+          "selector": "tr:contains('{{project_name}}') a"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='phase-select'], select[name='phase'], [data-testid='update-phase']",
+          "timeout_ms": 8000
+        },
+        {
+          "type": "select",
+          "selector": "[data-testid='phase-select'], select[name='phase']",
+          "value": "{{new_phase}}"
+        },
+        {
+          "type": "fill_if_exists",
+          "selector": "textarea[name='phaseNotes'], textarea[placeholder*='notes']",
+          "value": "{{notes}}"
+        },
+        {
+          "type": "click",
+          "selector": "button[type='submit'], button:contains('Save'), button:contains('Update')"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[role='alert']:contains('success'), .toast-success, [data-testid='save-success']",
+          "timeout_ms": 5000
+        }
+      ],
+      "on_success": {
+        "return": {
+          "updated": true,
+          "project_name": "{{project_name}}",
+          "new_phase": "{{new_phase}}"
+        }
+      },
+      "on_error": {
+        "return": {
+          "updated": false,
+          "error": "{{error_message}}",
+          "project_name": "{{project_name}}"
+        }
+      }
+    },
+
+    {
+      "id": "dtools_search_projects",
+      "name": "D-Tools: Search Projects",
+      "description": "Searches D-Tools Cloud for projects matching a search term and returns a list",
+      "trigger": {
+        "type": "api",
+        "requires_page": "https://portal.d-tools.com"
+      },
+      "variables": [
+        {
+          "name": "search_term",
+          "type": "string",
+          "description": "Search term (client name, project name, or address)",
+          "required": true
+        }
+      ],
+      "steps": [
+        {
+          "type": "navigate",
+          "url": "https://portal.d-tools.com/projects",
+          "wait_for": "selector",
+          "wait_selector": "input[placeholder*='search'], input[type='search']",
+          "timeout_ms": 10000
+        },
+        {
+          "type": "fill",
+          "selector": "input[placeholder*='search'], input[type='search']",
+          "value": "{{search_term}}"
+        },
+        {
+          "type": "wait",
+          "wait_for": "selector",
+          "wait_selector": "[data-testid='project-row'], table tbody tr, .project-list-item",
+          "timeout_ms": 5000
+        },
+        {
+          "type": "extract_all",
+          "extract": {
+            "projects": {
+              "selector": "[data-testid='project-row'], table tbody tr",
+              "fields": {
+                "name": {
+                  "selector": "[data-testid='project-name'], td:nth-child(1)",
+                  "text": true
+                },
+                "client": {
+                  "selector": "[data-testid='client-name'], td:nth-child(2)",
+                  "text": true
+                },
+                "status": {
+                  "selector": "[data-testid='project-status'], td:nth-child(3)",
+                  "text": true
+                },
+                "phase": {
+                  "selector": "[data-testid='project-phase'], td:nth-child(4)",
+                  "text": true
+                },
+                "total": {
+                  "selector": "[data-testid='project-total'], td:nth-child(5)",
+                  "text": true
+                }
+              }
+            }
+          }
+        }
+      ],
+      "on_success": {
+        "return": {
+          "found": true,
+          "search_term": "{{search_term}}",
+          "count": "{{extracted.projects | length}}",
+          "projects": "{{extracted.projects}}"
+        }
+      },
+      "on_error": {
+        "return": {
+          "found": false,
+          "error": "{{error_message}}",
+          "search_term": "{{search_term}}",
+          "projects": []
+        }
+      }
+    }
+  ]
+}
