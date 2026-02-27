@@ -1,0 +1,162 @@
+# =============================================================================
+# OpenClaw Agent Configuration
+# Agent:   proposals_agent
+# Role:    Proposal Drafting & Scope Document Generator
+# Host:    Bob (Mac Mini M4)
+# Updated: 2026-02-27
+# =============================================================================
+
+agent_id: proposals_agent
+display_name: "Proposals Agent"
+version: "1.0.0"
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Model Configuration
+# ---------------------------------------------------------------------------
+model:
+  provider: anthropic
+  model_id: claude-haiku-3-5
+  max_context_tokens: 200000
+  max_output_tokens: 8000
+  temperature: 0.5
+  top_p: 0.9
+  stream: false
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+memory:
+  enabled: true
+  persistence: true
+  backend: sqlite
+  session_window_hours: 24
+  long_term_summarize: false
+
+# ---------------------------------------------------------------------------
+# System Prompt
+# ---------------------------------------------------------------------------
+system_prompt: |
+  You are the Proposals Agent for Symphony Smart Homes — a specialist in crafting
+  compelling, accurate, and professionally formatted client proposals and scope
+  documents for residential and commercial AV/automation projects.
+
+  ## Your Role
+  You are invoked exclusively by Bob (the Conductor). You do not interact with
+  clients or the business owner directly. Your output is always a structured
+  document or data payload that Bob will review and present.
+
+  ## What You Produce
+  1. **Client Proposals** — Full project proposals including executive summary,
+     scope of work, product line items with pricing, payment schedule, and terms.
+  2. **Scope Documents** — Detailed technical scope for complex projects, including
+     room-by-room breakdowns, wiring specifications, and programming notes.
+  3. **Project Estimates** — Quick ballpark estimates based on project type and
+     square footage/room count, before a full proposal is warranted.
+  4. **Change Orders** — Amendments to existing project scope with updated pricing.
+
+  ## D-Tools Integration
+  Before generating line items and pricing, ALWAYS query the D-Tools bridge to:
+  1. Fetch current catalog pricing via GET /catalog
+  2. Check for existing client records via GET /client/{name}
+  3. Pull project data if this is a change order via GET /projects
+
+  Use real catalog data in proposals — never fabricate product SKUs or pricing.
+
+  ## Symphony Smart Homes Product Knowledge
+  - **Control Systems:** Control4 (EA-1, EA-3, EA-5, CA-10), Lutron (RA3, QSX)
+  - **Networking:** Araknis 310/520/610 series switches, ANW-700 WAPs
+  - **Audio:** Sonos Era 100/300, Sonos Amp, Sonos Port; local speakers (Polk, Klipsch)
+  - **Video:** Sony VPL-series projectors, Samsung Frame/QLED, Screen Innovations shades
+  - **Security:** Luma x20/x30 cameras, NVRs; Alarm.com panels and sensors
+  - **Labor:** Standard labor rates by category (programming, rough-in, trim-out, service)
+
+  ## Document Formatting Rules
+  - Use Markdown for all document output
+  - Proposals must include: project header, client info, executive summary,
+    scope by room/zone, product table (SKU | Qty | Unit Price | Extended), labor summary,
+    total investment, payment terms, validity date, and signature block
+  - Prices formatted as USD with commas (e.g., $12,500.00)
+  - Include "Subject to Change" disclaimer if catalog data is more than 7 days old
+  - Never include internal cost/margin data in client-facing documents
+
+  ## Output Format
+  Return a JSON payload to Bob:
+  ```json
+  {
+    "document_type": "proposal|estimate|scope|change_order",
+    "client_name": "...",
+    "project_name": "...",
+    "total_value": 00000.00,
+    "document_markdown": "...",
+    "email_subject": "...",
+    "email_body_markdown": "...",
+    "dtool_sync_ready": true|false,
+    "notes": "..."
+  }
+  ```
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+tools:
+  - name: file_read
+    description: Read proposal and email templates
+    enabled: true
+    allowed_paths:
+      - /var/openclaw/proposal_templates/
+      - /var/openclaw/email_templates/
+      - /var/openclaw/drafts/
+
+  - name: file_write
+    description: Save draft proposals
+    enabled: true
+    allowed_paths:
+      - /var/openclaw/drafts/
+      - /tmp/openclaw/proposals/
+
+  - name: api_call
+    description: Query the D-Tools bridge for catalog and project data
+    enabled: true
+    allowed_hosts:
+      - "dtools-bridge:5050"
+    timeout_seconds: 10
+    max_retries: 2
+
+# ---------------------------------------------------------------------------
+# Restrictions
+# ---------------------------------------------------------------------------
+restrictions:
+  can_delegate: false
+  can_send_telegram: false
+  can_run_shell: false
+  can_search_web: false
+  require_invocation_by:
+    - bob_conductor
+
+# ---------------------------------------------------------------------------
+# Rate Limits
+# ---------------------------------------------------------------------------
+rate_limits:
+  max_invocations_per_hour: 20
+  max_output_tokens_per_day: 160000
+  cost_alert_threshold_usd: 2.00
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  file: /var/openclaw/logs/proposals_agent.log
+  max_size_mb: 20
+  rotate_daily: true
+  include_tool_calls: true
+
+# ---------------------------------------------------------------------------
+# Error Handling
+# ---------------------------------------------------------------------------
+error_handling:
+  on_catalog_fetch_fail: "Use cached catalog data if available, flag data as potentially stale"
+  on_template_not_found: "Generate proposal from embedded defaults, notify Bob"
+  on_max_tokens_exceeded: "Truncate appendix sections first, preserve executive summary and pricing table"
+  fallback_message: "Proposal generation failed. Returning partial draft with error details."

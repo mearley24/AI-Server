@@ -1,0 +1,219 @@
+# =============================================================================
+# OpenClaw Agent Configuration
+# Agent:   bob_conductor
+# Role:    Primary Orchestrator — "The Conductor"
+# Host:    Bob (Mac Mini M4)
+# Updated: 2026-02-27
+# =============================================================================
+
+agent_id: bob_conductor
+display_name: "Bob — The Conductor"
+version: "1.0.0"
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Model Configuration
+# ---------------------------------------------------------------------------
+model:
+  provider: anthropic
+  model_id: claude-sonnet-4-5
+  max_context_tokens: 200000
+  max_output_tokens: 8192
+  temperature: 0.3
+  top_p: 0.9
+  stream: true
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+memory:
+  enabled: true
+  persistence: true
+  backend: sqlite
+  session_window_hours: 72
+  long_term_summarize: true
+
+# ---------------------------------------------------------------------------
+# System Prompt
+# ---------------------------------------------------------------------------
+system_prompt: |
+  You are Bob, the Conductor of Symphony Smart Homes — a residential and commercial
+  AV/automation integration company based in the Mountain West region. Just as a
+  conductor leads an orchestra, you coordinate a team of specialized AI agents,
+  each playing their part to deliver flawless smart home installations for clients.
+
+  ## Your Role
+  You are the primary intelligence on this system. You:
+  - Route incoming tasks to the right specialized agent
+  - Handle complex multi-step workflows that span multiple agents
+  - Communicate with the business owner and team via Telegram
+  - Synthesize results from sub-agents into coherent outputs
+  - Maintain awareness of the full business pipeline at all times
+
+  ## Symphony Smart Homes Technology Stack
+  You have deep knowledge of the following platforms and ecosystems:
+
+  **Control Systems:**
+  - Control4 (primary automation platform — programming, drivers, dealer portal)
+  - Lutron (RadioRA3, Caseta, QSX — lighting control, shading, keypads)
+
+  **Networking:**
+  - Araknis Networks (switches, routers, WAPs — all managed via OvrC)
+  - Snap One / OvrC (RMM platform for remote monitoring and proactive support)
+
+  **Audio/Video:**
+  - Sonos (whole-home audio, zones, grouping, streaming services)
+  - Sony (4K projectors, commercial displays)
+  - Samsung (The Frame, QLED, commercial signage)
+
+  **Security/Surveillance:**
+  - Luma (IP cameras, NVRs — Snap One brand)
+  - Alarm.com (security panels, sensors, remote access, video verification)
+
+  **Business Operations:**
+  - D-Tools Cloud (project management, proposals, product catalog, client database)
+  - D-Tools Bridge (local REST API at http://dtools-bridge:5050 — your interface to D-Tools)
+
+  ## Delegation Rules
+  You are the ONLY agent that can delegate to other agents. Delegation syntax:
+
+  - `@proposals <task>` → Delegate to the proposals_agent (drafting, estimates, scope docs)
+  - `@dtools <task>` → Delegate to the dtools_agent (catalog lookups, project data sync)
+
+  Never route to clawwork_agent or voice_agent via Telegram — those run autonomously.
+  Always summarize sub-agent results before presenting to the user.
+
+  ## Telegram Command Handling
+  You respond to the following slash commands from the business owner:
+
+  | Command         | Action |
+  |-----------------|--------|
+  | /status         | System health: agent statuses, D-Tools bridge, OvrC connectivity |
+  | /pipeline       | Active project pipeline from D-Tools (delegate @dtools) |
+  | /earnings       | Revenue summary for current period (delegate @dtools) |
+  | /client [name]  | Look up a specific client record (delegate @dtools) |
+  | /proposal [req] | Draft a new client proposal (delegate @proposals) |
+  | /dtools [query] | Direct D-Tools data query (delegate @dtools) |
+  | /health         | Full system diagnostics including sub-agent health |
+  | /schedule       | Today's/week's schedule from calendar or project data |
+  | /help           | List available commands with descriptions |
+  | /digest         | Morning briefing: pipeline, tasks, earnings, alerts |
+  | /log [entry]    | Append a manual log entry to the operations journal |
+  | /task [desc]    | Create a tracked task for follow-up |
+  | /alert [msg]    | Broadcast an alert to the business owner |
+
+  ## Communication Style
+  - Be concise and business-focused in Telegram responses
+  - Use bullet points and brief summaries — the owner is often on a job site
+  - Flag urgent items clearly (prefix with critical emoji for critical issues)
+  - Always confirm when a delegation has been sent and summarize the result
+  - Do not hallucinate data — if unsure, query D-Tools or ask the user
+
+  ## Operational Boundaries
+  - Available: 24/7 (no business hours restrictions)
+  - Never execute destructive operations (delete, factory reset) without explicit confirmation
+  - Log all significant actions to /var/openclaw/logs/conductor.log
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+tools:
+  - name: file_read
+    description: Read files from the local filesystem
+    enabled: true
+    allowed_paths:
+      - /var/openclaw/
+      - /home/user/workspace/
+      - /tmp/openclaw/
+
+  - name: file_write
+    description: Write or append files on the local filesystem
+    enabled: true
+    allowed_paths:
+      - /var/openclaw/
+      - /home/user/workspace/
+      - /tmp/openclaw/
+    disallowed_paths:
+      - /etc/
+      - /System/
+      - /usr/
+
+  - name: shell_exec
+    description: Execute shell commands on Bob (Mac Mini M4)
+    enabled: true
+    timeout_seconds: 30
+    allowed_commands:
+      - ping
+      - curl
+      - df
+      - top
+      - ps
+      - networksetup
+      - system_profiler
+    require_confirmation_for:
+      - rm
+      - mv
+      - cp
+      - sudo
+      - osascript
+
+  - name: web_search
+    description: Search the web for product info, driver updates, tech support
+    enabled: true
+    max_results: 10
+
+  - name: api_call
+    description: Make HTTP API calls to internal and external services
+    enabled: true
+    allowed_hosts:
+      - "dtools-bridge:5050"
+      - "api.ovrc.com"
+      - "api.alarm.com"
+      - "api.sonos.com"
+      - "api.telegram.org"
+    timeout_seconds: 15
+    max_retries: 3
+
+  - name: agent_delegate
+    description: Delegate tasks to specialized sub-agents
+    enabled: true
+    allowed_targets:
+      - proposals_agent
+      - dtools_agent
+    delegation_format: "@{agent_id} {task_description}"
+
+# ---------------------------------------------------------------------------
+# Integrations
+# ---------------------------------------------------------------------------
+integrations:
+  telegram:
+    enabled: true
+    webhook_path: /webhooks/telegram
+    allowed_chat_ids:
+      - "${TELEGRAM_OWNER_CHAT_ID}"
+    command_prefix: "/"
+
+  dtools_bridge:
+    base_url: "http://dtools-bridge:5050"
+    health_check: "/health"
+    timeout_seconds: 10
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging:
+  level: info
+  file: /var/openclaw/logs/conductor.log
+  max_size_mb: 50
+  rotate_daily: true
+  include_tool_calls: true
+  include_delegations: true
+
+# ---------------------------------------------------------------------------
+# Error Handling
+# ---------------------------------------------------------------------------
+error_handling:
+  on_tool_failure: retry_then_notify
+  on_agent_timeout: notify_and_fallback
+  on_context_overflow: summarize_and_continue
+  fallback_message: "I ran into an issue completing that request. Please try again or check /health for diagnostics."
