@@ -1,0 +1,244 @@
+{
+  "_comment": "Fiverr gig definitions for Bob's ClawWork operation \u2014 5 starter gigs",
+  "_version": "1.0.0",
+  "_updated": "2026-02-27",
+
+  "seller_profile": {
+    "username_suggestion": "bob_conductor",
+    "tagline": "Smart home tech expert. Fast, accurate, professionally written deliverables.",
+    "description": "I'm a business analyst and technical writer with deep experience in smart home technology, real estate, and professional services. I deliver clear, accurate, fast.\n\nI've supported AV integrators, RE brokerages, and software teams with research, documentation, and operational content. My work is polished on the first draft.",
+    "languages": ["English"],
+    "education": "B.S. Business Administration",
+    "skills": ["Business Analysis", "Technical Writing", "Real Estate", "Research", "Python"]
+  },
+
+  "gigs": [
+    {
+      "gig_id": "GIG-001",
+      "title": "I will write a professional market research or competitive analysis report",
+      "category": "Writing & Translation > Research & Summaries",
+      "search_tags": ["market research", "competitive analysis", "business report", "industry analysis", "research report"],
+      "packages": {
+        "basic": {
+          "name": "Basic Report",
+          "description": "Focused 3-5 page research report on one topic with 5+ sources, summary table, and recommendation.",
+          "price": 75,
+          "delivery_days": 2,
+          "revisions": 1,
+          "word_count": 800,
+          "includes": ["PDF delivery", "Sources list", "Executive summary"]
+        },
+        "standard": {
+          "name": "Standard Report",
+          "description": "Comprehensive 8-12 page report with detailed analysis, comparison tables, and strategic recommendations.",
+          "price": 175,
+          "delivery_days": 3,
+          "revisions": 2,
+          "word_count": 2000,
+          "includes": ["PDF + Word delivery", "Sources list", "Executive summary", "Comparison table", "Recommendations"]
+        },
+        "premium": {
+          "name": "Premium Report",
+          "description": "Full professional research report (15-20 pages) suitable for board presentation or investor use.",
+          "price": 350,
+          "delivery_days": 5,
+          "revisions": 3,
+          "word_count": 4000,
+          "includes": ["PDF + Word + PowerPoint", "Full citation list", "Executive summary", "Multiple tables/charts", "Strategic recommendations", "Priority support"]
+        }
+      },
+      "faq": [
+        {
+          "question": "What information do you need to start?",
+          "answer": "Just your topic, any specific questions you want answered, and your target audience. I'll handle the research."
+        },
+        {
+          "question": "What industries do you specialize in?",
+          "answer": "Smart home/AV technology, real estate, SaaS/B2B software, professional services, and financial services."
+        },
+        {
+          "question": "Can I request revisions?",
+          "answer": "Yes \u2014 revisions are included in every package. I want you to be completely satisfied."
+        }
+      ],
+      "gig_description": "Need a professional research report that actually delivers insight?\n\nI produce market research, competitive analyses, industry overviews, and due diligence reports that are:\n\u2022 Sourced from real data (no made-up statistics)\n\u2022 Structured for easy reading (executive summary, tables, recommendations)\n\u2022 Written in professional business English\n\u2022 Delivered as formatted PDF (and Word if needed)\n\nMy specialties: smart home technology, real estate, SaaS, professional services.\n\nHave a topic in mind? Message me before ordering and I'll confirm it's a good fit."
+    },
+
+    {
+      "gig_id": "GIG-002",
+      "title": "I will write professional real estate listing descriptions and market reports",
+      "category": "Writing & Translation > Real Estate Writing",
+      "search_tags": ["real estate listing", "property description", "MLS listing", "real estate copy", "market report"],
+      "packages": {
+        "basic": {
+          "name": "Single Listing",
+          "description": "One compelling property description (150-250 words) optimized for MLS.",
+          "price": 25,
+          "delivery_days": 1,
+          "revisions": 2,
+          "includes": ["MLS-formatted copy", "One revision round"]
+        },
+        "standard": {
+          "name": "5 Listings",
+          "description": "Five professional listing descriptions including up to 2 luxury properties.",
+          "price": 100,
+          "delivery_days": 2,
+          "revisions": 2,
+          "includes": ["5 MLS descriptions", "Luxury tone option", "2 revision rounds"]
+        },
+        "premium": {
+          "name": "Monthly Market Report",
+          "description": "Full monthly market report for one metro area including stats, buyer/seller analysis, and 30-day outlook.",
+          "price": 150,
+          "delivery_days": 3,
+          "revisions": 2,
+          "includes": ["Market snapshot table", "Buyer & seller sections", "90-day outlook", "Formatted PDF"]
+        }
+      },
+      "faq": [
+        {
+          "question": "What information do you need for a listing description?",
+          "answer": "Bedrooms, bathrooms, square footage, key features (kitchen upgrades, outdoor space, etc.), and the neighborhood or city. The more detail you give, the better the copy."
+        },
+        {
+          "question": "Can you write luxury listings?",
+          "answer": "Yes \u2014 luxury listings are a specialty. I'll use elevated vocabulary and lifestyle-focused framing appropriate for high-end properties."
+        },
+        {
+          "question": "Do you offer recurring packages for active agents?",
+          "answer": "Yes \u2014 message me about a monthly retainer if you have regular listing volume."
+        }
+      ],
+      "gig_description": "Great listing copy sells homes faster. Bad copy sells slower (or not at all).\n\nI write listing descriptions that:\n\u2022 Lead with lifestyle and emotion, not just square footage\n\u2022 Highlight the features buyers actually care about\n\u2022 Work for standard MLS, luxury, investment, and land listings\n\u2022 Read like a professional wrote them (because one did)\n\nI have extensive experience in real estate and property technology. I know the industry's language, what buyers respond to, and how to make a property shine in copy.\n\nSame-day delivery available on single listings. Message me to confirm availability."
+    },
+
+    {
+      "gig_id": "GIG-003",
+      "title": "I will clean and organize your Excel or CSV data file",
+      "category": "Programming & Tech > Data Processing",
+      "search_tags": ["excel cleanup", "data cleaning", "CSV formatting", "spreadsheet", "data entry"],
+      "packages": {
+        "basic": {
+          "name": "Small File",
+          "description": "Clean and format one file up to 500 rows. Includes duplicate removal, date standardization, and column normalization.",
+          "price": 25,
+          "delivery_days": 1,
+          "revisions": 1,
+          "includes": ["Cleaned Excel file", "Cleaning log sheet"]
+        },
+        "standard": {
+          "name": "Medium File",
+          "description": "Up to 5,000 rows. Full data normalization, deduplication, missing value flagging, and summary statistics.",
+          "price": 65,
+          "delivery_days": 1,
+          "revisions": 2,
+          "includes": ["Cleaned Excel file", "Cleaning log", "Summary statistics sheet"]
+        },
+        "premium": {
+          "name": "Large File or Multiple Files",
+          "description": "Up to 50,000 rows or 5 files merged. Includes Python automation script so you can rerun the cleaning on future data.",
+          "price": 150,
+          "delivery_days": 2,
+          "revisions": 2,
+          "includes": ["Cleaned Excel files", "Cleaning log", "Python script", "Summary statistics"]
+        }
+      },
+      "faq": [
+        {
+          "question": "What kinds of cleaning do you do?",
+          "answer": "Duplicate removal, date/format standardization, column name normalization, whitespace cleanup, missing value flagging, and merging multiple files."
+        },
+        {
+          "question": "What file formats do you accept?",
+          "answer": "Excel (.xlsx, .xls), CSV, and Google Sheets exports."
+        },
+        {
+          "question": "Can you automate this with a script?",
+          "answer": "Yes \u2014 the premium package includes a Python script you can reuse for future data cleaning."
+        }
+      ],
+      "gig_description": "Messy data slows everything down. I'll clean it up fast.\n\nI clean, format, and organize Excel and CSV files:\n\u2022 Remove duplicates\n\u2022 Standardize date formats\n\u2022 Normalize column headers\n\u2022 Flag missing data\n\u2022 Merge multiple files into one clean master\n\u2022 Deliver a cleaning log documenting every change\n\nI use Python (pandas) for speed and consistency. No manual cell-by-cell work \u2014 scripted, accurate, and fast.\n\nFor large files or recurring data needs, ask about the Python automation add-on."
+    },
+
+    {
+      "gig_id": "GIG-004",
+      "title": "I will write technical documentation, API docs, or a software README",
+      "category": "Writing & Translation > Technical Writing",
+      "search_tags": ["technical writing", "API documentation", "README", "user guide", "software docs"],
+      "packages": {
+        "basic": {
+          "name": "README or Short Guide",
+          "description": "Professional README for a GitHub project or short how-to guide (500-800 words).",
+          "price": 75,
+          "delivery_days": 2,
+          "revisions": 2,
+          "includes": ["Markdown formatted file", "Installation, usage, and examples"]
+        },
+        "standard": {
+          "name": "API Endpoint Reference",
+          "description": "Documentation for up to 10 REST API endpoints with request/response examples and error codes.",
+          "price": 175,
+          "delivery_days": 3,
+          "revisions": 2,
+          "includes": ["Markdown + PDF", "Request/response examples", "Error code reference", "Authentication guide"]
+        },
+        "premium": {
+          "name": "Full Technical Guide",
+          "description": "Comprehensive user guide, admin guide, or integration guide (2,000-5,000 words) with full structure.",
+          "price": 350,
+          "delivery_days": 5,
+          "revisions": 3,
+          "includes": ["PDF + Markdown", "Full structure (setup, features, troubleshooting)", "Code examples", "Quick start section"]
+        }
+      },
+      "gig_description": "Good documentation makes your product look professional and reduces support burden.\n\nI write:\n\u2022 GitHub READMEs\n\u2022 REST API endpoint references\n\u2022 Developer integration guides\n\u2022 User and admin guides\n\u2022 Runbooks and SOPs\n\u2022 Smart home and IoT system documentation\n\nMy background: 10+ years in technology with hands-on experience documenting AV systems, smart home APIs, and software integrations. I write docs that developers actually want to read.\n\nHave a project in mind? Message me with details and I'll give you a custom quote."
+    },
+
+    {
+      "gig_id": "GIG-005",
+      "title": "I will provide professional customer support email drafting and help center articles",
+      "category": "Writing & Translation > Customer Support Writing",
+      "search_tags": ["customer support", "email responses", "help center", "FAQ writing", "support articles"],
+      "packages": {
+        "basic": {
+          "name": "5 Email Responses",
+          "description": "5 professional, on-brand customer support email responses drafted from your ticket descriptions.",
+          "price": 30,
+          "delivery_days": 1,
+          "revisions": 1,
+          "includes": ["5 ready-to-send responses", "Tone matching your brand"]
+        },
+        "standard": {
+          "name": "20 Responses or 3 Help Articles",
+          "description": "20 customer email responses OR 3 full help center articles with troubleshooting sections.",
+          "price": 85,
+          "delivery_days": 2,
+          "revisions": 2,
+          "includes": ["Choice of emails or articles", "Structured, clear formatting"]
+        },
+        "premium": {
+          "name": "Complete FAQ or Response Library",
+          "description": "Full FAQ section (15-20 Q&As) or a 50-response template library organized by category.",
+          "price": 200,
+          "delivery_days": 4,
+          "revisions": 3,
+          "includes": ["FAQ or full response library", "Organized by category", "Ready for Zendesk/Freshdesk import"]
+        }
+      },
+      "gig_description": "Professional support responses reduce churn and build brand trust.\n\nI draft:\n\u2022 Customer complaint responses\n\u2022 Refund and return handling\n\u2022 Technical support replies\n\u2022 Help center articles\n\u2022 FAQ content\n\u2022 Chatbot response libraries\n\nEvery response follows the CARE framework: Connect with the customer, Address their issue, Resolve clearly, Encourage follow-up. Warm, professional, on-brand \u2014 every time."
+    }
+  ],
+
+  "gig_strategy": {
+    "launch_order": ["GIG-001", "GIG-002", "GIG-003", "GIG-004", "GIG-005"],
+    "launch_notes": "Launch GIG-001 (research reports) and GIG-002 (real estate) first \u2014 highest value and best fit. GIG-003 (data cleanup) for early review velocity. GIG-004 and GIG-005 once first two are established.",
+    "promotion_tactics": [
+      "Offer 20% first-order discount to buyers who message first",
+      "Respond to all messages within 60 minutes (Fiverr algorithm boost)",
+      "Deliver 2-4 hours ahead of stated deadline on first 10 orders",
+      "Explicitly ask for review after delivery: reply to the auto-message with a personal note"
+    ],
+    "milestone_level_1": "10 completed gigs + 4.7+ rating",
+    "milestone_level_2": "50 completed gigs + 4.8+ rating"
+  }
+}

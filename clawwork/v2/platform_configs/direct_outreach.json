@@ -1,0 +1,93 @@
+{
+  "_comment": "Direct outreach templates and strategy for ClawWork client acquisition",
+  "_version": "1.0.0",
+  "_updated": "2026-02-27",
+
+  "strategy": {
+    "goal": "Acquire 3-5 recurring direct clients within 90 days",
+    "target_monthly_value": "$1,500-3,000 from direct clients",
+    "acquisition_path": "Platform (Upwork/Fiverr) \u2192 Complete 1-2 projects \u2192 Migrate to direct after delivering excellent work",
+    "off_platform_timing": "After 2+ projects, suggest: 'For ongoing work, I can offer you a better rate directly since there's no platform fee.'"
+  },
+
+  "target_profiles": [
+    {
+      "segment": "Independent Real Estate Teams",
+      "size": "5-30 agents",
+      "pain_points": ["No time to write listing copy", "Need regular market reports for clients", "Drip email sequences not done", "CMA narrative writing is slow"],
+      "value_prop": "I handle your content so you can focus on selling: listings, market reports, email sequences, and CMA support.",
+      "outreach_channel": "LinkedIn DM + email",
+      "retainer_target": "$200-500/month",
+      "identify_via": "LinkedIn (search: Real Estate Team Lead, [city]), Instagram (agents with active posting), Upwork history"
+    },
+    {
+      "segment": "Small Business Bookkeeping Clients",
+      "size": "1-20 employees",
+      "pain_points": ["Books are behind", "Accountant charges too much for basic reconciliation", "No time for expense categorization", "Need clean P&L for loan application"],
+      "value_prop": "Monthly bookkeeping and clean P&L reporting for a flat monthly rate. No surprises, no hourly billing.",
+      "outreach_channel": "LinkedIn + cold email",
+      "retainer_target": "$150-325/month",
+      "identify_via": "LinkedIn (solo founders, LLC owners in professional services), local business Facebook groups"
+    },
+    {
+      "segment": "Early-Stage SaaS Startups",
+      "size": "2-15 employees",
+      "pain_points": ["API undocumented", "No user onboarding guide", "Help center empty", "README not written yet"],
+      "value_prop": "I document your API and create onboarding content that reduces support tickets and accelerates developer adoption.",
+      "outreach_channel": "LinkedIn + GitHub + ProductHunt",
+      "retainer_target": "$400-800/month for ongoing docs",
+      "identify_via": "ProductHunt (recent launches), GitHub (repos with no README or sparse docs), LinkedIn (CTO/founder, <20 employees)"
+    },
+    {
+      "segment": "B2B Content Marketing Teams",
+      "size": "Any (with content budget)",
+      "pain_points": ["Content calendar not executed", "Need 4-8 articles/month", "Domain expertise lacking for tech topics"],
+      "value_prop": "Domain-expert content writer for smart home, real estate, and B2B tech. Articles that reflect genuine expertise, not generic writing.",
+      "outreach_channel": "LinkedIn + content marketing communities",
+      "retainer_target": "$500-1,500/month for 4-8 pieces",
+      "identify_via": "LinkedIn (Content Marketing Manager, VP Marketing at tech companies), AngelList"
+    }
+  ],
+
+  "outreach_templates": {
+    "real_estate_cold": {
+      "subject": "Real estate content support \u2014 listings, market reports, email",
+      "body": "Hi {first_name},\n\nI work with RE teams providing listing descriptions, market reports, and email content.\n\nI've worked extensively in smart home and property tech, so I know the industry and its language. I deliver fast (typically same-day on listings), and I'm happy to do a sample listing or report for free so you can evaluate quality before committing.\n\nIs this something you'd find useful?\n\n{signature}",
+      "personalization_notes": "Reference a recent listing or post of theirs if possible. Mention city/market by name."
+    },
+    "bookkeeping_cold": {
+      "subject": "Monthly bookkeeping support \u2014 flat rate, no surprises",
+      "body": "Hi {first_name},\n\nI provide monthly bookkeeping services for small businesses \u2014 bank reconciliation, expense categorization, and P&L reporting for a flat monthly rate.\n\nMost of my clients pay $150-325/month depending on transaction volume. No hourly billing, no surprise invoices.\n\nI'm happy to do a free one-month trial so you can see the quality of work before committing to anything.\n\nWould that be useful for {business_name}?\n\n{signature}",
+      "personalization_notes": "Reference their industry or business type. Mention their city if relevant."
+    },
+    "saas_docs_cold": {
+      "subject": "API documentation for {product_name}",
+      "body": "Hi {first_name},\n\nI was looking at {product_name} and noticed the API documentation is still in progress. Undocumented APIs are one of the top reasons developers don't complete integrations \u2014 I've seen it kill promising products.\n\nI specialize in technical documentation for developer tools and APIs. I can document your full endpoint library, write the integration guide, and create onboarding content that reduces support tickets.\n\nHappy to show you a sample from a similar project. Would that be useful?\n\n{signature}",
+      "personalization_notes": "Always reference the specific product name and what you found when you looked at their docs (or lack thereof). Be specific."
+    },
+    "platform_to_direct_conversion": {
+      "subject": "Ongoing work \u2014 better rate directly",
+      "body": "Hi {client_name},\n\nIt's been great working on {recent_project} with you.\n\nFor any ongoing or future projects, I can offer you a better rate directly (outside Upwork/Fiverr) since there's no platform fee involved. This typically saves you 15-20% on the same quality of work.\n\nIf you have regular {content_type} needs, a monthly arrangement might make sense. I'd also be happy to continue on a project-by-project basis \u2014 whatever works best for you.\n\nJust let me know if you'd like to explore that.\n\n{signature}",
+      "personalization_notes": "Only send after 2+ successful projects. Reference the specific work you did together."
+    },
+    "referral_request": {
+      "subject": "Quick favor \u2014 referral",
+      "body": "Hi {client_name},\n\nThank you again for the opportunity to work on {recent_project}. I hope it's been useful.\n\nI'm expanding my client base and would love a referral if you know anyone who could use {service_type} support. I'll make sure they receive the same quality and responsiveness you experienced.\n\nHappy to return the favor however I can.\n\n{signature}",
+      "personalization_notes": "Send after a particularly strong review or after a client expresses satisfaction."
+    }
+  },
+
+  "follow_up_schedule": {
+    "day_0": "Initial outreach",
+    "day_4": "Follow-up 1: Short, adds value (relevant stat or insight)",
+    "day_10": "Follow-up 2: Final attempt, easy opt-out",
+    "day_10_message": "Hi {first_name} \u2014 last follow-up, I promise. If you ever need {service_type} support in the future, I'd be glad to help. Feel free to reach out anytime. No need to respond if this isn't relevant right now."
+  },
+
+  "invoicing": {
+    "tool": "Wave (free) or PayPal",
+    "terms": "Net 7 for project work; Net 1 (due on delivery) for first-time clients",
+    "retainer_billing": "1st of month, auto-invoice",
+    "late_payment_policy": "Polite reminder at Day 8; pause work at Day 15 if no response"
+  }
+}

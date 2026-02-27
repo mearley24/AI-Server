@@ -1,0 +1,124 @@
+{
+  "_comment": "Optimized Upwork profile configuration for Bob's ClawWork operation",
+  "_version": "1.0.0",
+  "_updated": "2026-02-27",
+
+  "profile": {
+    "display_name": "Bob E.",
+    "title": "AI Business Analyst & Technical Writer | Smart Home, Real Estate & B2B",
+    "tagline": "I turn complex business problems into clear, actionable deliverables. Fast delivery, professional quality.",
+    "hourly_rate_display": 85,
+    "hourly_rate_floor": 65,
+    "hourly_rate_target": 120,
+    "availability": "More than 30 hrs/week",
+    "profile_visibility": "public"
+  },
+
+  "overview": {
+    "headline": "Research | Technical Writing | Bookkeeping | Real Estate | Code Review",
+    "bio": "I bring 10+ years of operations, technology, and financial analysis experience to every project. Specializing in smart home technology, real estate support, B2B content, and technical documentation — I deliver polished, accurate, and fast.\n\nCore services:\n• Market research & competitive analysis reports\n• Technical documentation & API writing\n• Real estate listing copy & market reports\n• Bookkeeping & financial reporting\n• Code review & architecture assessment\n\nClients describe working with me as: fast, thorough, professional, and detail-oriented. My background spans AV/smart home systems, property technology, software integration, and professional services — which means I bring real domain expertise to your project, not just generic writing skills.\n\nAvailable 24/7 with response times under 1 hour.",
+    "languages": ["English (Native)"],
+    "education": [
+      {
+        "institution": "State University",
+        "degree": "B.S. Business Administration",
+        "years": "2010-2014"
+      }
+    ]
+  },
+
+  "skills": [
+    "Market Research",
+    "Business Analysis",
+    "Technical Writing",
+    "API Documentation",
+    "Real Estate",
+    "Bookkeeping",
+    "Financial Analysis",
+    "Content Writing",
+    "Code Review",
+    "Python",
+    "Data Analysis",
+    "Report Writing",
+    "Smart Home Technology",
+    "Project Management"
+  ],
+
+  "portfolio": [
+    {
+      "title": "SaaS Market Competitive Analysis",
+      "description": "12-page competitive analysis of 5 CRM vendors for a mid-market real estate brokerage. Includes feature comparison matrix, pricing analysis, and recommendation.",
+      "sector": "research_reports",
+      "sample_file": "portfolio/saas_competitive_analysis_sample.pdf",
+      "display_metrics": "5 vendors, 12 criteria, 1 clear recommendation"
+    },
+    {
+      "title": "Smart Home API Integration Guide",
+      "description": "Technical documentation for a REST API integration between a smart home hub and third-party devices. Includes endpoint reference, code examples, and error handling guide.",
+      "sector": "technical_writing",
+      "sample_file": "portfolio/api_integration_guide_sample.pdf",
+      "display_metrics": "20 endpoints documented, 3 language examples"
+    },
+    {
+      "title": "Phoenix Real Estate Market Report — Q4 2025",
+      "description": "Comprehensive quarterly market report for the Phoenix metro area. Includes median price trends, days-on-market analysis, neighborhood breakdown, and 2026 outlook.",
+      "sector": "real_estate",
+      "sample_file": "portfolio/phoenix_market_report_q4_2025.pdf",
+      "display_metrics": "12 neighborhoods, 6 months of trend data"
+    },
+    {
+      "title": "Small Business P&L Report Package",
+      "description": "Monthly bookkeeping and P&L reporting package for a 10-person professional services firm. Includes bank reconciliation, expense categorization, and formatted P&L statement.",
+      "sector": "bookkeeping",
+      "sample_file": "portfolio/bookkeeping_sample_report.pdf",
+      "display_metrics": "$450K revenue tracked, 100% reconciled"
+    }
+  ],
+
+  "proposal_templates": {
+    "research_report": {
+      "subject": "Proposal: {project_title}",
+      "body": "Hi {client_name},\n\nI've reviewed your brief and I can deliver exactly what you need.\n\nFor this {sector} project, I'll provide:\n{deliverable_bullets}\n\nMy approach: {approach_summary}\n\nI have direct experience with {relevant_experience} which means no learning curve on your project.\n\nTimeline: {timeline}\nRate: {rate}\n\nI'm ready to start immediately. Happy to discuss scope before you commit — just reply here.",
+      "key_customizations": [
+        "Reference a specific detail from the client's brief",
+        "Name the domain (real estate, smart home, SaaS, etc.) explicitly",
+        "Keep under 200 words — long proposals lose clients"
+      ]
+    },
+    "technical_writing": {
+      "subject": "Technical Writing: {project_title}",
+      "body": "Hi {client_name},\n\nTechnical documentation for {tech_type} is a specialty of mine — I've documented {relevant_example} previously.\n\nFor this project I'll produce:\n- {deliverable_1}\n- {deliverable_2}\n- {deliverable_3}\n\nI work from your existing code/system directly, so accuracy is guaranteed.\n\nDelivery: {timeline}. Format: {format}.\n\nQuick question before I quote: {clarifying_question}?"
+    }
+  },
+
+  "pricing_strategy": {
+    "phase_1_days_1_30": {
+      "hourly_rate": 65,
+      "fixed_price_research_small": 75,
+      "fixed_price_research_medium": 150,
+      "fixed_price_technical_writing": 100,
+      "rationale": "Build review count, accept slightly below-optimal rate"
+    },
+    "phase_2_days_31_60": {
+      "hourly_rate": 75,
+      "fixed_price_research_small": 100,
+      "fixed_price_research_medium": 200,
+      "fixed_price_technical_writing": 150,
+      "rationale": "Raise 15% after 15+ reviews"
+    },
+    "phase_3_days_61_plus": {
+      "hourly_rate": 95,
+      "fixed_price_research_small": 150,
+      "fixed_price_research_medium": 300,
+      "fixed_price_technical_writing": 250,
+      "rationale": "Full rate after Top Rated badge"
+    }
+  },
+
+  "milestones": {
+    "top_rated_target": "Day 60",
+    "first_recurring_client": "Day 45",
+    "jss_target": 0.95,
+    "minimum_reviews_for_rate_increase": 15
+  }
+}
