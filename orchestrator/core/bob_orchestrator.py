@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
+import os
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
 
-BASE = Path.home() / "AI-Server"
+BASE = Path(os.environ.get("AI_SERVER_DIR", str(Path.home() / "AI-Server")))
 LOG = BASE / "orchestrator/logs/bob_orchestrator.log"
 
 LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -31,7 +32,7 @@ PIPELINES = {
 
 def log(message: str):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with LOG.open("a") as f:
+    with LOG.open("a", encoding="utf-8") as f:
         f.write(f"[{ts}] {message}\n")
 
 def execute(action: str):
@@ -44,63 +45,47 @@ def execute(action: str):
     log(f"Executing: {action}")
 
     if cmd.endswith(".py"):
-        subprocess.run(["python", cmd])
+        subprocess.run(["python", cmd], check=False)
     else:
-        subprocess.run([cmd])
+        subprocess.run([cmd], check=False)
 
 def run_pipeline(name: str):
     if name not in PIPELINES:
         print("Unknown pipeline.")
         return
-
     for step in PIPELINES[name]:
         execute(step)
-
     print("Pipeline complete.")
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: RUN_BOB.command <command> [project_name]")
+        print("Usage: RUN_BOB.command <command> [args...]")
         print("Available commands:")
         print(" - refresh_everything")
-        print(" - analyze_project <project_folder_name>  # Proposal Intelligence + D-Tools CSV")
-        print(" - export_dtools <project_folder_name>   # D-Tools CSV only")
+        print(" - analyze_project <project_name_part>  (existing tool you already have)")
+        print(" - export_dtools <project_name_part>")
         return
 
     command = sys.argv[1]
 
     if command == "analyze_project":
         if len(sys.argv) < 3:
-            print("Please provide project folder name.")
+            print("Please provide project folder name part.")
             return
-
-        project_name = sys.argv[2]
-        subprocess.run([
-            "python",
-            str(BASE / "tools/bob_project_analyzer.py"),
-            project_name,
-        ])
-        subprocess.run([
-            "python",
-            str(BASE / "tools/bob_proposal_to_dtools.py"),
-            project_name,
-        ])
+        project_name = " ".join(sys.argv[2:]).strip()
+        subprocess.run(["python", str(BASE / "tools/bob_project_analyzer.py"), project_name], check=False)
         return
 
     if command == "export_dtools":
         if len(sys.argv) < 3:
-            print("Please provide project folder name.")
+            print("Please provide project folder name part.")
             return
-
-        project_name = sys.argv[2]
-        subprocess.run([
-            "python",
-            str(BASE / "tools/bob_proposal_to_dtools.py"),
-            project_name,
-        ])
+        project_name = " ".join(sys.argv[2:]).strip()
+        subprocess.run(["python", str(BASE / "tools/bob_export_dtools.py"), project_name], check=False)
         return
 
     if command in PIPELINES:
         run_pipeline(command)
-    else:
-        execute(command)
+        return
+
+    execute(command)

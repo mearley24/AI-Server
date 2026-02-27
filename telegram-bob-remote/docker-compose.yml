@@ -1,0 +1,11 @@
+services:
+  bob-remote:
+    build: .
+    container_name: bob-remote
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      AI_SERVER_DIR: "/AI-Server"
+    volumes:
+      - "${HOME}/AI-Server:/AI-Server:rw"

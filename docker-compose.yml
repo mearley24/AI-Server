@@ -1,291 +1,79 @@
-# =============================================================================
-# Symphony Smart Homes — AI-Server Master Compose
-# Host: Bob (Mac Mini M4, Apple Silicon / arm64)
-# Run: ./start_symphony.sh  OR  docker compose up -d
-#
-# External dependencies (NOT managed here):
-#   • Ollama  — running natively on Maestro (64GB iMac)
-#               exposed via OLLAMA_HOST=http://<MAESTRO_IP>:11434
-# =============================================================================
-
-name: symphony
-
-# ---------------------------------------------------------------------------
-# Networks
-# ---------------------------------------------------------------------------
-networks:
-  symphony:
-    name: symphony
-    driver: bridge
-    labels:
-      com.symphony.description: "Internal backbone network for all Symphony services"
-
-# ---------------------------------------------------------------------------
-# Volumes
-# ---------------------------------------------------------------------------
-volumes:
-  redis_data:
-    name: symphony_redis_data
-    labels:
-      com.symphony.description: "Persistent Redis AOF + RDB snapshots"
-
-  openclaw_data:
-    name: symphony_openclaw_data
-    labels:
-      com.symphony.description: "OpenClaw agent state, memory, and tool configs"
-
-# ---------------------------------------------------------------------------
-# Shared logging defaults (referenced via YAML anchors)
-# ---------------------------------------------------------------------------
-x-logging: &default-logging
-  driver: json-file
-  options:
-    max-size: "10m"
-    max-file: "3"
-
-# ---------------------------------------------------------------------------
-# Shared restart policy
-# ---------------------------------------------------------------------------
-x-restart: &default-restart
-  restart: unless-stopped
-
-# =============================================================================
-# Services
-# =============================================================================
 services:
-
-  # ---------------------------------------------------------------------------
-  # redis — Shared state, pub/sub, and short-term memory cache
-  # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: symphony_redis
-    <<: *default-restart
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"         # Bind to loopback only — not exposed externally
+      - "127.0.0.1:3001:3001"
     volumes:
-      - redis_data:/data
-    command: >
-      redis-server
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-    networks:
-      - symphony
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    logging: *default-logging
-    labels:
-      com.symphony.role: "cache"
-      com.symphony.description: "Shared Redis 7 — pub/sub, ephemeral state, LRU cache"
-      com.symphony.team: "infrastructure"
+      - kuma:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-  # ---------------------------------------------------------------------------
-  # openclaw — Multi-agent orchestration framework (Bob's brain)
-  # ---------------------------------------------------------------------------
-  openclaw:
-    build:
-      context: ./setup/openclaw
-      dockerfile: Dockerfile
-      args:
-        BUILDPLATFORM: linux/arm64
-    image: symphony/openclaw:latest
-    container_name: symphony_openclaw
-    <<: *default-restart
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3000:8080"
     volumes:
-      - openclaw_data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro   # Allow agent to inspect containers
+      - openwebui:/app/backend/data
+      - "./data:/data"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-3-5-sonnet-20241022}
-      - OLLAMA_HOST=${OLLAMA_HOST}
-      - REDIS_URL=redis://redis:6379
-      - NODE_ENV=${NODE_ENV:-production}
-      - LOG_LEVEL=${OPENCLAW_LOG_LEVEL:-info}
-      - PORT=3000
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - symphony
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    logging: *default-logging
-    labels:
-      com.symphony.role: "orchestrator"
-      com.symphony.description: "OpenClaw multi-agent framework — primary AI conductor"
-      com.symphony.team: "core"
+      - WEBUI_NAME=AI-Server
+      - ENABLE_API_KEYS=True
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-  # ---------------------------------------------------------------------------
-  # voice-receptionist — Twilio voice AI (inbound/outbound call handler)
-  # ---------------------------------------------------------------------------
-  voice-receptionist:
-    build:
-      context: ./voice_receptionist
-      dockerfile: Dockerfile
-      args:
-        BUILDPLATFORM: linux/arm64
-    image: symphony/voice-receptionist:latest
-    container_name: symphony_voice_receptionist
-    <<: *default-restart
-    ports:
-      - "5000:5000"                    # Exposed externally — Twilio webhooks POST here
-    environment:
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SYMPHONY_PHONE=${SYMPHONY_PHONE}
-      - OPENCLAW_URL=http://openclaw:3000
-      - REDIS_URL=redis://redis:6379
-      - PORT=5000
-      - LOG_LEVEL=${VOICE_LOG_LEVEL:-info}
-    depends_on:
-      openclaw:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - symphony
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    logging: *default-logging
-    labels:
-      com.symphony.role: "telephony"
-      com.symphony.description: "Twilio voice AI — inbound call handler and voice receptionist"
-      com.symphony.team: "customer-facing"
-
-  # ---------------------------------------------------------------------------
-  # dtools-bridge — D-Tools Cloud REST API integration
-  # ---------------------------------------------------------------------------
-  dtools-bridge:
-    build:
-      context: ./integrations/dtools
-      dockerfile: Dockerfile
-      args:
-        BUILDPLATFORM: linux/arm64
-    image: symphony/dtools-bridge:latest
-    container_name: symphony_dtools_bridge
-    <<: *default-restart
-    ports:
-      - "127.0.0.1:5050:5050"
-    environment:
-      - DTOOLS_API_KEY=${DTOOLS_API_KEY}
-      - DTOOLS_BASE_URL=${DTOOLS_BASE_URL:-https://api.d-tools.com/v2}
-      - REDIS_URL=redis://redis:6379
-      - PORT=5050
-      - LOG_LEVEL=${DTOOLS_LOG_LEVEL:-info}
-    depends_on:
-      redis:
-        condition: service_healthy
-    networks:
-      - symphony
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5050/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    logging: *default-logging
-    labels:
-      com.symphony.role: "integration"
-      com.symphony.description: "D-Tools Cloud REST bridge — project and inventory data"
-      com.symphony.team: "integrations"
-
-  # ---------------------------------------------------------------------------
-  # telegram-bot — @ConductorBob_bot remote management interface
-  # ---------------------------------------------------------------------------
-  telegram-bot:
+  telegram-interface:
     build:
       context: ./telegram-interface
-      dockerfile: Dockerfile
-      args:
-        BUILDPLATFORM: linux/arm64
-    image: symphony/telegram-bot:latest
-    container_name: symphony_telegram_bot
-    <<: *default-restart
-    # No exposed ports — bot uses Telegram long-polling, no inbound webhooks
-    environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID}
-      - OPENCLAW_URL=http://openclaw:3000
-      - REDIS_URL=redis://redis:6379
-      - LOG_LEVEL=${TELEGRAM_LOG_LEVEL:-info}
+    container_name: telegram-interface
+    restart: unless-stopped
+    env_file:
+      - ./telegram-interface/.env
     depends_on:
-      openclaw:
-        condition: service_healthy
-    networks:
-      - symphony
+      - openwebui
+    volumes:
+      - "./data:/data"
+      - "/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH/Bob_Library:/library"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
       start_period: 20s
-    logging: *default-logging
-    labels:
-      com.symphony.role: "management"
-      com.symphony.description: "@ConductorBob_bot — Telegram remote management and alerting"
-      com.symphony.team: "ops"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
-  # ---------------------------------------------------------------------------
-  # homeassistant-bridge — MQTT + Home Assistant REST bridge
-  # ---------------------------------------------------------------------------
-  homeassistant-bridge:
+  remediator:
     build:
-      context: ./integrations/homeassistant
-      dockerfile: Dockerfile
-      args:
-        BUILDPLATFORM: linux/arm64
-    image: symphony/homeassistant-bridge:latest
-    container_name: symphony_ha_bridge
-    <<: *default-restart
+      context: ./remediator
+    container_name: remediator
+    restart: unless-stopped
+    env_file:
+      - ./remediator/.env
     ports:
-      - "127.0.0.1:5100:5100"
-    environment:
-      - HA_URL=${HA_URL}
-      - HA_TOKEN=${HA_TOKEN}
-      - MQTT_BROKER=${MQTT_BROKER}
-      - MQTT_PORT=${MQTT_PORT:-1883}
-      - MQTT_USERNAME=${MQTT_USERNAME:-}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
-      - REDIS_URL=redis://redis:6379
-      - OPENCLAW_URL=http://openclaw:3000
-      - PORT=5100
-      - LOG_LEVEL=${HA_LOG_LEVEL:-info}
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      redis:
-        condition: service_healthy
-      openclaw:
-        condition: service_healthy
-    networks:
-      - symphony
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:5100/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    logging: *default-logging
-    labels:
-      com.symphony.role: "integration"
-      com.symphony.description: "Home Assistant + MQTT bridge — smart home device control"
-      com.symphony.team: "integrations"
+      - telegram-interface
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  kuma:
+  openwebui:
