@@ -16,13 +16,15 @@ For remote access via Tailscale:
 """
 
 import asyncio
+import csv
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
@@ -36,7 +38,7 @@ except ModuleNotFoundError:
 
 # FastAPI with fallback to simple HTTP server
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
     import uvicorn
@@ -48,6 +50,8 @@ except ImportError:
 sys.path.insert(0, str(BASE_DIR))
 
 API_PORT = int(os.environ.get("MOBILE_API_PORT", "8420"))
+DTOOLS_PRODUCT_AGENT_DIR = BASE_DIR / "data" / "dtools_product_agent"
+DTOOLS_PRODUCT_AGENT_DIR.mkdir(parents=True, exist_ok=True)
 
 if HAS_FASTAPI:
     app = FastAPI(
@@ -98,6 +102,298 @@ def run_command(cmd: List[str], timeout: int = 30) -> Dict:
 def run_tool_endpoint(script: str, args: List[str], timeout: int = 60) -> Dict:
     """Run a tools/ script and return {success, output, error}."""
     return run_tool_script(BASE_DIR, script, args=args, timeout=timeout)
+
+
+def _to_money(value: Any) -> Optional[float]:
+    """Coerce numeric-ish value to float."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("$", "").replace(",", "")
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _pick_unit_cost(prices: List[float], dealer_tier: str) -> Optional[float]:
+    """
+    Price columns expected in many manufacturer sheets:
+    MSRP, Standard, Silver, Gold, Dist/Fab
+    """
+    if len(prices) < 2:
+        return None
+    tier = (dealer_tier or "standard").strip().lower()
+    if tier == "fabricator":
+        idx = 4
+    elif tier == "gold":
+        idx = 3
+    elif tier == "silver":
+        idx = 2
+    else:
+        idx = 1
+    if idx < len(prices):
+        return prices[idx]
+    return prices[-1]
+
+
+def _looks_like_price_line(line: str) -> bool:
+    nums = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line)
+    return len(nums) >= 2
+
+
+def _extract_part_number_from_line(line: str) -> Optional[str]:
+    upper = line.upper().strip()
+    # Prefer SKU-like tokens whose first segment is alpha-heavy.
+    tokens = re.findall(r"[A-Z0-9#]+(?:-[A-Z0-9#]+)+", upper)
+    if not tokens:
+        return None
+    candidates: List[str] = []
+    for token in tokens:
+        parts = token.split("-")
+        first = parts[0]
+        if first.isdigit():
+            continue
+        if len(first) < 3:
+            continue
+        if first.endswith("YR"):
+            continue
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", token):
+            continue
+        if token.startswith("Q") and token[1:].isdigit():
+            continue
+        if len(parts) == 2 and parts[1].isdigit() and first in {"POE", "DC"}:
+            continue
+        if "WARRANTY" in token:
+            continue
+        if not any(ch.isalpha() for ch in token):
+            continue
+        candidates.append(token)
+    if not candidates:
+        return None
+    # Usually the SKU is the longest code in the row.
+    return sorted(candidates, key=len, reverse=True)[0]
+
+
+def _extract_text_from_pdf(path: Path) -> str:
+    """Extract PDF text using pypdf, with pdftotext fallback."""
+    try:
+        from pypdf import PdfReader  # type: ignore
+        reader = PdfReader(str(path))
+        chunks: List[str] = []
+        for page in reader.pages:
+            chunks.append(page.extract_text() or "")
+        return "\n".join(chunks)
+    except Exception:
+        try:
+            # macOS/homebrew fallback.
+            result = subprocess.run(
+                ["pdftotext", str(path), "-"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout
+        except Exception:
+            pass
+        raise RuntimeError(
+            "Could not parse PDF text. Install pypdf (`pip3 install pypdf`) or ensure pdftotext is installed."
+        )
+
+
+def _parse_price_sheet_text(text: str, dealer_tier: str) -> List[Dict[str, Any]]:
+    """
+    Parse semi-structured price-book text into D-Tools product drafts.
+    Works best for sheets with rows that include a SKU and nearby pricing line.
+    """
+    lines = [ln.strip() for ln in text.splitlines()]
+    lines = [ln for ln in lines if ln]
+    products: List[Dict[str, Any]] = []
+
+    def _is_noise_line(value: str) -> bool:
+        up = value.upper()
+        return (
+            "PRICE BOOK" in up
+            or "MODEL NAME" in up
+            or "PART NUMBER" in up
+            or "ALL BRAND NAMES" in up
+            or "ARE THE PROPERTY" in up
+            or "DEALER LEVEL" in up
+            or "TERMS:" in up
+            or up.startswith("-- ")
+            or up.startswith("#")
+        )
+
+    # Pass 1: detect SKU anchors.
+    sku_rows: List[tuple[int, str]] = []
+    for idx, line in enumerate(lines):
+        if _is_noise_line(line):
+            continue
+        part = _extract_part_number_from_line(line)
+        if not part:
+            continue
+        words = line.split()
+        if line.strip().upper() == part:
+            sku_rows.append((idx, part))
+            continue
+        if line.strip().upper().endswith(part) and len(words) <= 6:
+            sku_rows.append((idx, part))
+
+    for row_idx, (start, part) in enumerate(sku_rows):
+        end = sku_rows[row_idx + 1][0] if row_idx + 1 < len(sku_rows) else min(len(lines), start + 35)
+        block = lines[start + 1:end]
+
+        # Model: nearest previous human-readable line.
+        model = ""
+        j = start - 1
+        while j >= 0:
+            prev = lines[j].strip()
+            if _is_noise_line(prev):
+                j -= 1
+                continue
+            if "MADE IN USA" in prev.upper():
+                j -= 1
+                continue
+            if _extract_part_number_from_line(prev):
+                j -= 1
+                continue
+            prev_upper = prev.upper()
+            if any(
+                word in prev_upper
+                for word in ["DEALER", "MSRP", "SKU", "DESCRIPTION", "WARRANTY", "NOW", "Q226", "Q326", "Q426"]
+            ):
+                j -= 1
+                continue
+            if re.search(r"[A-Za-z]", prev):
+                model = prev
+                break
+            j -= 1
+        if not model:
+            model = part
+
+        # Description: text lines before dense pricing starts.
+        desc_parts: List[str] = []
+        prices: List[float] = []
+        for ln in block:
+            nums = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", ln)
+            if nums:
+                prices.extend([float(n.replace(",", "")) for n in nums])
+                continue
+            up = ln.upper()
+            if (
+                "$" in ln
+                or up in {"NOW", "Q226", "Q326", "Q426"}
+                or _extract_part_number_from_line(ln)
+                or _is_noise_line(ln)
+            ):
+                continue
+            if len(ln) <= 2:
+                continue
+            desc_parts.append(ln)
+
+        prices = prices[:5]
+        if not prices:
+            # Some PDFs print price columns before SKU in reading order.
+            nearby = lines[max(0, start - 20):end]
+            backfill: List[float] = []
+            for ln in nearby:
+                nums = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", ln)
+                backfill.extend([float(n.replace(",", "")) for n in nums])
+                if len(backfill) >= 5:
+                    break
+            prices = backfill[:5]
+        msrp = prices[0] if prices else None
+        unit_cost = _pick_unit_cost(prices, dealer_tier)
+        unit_price = msrp
+        short_desc = " ".join(desc_parts).strip()
+        if len(short_desc) > 300:
+            short_desc = short_desc[:297] + "..."
+        if not short_desc:
+            short_desc = f"{model} {part}".strip()
+
+        up_model = model.upper()
+        if "TERMS" in up_model or "DEALER LEVEL" in up_model:
+            continue
+
+        bad_model_tokens = ["DEALER", "WARRANTY", "AVAIL", "Q226", "Q326", "Q426"]
+        if any(tok in up_model for tok in bad_model_tokens):
+            model = part
+        if model.startswith("10YR") or model.startswith("Q") or "/" in model:
+            model = part
+
+        keywords = ", ".join([kw for kw in ["Modern Atomics", model, part, "power", "pdu"] if kw])
+        products.append(
+            {
+                "brand": "Modern Atomics",
+                "model": model.replace("™", "").replace("®", "").strip(),
+                "part_number": part.strip(),
+                "category": "Power Management",
+                "short_description": short_desc,
+                "keywords": keywords[:280],
+                "unit_price": unit_price,
+                "unit_cost": unit_cost,
+                "msrp": msrp,
+                "supplier": "Modern Atomics",
+            }
+        )
+
+    # Deduplicate by part number.
+    dedup: Dict[str, Dict[str, Any]] = {}
+    for p in products:
+        key = (p.get("part_number") or "").upper()
+        if key and key not in dedup:
+            dedup[key] = p
+    return list(dedup.values())
+
+
+def _parse_sheet_file(path: Path, dealer_tier: str) -> List[Dict[str, Any]]:
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
+        parsed: List[Dict[str, Any]] = []
+        with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                model = (row.get("Model") or row.get("MODEL") or row.get("Name") or "").strip()
+                part = (row.get("Part Number") or row.get("SKU") or row.get("Part") or "").strip()
+                if not model and not part:
+                    continue
+                msrp = _to_money(row.get("MSRP"))
+                unit_cost = _to_money(row.get("Dealer") or row.get("Cost"))
+                parsed.append(
+                    {
+                        "brand": (row.get("Brand") or row.get("Manufacturer") or "Unknown").strip(),
+                        "model": model or part,
+                        "part_number": part,
+                        "category": (row.get("Category") or "General").strip(),
+                        "short_description": (row.get("Description") or "").strip()[:300],
+                        "keywords": ", ".join(
+                            [
+                                k
+                                for k in [
+                                    row.get("Brand", ""),
+                                    model,
+                                    part,
+                                ]
+                                if k
+                            ]
+                        )[:280],
+                        "unit_price": msrp,
+                        "unit_cost": unit_cost,
+                        "msrp": msrp,
+                        "supplier": (row.get("Supplier") or row.get("Brand") or "").strip(),
+                    }
+                )
+        return parsed
+
+    if suffix == ".pdf":
+        text = _extract_text_from_pdf(path)
+        return _parse_price_sheet_text(text, dealer_tier)
+
+    raise RuntimeError(f"Unsupported file type: {suffix}. Use PDF or CSV.")
 
 
 def get_launchd_job_status(label: str) -> Dict:
@@ -160,6 +456,83 @@ def get_launchd_job_status(label: str) -> Dict:
     except Exception as e:
         status["error"] = str(e)
     return status
+
+
+def run_trading_api_watchdog() -> Dict:
+    """Kill stale :8421 listeners and kickstart trading API launchd service."""
+    label = "com.symphony.trading-api"
+    user_id = str(os.getuid())
+    steps: List[Dict] = []
+
+    # Kill any direct python process for trading_api.py.
+    pkill_result = run_command(["pkill", "-f", "api/trading_api.py"], timeout=10)
+    steps.append({"step": "pkill trading_api.py", "result": pkill_result})
+
+    # Kill stale listener on port 8421 if present.
+    listener_pid: Optional[int] = None
+    lsof_cmd = ["/usr/sbin/lsof", "-t", "-iTCP:8421", "-sTCP:LISTEN"]
+    lsof_result = run_command(lsof_cmd, timeout=10)
+    if (not lsof_result.get("success")) and "No such file or directory" in str(lsof_result.get("error", "")):
+        lsof_result = run_command(["lsof", "-t", "-iTCP:8421", "-sTCP:LISTEN"], timeout=10)
+    if lsof_result.get("success") and lsof_result.get("output"):
+        raw_pid = (lsof_result.get("output", "").splitlines() or [""])[0].strip()
+        try:
+            listener_pid = int(raw_pid)
+            kill_result = run_command(["kill", "-9", str(listener_pid)], timeout=10)
+            steps.append({
+                "step": "kill stale port 8421 listener",
+                "pid": listener_pid,
+                "result": kill_result,
+            })
+        except ValueError:
+            steps.append({
+                "step": "kill stale port 8421 listener",
+                "result": {"success": False, "error": f"Unexpected PID output: {raw_pid}"},
+            })
+    else:
+        steps.append({"step": "check stale port 8421 listener", "result": lsof_result})
+
+    # Restart launchd service for trading API.
+    kickstart_result = run_command(
+        ["launchctl", "kickstart", "-k", f"gui/{user_id}/{label}"],
+        timeout=15,
+    )
+    steps.append({"step": "launchctl kickstart trading-api", "result": kickstart_result})
+
+    # Verify health endpoint.
+    health_result = run_command(
+        [
+            "python3",
+            "-c",
+            (
+                "import time, urllib.request\n"
+                "ok=False\n"
+                "last=''\n"
+                "for _ in range(8):\n"
+                "    try:\n"
+                "        urllib.request.urlopen('http://127.0.0.1:8421/health', timeout=2)\n"
+                "        ok=True\n"
+                "        break\n"
+                "    except Exception as e:\n"
+                "        last=str(e)\n"
+                "        time.sleep(1)\n"
+                "print('healthy' if ok else last)\n"
+                "raise SystemExit(0 if ok else 1)\n"
+            ),
+        ],
+        timeout=20,
+    )
+    steps.append({"step": "verify trading api health", "result": health_result})
+
+    job = get_launchd_job_status(label)
+    return {
+        "success": bool(health_result.get("success")),
+        "timestamp": datetime.now().isoformat(),
+        "label": label,
+        "job": job,
+        "stale_listener_pid": listener_pid,
+        "steps": steps,
+    }
 
 
 def get_service_status() -> List[Dict]:
@@ -525,6 +898,19 @@ if HAS_FASTAPI:
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/trading/fix_api")
+    async def trading_fix_api():
+        """Run watchdog to clear stale :8421 listener and restart trading API."""
+        try:
+            status = run_trading_api_watchdog()
+            return {
+                "success": status.get("success", False),
+                "output": json.dumps(status, indent=2),
+                "error": None if status.get("success") else "Trading API watchdog failed",
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/research")
     async def research(request: ResearchRequest):
@@ -637,6 +1023,88 @@ if HAS_FASTAPI:
         project_name: str
         description: str
         rooms: Optional[List[str]] = None
+
+    @app.post("/dtools/products/import")
+    async def dtools_products_import(
+        file: UploadFile = File(...),
+        create_in_dtools: bool = Form(False),
+        max_products: int = Form(25),
+        dealer_tier: str = Form("standard"),
+        dry_run: bool = Form(True),
+    ):
+        """
+        Upload a pricing/data sheet, parse products, and optionally create them in D-Tools Cloud.
+        """
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            upload_name = file.filename or f"upload_{ts}.pdf"
+            safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in upload_name)
+            upload_path = DTOOLS_PRODUCT_AGENT_DIR / f"{ts}_{safe_name}"
+
+            content = await file.read()
+            upload_path.write_bytes(content)
+
+            products = _parse_sheet_file(upload_path, dealer_tier=dealer_tier)
+            if not products:
+                return {
+                    "success": False,
+                    "error": "No products parsed from file.",
+                    "file": str(upload_path),
+                }
+
+            limited = products[: max(1, min(max_products, 500))]
+            results: List[Dict[str, Any]] = []
+            created_count = 0
+
+            if create_in_dtools and not dry_run:
+                from agents.dtools_browser_agent import DToolsBrowserAgent
+
+                agent = DToolsBrowserAgent(headless=True)
+                if not await agent.start():
+                    return {
+                        "success": False,
+                        "error": "Failed to start browser agent (Playwright not ready).",
+                        "parsed_count": len(products),
+                        "products": limited,
+                    }
+                try:
+                    if not await agent.login():
+                        return {
+                            "success": False,
+                            "error": "Failed to login to D-Tools Cloud. Check DTOOLS credentials.",
+                            "parsed_count": len(products),
+                            "products": limited,
+                        }
+                    for prod in limited:
+                        out = await agent.create_product(prod)
+                        results.append(out)
+                        if out.get("success"):
+                            created_count += 1
+                finally:
+                    await agent.stop()
+            else:
+                results = [{"success": True, "mode": "dry_run", "product": p} for p in limited]
+
+            summary = {
+                "success": True,
+                "file": str(upload_path),
+                "parsed_count": len(products),
+                "attempted_count": len(limited),
+                "created_count": created_count,
+                "failed_count": max(0, len(limited) - created_count) if create_in_dtools and not dry_run else 0,
+                "create_in_dtools": bool(create_in_dtools and not dry_run),
+                "dealer_tier": dealer_tier,
+                "results": results,
+                "products": limited,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+            out_file = DTOOLS_PRODUCT_AGENT_DIR / f"product_import_{ts}.json"
+            out_file.write_text(json.dumps(summary, indent=2))
+            summary["output_file"] = str(out_file)
+            return summary
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
     
     @app.post("/markup/generate")
     async def generate_markup(request: MarkupRequest):

@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var api: APIClient
@@ -1101,6 +1102,13 @@ struct ActionsView: View {
     @State private var searchQuery = ""
     @State private var result: String?
     @State private var isLoading = false
+    @State private var showProductImporter = false
+    @State private var selectedSheetURL: URL?
+    @State private var dealerTier = "standard"
+    @State private var maxProducts = 25
+    @State private var createInDTools = false
+    @State private var dryRun = true
+    @State private var productImportResponse: DToolsProductImportResponse?
     
     var markupURL: URL {
         api.markupURL ?? api.fallbackMarkupURL
@@ -1133,6 +1141,86 @@ struct ActionsView: View {
                         .padding(.vertical, 8)
                     }
                     .foregroundColor(.primary)
+                }
+
+                Section(header: Text("D-Tools Product Agent")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Upload a price/data sheet, parse products, and optionally create products in d-tools.cloud.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Button {
+                            showProductImporter = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.badge.plus")
+                                Text(selectedSheetURL == nil ? "Choose PDF/CSV Sheet" : selectedSheetURL!.lastPathComponent)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Picker("Dealer Tier", selection: $dealerTier) {
+                            Text("Standard").tag("standard")
+                            Text("Silver").tag("silver")
+                            Text("Gold").tag("gold")
+                            Text("Fabricator").tag("fabricator")
+                        }
+                        .pickerStyle(.menu)
+
+                        Stepper("Max Products: \(maxProducts)", value: $maxProducts, in: 1...250)
+
+                        Toggle("Create in D-Tools", isOn: $createInDTools)
+                        Toggle("Dry Run", isOn: $dryRun)
+                            .onChange(of: dryRun) { newValue in
+                                if !newValue { createInDTools = true }
+                            }
+                            .onChange(of: createInDTools) { newValue in
+                                if !newValue { dryRun = true }
+                            }
+
+                        Button {
+                            Task { await runProductImport() }
+                        } label: {
+                            HStack {
+                                Image(systemName: "wand.and.stars")
+                                Text("Run Product Agent")
+                            }
+                        }
+                        .disabled(isLoading || selectedSheetURL == nil)
+                    }
+                }
+
+                if let importResponse = productImportResponse {
+                    Section(header: Text("Product Agent Result")) {
+                        Text("Parsed: \(importResponse.parsed_count ?? 0) • Attempted: \(importResponse.attempted_count ?? 0) • Created: \(importResponse.created_count ?? 0)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        if let error = importResponse.error, !error.isEmpty {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+
+                        if let products = importResponse.products {
+                            ForEach(Array(products.prefix(10).enumerated()), id: \.offset) { _, product in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(product.model)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text("\(product.brand ?? "Unknown") • \(product.part_number ?? "No part #")")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    if let msrp = product.msrp {
+                                        Text("MSRP: $\(String(format: "%.2f", msrp))")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    }
                 }
                 
                 Section(header: Text("Search Knowledge")) {
@@ -1205,6 +1293,23 @@ struct ActionsView: View {
                 }
                 
                 Section(header: Text("Quick Commands")) {
+                    ActionRow(title: "Fix Trading API (:8421)", icon: "bolt.horizontal.circle.fill") {
+                        Task {
+                            isLoading = true
+                            let r = await api.fixTradingAPI()
+                            if let output = r?.output, !output.isEmpty {
+                                result = output
+                            } else if let err = r?.error, !err.isEmpty {
+                                result = err
+                            } else if r?.success == true {
+                                result = "Trading API watchdog completed."
+                            } else {
+                                result = "Trading API watchdog failed."
+                            }
+                            isLoading = false
+                        }
+                    }
+
                     ActionRow(title: "Morning Checklist", icon: "sunrise") {
                         Task {
                             isLoading = true
@@ -1249,6 +1354,40 @@ struct ActionsView: View {
             .navigationTitle("Actions")
         }
         .task { await api.fetchMarkupURL() }
+        .fileImporter(
+            isPresented: $showProductImporter,
+            allowedContentTypes: [.pdf, .commaSeparatedText, .plainText, .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                selectedSheetURL = urls.first
+            case .failure(let err):
+                self.result = "File picker failed: \(err.localizedDescription)"
+            }
+        }
+    }
+
+    func runProductImport() async {
+        guard let sheetURL = selectedSheetURL else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        let response = await api.importDToolsProducts(
+            fileURL: sheetURL,
+            createInDTools: createInDTools,
+            maxProducts: maxProducts,
+            dealerTier: dealerTier,
+            dryRun: dryRun
+        )
+        productImportResponse = response
+        if response == nil {
+            result = api.error ?? "Product import failed"
+        } else if response?.success == false {
+            result = response?.error ?? "Product import failed"
+        } else {
+            result = "Product agent completed."
+        }
     }
 }
 

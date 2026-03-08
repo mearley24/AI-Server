@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UniformTypeIdentifiers
 
 extension UserDefaults {
     func contains(key: String) -> Bool {
@@ -296,6 +297,52 @@ class APIClient: ObservableObject {
     func seoKeywords() async -> CommandResult? { await runCommand("/seo/keywords") }
     func seoContent() async -> CommandResult? { await runCommand("/seo/content") }
     func seoLocal() async -> CommandResult? { await runCommand("/seo/local") }
+    func fixTradingAPI() async -> CommandResult? { await postCommandNoBody(endpoint: "/trading/fix_api") }
+
+    // MARK: - D-Tools Product Agent
+
+    func importDToolsProducts(
+        fileURL: URL,
+        createInDTools: Bool,
+        maxProducts: Int,
+        dealerTier: String,
+        dryRun: Bool
+    ) async -> DToolsProductImportResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/dtools/products/import")!)
+            request.httpMethod = "POST"
+
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 300
+
+            let startAccess = fileURL.startAccessingSecurityScopedResource()
+            defer {
+                if startAccess { fileURL.stopAccessingSecurityScopedResource() }
+            }
+
+            let fileData = try Data(contentsOf: fileURL)
+            let filename = fileURL.lastPathComponent
+            let mimeType = mimeTypeForFile(url: fileURL)
+
+            var body = Data()
+            body.append(multipartField(name: "create_in_dtools", value: createInDTools ? "true" : "false", boundary: boundary))
+            body.append(multipartField(name: "max_products", value: "\(maxProducts)", boundary: boundary))
+            body.append(multipartField(name: "dealer_tier", value: dealerTier, boundary: boundary))
+            body.append(multipartField(name: "dry_run", value: dryRun ? "true" : "false", boundary: boundary))
+            body.append(multipartFileField(name: "file", filename: filename, mimeType: mimeType, data: fileData, boundary: boundary))
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(DToolsProductImportResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
     
     // MARK: - Facts (cortex ingest)
     
@@ -636,6 +683,52 @@ class APIClient: ObservableObject {
             return nil
         }
     }
+
+    private func postCommandNoBody(endpoint: String) async -> CommandResult? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)\(endpoint)")!)
+            request.httpMethod = "POST"
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(CommandResult.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    private func multipartField(name: String, value: String, boundary: String) -> Data {
+        var data = Data()
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        data.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+        data.append("\(value)\r\n".data(using: .utf8)!)
+        return data
+    }
+
+    private func multipartFileField(
+        name: String,
+        filename: String,
+        mimeType: String,
+        data fileData: Data,
+        boundary: String
+    ) -> Data {
+        var data = Data()
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        data.append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        data.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        data.append(fileData)
+        data.append("\r\n".data(using: .utf8)!)
+        return data
+    }
+
+    private func mimeTypeForFile(url: URL) -> String {
+        if let contentType = UTType(filenameExtension: url.pathExtension),
+           let mime = contentType.preferredMIMEType {
+            return mime
+        }
+        return "application/octet-stream"
+    }
 }
 
 // MARK: - Models
@@ -892,4 +985,32 @@ struct AIBackendStatus: Codable {
     let lm_studio: Bool
     let openai: Bool
     let perplexity: Bool
+}
+
+struct DToolsProductImportResponse: Codable {
+    let success: Bool
+    let file: String?
+    let parsed_count: Int?
+    let attempted_count: Int?
+    let created_count: Int?
+    let failed_count: Int?
+    let create_in_dtools: Bool?
+    let dealer_tier: String?
+    let output_file: String?
+    let error: String?
+    let products: [DToolsProductDraft]?
+}
+
+struct DToolsProductDraft: Codable, Identifiable {
+    var id: String { part_number ?? model }
+    let brand: String?
+    let model: String
+    let part_number: String?
+    let category: String?
+    let short_description: String?
+    let keywords: String?
+    let unit_price: Double?
+    let unit_cost: Double?
+    let msrp: Double?
+    let supplier: String?
 }
