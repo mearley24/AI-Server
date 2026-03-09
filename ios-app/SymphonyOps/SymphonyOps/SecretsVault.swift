@@ -192,10 +192,10 @@ final class SecretsVaultStore: ObservableObject {
                 }
                 continue
             }
-            if let idx = line.firstIndex(of: ":"), line.contains("_") {
+            if let idx = line.firstIndex(of: ":") {
                 let key = String(line[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
                 let value = String(line[line.index(after: idx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !key.isEmpty && !value.isEmpty {
+                if !key.isEmpty && !value.isEmpty && looksLikeSecretValue(value) {
                     out.append(VaultImportCandidate(keyName: key, provider: providerGuess(key), tags: tagGuess(key), value: value))
                 }
             }
@@ -240,6 +240,22 @@ final class SecretsVaultStore: ObservableObject {
 
     private func tagGuess(_ key: String) -> [String] {
         [providerGuess(key).lowercased(), "credential"]
+    }
+
+    private func looksLikeSecretValue(_ value: String) -> Bool {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.count < 8 { return false }
+        if v.contains(" ") { return false }
+        if v.hasPrefix("http://") || v.hasPrefix("https://") { return false }
+        if v.lowercased().hasPrefix("sk_") { return true }
+        if v.lowercased().hasPrefix("sk-") { return true }
+        if v.lowercased().hasPrefix("ghp_") { return true }
+        if v.lowercased().hasPrefix("xoxb-") { return true }
+        if v.lowercased().hasPrefix("xoxp-") { return true }
+        if v.lowercased().hasPrefix("pat_") { return true }
+        // Generic high-entropy token-ish fallback.
+        let charset = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-./+=:"))
+        return v.rangeOfCharacter(from: charset.inverted) == nil
     }
 
     private static func hashPrefix(_ value: String) -> String {
