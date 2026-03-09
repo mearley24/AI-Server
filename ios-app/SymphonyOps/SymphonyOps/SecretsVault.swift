@@ -424,6 +424,30 @@ struct SecretsVaultView: View {
     @State private var importPreviewRows: [VaultImportPreviewRow] = []
     @State private var pendingDeleteRecord: VaultSecretRecord?
     @State private var rotationStatusMessage = ""
+    private let commonKeyNameTemplates: [String] = [
+        "SYMPHONY_API_TOKEN",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "BETTY_BOT_TOKEN",
+        "BEATRICE_BOT_TOKEN",
+        "DTOOLS_API_KEY",
+        "SUPABASE_URL",
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_PHONE_NUMBER",
+        "GITHUB_TOKEN",
+        "CLOUDFLARE_API_TOKEN",
+        "ZOHO_CLIENT_ID",
+        "ZOHO_CLIENT_SECRET",
+        "ZOHO_REFRESH_TOKEN",
+        "FINNHUB_API_KEY",
+        "ALPACA_API_KEY",
+        "ALPACA_SECRET_KEY"
+    ]
 
     var filtered: [VaultSecretRecord] {
         let q = filter.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -436,6 +460,14 @@ struct SecretsVaultView: View {
                 $0.provider.lowercased().contains(q) ||
                 $0.tags.joined(separator: " ").lowercased().contains(q)
         }
+    }
+
+    private var addNameSuggestions: [String] {
+        let q = addName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let existing = Set(vault.records.map { $0.keyName.lowercased() })
+        let list = commonKeyNameTemplates.filter { !existing.contains($0.lowercased()) }
+        guard !q.isEmpty else { return Array(list.prefix(8)) }
+        return list.filter { $0.lowercased().contains(q) }.prefix(8).map { $0 }
     }
 
     var body: some View {
@@ -557,6 +589,27 @@ struct SecretsVaultView: View {
                 NavigationView {
                     Form {
                         TextField("Env key (e.g. OPENAI_API_KEY)", text: $addName)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                        if !addNameSuggestions.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(addNameSuggestions, id: \.self) { suggestion in
+                                        Button(suggestion) {
+                                            addName = suggestion
+                                            if addProvider == "General" || addProvider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                addProvider = inferredProvider(from: suggestion)
+                                            }
+                                            if addTags.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                                addTags = inferredTagsCSV(from: suggestion)
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .controlSize(.small)
+                                    }
+                                }
+                            }
+                        }
                         TextField("Provider", text: $addProvider)
                         TextField("Tags (comma-separated)", text: $addTags)
                         SecureField("Secret value", text: $addValue)
@@ -744,5 +797,27 @@ struct SecretsVaultView: View {
         case .aging:
             return days >= 30
         }
+    }
+
+    private func inferredProvider(from keyName: String) -> String {
+        let k = keyName.lowercased()
+        if k.contains("openai") { return "OpenAI" }
+        if k.contains("anthropic") { return "Anthropic" }
+        if k.contains("perplexity") { return "Perplexity" }
+        if k.contains("telegram") || k.contains("bot_token") { return "Telegram" }
+        if k.contains("dtools") { return "D-Tools" }
+        if k.contains("supabase") { return "Supabase" }
+        if k.contains("twilio") { return "Twilio" }
+        if k.contains("github") { return "GitHub" }
+        if k.contains("cloudflare") { return "Cloudflare" }
+        if k.contains("zoho") { return "Zoho" }
+        if k.contains("alpaca") { return "Alpaca" }
+        if k.contains("finnhub") { return "Finnhub" }
+        return "General"
+    }
+
+    private func inferredTagsCSV(from keyName: String) -> String {
+        let provider = inferredProvider(from: keyName).lowercased()
+        return "\(provider),credential"
     }
 }
