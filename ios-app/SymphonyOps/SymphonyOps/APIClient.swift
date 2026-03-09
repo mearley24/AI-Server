@@ -1180,6 +1180,61 @@ class APIClient: ObservableObject {
             return []
         }
     }
+
+    // MARK: - Intake Uploads (proposal/drawing/image/document)
+
+    func uploadTaskIntake(
+        fileURL: URL,
+        category: String,
+        projectName: String,
+        clientName: String,
+        title: String,
+        description: String,
+        priority: String
+    ) async -> TaskUploadIntakeResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/tasks/upload_intake")!)
+            request.httpMethod = "POST"
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 120
+
+            let started = fileURL.startAccessingSecurityScopedResource()
+            defer {
+                if started { fileURL.stopAccessingSecurityScopedResource() }
+            }
+            let fileData = try Data(contentsOf: fileURL)
+            let filename = fileURL.lastPathComponent
+            let mimeType = mimeTypeForFile(url: fileURL)
+
+            var body = Data()
+            body.append(multipartField(name: "category", value: category, boundary: boundary))
+            body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
+            body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
+            body.append(multipartField(name: "title", value: title, boundary: boundary))
+            body.append(multipartField(name: "description", value: description, boundary: boundary))
+            body.append(multipartField(name: "priority", value: priority, boundary: boundary))
+            body.append(
+                multipartFileField(
+                    name: "file",
+                    filename: filename,
+                    mimeType: mimeType,
+                    data: fileData,
+                    boundary: boundary
+                )
+            )
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(TaskUploadIntakeResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return nil
+        }
+    }
     
     func approveClaudeTask(id: Int) async -> (success: Bool, message: String) {
         do {
@@ -1738,6 +1793,16 @@ struct TaskCreateRequest: Codable {
 struct TaskCreateResponse: Codable {
     let success: Bool
     let task_id: Int?
+    let error: String?
+}
+
+struct TaskUploadIntakeResponse: Codable {
+    let success: Bool
+    let task_id: Int?
+    let category: String?
+    let stored_filename: String?
+    let stored_path: String?
+    let naming_scheme: String?
     let error: String?
 }
 

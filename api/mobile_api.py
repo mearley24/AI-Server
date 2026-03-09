@@ -20,11 +20,15 @@ import csv
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
+import tempfile
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 from dotenv import load_dotenv
 
@@ -40,6 +44,7 @@ except ModuleNotFoundError:
 try:
     from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import FileResponse, JSONResponse
     from pydantic import BaseModel
     import uvicorn
     HAS_FASTAPI = True
@@ -50,8 +55,114 @@ except ImportError:
 sys.path.insert(0, str(BASE_DIR))
 
 API_PORT = int(os.environ.get("MOBILE_API_PORT", "8420"))
+API_BIND_HOST = os.environ.get("MOBILE_API_BIND_HOST", "127.0.0.1")
+API_AUTH_TOKEN = os.environ.get("SYMPHONY_API_TOKEN", "").strip()
 DTOOLS_PRODUCT_AGENT_DIR = BASE_DIR / "data" / "dtools_product_agent"
 DTOOLS_PRODUCT_AGENT_DIR.mkdir(parents=True, exist_ok=True)
+DTOOLS_PRODUCT_DB = DTOOLS_PRODUCT_AGENT_DIR / "products.sqlite3"
+MANUAL_DIGEST_DIR = BASE_DIR / "data" / "manual_digest"
+MANUAL_DIGEST_DIR.mkdir(parents=True, exist_ok=True)
+ASK_BOB_MEMORY_DIR = BASE_DIR / "data" / "ask_bob_memory"
+ASK_BOB_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+IMESSAGE_WATCHER_STATE_FILE = BASE_DIR / "data" / "imessage_watcher_state.json"
+IMESSAGE_WORK_LOG_FILE = BASE_DIR / "knowledge" / "imessages" / "work_talk.jsonl"
+CONTACTS_INDEX_FILE = BASE_DIR / "data" / "contacts" / "contacts_index.json"
+CLIENTS_REGISTRY_FILE = BASE_DIR / "data" / "contacts" / "clients_registry.json"
+NOTES_PROJECT_LINKS_FILE = BASE_DIR / "data" / "notes_project_links.json"
+TASK_UPLOAD_DIR = BASE_DIR / "data" / "intake_uploads"
+TASK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
+    "auto": {
+        "label": "Auto detect",
+        "expected_columns": [],
+    },
+    "msrp_three_tiers": {
+        "label": "MSRP + Standard/Silver/Gold",
+        "expected_columns": [
+            "MODEL NAME",
+            "PART NUMBER",
+            "SKU",
+            "DESCRIPTION",
+            "MSRP",
+            "STANDARD DEALER",
+            "SILVER DEALER",
+            "GOLD DEALER",
+        ],
+    },
+    "msrp_standard_only": {
+        "label": "MSRP + Standard dealer",
+        "expected_columns": [
+            "MODEL NAME",
+            "PART NUMBER",
+            "SKU",
+            "DESCRIPTION",
+            "MSRP",
+            "STANDARD DEALER",
+        ],
+    },
+    "minimal": {
+        "label": "Minimal (model, part, description, price)",
+        "expected_columns": [
+            "MODEL",
+            "PART NUMBER",
+            "DESCRIPTION",
+            "PRICE",
+        ],
+    },
+}
+
+KNOWN_DEVICE_BRANDS = [
+    "Control4",
+    "Lutron",
+    "Sonos",
+    "Araknis",
+    "Episode",
+    "WattBox",
+    "Luma",
+    "Pakedge",
+    "Snap One",
+    "Modern Atomics",
+    "Josh.ai",
+    "Apple TV",
+    "Samsung",
+    "Sony",
+    "Yamaha",
+]
+
+
+def _slugify(value: str, fallback: str = "na", max_len: int = 48) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "").strip().lower()).strip("-")
+    if not cleaned:
+        cleaned = fallback
+    return cleaned[:max_len]
+
+
+def _build_intake_filename(
+    category: str,
+    project_name: str,
+    client_name: str,
+    original_filename: str,
+) -> str:
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    cat = _slugify(category, fallback="document", max_len=20)
+    project = _slugify(project_name, fallback="no-project", max_len=36)
+    client = _slugify(client_name, fallback="no-client", max_len=28)
+    orig_stem = _slugify(Path(original_filename or "upload").stem, fallback="file", max_len=36)
+    ext = (Path(original_filename or "").suffix or ".bin").lower()
+    return f"{ts}--{cat}--{project}--{client}--{orig_stem}{ext}"
+
+
+def _parse_allowed_origins(env_key: str, default_csv: str) -> list[str]:
+    raw = (os.environ.get(env_key, default_csv) or "").strip()
+    origins = [x.strip() for x in raw.split(",") if x.strip()]
+    return origins or ["http://localhost", "http://127.0.0.1"]
+
+
+def _auth_exempt_path(path: str) -> bool:
+    if path in {"/", "/health", "/openapi.json", "/docs", "/redoc"}:
+        return True
+    return path.startswith("/docs") or path.startswith("/redoc")
 
 if HAS_FASTAPI:
     app = FastAPI(
@@ -60,14 +171,38 @@ if HAS_FASTAPI:
         version="1.0.0"
     )
     
-    # Allow CORS for mobile app
+    # CORS allowlist (no wildcard in production hardening mode)
+    allowed_origins = _parse_allowed_origins(
+        "MOBILE_APP_ALLOWED_ORIGINS",
+        "http://localhost,http://127.0.0.1,http://bobs-mac-mini:8420",
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
         allow_methods=["*"],
-        allow_headers=["*"],
+        allow_headers=["Content-Type", "Authorization", "X-Symphony-Token"],
     )
+
+    @app.middleware("http")
+    async def symphony_api_auth(request: Request, call_next):
+        """
+        Require API token on all non-health routes when SYMPHONY_API_TOKEN is set.
+        Accepts:
+          - X-Symphony-Token: <token>
+          - Authorization: Bearer <token>
+        """
+        if not API_AUTH_TOKEN or _auth_exempt_path(request.url.path):
+            return await call_next(request)
+
+        header_token = request.headers.get("x-symphony-token", "").strip()
+        auth = request.headers.get("authorization", "").strip()
+        bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        token = header_token or bearer
+
+        if token != API_AUTH_TOKEN:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+        return await call_next(request)
 
 
 # --- Helper Functions ---
@@ -102,6 +237,46 @@ def run_command(cmd: List[str], timeout: int = 30) -> Dict:
 def run_tool_endpoint(script: str, args: List[str], timeout: int = 60) -> Dict:
     """Run a tools/ script and return {success, output, error}."""
     return run_tool_script(BASE_DIR, script, args=args, timeout=timeout)
+
+
+def _read_json_file(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _read_recent_jsonl(path: Path, limit: int = 20) -> List[Dict[str, Any]]:
+    """Read the last N JSONL records from a file."""
+    if not path.exists():
+        return []
+    capped_limit = max(1, min(int(limit), 200))
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+        recent = lines[-capped_limit:]
+        items: List[Dict[str, Any]] = []
+        for raw in recent:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw)
+                if isinstance(payload, dict):
+                    items.append(payload)
+            except json.JSONDecodeError:
+                continue
+        return list(reversed(items))
+    except Exception:
+        return []
+
+
+def _http_get_json(url: str, timeout: int = 6) -> Dict[str, Any]:
+    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
 def _to_money(value: Any) -> Optional[float]:
@@ -351,30 +526,108 @@ def _parse_price_sheet_text(text: str, dealer_tier: str) -> List[Dict[str, Any]]
 
 
 def _parse_sheet_file(path: Path, dealer_tier: str) -> List[Dict[str, Any]]:
+    return _parse_sheet_file_with_profile(path, dealer_tier, parse_profile="auto", custom_columns=None)
+
+
+def _normalize_header_name(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", value.upper())
+
+
+def _parse_sheet_file_with_profile(
+    path: Path,
+    dealer_tier: str,
+    parse_profile: str,
+    custom_columns: Optional[List[str]],
+) -> List[Dict[str, Any]]:
     suffix = path.suffix.lower()
+    profile = PARSE_PROFILES.get(parse_profile, PARSE_PROFILES["auto"])
+    expected_columns = custom_columns or profile.get("expected_columns", [])
+    expected_normalized = [_normalize_header_name(col) for col in expected_columns if col]
+
+    def pick_value_by_patterns(row: Dict[str, Any], patterns: List[str]) -> str:
+        if not row:
+            return ""
+        normalized = { _normalize_header_name(k): v for k, v in row.items() if k is not None }
+        for pat in patterns:
+            pat_n = _normalize_header_name(pat)
+            for key_n, value in normalized.items():
+                if pat_n and pat_n in key_n:
+                    return str(value or "").strip()
+        return ""
+
     if suffix == ".csv":
         parsed: List[Dict[str, Any]] = []
         with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                model = (row.get("Model") or row.get("MODEL") or row.get("Name") or "").strip()
-                part = (row.get("Part Number") or row.get("SKU") or row.get("Part") or "").strip()
+                model = (
+                    pick_value_by_patterns(row, ["MODEL NAME", "MODEL", "NAME"])
+                    or (row.get("Model") or row.get("MODEL") or row.get("Name") or "").strip()
+                )
+                part = (
+                    pick_value_by_patterns(row, ["PART NUMBER", "SKU", "PART"])
+                    or (row.get("Part Number") or row.get("SKU") or row.get("Part") or "").strip()
+                )
                 if not model and not part:
                     continue
-                msrp = _to_money(row.get("MSRP"))
-                unit_cost = _to_money(row.get("Dealer") or row.get("Cost"))
+                msrp = _to_money(
+                    pick_value_by_patterns(row, ["MSRP", "LIST PRICE", "PRICE"])
+                    or row.get("MSRP")
+                )
+
+                if expected_normalized:
+                    # If profile declares dealer columns, respect that order.
+                    normalized_row = {
+                        _normalize_header_name(k): v for k, v in row.items() if k is not None
+                    }
+                    profile_prices: List[float] = []
+                    for col_n in expected_normalized:
+                        raw = normalized_row.get(col_n, "")
+                        val = _to_money(raw)
+                        if val is not None and any(token in col_n for token in ["MSRP", "DEALER", "PRICE", "COST"]):
+                            profile_prices.append(val)
+                    if profile_prices:
+                        unit_cost = _pick_unit_cost(profile_prices, dealer_tier)
+                        if msrp is None:
+                            msrp = profile_prices[0]
+                    else:
+                        unit_cost = _to_money(
+                            pick_value_by_patterns(row, ["STANDARD DEALER", "DEALER", "COST"])
+                            or row.get("Dealer")
+                            or row.get("Cost")
+                        )
+                else:
+                    unit_cost = _to_money(
+                        pick_value_by_patterns(row, ["STANDARD DEALER", "DEALER", "COST"])
+                        or row.get("Dealer")
+                        or row.get("Cost")
+                    )
+
                 parsed.append(
                     {
-                        "brand": (row.get("Brand") or row.get("Manufacturer") or "Unknown").strip(),
+                        "brand": (
+                            pick_value_by_patterns(row, ["BRAND", "MANUFACTURER"])
+                            or row.get("Brand")
+                            or row.get("Manufacturer")
+                            or "Unknown"
+                        ).strip(),
                         "model": model or part,
                         "part_number": part,
-                        "category": (row.get("Category") or "General").strip(),
-                        "short_description": (row.get("Description") or "").strip()[:300],
+                        "category": (
+                            pick_value_by_patterns(row, ["CATEGORY"])
+                            or row.get("Category")
+                            or "General"
+                        ).strip(),
+                        "short_description": (
+                            pick_value_by_patterns(row, ["DESCRIPTION", "SHORT DESCRIPTION"])
+                            or row.get("Description")
+                            or ""
+                        ).strip()[:300],
                         "keywords": ", ".join(
                             [
                                 k
                                 for k in [
-                                    row.get("Brand", ""),
+                                    pick_value_by_patterns(row, ["BRAND", "MANUFACTURER"]) or row.get("Brand", ""),
                                     model,
                                     part,
                                 ]
@@ -394,6 +647,313 @@ def _parse_sheet_file(path: Path, dealer_tier: str) -> List[Dict[str, Any]]:
         return _parse_price_sheet_text(text, dealer_tier)
 
     raise RuntimeError(f"Unsupported file type: {suffix}. Use PDF or CSV.")
+
+
+def _product_unique_key(brand: str, part_number: str, model: str) -> str:
+    b = (brand or "unknown").strip().lower()
+    p = (part_number or "").strip().lower()
+    m = (model or "").strip().lower()
+    return f"{b}::{p or m}"
+
+
+def _slugify(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "").strip()).strip("-").lower()
+    return cleaned or "unnamed-project"
+
+
+def _extract_text_from_path(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return _extract_text_from_pdf(path)
+    if suffix in {".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".log"}:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    if suffix in {".rtf"}:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    return ""
+
+
+def _extract_manual_digest_signals(text: str) -> Dict[str, Any]:
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    recommended: List[str] = []
+    scope_lines: List[str] = []
+    risk_lines: List[str] = []
+    questions: List[str] = []
+
+    for line in lines:
+        low = line.lower()
+        if any(tok in low for tok in ["recommend", "recommended", "should use", "suggested", "suggestion"]):
+            recommended.append(line)
+        if any(tok in low for tok in ["scope", "requirements", "deliverable", "rooms", "system includes"]):
+            scope_lines.append(line)
+        if any(tok in low for tok in ["risk", "constraint", "budget", "timeline", "deadline", "lead time"]):
+            risk_lines.append(line)
+        if "?" in line or any(tok in low for tok in ["confirm", "verify", "need to know", "clarify"]):
+            questions.append(line)
+
+    sku_matches = sorted(
+        set(re.findall(r"\b[A-Z0-9#]+(?:-[A-Z0-9#]+){1,}\b", text.upper()))
+    )
+    sku_matches = [m for m in sku_matches if len(m) >= 5][:200]
+
+    brands_found = []
+    text_low = text.lower()
+    for brand in KNOWN_DEVICE_BRANDS:
+        if brand.lower() in text_low:
+            brands_found.append(brand)
+
+    emails = sorted(set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)))
+    phones = sorted(set(re.findall(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}", text)))
+
+    return {
+        "recommended_notes": recommended[:40],
+        "scope_notes": scope_lines[:40],
+        "risk_notes": risk_lines[:30],
+        "open_questions": questions[:30],
+        "detected_skus": sku_matches,
+        "detected_brands": brands_found,
+        "detected_contacts": {
+            "emails": emails[:20],
+            "phones": phones[:20],
+        },
+    }
+
+
+def _merge_digest_signals(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = {
+        "recommended_notes": [],
+        "scope_notes": [],
+        "risk_notes": [],
+        "open_questions": [],
+        "detected_skus": [],
+        "detected_brands": [],
+        "detected_contacts": {"emails": [], "phones": []},
+    }
+    for item in items:
+        for key in ["recommended_notes", "scope_notes", "risk_notes", "open_questions", "detected_skus", "detected_brands"]:
+            merged[key].extend(item.get(key, []))
+        contacts = item.get("detected_contacts", {})
+        merged["detected_contacts"]["emails"].extend(contacts.get("emails", []))
+        merged["detected_contacts"]["phones"].extend(contacts.get("phones", []))
+
+    for key in ["recommended_notes", "scope_notes", "risk_notes", "open_questions", "detected_skus", "detected_brands"]:
+        merged[key] = sorted(set(merged[key]))
+    merged["detected_contacts"]["emails"] = sorted(set(merged["detected_contacts"]["emails"]))
+    merged["detected_contacts"]["phones"] = sorted(set(merged["detected_contacts"]["phones"]))
+    return merged
+
+
+def _ai_project_digest_summary(project_name: str, merged: Dict[str, Any]) -> Dict[str, Any]:
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {}
+    model = os.environ.get("OPENAI_BACKUP_MODEL", "gpt-4.1-mini")
+    payload = {
+        "model": model,
+        "temperature": 0.2,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an AV integration project analyst. Output strict JSON with keys: "
+                    "recommended_devices (array), key_findings (array), risks (array), "
+                    "clarifying_questions (array), next_steps (array)."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "project_name": project_name,
+                        "digest": merged,
+                    }
+                ),
+            },
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+        content = (
+            raw.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "{}")
+        )
+        return json.loads(content)
+    except Exception:
+        return {}
+
+
+def _session_memory_file(session_id: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", (session_id or "default"))[:80]
+    return ASK_BOB_MEMORY_DIR / f"{safe}.jsonl"
+
+
+def _append_ask_bob_memory(session_id: str, question: str, answer: str, source: str) -> None:
+    path = _session_memory_file(session_id)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "question": question,
+                    "answer": answer,
+                    "source": source,
+                }
+            )
+            + "\n"
+        )
+
+
+def _load_recent_ask_bob_memory(session_id: str, limit: int = 8) -> List[Dict[str, Any]]:
+    path = _session_memory_file(session_id)
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    out: List[Dict[str, Any]] = []
+    for line in lines[-limit:]:
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+
+def _extract_project_hint(question: str) -> Optional[str]:
+    q = question.strip()
+    match = re.search(r"\b([A-Za-z][A-Za-z0-9_-]{2,})\s+project\b", q, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    match = re.search(r"\bfor\s+([A-Za-z][A-Za-z0-9_-]{2,})\b", q, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _collect_project_file_context(project_hint: str, question: str, max_files: int = 16) -> Dict[str, Any]:
+    """
+    Scan likely project-related directories for files matching project hint
+    and collect concise snippets for Ask Bob context.
+    """
+    hint = (project_hint or "").strip()
+    if not hint:
+        return {"project_hint": "", "files": [], "context": ""}
+
+    candidates: List[Path] = []
+    roots = [
+        BASE_DIR / "knowledge" / "projects",
+        BASE_DIR / "knowledge" / "generated_proposals",
+        BASE_DIR / "knowledge" / "proposals",
+        BASE_DIR / "data" / "manual_digest",
+        BASE_DIR / "knowledge" / "cortex",
+    ]
+    hint_low = hint.lower()
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            rel = str(path.relative_to(BASE_DIR)).lower()
+            if hint_low in rel:
+                candidates.append(path)
+
+    # Prefer digest JSON + text docs.
+    candidates = sorted(
+        candidates,
+        key=lambda p: (
+            0 if p.name == "digest.json" else 1,
+            0 if p.suffix.lower() in {".md", ".txt", ".json", ".csv"} else 1,
+            str(p),
+        ),
+    )[: max_files]
+
+    snippets: List[str] = []
+    files_used: List[str] = []
+    q_terms = [t for t in re.findall(r"[A-Za-z0-9]{3,}", question.lower()) if t not in {"what", "which", "with", "from", "that", "this"}]
+
+    for path in candidates:
+        rel = str(path.relative_to(BASE_DIR))
+        try:
+            text = _extract_text_from_path(path)
+            if not text:
+                continue
+            lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            if not lines:
+                continue
+            picked: List[str] = []
+            for ln in lines:
+                low = ln.lower()
+                if any(term in low for term in q_terms):
+                    picked.append(ln)
+                if len(picked) >= 4:
+                    break
+            if not picked:
+                picked = lines[:3]
+            snippet = "\n".join(picked)
+            snippets.append(f"[{rel}]\n{snippet}")
+            files_used.append(rel)
+        except Exception:
+            continue
+
+    context = "\n\n".join(snippets)[:12000]
+    return {
+        "project_hint": hint,
+        "files": files_used,
+        "context": context,
+    }
+
+
+def _init_product_db(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS approved_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            source_file TEXT,
+            parse_profile TEXT,
+            dealer_tier TEXT,
+            notes TEXT,
+            total_products INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS approved_products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER,
+            unique_key TEXT NOT NULL UNIQUE,
+            brand TEXT,
+            model TEXT NOT NULL,
+            part_number TEXT,
+            category TEXT,
+            short_description TEXT,
+            keywords TEXT,
+            unit_price REAL,
+            unit_cost REAL,
+            msrp REAL,
+            supplier TEXT,
+            approved_at TEXT NOT NULL,
+            FOREIGN KEY(batch_id) REFERENCES approved_batches(id)
+        )
+        """
+    )
+    conn.commit()
+
+
+def _safe_export_filename(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", (value or "").strip())
+    return cleaned.strip("._") or "export"
 
 
 def get_launchd_job_status(label: str) -> Dict:
@@ -674,6 +1234,18 @@ if HAS_FASTAPI:
             "services": get_service_status(),
             "timestamp": datetime.now().isoformat()
         }
+
+    @app.get("/templates/manual_digest_intake_pdf")
+    async def get_manual_digest_intake_pdf():
+        """Download fillable PDF intake template for clients/builders."""
+        pdf_path = BASE_DIR / "docs" / "templates" / "MANUAL_DIGEST_CLIENT_BUILDER_INTAKE_FILLABLE.pdf"
+        if not pdf_path.exists():
+            raise HTTPException(status_code=404, detail="Template not found")
+        return FileResponse(
+            path=str(pdf_path),
+            media_type="application/pdf",
+            filename="Symphony_Project_Intake_Fillable.pdf",
+        )
     
     @app.get("/dashboard")
     async def dashboard():
@@ -899,6 +1471,549 @@ if HAS_FASTAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.get("/notes/pipeline_status")
+    async def notes_pipeline_status():
+        """Get health/status of the Notes ingestion pipeline."""
+        try:
+            notes_watcher_job = get_launchd_job_status("com.symphony.notes-watcher")
+            incoming_tasks_job = get_launchd_job_status("com.symphony.incoming-tasks")
+            notes_sync_job = get_launchd_job_status("com.symphony.notes-sync-photos")
+
+            watcher_state = _read_json_file(BASE_DIR / "knowledge" / "state" / "notes_watcher_state.json")
+            incoming_state = _read_json_file(BASE_DIR / "knowledge" / "state" / "incoming_tasks_state.json")
+            processed_tasks = _read_json_file(BASE_DIR / "knowledge" / "state" / "processed_tasks.json")
+
+            logs = {
+                "notes_watcher_log": str(BASE_DIR / "logs" / "notes-watcher.log"),
+                "notes_watcher_error_log": str(BASE_DIR / "logs" / "notes-watcher.error.log"),
+                "incoming_tasks_log": str(BASE_DIR / "logs" / "incoming-tasks.log"),
+                "incoming_tasks_error_log": str(BASE_DIR / "logs" / "incoming-tasks.error.log"),
+                "notes_sync_log": str(BASE_DIR / "logs" / "notes-sync-photos.log"),
+                "notes_sync_error_log": str(BASE_DIR / "logs" / "notes-sync-photos.error.log"),
+            }
+            log_mtimes = {}
+            for key, file_path in logs.items():
+                p = Path(file_path)
+                if p.exists():
+                    log_mtimes[key + "_updated_at"] = datetime.fromtimestamp(p.stat().st_mtime).isoformat()
+
+            return {
+                "success": True,
+                "timestamp": datetime.now().isoformat(),
+                "jobs": {
+                    "notes_watcher": notes_watcher_job,
+                    "incoming_tasks": incoming_tasks_job,
+                    "notes_sync_photos": notes_sync_job,
+                },
+                "state": {
+                    "notes_watcher_last_check": watcher_state.get("last_check"),
+                    "notes_watcher_processed_count": len(watcher_state.get("processed_notes", {})),
+                    "notes_watcher_known_projects": len(watcher_state.get("known_projects", [])),
+                    "incoming_tasks_last_check": incoming_state.get("last_check"),
+                    "incoming_tasks_processed_count": len(incoming_state.get("processed_notes", {})),
+                    "incoming_tasks_completed_total": len(processed_tasks) if isinstance(processed_tasks, list) else 0,
+                },
+                "logs": {**logs, **log_mtimes},
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    class NotesProcessNowRequest(BaseModel):
+        note_id: Optional[int] = None
+        project_name: Optional[str] = None
+        sync_media: Optional[bool] = True
+        run_incoming_tasks: Optional[bool] = True
+
+    class IMessageWatchlistRequest(BaseModel):
+        numbers: List[str]
+        monitor_all: Optional[bool] = False
+
+    class ContactsLookupRequest(BaseModel):
+        query: str
+
+    class ClientContactAddRequest(BaseModel):
+        name: str
+        phones: List[str] = []
+        emails: List[str] = []
+        notes: Optional[str] = ""
+        auto_monitor: Optional[bool] = True
+
+    class OpsRecoveryRunRequest(BaseModel):
+        apply: bool = False
+        threshold: float = float(os.environ.get("AUTOPILOT_CONFIDENCE_THRESHOLD", "0.80"))
+        playbook: Optional[str] = None
+
+    class NotesProjectLinkUpsertRequest(BaseModel):
+        match_text: str
+        project_name: str
+        enabled: Optional[bool] = True
+
+    class NotesTaskApprovalRejectRequest(BaseModel):
+        reason: Optional[str] = ""
+
+    @app.post("/notes/process_now")
+    async def notes_process_now(request: NotesProcessNowRequest):
+        """Force immediate notes processing and optional media/task sync."""
+        try:
+            steps: List[Dict[str, Any]] = []
+
+            if request.note_id is not None:
+                notes_result = run_tool_endpoint(
+                    "notes_watcher.py",
+                    ["--process-note", str(request.note_id)],
+                    timeout=120,
+                )
+                steps.append({"step": "notes_watcher_process_note", **notes_result})
+            elif request.project_name:
+                notes_result = run_tool_endpoint(
+                    "notes_watcher.py",
+                    ["--process-project", request.project_name],
+                    timeout=150,
+                )
+                steps.append({"step": "notes_watcher_process_project", **notes_result})
+            else:
+                notes_result = run_tool_endpoint(
+                    "notes_watcher.py",
+                    ["--check"],
+                    timeout=120,
+                )
+                steps.append({"step": "notes_watcher_check", **notes_result})
+
+            if request.sync_media:
+                media_result = run_tool_endpoint(
+                    "notes_sync.py",
+                    ["--sync-photos"],
+                    timeout=180,
+                )
+                steps.append({"step": "notes_sync_photos", **media_result})
+
+            if request.run_incoming_tasks:
+                incoming_result = run_command(
+                    [
+                        "python3",
+                        str(BASE_DIR / "orchestrator" / "incoming_task_processor.py"),
+                        "--check",
+                    ],
+                    timeout=180,
+                )
+                steps.append({"step": "incoming_tasks_check", **incoming_result})
+
+            success = all(step.get("success", False) for step in steps)
+            return {
+                "success": success,
+                "timestamp": datetime.now().isoformat(),
+                "note_id": request.note_id,
+                "project_name": request.project_name,
+                "steps": steps,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/notes/project_links")
+    async def notes_project_links():
+        """List explicit note->project linking rules used by notes_watcher."""
+        try:
+            data = _read_json_file(NOTES_PROJECT_LINKS_FILE)
+            rules = data.get("rules", []) if isinstance(data, dict) else []
+            return {"success": True, "count": len(rules), "rules": rules}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/notes/project_links")
+    async def notes_project_links_upsert(request: NotesProjectLinkUpsertRequest):
+        """Add a note linking rule: if note contains match_text -> project_name."""
+        try:
+            match_text = (request.match_text or "").strip()
+            project_name = (request.project_name or "").strip()
+            if not match_text or not project_name:
+                raise HTTPException(status_code=400, detail="match_text and project_name are required")
+
+            NOTES_PROJECT_LINKS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            data = _read_json_file(NOTES_PROJECT_LINKS_FILE)
+            rules = data.get("rules", []) if isinstance(data, dict) else []
+            # Upsert by match_text exact lower.
+            normalized = match_text.lower()
+            updated = False
+            for r in rules:
+                if str(r.get("match_text", "")).strip().lower() == normalized:
+                    r["project_name"] = project_name
+                    r["enabled"] = bool(request.enabled)
+                    r["updated_at"] = datetime.now().isoformat()
+                    updated = True
+                    break
+            if not updated:
+                rules.append(
+                    {
+                        "id": f"npl_{uuid4().hex[:10]}",
+                        "match_text": match_text,
+                        "project_name": project_name,
+                        "enabled": bool(request.enabled),
+                        "created_at": datetime.now().isoformat(),
+                    }
+                )
+            NOTES_PROJECT_LINKS_FILE.write_text(json.dumps({"rules": rules}, indent=2), encoding="utf-8")
+            return {"success": True, "count": len(rules), "rules": rules}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/notes/task_approvals")
+    async def notes_task_approvals(status: str = "pending_approval", limit: int = 50):
+        """List notes-to-task approvals queue."""
+        try:
+            sys.path.insert(0, str(BASE_DIR / "tools"))
+            from notes_watcher import list_task_approvals
+            return list_task_approvals(status=status, limit=max(1, min(limit, 200)))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/notes/task_approvals/{approval_id}/approve")
+    async def notes_task_approvals_approve(approval_id: str):
+        """Approve note follow-up and create task board task."""
+        try:
+            sys.path.insert(0, str(BASE_DIR / "tools"))
+            from notes_watcher import approve_task_approval
+            return approve_task_approval(approval_id)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/notes/task_approvals/{approval_id}/reject")
+    async def notes_task_approvals_reject(approval_id: str, request: NotesTaskApprovalRejectRequest):
+        """Reject note follow-up approval item."""
+        try:
+            sys.path.insert(0, str(BASE_DIR / "tools"))
+            from notes_watcher import reject_task_approval
+            return reject_task_approval(approval_id, reason=(request.reason or ""))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/status")
+    async def imessages_status():
+        """Get iMessage watcher status and monitoring configuration."""
+        try:
+            watcher_job = get_launchd_job_status("com.symphony.imessage-watcher")
+            watcher_state = _read_json_file(IMESSAGE_WATCHER_STATE_FILE)
+            script_result = run_tool_endpoint("imessage_watcher.py", ["--status"], timeout=30)
+            script_json = _extract_json_from_output(script_result, fallback_key="output")
+            return {
+                "success": True,
+                "timestamp": datetime.now().isoformat(),
+                "job": watcher_job,
+                "state": watcher_state,
+                "watcher": script_json,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/watchlist")
+    async def imessages_watchlist():
+        """Get monitored numbers/emails for iMessage pipeline."""
+        try:
+            state = _read_json_file(IMESSAGE_WATCHER_STATE_FILE)
+            return {
+                "success": True,
+                "watchlist": state.get("watchlist", []),
+                "watchlist_count": len(state.get("watchlist", [])),
+                "monitor_all": bool(state.get("monitor_all", False)),
+                "last_check": state.get("last_check"),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/watchlist")
+    async def imessages_set_watchlist(request: IMessageWatchlistRequest):
+        """Set monitored numbers/emails for iMessage watcher."""
+        try:
+            args = ["--set-watchlist", ",".join(request.numbers or [])]
+            if request.monitor_all:
+                args.append("--monitor-all")
+            result = run_tool_endpoint("imessage_watcher.py", args, timeout=30)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/process_now")
+    async def imessages_process_now():
+        """Force immediate iMessage ingestion pass."""
+        try:
+            result = run_tool_endpoint("imessage_watcher.py", ["--check"], timeout=90)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/recent")
+    async def imessages_recent(limit: int = 20):
+        """Recent parsed work texts with task mapping info for live feed."""
+        try:
+            items = _read_recent_jsonl(IMESSAGE_WORK_LOG_FILE, limit=limit)
+            feed = []
+            for item in items:
+                feed.append(
+                    {
+                        "timestamp": item.get("timestamp"),
+                        "rowid": item.get("rowid"),
+                        "direction": item.get("direction"),
+                        "handle": item.get("handle"),
+                        "contact_name": item.get("contact_name"),
+                        "linked_projects": item.get("linked_projects", []),
+                        "text": item.get("text"),
+                        "task_id": item.get("task_id"),
+                    }
+                )
+            return {
+                "success": True,
+                "count": len(feed),
+                "items": feed,
+                "source_file": str(IMESSAGE_WORK_LOG_FILE),
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/contacts/status")
+    async def contacts_status():
+        """Get contacts sync status and launchd job status."""
+        try:
+            contacts_job = get_launchd_job_status("com.symphony.contacts-sync")
+            status_result = run_tool_endpoint("contacts_sync.py", ["--status"], timeout=30)
+            status_json = _extract_json_from_output(status_result, fallback_key="output")
+            return {
+                "success": True,
+                "timestamp": datetime.now().isoformat(),
+                "job": contacts_job,
+                "contacts": status_json,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/contacts/sync")
+    async def contacts_sync_now():
+        """Run contacts sync now to refresh phone/email/project linking index."""
+        try:
+            result = run_tool_endpoint("contacts_sync.py", ["--sync"], timeout=120)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/contacts/lookup")
+    async def contacts_lookup(query: str):
+        """Lookup contact by phone/email/name using current index."""
+        try:
+            result = run_tool_endpoint("contacts_sync.py", ["--lookup", query], timeout=30)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/contacts/list")
+    async def contacts_list(query: str = "", limit: int = 200):
+        """List synced contacts for quick in-app picker/search."""
+        try:
+            data = _read_json_file(CONTACTS_INDEX_FILE)
+            contacts = data.get("contacts", []) if isinstance(data, dict) else []
+            q = (query or "").strip().lower()
+            if q:
+                filtered = []
+                for c in contacts:
+                    name = str(c.get("name", "")).lower()
+                    phones = " ".join(c.get("phones", []))
+                    emails = " ".join(c.get("emails", []))
+                    if q in name or q in phones or q in emails.lower():
+                        filtered.append(c)
+                contacts = filtered
+            contacts = contacts[: max(1, min(limit, 1000))]
+            items = []
+            for c in contacts:
+                name = str(c.get("name", "")).strip() or "Unknown"
+                phones = [str(p) for p in c.get("phones", [])]
+                emails = [str(e) for e in c.get("emails", [])]
+                linked_projects = [str(p) for p in c.get("linked_projects", [])]
+                stable = f"{name}|{'|'.join(phones[:2])}|{'|'.join(emails[:1])}"
+                item_id = _safe_export_filename(stable)[:120]
+                items.append(
+                    {
+                        "id": item_id,
+                        "name": name,
+                        "phones": phones,
+                        "emails": emails,
+                        "linked_projects": linked_projects,
+                    }
+                )
+            return {"success": True, "count": len(items), "contacts": items, "timestamp": datetime.now().isoformat()}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/contacts/clients")
+    async def contacts_clients():
+        """List manually added client contacts."""
+        try:
+            data = _read_json_file(CLIENTS_REGISTRY_FILE)
+            clients = data.get("clients", []) if isinstance(data, dict) else []
+            return {"success": True, "count": len(clients), "clients": clients}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/contacts/clients/add")
+    async def contacts_clients_add(request: ClientContactAddRequest):
+        """
+        Add a new client contact record and optionally append phones to iMessage watchlist.
+        """
+        try:
+            name = (request.name or "").strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="Client name is required")
+
+            CLIENTS_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            data = _read_json_file(CLIENTS_REGISTRY_FILE)
+            clients = data.get("clients", []) if isinstance(data, dict) else []
+
+            phones = [str(p).strip() for p in (request.phones or []) if str(p).strip()]
+            emails = [str(e).strip().lower() for e in (request.emails or []) if str(e).strip()]
+            client_id = f"client_{uuid4().hex[:10]}"
+            record = {
+                "id": client_id,
+                "name": name,
+                "phones": phones,
+                "emails": emails,
+                "notes": (request.notes or "").strip(),
+                "created_at": datetime.now().isoformat(),
+            }
+            clients.append(record)
+            CLIENTS_REGISTRY_FILE.write_text(json.dumps({"clients": clients}, indent=2), encoding="utf-8")
+
+            monitor_result = None
+            if request.auto_monitor and phones:
+                state = _read_json_file(IMESSAGE_WATCHER_STATE_FILE)
+                current = [str(x) for x in state.get("watchlist", [])] if isinstance(state, dict) else []
+                merged = sorted(set(current + phones))
+                set_result = run_tool_endpoint(
+                    "imessage_watcher.py",
+                    ["--set-watchlist", ",".join(merged)],
+                    timeout=30,
+                )
+                monitor_result = _extract_json_from_output(set_result, fallback_key="output")
+                monitor_result.setdefault("command_success", set_result.get("success", False))
+
+            return {
+                "success": True,
+                "client": record,
+                "clients_count": len(clients),
+                "watchlist_updated": bool(request.auto_monitor and phones),
+                "monitor_result": monitor_result,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/ops/health")
+    async def ops_health():
+        """Unified operations health across APIs, pipelines, automations, and iOS guardian."""
+        try:
+            services = {
+                "mobile_api": {
+                    "healthy": True,
+                    "url": "http://127.0.0.1:8420/health",
+                }
+            }
+            # External local dependencies.
+            try:
+                trading_health = _http_get_json("http://127.0.0.1:8421/health", timeout=4)
+                services["trading_api"] = {
+                    "healthy": trading_health.get("status") == "healthy",
+                    "url": "http://127.0.0.1:8421/health",
+                }
+            except Exception as exc:
+                services["trading_api"] = {
+                    "healthy": False,
+                    "url": "http://127.0.0.1:8421/health",
+                    "error": str(exc),
+                }
+
+            # Notes pipeline and launchd jobs.
+            jobs = {
+                "memory_guard": get_launchd_job_status("com.symphony.memory-guard"),
+                "notes_watcher": get_launchd_job_status("com.symphony.notes-watcher"),
+                "incoming_tasks": get_launchd_job_status("com.symphony.incoming-tasks"),
+                "notes_sync_photos": get_launchd_job_status("com.symphony.notes-sync-photos"),
+                "ios_build_guardian": get_launchd_job_status("com.symphony.ios-build-guardian"),
+                "autonomous_recovery": get_launchd_job_status("com.symphony.autonomous-recovery"),
+            }
+
+            notes_state = _read_json_file(BASE_DIR / "knowledge" / "state" / "notes_watcher_state.json")
+            incoming_state = _read_json_file(BASE_DIR / "knowledge" / "state" / "incoming_tasks_state.json")
+            ios_guardian = _read_json_file(BASE_DIR / "data" / "ios_build_guardian_status.json")
+            recovery_state = _read_json_file(BASE_DIR / "data" / "autonomous_recovery_last.json")
+
+            # Trading automation snapshot (if trading API available).
+            trading_automation = {}
+            if services.get("trading_api", {}).get("healthy"):
+                try:
+                    trading_automation = _http_get_json("http://127.0.0.1:8421/automation/health", timeout=5)
+                except Exception as exc:
+                    trading_automation = {"success": False, "error": str(exc)}
+
+            problems: List[str] = []
+            if not services["trading_api"]["healthy"]:
+                problems.append("trading_api_unhealthy")
+            if ios_guardian and not ios_guardian.get("overall_ok", True):
+                problems.append("ios_build_failures")
+            for key, job in jobs.items():
+                if key in {"autonomous_recovery"}:
+                    continue
+                if job.get("loaded") and not job.get("running") and job.get("last_exit_code", 0) not in (0, None):
+                    problems.append(f"{key}_not_running")
+
+            status = "healthy" if not problems else "degraded"
+            return {
+                "success": True,
+                "status": status,
+                "timestamp": datetime.now().isoformat(),
+                "services": services,
+                "jobs": jobs,
+                "notes_pipeline": {
+                    "notes_watcher_last_check": notes_state.get("last_check"),
+                    "notes_processed_count": len(notes_state.get("processed_notes", {})),
+                    "incoming_last_check": incoming_state.get("last_check"),
+                    "incoming_processed_count": len(incoming_state.get("processed_notes", {})),
+                },
+                "ios_build_guardian": ios_guardian,
+                "autonomous_recovery": recovery_state,
+                "trading_automation": trading_automation,
+                "problems": problems,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/recovery/run")
+    async def ops_recovery_run(request: OpsRecoveryRunRequest):
+        """Run autonomous recovery scan/apply with confidence gating."""
+        try:
+            threshold = max(0.0, min(1.0, float(request.threshold)))
+            args = []
+            if request.apply:
+                args.append("--apply")
+            else:
+                args.append("--scan")
+            args.extend(["--threshold", str(threshold)])
+            if request.playbook:
+                args.extend(["--playbook", request.playbook])
+
+            result = run_tool_endpoint("autonomous_recovery.py", args, timeout=180)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.post("/trading/fix_api")
     async def trading_fix_api():
         """Run watchdog to clear stale :8421 listener and restart trading API."""
@@ -1024,12 +2139,92 @@ if HAS_FASTAPI:
         description: str
         rooms: Optional[List[str]] = None
 
+    class ProductApprovalItem(BaseModel):
+        brand: Optional[str] = None
+        model: str
+        part_number: Optional[str] = None
+        category: Optional[str] = None
+        short_description: Optional[str] = None
+        keywords: Optional[str] = None
+        unit_price: Optional[float] = None
+        unit_cost: Optional[float] = None
+        msrp: Optional[float] = None
+        supplier: Optional[str] = None
+
+    class ProductApproveStoreRequest(BaseModel):
+        products: List[ProductApprovalItem]
+        source_file: Optional[str] = ""
+        parse_profile: Optional[str] = "auto"
+        dealer_tier: Optional[str] = "standard"
+        notes: Optional[str] = ""
+
+    @app.post("/projects/manual_digest")
+    async def projects_manual_digest(
+        project_name: str = Form(""),
+        run_ai_summary: bool = Form(True),
+        files: List[UploadFile] = File(...),
+    ):
+        """
+        Upload project manuals/docs and build a structured digest for project planning.
+        """
+        if not files:
+            return {"success": False, "error": "No files uploaded."}
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        project_slug = _slugify(project_name or "new-project")
+        batch_dir = MANUAL_DIGEST_DIR / project_slug / ts
+        batch_dir.mkdir(parents=True, exist_ok=True)
+
+        file_summaries: List[Dict[str, Any]] = []
+        per_file_signals: List[Dict[str, Any]] = []
+
+        for upload in files:
+            safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in (upload.filename or "file"))
+            save_path = batch_dir / safe_name
+            content = await upload.read()
+            save_path.write_bytes(content)
+
+            extracted_text = _extract_text_from_path(save_path)
+            signals = _extract_manual_digest_signals(extracted_text) if extracted_text else {}
+            if signals:
+                per_file_signals.append(signals)
+
+            file_summaries.append(
+                {
+                    "filename": safe_name,
+                    "path": str(save_path),
+                    "size_bytes": len(content),
+                    "text_chars": len(extracted_text),
+                    "supported": bool(extracted_text),
+                }
+            )
+
+        merged = _merge_digest_signals(per_file_signals)
+        ai_summary = _ai_project_digest_summary(project_name or project_slug, merged) if run_ai_summary else {}
+
+        digest = {
+            "success": True,
+            "project_name": project_name or project_slug,
+            "project_slug": project_slug,
+            "batch_timestamp": ts,
+            "files": file_summaries,
+            "digest": merged,
+            "ai_summary": ai_summary,
+            "output_dir": str(batch_dir),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        (batch_dir / "digest.json").write_text(json.dumps(digest, indent=2))
+        return digest
+
     @app.post("/dtools/products/import")
     async def dtools_products_import(
         file: UploadFile = File(...),
         create_in_dtools: bool = Form(False),
         max_products: int = Form(25),
         dealer_tier: str = Form("standard"),
+        parse_profile: str = Form("auto"),
+        expected_columns_json: str = Form(""),
         dry_run: bool = Form(True),
     ):
         """
@@ -1044,7 +2239,21 @@ if HAS_FASTAPI:
             content = await file.read()
             upload_path.write_bytes(content)
 
-            products = _parse_sheet_file(upload_path, dealer_tier=dealer_tier)
+            custom_columns: Optional[List[str]] = None
+            if expected_columns_json:
+                try:
+                    maybe = json.loads(expected_columns_json)
+                    if isinstance(maybe, list):
+                        custom_columns = [str(x).strip() for x in maybe if str(x).strip()]
+                except Exception:
+                    custom_columns = None
+
+            products = _parse_sheet_file_with_profile(
+                upload_path,
+                dealer_tier=dealer_tier,
+                parse_profile=parse_profile,
+                custom_columns=custom_columns,
+            )
             if not products:
                 return {
                     "success": False,
@@ -1094,6 +2303,8 @@ if HAS_FASTAPI:
                 "failed_count": max(0, len(limited) - created_count) if create_in_dtools and not dry_run else 0,
                 "create_in_dtools": bool(create_in_dtools and not dry_run),
                 "dealer_tier": dealer_tier,
+                "parse_profile": parse_profile,
+                "expected_columns": custom_columns or PARSE_PROFILES.get(parse_profile, {}).get("expected_columns", []),
                 "results": results,
                 "products": limited,
                 "timestamp": datetime.now().isoformat(),
@@ -1105,6 +2316,309 @@ if HAS_FASTAPI:
             return summary
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/dtools/products/approve_store")
+    async def dtools_products_approve_store(request: ProductApproveStoreRequest):
+        """
+        Approve parsed products and persist them to local SQLite product database.
+        """
+        if not request.products:
+            return {"success": False, "error": "No products provided."}
+
+        conn = sqlite3.connect(str(DTOOLS_PRODUCT_DB))
+        try:
+            _init_product_db(conn)
+            now = datetime.now().isoformat()
+            total = len(request.products)
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO approved_batches (created_at, source_file, parse_profile, dealer_tier, notes, total_products)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now,
+                    request.source_file or "",
+                    request.parse_profile or "auto",
+                    request.dealer_tier or "standard",
+                    request.notes or "",
+                    total,
+                ),
+            )
+            batch_id = int(cur.lastrowid)
+
+            keys = [
+                _product_unique_key(
+                    item.brand or "",
+                    item.part_number or "",
+                    item.model or "",
+                )
+                for item in request.products
+                if (item.model or "").strip()
+            ]
+            existing_keys: set[str] = set()
+            if keys:
+                placeholders = ",".join(["?"] * len(keys))
+                rows = conn.execute(
+                    f"SELECT unique_key FROM approved_products WHERE unique_key IN ({placeholders})",
+                    keys,
+                ).fetchall()
+                existing_keys = {str(r[0]) for r in rows}
+
+            inserted_count = 0
+            updated_count = 0
+            saved_count = 0
+
+            for item in request.products:
+                model = (item.model or "").strip()
+                if not model:
+                    continue
+                brand = (item.brand or "Unknown").strip()
+                part_number = (item.part_number or "").strip()
+                key = _product_unique_key(brand, part_number, model)
+                if key in existing_keys:
+                    updated_count += 1
+                else:
+                    inserted_count += 1
+
+                conn.execute(
+                    """
+                    INSERT INTO approved_products (
+                        batch_id, unique_key, brand, model, part_number, category, short_description,
+                        keywords, unit_price, unit_cost, msrp, supplier, approved_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(unique_key) DO UPDATE SET
+                        batch_id=excluded.batch_id,
+                        brand=excluded.brand,
+                        model=excluded.model,
+                        part_number=excluded.part_number,
+                        category=excluded.category,
+                        short_description=excluded.short_description,
+                        keywords=excluded.keywords,
+                        unit_price=excluded.unit_price,
+                        unit_cost=excluded.unit_cost,
+                        msrp=excluded.msrp,
+                        supplier=excluded.supplier,
+                        approved_at=excluded.approved_at
+                    """,
+                    (
+                        batch_id,
+                        key,
+                        brand,
+                        model,
+                        part_number,
+                        item.category or "",
+                        item.short_description or "",
+                        item.keywords or "",
+                        item.unit_price,
+                        item.unit_cost,
+                        item.msrp,
+                        item.supplier or "",
+                        now,
+                    ),
+                )
+                saved_count += 1
+
+            conn.commit()
+            return {
+                "success": True,
+                "database": str(DTOOLS_PRODUCT_DB),
+                "batch_id": batch_id,
+                "saved_count": saved_count,
+                "inserted_count": inserted_count,
+                "updated_count": updated_count,
+                "timestamp": now,
+            }
+        except Exception as e:
+            conn.rollback()
+            raise HTTPException(status_code=500, detail=str(e))
+        finally:
+            conn.close()
+
+    @app.post("/dtools/products/retry_create")
+    async def dtools_products_retry_create(request: ProductApproveStoreRequest):
+        """
+        Retry creating selected products in D-Tools after manual fixes.
+        """
+        if not request.products:
+            return {"success": False, "error": "No products provided."}
+
+        try:
+            from agents.dtools_browser_agent import DToolsBrowserAgent
+
+            agent = DToolsBrowserAgent(headless=True)
+            if not await agent.start():
+                return {"success": False, "error": "Failed to start browser agent (Playwright not ready)."}
+
+            created_count = 0
+            failed_count = 0
+            results: List[Dict[str, Any]] = []
+            try:
+                if not await agent.login():
+                    return {"success": False, "error": "Failed to login to D-Tools Cloud. Check credentials."}
+
+                for item in request.products:
+                    payload = {
+                        "brand": item.brand or "Generic",
+                        "model": item.model,
+                        "part_number": item.part_number or "",
+                        "category": item.category or "Power Management",
+                        "short_description": item.short_description or "",
+                        "keywords": item.keywords or "",
+                        "unit_price": item.unit_price,
+                        "unit_cost": item.unit_cost,
+                        "msrp": item.msrp,
+                        "supplier": item.supplier or "",
+                    }
+                    out = await agent.create_product(payload)
+                    results.append(out)
+                    if out.get("success"):
+                        created_count += 1
+                    else:
+                        failed_count += 1
+            finally:
+                await agent.stop()
+
+            return {
+                "success": True,
+                "attempted_count": len(request.products),
+                "created_count": created_count,
+                "failed_count": failed_count,
+                "results": results,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/dtools/products/export")
+    async def dtools_products_export(
+        batch_id: Optional[int] = None,
+        export_format: str = "csv",
+        include_all_batches: bool = False,
+    ):
+        """
+        Export approved products from local DB.
+        - batch_id: specific batch to export
+        - export_format: csv or json
+        - include_all_batches: export across all batches (ignores batch_id)
+        """
+        fmt = (export_format or "csv").strip().lower()
+        if fmt not in {"csv", "json"}:
+            raise HTTPException(status_code=400, detail="export_format must be 'csv' or 'json'")
+
+        conn = sqlite3.connect(str(DTOOLS_PRODUCT_DB))
+        conn.row_factory = sqlite3.Row
+        try:
+            _init_product_db(conn)
+            params: List[Any] = []
+            where_clause = ""
+            effective_batch: Optional[int] = None
+
+            if include_all_batches:
+                where_clause = ""
+            elif batch_id is not None:
+                where_clause = "WHERE p.batch_id = ?"
+                params.append(int(batch_id))
+                effective_batch = int(batch_id)
+            else:
+                row = conn.execute("SELECT id FROM approved_batches ORDER BY id DESC LIMIT 1").fetchone()
+                if not row:
+                    raise HTTPException(status_code=404, detail="No approved product batches found")
+                effective_batch = int(row["id"])
+                where_clause = "WHERE p.batch_id = ?"
+                params.append(effective_batch)
+
+            rows = conn.execute(
+                f"""
+                SELECT
+                    p.id,
+                    p.batch_id,
+                    b.created_at AS batch_created_at,
+                    b.source_file AS batch_source_file,
+                    b.parse_profile AS batch_parse_profile,
+                    b.dealer_tier AS batch_dealer_tier,
+                    p.brand,
+                    p.model,
+                    p.part_number,
+                    p.category,
+                    p.short_description,
+                    p.keywords,
+                    p.unit_price,
+                    p.unit_cost,
+                    p.msrp,
+                    p.supplier,
+                    p.approved_at
+                FROM approved_products p
+                LEFT JOIN approved_batches b ON b.id = p.batch_id
+                {where_clause}
+                ORDER BY p.batch_id DESC, p.id ASC
+                """,
+                params,
+            ).fetchall()
+
+            if not rows:
+                if effective_batch is not None:
+                    raise HTTPException(status_code=404, detail=f"No approved products found for batch_id={effective_batch}")
+                raise HTTPException(status_code=404, detail="No approved products found")
+
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            batch_label = "all" if include_all_batches else str(effective_batch or "latest")
+            base_name = _safe_export_filename(f"dtools_products_batch_{batch_label}_{ts}")
+            export_dir = Path(tempfile.gettempdir()) / "symphony_exports"
+            export_dir.mkdir(parents=True, exist_ok=True)
+
+            if fmt == "json":
+                payload = {
+                    "success": True,
+                    "timestamp": datetime.now().isoformat(),
+                    "batch_id": effective_batch,
+                    "include_all_batches": include_all_batches,
+                    "count": len(rows),
+                    "products": [dict(row) for row in rows],
+                }
+                out_path = export_dir / f"{base_name}.json"
+                out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                return FileResponse(
+                    path=str(out_path),
+                    media_type="application/json",
+                    filename=out_path.name,
+                )
+
+            # CSV export
+            out_path = export_dir / f"{base_name}.csv"
+            fieldnames = [
+                "id",
+                "batch_id",
+                "batch_created_at",
+                "batch_source_file",
+                "batch_parse_profile",
+                "batch_dealer_tier",
+                "brand",
+                "model",
+                "part_number",
+                "category",
+                "short_description",
+                "keywords",
+                "unit_price",
+                "unit_cost",
+                "msrp",
+                "supplier",
+                "approved_at",
+            ]
+            with out_path.open("w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(dict(row))
+
+            return FileResponse(
+                path=str(out_path),
+                media_type="text/csv",
+                filename=out_path.name,
+            )
+        finally:
+            conn.close()
     
     @app.post("/markup/generate")
     async def generate_markup(request: MarkupRequest):
@@ -1158,8 +2672,8 @@ if HAS_FASTAPI:
         return {"exports": exports}
     
     @app.get("/markup/url")
-    async def get_markup_url():
-        """Get URL for Symphony Markup app. Prefers HTTPS when MARKUP_HTTPS_URL is set."""
+    async def get_markup_url(request: Request):
+        """Get URL for Symphony Markup app with safe fallback when HTTPS URL is unreachable."""
         import socket
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1168,12 +2682,25 @@ if HAS_FASTAPI:
             s.close()
         except:
             local_ip = "localhost"
+
+        request_host = request.url.hostname or local_ip
+        request_scheme = request.url.scheme or "http"
+        derived_url = f"{request_scheme}://{request_host}:8091"
+
         https_url = os.environ.get("MARKUP_HTTPS_URL", "").strip()
+        preferred_https = https_url if https_url and is_http_url_reachable(https_url) else None
+        active_url = preferred_https or derived_url
+        warning = None
+        if https_url and not preferred_https:
+            warning = "MARKUP_HTTPS_URL configured but unreachable; using derived URL."
+
         return {
-            "url": https_url or f"http://{local_ip}:8091",
-            "httpsUrl": https_url or None,
+            "url": active_url,
+            "httpsUrl": preferred_https,
+            "derivedUrl": derived_url,
             "localhost": "http://localhost:8091",
-            "status": "running" if is_port_open(8091) else "stopped"
+            "status": "running" if is_port_open(8091) else "stopped",
+            "warning": warning,
         }
 
 
@@ -1185,6 +2712,16 @@ def is_port_open(port: int) -> bool:
     result = sock.connect_ex(('127.0.0.1', port))
     sock.close()
     return result == 0
+
+
+def is_http_url_reachable(url: str, timeout: int = 3) -> bool:
+    """Best-effort URL probe used for MARKUP_HTTPS_URL fallback logic."""
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= resp.status < 500
+    except Exception:
+        return False
 
 
 # ============================================================================
@@ -1303,6 +2840,7 @@ if HAS_FASTAPI:
     class ChatRequest(BaseModel):
         question: str
         source: Optional[str] = "auto"
+        session_id: Optional[str] = "default"
 
     @app.post("/ai/chat")
     async def ai_chat(body: ChatRequest):
@@ -1313,6 +2851,7 @@ if HAS_FASTAPI:
         try:
             question = body.question or ""
             source = body.source or "auto"
+            session_id = body.session_id or "default"
 
             if not question:
                 return {"success": False, "error": "No question provided"}
@@ -1320,16 +2859,74 @@ if HAS_FASTAPI:
             import sys
             sys.path.insert(0, str(BASE_DIR / "tools"))
             from ai_router import ask, classify_question
-            
+
+            # Build retained memory context from recent Ask Bob exchanges.
+            recent_memory = _load_recent_ask_bob_memory(session_id=session_id, limit=8)
+            memory_lines: List[str] = []
+            for item in recent_memory:
+                q = (item.get("question", "") or "").strip()
+                a = (item.get("answer", "") or "").strip()
+                if q and a:
+                    memory_lines.append(f"Q: {q}\nA: {a[:500]}")
+
+            project_hint = _extract_project_hint(question)
+            project_ctx = _collect_project_file_context(project_hint, question) if project_hint else {
+                "project_hint": "",
+                "files": [],
+                "context": "",
+            }
+
+            augment_blocks: List[str] = []
+            if memory_lines:
+                augment_blocks.append(
+                    "Recent conversation memory:\n" + "\n\n".join(memory_lines[-6:])
+                )
+            if project_ctx.get("context"):
+                augment_blocks.append(
+                    "Project file context:\n" + project_ctx["context"]
+                )
+
+            augmented_question = question
+            if augment_blocks:
+                augmented_question = (
+                    f"{question}\n\n"
+                    "Use the context below to answer accurately. "
+                    "If context is insufficient, say what is missing.\n\n"
+                    + "\n\n".join(augment_blocks)
+                )
+
             complexity = classify_question(question)
-            answer, used_source, cost = ask(question, source=source)
+            answer, used_source, cost = ask(augmented_question, source=source)
+
+            files_scanned = project_ctx.get("files", [])
+            if files_scanned:
+                top_files = files_scanned[:4]
+                more_count = max(0, len(files_scanned) - len(top_files))
+                footer = "Sources: " + ", ".join(top_files)
+                if more_count > 0:
+                    footer += f", +{more_count} more"
+                if footer not in answer:
+                    answer = f"{answer}\n\n{footer}"
+
+            # Persist memory for future asks.
+            _append_ask_bob_memory(
+                session_id=session_id,
+                question=question,
+                answer=answer,
+                source=used_source,
+            )
             
             return {
                 "success": True,
                 "output": answer,
                 "source": used_source,
                 "complexity": complexity,
-                "cost_usd": cost
+                "cost_usd": cost,
+                "session_id": session_id,
+                "memory_used": bool(memory_lines),
+                "project_context_used": bool(project_ctx.get("context")),
+                "project_hint": project_ctx.get("project_hint", ""),
+                "project_files_scanned": files_scanned,
             }
         except Exception as e:
             import traceback
@@ -1394,6 +2991,87 @@ if HAS_FASTAPI:
             return {"success": True, "task_id": task_id}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @app.post("/tasks/upload_intake")
+    async def upload_intake_task(
+        category: str = Form("document"),
+        project_name: str = Form(""),
+        client_name: str = Form(""),
+        title: str = Form(""),
+        description: str = Form(""),
+        priority: str = Form("high"),
+        file: UploadFile = File(...),
+    ):
+        """
+        Upload a proposal/drawing/image/document, store it with a strict naming scheme,
+        and create a categorized task for team processing.
+        """
+        try:
+            allowed = {"proposal", "drawing", "image", "document"}
+            category_norm = (category or "document").strip().lower()
+            if category_norm not in allowed:
+                category_norm = "document"
+
+            source_filename = (file.filename or "upload.bin").strip()
+            stored_filename = _build_intake_filename(
+                category=category_norm,
+                project_name=project_name,
+                client_name=client_name,
+                original_filename=source_filename,
+            )
+
+            day_dir = datetime.now().strftime("%Y-%m-%d")
+            target_dir = TASK_UPLOAD_DIR / category_norm / day_dir
+            target_dir.mkdir(parents=True, exist_ok=True)
+            stored_path = target_dir / stored_filename
+
+            data = await file.read()
+            if not data:
+                return {"success": False, "error": "Uploaded file was empty"}
+            stored_path.write_bytes(data)
+
+            default_title = f"Review {category_norm}: {project_name or client_name or source_filename}"
+            task_title = (title or default_title).strip()
+
+            task_type_map = {
+                "proposal": "proposal",
+                "drawing": "documentation",
+                "image": "documentation",
+                "document": "documentation",
+            }
+            task_type = task_type_map.get(category_norm, "documentation")
+
+            desc_parts = [
+                description.strip() if description else "",
+                f"Category: {category_norm}",
+                f"Project: {project_name or 'n/a'}",
+                f"Client: {client_name or 'n/a'}",
+                f"Original filename: {source_filename}",
+                f"Stored path: {stored_path}",
+                "Naming scheme: YYYYMMDD-HHMMSS--category--project--client--original.ext",
+            ]
+            task_description = "\n".join([x for x in desc_parts if x])
+
+            sys.path.insert(0, str(BASE_DIR))
+            from orchestrator.task_board import add_task as tb_add_task
+
+            task_id = tb_add_task(
+                title=task_title,
+                description=task_description,
+                task_type=task_type,
+                priority=(priority or "high"),
+            )
+
+            return {
+                "success": True,
+                "task_id": task_id,
+                "category": category_norm,
+                "stored_filename": stored_filename,
+                "stored_path": str(stored_path),
+                "naming_scheme": "YYYYMMDD-HHMMSS--category--project--client--original.ext",
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
     @app.get("/tasks/claude_pending")
     async def get_claude_pending():
@@ -1416,6 +3094,58 @@ if HAS_FASTAPI:
             }
         except Exception as e:
             return {"tasks": [], "error": str(e)}
+
+    @app.get("/tasks/incidents")
+    async def get_incident_queue(limit: int = 20):
+        """
+        Get high-priority troubleshooting tasks for quick mobile triage.
+        Includes pending, in_progress, and blocked incidents.
+        """
+        try:
+            sys.path.insert(0, str(BASE_DIR))
+            from orchestrator.task_board import list_tasks
+
+            all_tasks = list_tasks(status=None, limit=max(50, min(limit * 6, 500)))
+            incidents = []
+            for t in all_tasks:
+                if t.task_type != "troubleshooting":
+                    continue
+                if t.priority not in {"critical", "high"}:
+                    continue
+                if t.status not in {"pending", "in_progress", "blocked"}:
+                    continue
+                incidents.append(
+                    {
+                        "id": t.id,
+                        "title": t.title,
+                        "description": t.description or "",
+                        "priority": t.priority,
+                        "status": t.status,
+                        "assigned_to": t.assigned_to,
+                        "created_at": t.created_at,
+                        "updated_at": t.updated_at,
+                    }
+                )
+
+            priority_rank = {"critical": 0, "high": 1}
+            status_rank = {"in_progress": 0, "blocked": 1, "pending": 2}
+            incidents.sort(
+                key=lambda x: (
+                    priority_rank.get(x.get("priority", "high"), 9),
+                    status_rank.get(x.get("status", "pending"), 9),
+                    x.get("created_at", ""),
+                )
+            )
+            incidents = incidents[: max(1, min(limit, 100))]
+
+            return {
+                "success": True,
+                "count": len(incidents),
+                "incidents": incidents,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            return {"success": False, "count": 0, "incidents": [], "error": str(e)}
     
     @app.post("/tasks/{task_id}/approve_claude")
     async def approve_claude(task_id: int):
@@ -1589,7 +3319,7 @@ def main():
 ╚══════════════════════════════════════════════════╝
 """)
     
-    uvicorn.run(app, host="0.0.0.0", port=API_PORT)
+    uvicorn.run(app, host=API_BIND_HOST, port=API_PORT)
 
 
 if __name__ == "__main__":

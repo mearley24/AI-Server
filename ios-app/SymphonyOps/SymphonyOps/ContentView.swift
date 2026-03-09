@@ -118,6 +118,10 @@ struct DashboardView: View {
     @State private var homeClaudePending: [ClaudeTask] = []
     @State private var homeNotesApprovals: [NotesTaskApprovalItem] = []
     @State private var taskBoardLoading = false
+    @State private var showTaskUploadImporter = false
+    @State private var uploadCategory = "proposal"
+    @State private var uploadProjectName = ""
+    @State private var uploadClientName = ""
     
     var body: some View {
         NavigationView {
@@ -236,6 +240,40 @@ struct DashboardView: View {
                             .disabled(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || taskBoardLoading)
                         }
 
+                        Divider()
+                        Text("Upload Intake")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+
+                        HStack {
+                            Menu {
+                                Button("Proposal") { uploadCategory = "proposal" }
+                                Button("Drawing") { uploadCategory = "drawing" }
+                                Button("Image") { uploadCategory = "image" }
+                                Button("Document") { uploadCategory = "document" }
+                            } label: {
+                                Label("Category: \(uploadCategory.capitalized)", systemImage: "folder")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Spacer()
+                            Button("Upload File") {
+                                showTaskUploadImporter = true
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(taskBoardLoading)
+                        }
+
+                        TextField("Project name (for naming)", text: $uploadProjectName)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Client name (for naming)", text: $uploadClientName)
+                            .textFieldStyle(.roundedBorder)
+
+                        Text("Naming scheme: YYYYMMDD-HHMMSS--category--project--client--original.ext")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+
                         if !homeClaudePending.isEmpty {
                             Text("Claude approvals (\(homeClaudePending.count))")
                                 .font(.caption)
@@ -275,6 +313,19 @@ struct DashboardView: View {
                         }
                     }
                     .padding(.horizontal, 20)
+                    .fileImporter(
+                        isPresented: $showTaskUploadImporter,
+                        allowedContentTypes: [.pdf, .image, .plainText, .commaSeparatedText, .data],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        switch result {
+                        case .success(let urls):
+                            guard let url = urls.first else { return }
+                            Task { await uploadTaskIntakeFile(url) }
+                        case .failure(let err):
+                            quickActionResult = "❌ Upload picker failed: \(err.localizedDescription)"
+                        }
+                    }
                     
                     // Stats — single compact row
                     if let stats = api.stats {
@@ -480,6 +531,28 @@ struct DashboardView: View {
             quickActionResult = response?.error ?? api.error ?? "Failed to approve note task"
         }
         await refreshHomeTaskBoard()
+        taskBoardLoading = false
+    }
+
+    func uploadTaskIntakeFile(_ fileURL: URL) async {
+        taskBoardLoading = true
+        let cleanProject = uploadProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanClient = uploadClientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = "Review \(uploadCategory): \(cleanProject.isEmpty ? (cleanClient.isEmpty ? fileURL.lastPathComponent : cleanClient) : cleanProject)"
+        let response = await api.uploadTaskIntake(
+            fileURL: fileURL,
+            category: uploadCategory,
+            projectName: cleanProject,
+            clientName: cleanClient,
+            title: title,
+            description: "Uploaded from SymphonyOps Home Task Board",
+            priority: "high"
+        )
+        if response?.success == true {
+            quickActionResult = "✅ Uploaded + task created (#\(response?.task_id ?? 0))\n\(response?.stored_filename ?? "")"
+        } else {
+            quickActionResult = "❌ Upload failed: \(response?.error ?? api.error ?? "Unknown error")"
+        }
         taskBoardLoading = false
     }
 }
