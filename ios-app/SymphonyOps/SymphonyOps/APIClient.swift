@@ -320,6 +320,39 @@ class APIClient: ObservableObject {
             return error ?? "Disconnected"
         }
     }
+
+    func runOneTapConnectionFix(
+        preferredURL: String?,
+        tokenCandidate: String?
+    ) async -> String {
+        let trimmedURL = (preferredURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedURL.isEmpty {
+            setBaseURL(trimmedURL)
+        }
+
+        let trimmedToken = (tokenCandidate ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedToken.isEmpty {
+            setAPIToken(trimmedToken)
+        }
+
+        await checkConnection()
+        if await MainActor.run(body: { self.isConnected }) {
+            return await MainActor.run { "Connected: \(self.baseURL)" }
+        }
+
+        // Force fallback host if first pass failed.
+        if baseURL != tailscaleFallbackURL {
+            setBaseURL(tailscaleFallbackURL)
+            await checkConnection()
+            if await MainActor.run(body: { self.isConnected }) {
+                return await MainActor.run { "Connected after fallback: \(self.baseURL)" }
+            }
+        }
+
+        return await MainActor.run {
+            self.error ?? "Could not connect. Verify API is running and token is valid."
+        }
+    }
     
     // MARK: - Dashboard
     

@@ -2899,6 +2899,7 @@ struct SettingsView: View {
     @State private var authStatusMessage: String = ""
     @State private var connectionTestMessage: String = ""
     @State private var isTestingConnection = false
+    @State private var isRunningOneTapFix = false
     
     var body: some View {
         NavigationView {
@@ -2908,7 +2909,7 @@ struct SettingsView: View {
                         .autocapitalization(.none)
                         .keyboardType(.URL)
                     
-                    Button("Save & Connect") {
+                    Button("Save + Test") {
                         api.setBaseURL(serverURL)
                         Task {
                             await api.checkConnection()
@@ -2952,6 +2953,34 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
 
+                Section(header: Text("Quick Fix")) {
+                    Button(isRunningOneTapFix ? "Running One-Tap Fix..." : "One-Tap Fix (Save + Fallback + Test)") {
+                        guard !isRunningOneTapFix else { return }
+                        isRunningOneTapFix = true
+                        Task {
+                            let result = await api.runOneTapConnectionFix(
+                                preferredURL: serverURL,
+                                tokenCandidate: apiTokenInput
+                            )
+                            await MainActor.run {
+                                connectionTestMessage = result
+                                authStatusMessage = api.apiTokenConfigured
+                                    ? "Token stored in Keychain."
+                                    : "No token in Keychain yet."
+                                apiTokenInput = ""
+                                serverURL = api.baseURL
+                                isRunningOneTapFix = false
+                            }
+                        }
+                    }
+                    .disabled(isRunningOneTapFix)
+                    .buttonStyle(.borderedProminent)
+
+                    Text("Runs full recovery in one step: saves token if entered, tests URL, falls back to Tailscale host, and re-tests.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
                 Section(header: Text("API Auth (Keychain)")) {
                     SecureField("X-Symphony-Token", text: $apiTokenInput)
                         .textInputAutocapitalization(.never)
@@ -2960,8 +2989,15 @@ struct SettingsView: View {
                     HStack {
                         Button("Save Token") {
                             api.setAPIToken(apiTokenInput)
-                            apiTokenInput = ""
-                            authStatusMessage = "Token saved to Keychain."
+                            Task {
+                                let msg = await api.testURLAndToken()
+                                await MainActor.run {
+                                    apiTokenInput = ""
+                                    authStatusMessage = "Token saved to Keychain."
+                                    connectionTestMessage = msg
+                                    serverURL = api.baseURL
+                                }
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(apiTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
