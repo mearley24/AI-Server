@@ -27,6 +27,14 @@ struct VaultImportCandidate: Identifiable, Hashable {
     var value: String
 }
 
+struct VaultImportPreviewRow: Identifiable, Hashable {
+    let id = UUID()
+    var sourceLine: String
+    var keyName: String?
+    var status: String // import | skip
+    var reason: String
+}
+
 @MainActor
 final class SecretsVaultStore: ObservableObject {
     @Published var records: [VaultSecretRecord] = []
@@ -223,6 +231,50 @@ final class SecretsVaultStore: ObservableObject {
         }
     }
 
+    func previewImportCandidates(rawText: String) -> [VaultImportPreviewRow] {
+        var rows: [VaultImportPreviewRow] = []
+        var seen: Set<String> = []
+        let lines = rawText.split(whereSeparator: \.isNewline)
+        for raw in lines {
+            let line = String(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty || line.hasPrefix("#") {
+                rows.append(VaultImportPreviewRow(sourceLine: line, keyName: nil, status: "skip", reason: "Comment/blank"))
+                continue
+            }
+
+            var parsedKey = ""
+            var parsedValue = ""
+
+            if let idx = line.firstIndex(of: "=") {
+                parsedKey = String(line[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+                parsedValue = String(line[line.index(after: idx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else if let idx = line.firstIndex(of: ":") {
+                parsedKey = String(line[..<idx]).trimmingCharacters(in: .whitespacesAndNewlines)
+                parsedValue = String(line[line.index(after: idx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                rows.append(VaultImportPreviewRow(sourceLine: line, keyName: nil, status: "skip", reason: "No separator"))
+                continue
+            }
+
+            if parsedKey.isEmpty || parsedValue.isEmpty {
+                rows.append(VaultImportPreviewRow(sourceLine: line, keyName: nil, status: "skip", reason: "Missing key/value"))
+                continue
+            }
+            if !looksLikeSecretValue(parsedValue) {
+                rows.append(VaultImportPreviewRow(sourceLine: line, keyName: parsedKey, status: "skip", reason: "Value does not look like secret"))
+                continue
+            }
+            let keyLower = parsedKey.lowercased()
+            if seen.contains(keyLower) {
+                rows.append(VaultImportPreviewRow(sourceLine: line, keyName: parsedKey, status: "skip", reason: "Duplicate key"))
+                continue
+            }
+            seen.insert(keyLower)
+            rows.append(VaultImportPreviewRow(sourceLine: line, keyName: parsedKey, status: "import", reason: "Ready"))
+        }
+        return rows
+    }
+
     private func providerGuess(_ key: String) -> String {
         let k = key.lowercased()
         if k.contains("openai") { return "OpenAI" }
@@ -369,6 +421,7 @@ struct SecretsVaultView: View {
     @State private var lastCopyStatus = ""
     @State private var importRawText = ""
     @State private var importCandidates: [VaultImportCandidate] = []
+    @State private var importPreviewRows: [VaultImportPreviewRow] = []
     @State private var pendingDeleteRecord: VaultSecretRecord?
     @State private var rotationStatusMessage = ""
 
@@ -542,10 +595,29 @@ struct SecretsVaultView: View {
                             TextEditor(text: $importRawText)
                                 .frame(minHeight: 160)
                             Button("Parse Candidates") {
+                                importPreviewRows = vault.previewImportCandidates(rawText: importRawText)
                                 importCandidates = vault.parseImportCandidates(rawText: importRawText)
                                 importRawText = ""
                             }
                             .buttonStyle(.bordered)
+                        }
+                        if !importPreviewRows.isEmpty {
+                            Section(header: Text("Preview (\(importPreviewRows.count) lines)")) {
+                                ForEach(importPreviewRows.prefix(40)) { row in
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack {
+                                            Image(systemName: row.status == "import" ? "checkmark.circle.fill" : "xmark.circle")
+                                                .foregroundColor(row.status == "import" ? .green : .secondary)
+                                            Text(row.keyName ?? row.sourceLine)
+                                                .font(.caption)
+                                                .lineLimit(1)
+                                        }
+                                        Text(row.reason)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                            }
                         }
                         Section(header: Text("Candidates (\(importCandidates.count))")) {
                             ForEach(importCandidates) { c in
@@ -567,6 +639,7 @@ struct SecretsVaultView: View {
                             Button("Cancel") {
                                 importRawText = ""
                                 importCandidates = []
+                                importPreviewRows = []
                                 showImport = false
                             }
                         }
@@ -575,6 +648,7 @@ struct SecretsVaultView: View {
                                 vault.importCandidates(importCandidates)
                                 importRawText = ""
                                 importCandidates = []
+                                importPreviewRows = []
                                 showImport = false
                             }.disabled(importCandidates.isEmpty)
                         }
