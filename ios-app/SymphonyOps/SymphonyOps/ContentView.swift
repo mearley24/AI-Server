@@ -1230,6 +1230,21 @@ struct ActionsView: View {
     var markupURL: URL {
         api.markupURL ?? api.fallbackMarkupURL
     }
+
+    private func opsStatusLabel(_ status: String) -> String {
+        switch status.lowercased() {
+        case "healthy":
+            return "On Track"
+        case "degraded":
+            return "Needs Attention"
+        default:
+            return status.capitalized
+        }
+    }
+
+    private func opsStatusColor(_ status: String) -> Color {
+        status.lowercased() == "healthy" ? .green : .orange
+    }
     
     var body: some View {
         NavigationView {
@@ -1475,9 +1490,9 @@ struct ActionsView: View {
 
                         if let health = opsHealth {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("Ops: \(health.status.uppercased())")
+                                Text("Ops: \(opsStatusLabel(health.status))")
                                     .font(.caption2)
-                                    .foregroundColor(health.status == "healthy" ? .green : .orange)
+                                    .foregroundColor(opsStatusColor(health.status))
                                 Text("Build Guardian: \((health.ios_build_guardian?.overall_ok ?? false) ? "OK" : "Check")")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
@@ -2670,13 +2685,20 @@ struct ActionRow: View {
             HStack {
                 Image(systemName: icon)
                     .foregroundColor(.accentColor)
+                    .frame(width: 20)
                 Text(title)
+                    .font(.footnote)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .foregroundColor(.secondary)
+                    .font(.caption)
             }
+            .padding(.vertical, 4)
         }
         .foregroundColor(.primary)
+        .buttonStyle(.plain)
     }
 }
 
@@ -2896,6 +2918,7 @@ struct WorkflowPromptSheet: View {
 
 struct SettingsView: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var secretsVault: SecretsVaultStore
     @State private var serverURL: String = ""
     @State private var apiTokenInput: String = ""
     @State private var authStatusMessage: String = ""
@@ -3029,6 +3052,19 @@ struct SettingsView: View {
                     }
 
                     Text("Token is stored in iOS Keychain only (WhenUnlockedThisDeviceOnly).")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                Section(header: Text("API Keys + Secrets Vault")) {
+                    NavigationLink {
+                        SecretsVaultView()
+                            .environmentObject(secretsVault)
+                    } label: {
+                        Label("Open Encrypted Secrets Vault", systemImage: "lock.shield")
+                    }
+
+                    Text("Use Vault records for API keys/tokens instead of notes. Values are encrypted at rest and managed with biometric-gated actions.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
