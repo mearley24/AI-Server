@@ -10,3 +10,8 @@ knowledge/Extracted_Knowledge/
 knowledge/state/
 knowledge/manual_vault/
 knowledge/reports/manual_fetch_queue.csv
+
+# Xcode user-local workspace state (never share)
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+**/*.xcworkspace/xcuserdata/
