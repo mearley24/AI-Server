@@ -2897,6 +2897,8 @@ struct SettingsView: View {
     @State private var serverURL: String = ""
     @State private var apiTokenInput: String = ""
     @State private var authStatusMessage: String = ""
+    @State private var connectionTestMessage: String = ""
+    @State private var isTestingConnection = false
     
     var body: some View {
         NavigationView {
@@ -2908,8 +2910,26 @@ struct SettingsView: View {
                     
                     Button("Save & Connect") {
                         api.setBaseURL(serverURL)
-                        Task { await api.checkConnection() }
+                        Task {
+                            await api.checkConnection()
+                            connectionTestMessage = api.lastConnectionMessage ?? ""
+                            serverURL = api.baseURL
+                        }
                     }
+
+                    Button(isTestingConnection ? "Testing..." : "Test URL + Token") {
+                        guard !isTestingConnection else { return }
+                        isTestingConnection = true
+                        Task {
+                            let msg = await api.testURLAndToken()
+                            await MainActor.run {
+                                connectionTestMessage = msg
+                                serverURL = api.baseURL
+                                isTestingConnection = false
+                            }
+                        }
+                    }
+                    .disabled(isTestingConnection)
                     
                     HStack {
                         Text("Status")
@@ -2920,6 +2940,16 @@ struct SettingsView: View {
                         Text(api.isConnected ? "Connected" : "Disconnected")
                             .foregroundColor(.secondary)
                     }
+
+                    if !connectionTestMessage.isEmpty {
+                        Text(connectionTestMessage)
+                            .font(.caption2)
+                            .foregroundColor(api.isConnected ? .green : .red)
+                    }
+
+                    Text("If URL is localhost/127.0.0.1 and unreachable, app auto-falls back to Tailscale host.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
 
                 Section(header: Text("API Auth (Keychain)")) {
@@ -2967,21 +2997,33 @@ struct SettingsView: View {
                 
                 Section(header: Text("Presets")) {
                     Button("Use Tailscale (Anywhere)") {
-                        serverURL = "http://bobs-mac-mini:8420"
+                        serverURL = "http://100.89.1.51:8420"
                         api.setBaseURL(serverURL)
-                        Task { await api.checkConnection() }
+                        Task {
+                            await api.checkConnection()
+                            connectionTestMessage = api.lastConnectionMessage ?? ""
+                            serverURL = api.baseURL
+                        }
                     }
                     
                     Button("Use Local Network (Home WiFi)") {
                         serverURL = "http://192.168.1.109:8420"
                         api.setBaseURL(serverURL)
-                        Task { await api.checkConnection() }
+                        Task {
+                            await api.checkConnection()
+                            connectionTestMessage = api.lastConnectionMessage ?? ""
+                            serverURL = api.baseURL
+                        }
                     }
                     
                     Button("Use Localhost (Simulator)") {
                         serverURL = "http://127.0.0.1:8420"
                         api.setBaseURL(serverURL)
-                        Task { await api.checkConnection() }
+                        Task {
+                            await api.checkConnection()
+                            connectionTestMessage = api.lastConnectionMessage ?? ""
+                            serverURL = api.baseURL
+                        }
                     }
                 }
                 
@@ -3060,6 +3102,7 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .onAppear {
                 serverURL = api.baseURL
+                connectionTestMessage = api.lastConnectionMessage ?? ""
             }
         }
     }

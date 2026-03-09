@@ -43,6 +43,7 @@ class APIClient: ObservableObject {
     @Published var preferredAISource: String = "auto"
     @Published var markupURL: URL?
     @Published var apiTokenConfigured = false
+    @Published var lastConnectionMessage: String?
     private let apiTokenKeychainService = "com.symphonysh.SymphonyOps.APIClient"
     private let apiTokenKeychainAccount = "symphony-api-token"
 
@@ -57,6 +58,10 @@ class APIClient: ObservableObject {
     // Local: http://192.168.1.109:8420 (home WiFi only)
     var baseURL: String {
         UserDefaults.standard.string(forKey: "api_base_url") ?? "http://bobs-mac-mini:8420"
+    }
+
+    private var tailscaleFallbackURL: String {
+        UserDefaults.standard.string(forKey: "api_tailscale_fallback_url") ?? "http://100.89.1.51:8420"
     }
 
     private var apiAuthToken: String {
@@ -160,7 +165,8 @@ class APIClient: ObservableObject {
     }
     
     func setBaseURL(_ url: String) {
-        UserDefaults.standard.set(url, forKey: "api_base_url")
+        let normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(normalized, forKey: "api_base_url")
         Task {
             await checkOllama()
             await checkLMStudio()
@@ -250,19 +256,68 @@ class APIClient: ObservableObject {
     // MARK: - Health Check
     
     func checkConnection() async {
-        do {
-            let url = URL(string: "\(baseURL)/health")!
-            let (_, response) = try await URLSession.shared.data(from: url)
-            if let httpResponse = response as? HTTPURLResponse {
-                await MainActor.run {
-                    self.isConnected = httpResponse.statusCode == 200
+        let candidates = connectionCandidates(from: baseURL)
+        var reachableBase: String?
+
+        for candidate in candidates {
+            guard let healthURL = URL(string: "\(candidate)/health") else { continue }
+            do {
+                var request = URLRequest(url: healthURL)
+                request.timeoutInterval = 5
+                let (_, response) = try await Foundation.URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    reachableBase = candidate
+                    break
                 }
+            } catch {
+                continue
+            }
+        }
+
+        guard let chosenBase = reachableBase else {
+            await MainActor.run {
+                self.isConnected = false
+                self.error = "Could not connect to server. Checked: \(candidates.joined(separator: ", "))"
+                self.lastConnectionMessage = self.error
+            }
+            return
+        }
+
+        if chosenBase != baseURL {
+            UserDefaults.standard.set(chosenBase, forKey: "api_base_url")
+        }
+
+        do {
+            let dashboardURL = URL(string: "\(chosenBase)/dashboard")!
+            let (_, response) = try await URLSession.shared.data(from: dashboardURL)
+            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
+            await MainActor.run {
+                if code == 401 {
+                    self.isConnected = false
+                    self.error = "Unauthorized (token missing/invalid). Save SYMPHONY_API_TOKEN in Settings -> API Auth."
+                    self.lastConnectionMessage = self.error
+                    return
+                }
+                self.isConnected = (200...299).contains(code)
+                self.error = self.isConnected ? nil : "Server reachable but returned HTTP \(code)"
+                self.lastConnectionMessage = self.isConnected ? "Connected to \(chosenBase)" : self.error
             }
         } catch {
             await MainActor.run {
                 self.isConnected = false
-                self.error = error.localizedDescription
+                self.error = userFacingError(error)
+                self.lastConnectionMessage = self.error
             }
+        }
+    }
+
+    func testURLAndToken() async -> String {
+        await checkConnection()
+        return await MainActor.run {
+            if isConnected {
+                return "Connected: \(baseURL)"
+            }
+            return error ?? "Disconnected"
         }
     }
     
@@ -1243,7 +1298,7 @@ class APIClient: ObservableObject {
             return try JSONDecoder().decode(CommandResult.self, from: data)
         } catch {
             await MainActor.run {
-                self.error = error.localizedDescription
+                self.error = userFacingError(error)
             }
             return nil
         }
@@ -1260,7 +1315,7 @@ class APIClient: ObservableObject {
             return try JSONDecoder().decode(CommandResult.self, from: data)
         } catch {
             await MainActor.run {
-                self.error = error.localizedDescription
+                self.error = userFacingError(error)
             }
             return nil
         }
@@ -1289,10 +1344,43 @@ class APIClient: ObservableObject {
             return try JSONDecoder().decode(CommandResult.self, from: data)
         } catch {
             await MainActor.run {
-                self.error = error.localizedDescription
+                self.error = userFacingError(error)
             }
             return nil
         }
+    }
+
+    private func connectionCandidates(from base: String) -> [String] {
+        let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let host = url.host?.lowercased() else {
+            return [trimmed]
+        }
+        let isLoopback = host == "127.0.0.1" || host == "localhost"
+        if !isLoopback {
+            return [trimmed]
+        }
+        let fallback = tailscaleFallbackURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if fallback.isEmpty || fallback == trimmed {
+            return [trimmed]
+        }
+        return [trimmed, fallback]
+    }
+
+    private func userFacingError(_ error: Error) -> String {
+        let nsError = error as NSError
+        let text = nsError.localizedDescription.lowercased()
+        if text.contains("401") || text.contains("unauthorized") {
+            return "Unauthorized (token missing/invalid). Save SYMPHONY_API_TOKEN in Settings -> API Auth."
+        }
+        if nsError.domain == NSURLErrorDomain {
+            switch nsError.code {
+            case NSURLErrorCannotConnectToHost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut:
+                return "Could not connect to server. Check URL/network, then try Test URL + Token."
+            default:
+                break
+            }
+        }
+        return nsError.localizedDescription
     }
 
     private func multipartField(name: String, value: String, boundary: String) -> Data {
