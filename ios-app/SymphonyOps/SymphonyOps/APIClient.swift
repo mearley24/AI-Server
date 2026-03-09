@@ -63,6 +63,9 @@ class APIClient: ObservableObject {
     private var tailscaleFallbackURL: String {
         UserDefaults.standard.string(forKey: "api_tailscale_fallback_url") ?? "http://100.89.1.51:8420"
     }
+    private var mdnsFallbackURL: String { "http://bobs-mac-mini:8420" }
+    private var lanFallbackURL: String { "http://192.168.1.109:8420" }
+    private var localhostFallbackURL: String { "http://127.0.0.1:8420" }
 
     private var apiAuthToken: String {
         let keychainToken = readAPITokenFromKeychain()
@@ -258,6 +261,7 @@ class APIClient: ObservableObject {
     func checkConnection() async {
         let candidates = connectionCandidates(from: baseURL)
         var reachableBase: String?
+        var atsBlocked = false
 
         for candidate in candidates {
             guard let healthURL = URL(string: "\(candidate)/health") else { continue }
@@ -270,6 +274,7 @@ class APIClient: ObservableObject {
                     break
                 }
             } catch {
+                if isATSError(error) { atsBlocked = true }
                 continue
             }
         }
@@ -277,7 +282,11 @@ class APIClient: ObservableObject {
         guard let chosenBase = reachableBase else {
             await MainActor.run {
                 self.isConnected = false
-                self.error = "Could not connect to server. Checked: \(candidates.joined(separator: ", "))"
+                if atsBlocked {
+                    self.error = "App Transport Security blocked HTTP. Update app/build then retry One-Tap Fix."
+                } else {
+                    self.error = "Could not connect to server. Checked: \(candidates.joined(separator: ", "))"
+                }
                 self.lastConnectionMessage = self.error
             }
             return
@@ -371,7 +380,7 @@ class APIClient: ObservableObject {
             await fetchMarkupURL()
         } catch {
             await MainActor.run {
-                self.error = error.localizedDescription
+                self.error = userFacingError(error)
             }
         }
     }
@@ -1385,18 +1394,22 @@ class APIClient: ObservableObject {
 
     private func connectionCandidates(from base: String) -> [String] {
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), let host = url.host?.lowercased() else {
-            return [trimmed]
+        var ordered = [trimmed]
+        let fallbacks = [
+            tailscaleFallbackURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            mdnsFallbackURL,
+            lanFallbackURL,
+            localhostFallbackURL,
+        ]
+        for candidate in fallbacks where !candidate.isEmpty && !ordered.contains(candidate) {
+            ordered.append(candidate)
         }
-        let isLoopback = host == "127.0.0.1" || host == "localhost"
-        if !isLoopback {
-            return [trimmed]
-        }
-        let fallback = tailscaleFallbackURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.isEmpty || fallback == trimmed {
-            return [trimmed]
-        }
-        return [trimmed, fallback]
+        return ordered
+    }
+
+    private func isATSError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorAppTransportSecurityRequiresSecureConnection
     }
 
     private func userFacingError(_ error: Error) -> String {

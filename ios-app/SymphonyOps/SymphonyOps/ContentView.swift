@@ -44,7 +44,9 @@ struct ContentView: View {
         .accentColor(Color.orange)
         .task {
             await api.checkConnection()
-            await api.fetchDashboard()
+            if api.isConnected {
+                await api.fetchDashboard()
+            }
             await api.checkOllama()
             await api.checkLMStudio()
             await api.fetchAIStatus()
