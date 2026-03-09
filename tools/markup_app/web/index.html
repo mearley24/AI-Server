@@ -426,6 +426,16 @@
             <h2>Room Name</h2>
             <label>Enter room name for this boundary</label>
             <input type="text" id="room-name" placeholder="Living Room, Kitchen, etc.">
+            <label>Quick name preset</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <select id="room-name-preset" style="flex:1;">
+                    <option value="standard">Standard Room Set</option>
+                    <option value="upstairs">Upstairs / Bedrooms</option>
+                    <option value="entertainment">Entertainment</option>
+                    <option value="networking">Networking / Utility</option>
+                </select>
+                <button type="button" onclick="applyNextRoomNameFromPreset('room-name-preset','room-name')">Use</button>
+            </div>
             <div class="btns">
                 <button onclick="cancelRoom()">Cancel</button>
                 <button class="primary" onclick="saveRoom()">Save</button>
@@ -439,6 +449,16 @@
             <h2>Edit Room</h2>
             <label>Room name</label>
             <input type="text" id="rename-room-name" placeholder="Living Room, Kitchen, etc.">
+            <label>Quick rename preset</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <select id="rename-room-preset" style="flex:1;">
+                    <option value="standard">Standard Room Set</option>
+                    <option value="upstairs">Upstairs / Bedrooms</option>
+                    <option value="entertainment">Entertainment</option>
+                    <option value="networking">Networking / Utility</option>
+                </select>
+                <button type="button" onclick="applyNextRoomNameFromPreset('rename-room-preset','rename-room-name')">Use</button>
+            </div>
             <div class="btns" style="flex-wrap:wrap;">
                 <button onclick="duplicateRoomFromModal()">Duplicate</button>
                 <button onclick="closeRenameRoomModal()">Cancel</button>
@@ -529,6 +549,34 @@
                 <div style="font-size:11px;color:#888;margin-bottom:8px;">MARKUP DATA</div>
                 <button style="width:100%;margin-bottom:8px;" onclick="importMarkup()">Import Markup</button>
                 <button style="width:100%;" onclick="clearAll()">Clear All</button>
+            </div>
+
+            <div style="margin-bottom:16px;">
+                <div style="font-size:11px;color:#888;margin-bottom:8px;">SMART BOUNDARIES</div>
+                <label class="option-row" style="align-items:center;">
+                    <span>Footprint Source</span>
+                    <select id="footprint-source" style="max-width:160px;">
+                        <option value="selected">Selected room</option>
+                        <option value="largest">Largest room</option>
+                    </select>
+                </label>
+                <label class="option-row" style="align-items:center;">
+                    <span>Name Template</span>
+                    <select id="auto-room-template" style="max-width:160px;">
+                        <option value="standard">Standard</option>
+                        <option value="upstairs">Upstairs</option>
+                        <option value="entertainment">Entertainment</option>
+                        <option value="networking">Networking</option>
+                    </select>
+                </label>
+                <label class="option-row" style="align-items:center;">
+                    <span>Room Count</span>
+                    <input id="auto-room-count" type="number" value="8" min="1" max="40" style="max-width:80px;">
+                </label>
+                <button style="width:100%;margin-top:8px;" onclick="autoSeedRoomsFromFootprint()">Generate Rooms from Footprint</button>
+                <div style="font-size:10px;color:#777;margin-top:6px;">
+                    Tip: draw/select the house footprint first, then auto-seed and quick-rename.
+                </div>
             </div>
             
             <div style="margin-bottom:16px;">
@@ -732,6 +780,13 @@ const ROOM_COLORS = [
 let freehandEnabled = localStorage.getItem('freehandEnabled') === '1';
 let snapEnabled = localStorage.getItem('snapEnabled') === '1';
 let layerVisibility = JSON.parse(localStorage.getItem('layerVisibility') || '{}');
+
+const ROOM_NAME_PRESETS = {
+    standard: ['Entry', 'Great Room', 'Kitchen', 'Dining', 'Primary Suite', 'Office', 'Media Room', 'Patio'],
+    upstairs: ['Primary Bedroom', 'Primary Bath', 'Bedroom 2', 'Bedroom 3', 'Bunk Room', 'Loft', 'Laundry', 'Hallway'],
+    entertainment: ['Theater', 'Game Room', 'Bar', 'Lounge', 'Gym', 'Spa', 'Golf Sim', 'Outdoor Living'],
+    networking: ['Rack Room', 'MDF', 'IDF', 'Mechanical', 'Electrical', 'Storage', 'Garage', 'Utility']
+};
 
 // Freehand drawing state
 let currentStroke = null;
@@ -1078,6 +1133,14 @@ function buildToolbar() {
         roomBtn.classList.add('category-symbol');
         if (tool === 'room') roomBtn.classList.add('selected');
         bar.appendChild(roomBtn);
+
+        const autoRoomBtn = createToolBtn('auto-room', '⌂', 'AutoRm', '#0f766e');
+        autoRoomBtn.classList.add('category-symbol');
+        autoRoomBtn.onclick = (e) => {
+            e.stopPropagation();
+            autoSeedRoomsFromFootprint();
+        };
+        bar.appendChild(autoRoomBtn);
         
         const textBtn = createToolBtn('text', 'Aa', 'Text', 'transparent');
         textBtn.classList.add('category-symbol');
@@ -1772,7 +1835,7 @@ function duplicateRoom(roomIndex) {
     setTimeout(() => {
         openRenameRoomModal(newIndex);
         // Focus the input to trigger keyboard
-        const input = document.getElementById('room-name-input');
+        const input = document.getElementById('rename-room-name');
         if (input) {
             input.focus();
             input.select();
@@ -1811,6 +1874,140 @@ function duplicateRoomFromModal() {
     setTimeout(() => {
         duplicateRoom(idx);
     }, 50);
+}
+
+function roomNamesForPreset(presetKey) {
+    return ROOM_NAME_PRESETS[presetKey] || ROOM_NAME_PRESETS.standard;
+}
+
+function nextAvailableRoomName(baseName) {
+    const used = new Set(rooms.map(r => (r.name || '').trim().toLowerCase()));
+    if (!used.has(baseName.toLowerCase())) return baseName;
+    let n = 2;
+    while (used.has(`${baseName.toLowerCase()} ${n}`)) {
+        n += 1;
+    }
+    return `${baseName} ${n}`;
+}
+
+function applyNextRoomNameFromPreset(selectId, inputId) {
+    const select = document.getElementById(selectId);
+    const input = document.getElementById(inputId);
+    if (!select || !input) return;
+    const names = roomNamesForPreset(select.value);
+    let picked = names[0] || 'Room';
+    for (const candidate of names) {
+        const normalized = candidate.trim().toLowerCase();
+        if (!rooms.some(r => (r.name || '').trim().toLowerCase() === normalized)) {
+            picked = candidate;
+            break;
+        }
+    }
+    input.value = nextAvailableRoomName(picked);
+    input.focus();
+    input.select();
+}
+
+function polygonArea(points) {
+    if (!points || points.length < 3) return 0;
+    let area = 0;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        area += (points[j].x * points[i].y) - (points[i].x * points[j].y);
+    }
+    return Math.abs(area / 2);
+}
+
+function polygonBounds(points) {
+    const xs = points.map(p => p.x);
+    const ys = points.map(p => p.y);
+    return {
+        minX: Math.min(...xs),
+        maxX: Math.max(...xs),
+        minY: Math.min(...ys),
+        maxY: Math.max(...ys)
+    };
+}
+
+function autoSeedRoomsFromFootprint() {
+    if (!rooms.length) {
+        showToast('Create a footprint room first');
+        return;
+    }
+
+    const source = (document.getElementById('footprint-source')?.value || 'selected');
+    const template = (document.getElementById('auto-room-template')?.value || 'standard');
+    const countRaw = parseInt(document.getElementById('auto-room-count')?.value || '8', 10);
+    const targetCount = Math.max(1, Math.min(40, isNaN(countRaw) ? 8 : countRaw));
+
+    let footprintIndex = -1;
+    if (source === 'selected' && selectedType === 'room' && selectedItem) {
+        footprintIndex = rooms.indexOf(selectedItem);
+    }
+    if (footprintIndex < 0) {
+        let bestArea = -1;
+        for (let i = 0; i < rooms.length; i++) {
+            const area = polygonArea(rooms[i].points);
+            if (area > bestArea) {
+                bestArea = area;
+                footprintIndex = i;
+            }
+        }
+    }
+    if (footprintIndex < 0) {
+        showToast('Select a footprint room first');
+        return;
+    }
+
+    const footprint = rooms[footprintIndex];
+    const bounds = polygonBounds(footprint.points);
+    const width = bounds.maxX - bounds.minX;
+    const height = bounds.maxY - bounds.minY;
+    if (width < 40 || height < 40) {
+        showToast('Footprint too small for auto-seed');
+        return;
+    }
+
+    const names = roomNamesForPreset(template);
+    const cols = Math.max(1, Math.ceil(Math.sqrt(targetCount)));
+    const rows = Math.max(1, Math.ceil(targetCount / cols));
+    const cellW = width / cols;
+    const cellH = height / rows;
+
+    saveState();
+    let created = 0;
+
+    for (let r = 0; r < rows && created < targetCount; r++) {
+        for (let c = 0; c < cols && created < targetCount; c++) {
+            const x1 = bounds.minX + c * cellW;
+            const y1 = bounds.minY + r * cellH;
+            const x2 = x1 + cellW;
+            const y2 = y1 + cellH;
+            const center = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+
+            if (!pointInPolygon(center, footprint.points)) continue;
+
+            const baseName = names[created % names.length] || `Room ${created + 1}`;
+            const name = nextAvailableRoomName(baseName);
+            rooms.push({
+                name,
+                points: [
+                    { x: x1, y: y1 },
+                    { x: x2, y: y1 },
+                    { x: x2, y: y2 },
+                    { x: x1, y: y2 }
+                ],
+                labelX: center.x,
+                labelY: center.y,
+                generated: true,
+                parentFootprint: footprint.name || 'Footprint'
+            });
+            created += 1;
+        }
+    }
+
+    updateCounts();
+    render();
+    showToast(`Smart boundaries created ${created} room${created === 1 ? '' : 's'}`);
 }
 
 // Text label

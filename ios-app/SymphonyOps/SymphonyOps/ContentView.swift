@@ -107,10 +107,19 @@ struct OpsHubView: View {
 
 // MARK: - Dashboard View
 
+private struct ActionResultEntry: Codable {
+    let message: String
+    let updatedAt: TimeInterval
+}
+
 struct DashboardView: View {
     @EnvironmentObject var api: APIClient
     @State private var quickActionResult: String?
     @State private var quickActionLoading = false
+    @State private var primaryActionResults: [String: ActionResultEntry] = [:]
+    @State private var selectedPrimaryAction: String? = nil
+    @AppStorage("home.primaryActionResults.v1") private var persistedPrimaryActionResults = ""
+    @AppStorage("home.selectedPrimaryAction.v1") private var persistedSelectedPrimaryAction = ""
     @State private var taskTitle = ""
     @State private var taskDescription = ""
     @State private var taskType = "research"
@@ -122,12 +131,32 @@ struct DashboardView: View {
     @State private var uploadCategory = "proposal"
     @State private var uploadProjectName = ""
     @State private var uploadClientName = ""
+    @State private var uploadDiscipline = ""
+    @State private var uploadSheetNumber = ""
+    @State private var uploadRevision = ""
+    @State private var uploadIssueDate = ""
+    @State private var uploadsQueue: [UploadQueueItem] = []
+    @State private var showApprovalsPanel = true
+    @State private var showTaskCreatePanel = false
+    @State private var showUploadPanel = false
+    @State private var showMoreActionsPanel = false
+    @State private var showUploadsQueuePanel = true
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 28) {
-                    // Status — compact pill
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Today")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Text("Start with high-impact actions, then intake and approvals.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+
                     StatusPill(
                         isConnected: api.isConnected,
                         ollamaAvailable: api.ollamaAvailable,
@@ -139,14 +168,43 @@ struct DashboardView: View {
             } }
                     )
                     .padding(.horizontal, 20)
-                    
-                    // Primary actions — 2x2 grid
+
+                    if let guidance = nextBestAction {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Next Best Action")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                            Text(guidance.title)
+                                .font(.headline)
+                            Text(guidance.detail)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Button(guidance.cta) {
+                                Task { await runNextBestAction() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(.horizontal, 20)
+                    }
+
+                    // Focus actions first
                     VStack(spacing: 12) {
                         HStack(spacing: 12) {
                             PrimaryActionCard(
                                 title: "Morning",
+                                subtitle: "Run startup checklist",
                                 icon: "sunrise.fill",
-                                color: Color(red: 1, green: 0.85, blue: 0.4)
+                                color: Color(red: 1, green: 0.85, blue: 0.4),
+                                isSelected: selectedPrimaryAction == "Morning",
+                                isLoading: quickActionLoading && selectedPrimaryAction == "Morning",
+                                statusLabel: actionFreshness("Morning")?.label,
+                                statusColor: actionFreshness("Morning")?.color
                             ) {
                                 Task { await runQuickAction(name: "Morning") { await api.runMorningChecklist() } }
                             }
@@ -154,8 +212,13 @@ struct DashboardView: View {
                             
                             PrimaryActionCard(
                                 title: "Check Bids",
+                                subtitle: "Scan incoming opportunities",
                                 icon: "hammer.fill",
-                                color: Color(red: 0.35, green: 0.55, blue: 0.95)
+                                color: Color(red: 0.35, green: 0.55, blue: 0.95),
+                                isSelected: selectedPrimaryAction == "Bids",
+                                isLoading: quickActionLoading && selectedPrimaryAction == "Bids",
+                                statusLabel: actionFreshness("Bids")?.label,
+                                statusColor: actionFreshness("Bids")?.color
                             ) {
                                 Task { await runQuickAction(name: "Bids") { await api.checkBids() } }
                             }
@@ -164,8 +227,13 @@ struct DashboardView: View {
                         HStack(spacing: 12) {
                             PrimaryActionCard(
                                 title: "Website",
+                                subtitle: "Check site uptime",
                                 icon: "globe.americas.fill",
-                                color: Color(red: 0.3, green: 0.7, blue: 0.5)
+                                color: Color(red: 0.3, green: 0.7, blue: 0.5),
+                                isSelected: selectedPrimaryAction == "Website",
+                                isLoading: quickActionLoading && selectedPrimaryAction == "Website",
+                                statusLabel: actionFreshness("Website")?.label,
+                                statusColor: actionFreshness("Website")?.color
                             ) {
                                 Task { await runWebsiteAction() }
                             }
@@ -173,9 +241,16 @@ struct DashboardView: View {
                             
                             PrimaryActionCard(
                                 title: "Markup",
+                                subtitle: "Open drawing workspace",
                                 icon: "pencil.and.outline",
-                                color: Color(red: 0.95, green: 0.6, blue: 0.3)
+                                color: Color(red: 0.95, green: 0.6, blue: 0.3),
+                                isSelected: selectedPrimaryAction == "Markup",
+                                isLoading: false,
+                                statusLabel: actionFreshness("Markup")?.label,
+                                statusColor: actionFreshness("Markup")?.color
                             ) {
+                                selectedPrimaryAction = "Markup"
+                                setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
                                 let url = api.markupURL ?? api.fallbackMarkupURL
                                 UIApplication.shared.open(url)
                             }
@@ -183,13 +258,66 @@ struct DashboardView: View {
                     }
                     .padding(.horizontal, 20)
 
-                    // Task Board quick panel
+                    if !primaryActionResults.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Action Results")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(["Morning", "Bids", "Website", "Markup"], id: \.self) { action in
+                                        if primaryActionResults[action] != nil {
+                                            Button(action) {
+                                                selectedPrimaryAction = action
+                                                persistedSelectedPrimaryAction = action
+                                            }
+                                            .buttonStyle(.borderedProminent)
+                                            .tint(selectedPrimaryAction == action ? .orange : .gray.opacity(0.4))
+                                            .controlSize(.small)
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let selected = selectedPrimaryAction, let result = primaryActionResults[selected] {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack {
+                                        Text(selected)
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                        Spacer()
+                                        Text(relativeTimeString(from: result.updatedAt))
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    if quickActionLoading && (selected == "Morning" || selected == "Bids" || selected == "Website") {
+                                        HStack(spacing: 8) {
+                                            ProgressView().scaleEffect(0.9)
+                                            Text("Running...")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    } else {
+                                        Text(result.message)
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Task Board")
-                                .font(.subheadline)
+                            Text("Inbox")
+                                .font(.headline)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
                             Spacer()
                             Button {
                                 Task { await refreshHomeTaskBoard() }
@@ -202,116 +330,186 @@ struct DashboardView: View {
                             .disabled(taskBoardLoading)
                         }
 
-                        TextField("New task title", text: $taskTitle)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Details (optional)", text: $taskDescription)
-                            .textFieldStyle(.roundedBorder)
-
                         HStack {
-                            Menu {
-                                Button("Research") { taskType = "research" }
-                                Button("Proposal") { taskType = "proposal" }
-                                Button("Troubleshooting") { taskType = "troubleshooting" }
-                                Button("Documentation") { taskType = "documentation" }
-                                Button("Integration") { taskType = "integration" }
-                                Button("Claude (approval)") { taskType = "claude" }
-                            } label: {
-                                Label("Type: \(taskType)", systemImage: "tag")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Menu {
-                                Button("Critical") { taskPriority = "critical" }
-                                Button("High") { taskPriority = "high" }
-                                Button("Medium") { taskPriority = "medium" }
-                                Button("Low") { taskPriority = "low" }
-                            } label: {
-                                Label("Priority: \(taskPriority)", systemImage: "flag")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Spacer()
-                            Button("Create") {
-                                Task { await createHomeTask() }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || taskBoardLoading)
-                        }
-
-                        Divider()
-                        Text("Upload Intake")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-
-                        HStack {
-                            Menu {
-                                Button("Proposal") { uploadCategory = "proposal" }
-                                Button("Drawing") { uploadCategory = "drawing" }
-                                Button("Image") { uploadCategory = "image" }
-                                Button("Document") { uploadCategory = "document" }
-                            } label: {
-                                Label("Category: \(uploadCategory.capitalized)", systemImage: "folder")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-
-                            Spacer()
-                            Button("Upload File") {
-                                showTaskUploadImporter = true
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(taskBoardLoading)
-                        }
-
-                        TextField("Project name (for naming)", text: $uploadProjectName)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Client name (for naming)", text: $uploadClientName)
-                            .textFieldStyle(.roundedBorder)
-
-                        Text("Naming scheme: YYYYMMDD-HHMMSS--category--project--client--original.ext")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-
-                        if !homeClaudePending.isEmpty {
-                            Text("Claude approvals (\(homeClaudePending.count))")
+                            Label("\(homeClaudePending.count) Claude approvals", systemImage: "brain.head.profile")
                                 .font(.caption)
-                                .fontWeight(.semibold)
-                            ForEach(homeClaudePending.prefix(3)) { task in
-                                HStack {
-                                    Text(task.title)
-                                        .font(.caption2)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Button("Approve") {
-                                        Task { await approveHomeClaudeTask(task) }
+                                .foregroundColor(homeClaudePending.isEmpty ? .secondary : .primary)
+                            Spacer()
+                            Label("\(homeNotesApprovals.count) note approvals", systemImage: "doc.badge.clock")
+                                .font(.caption)
+                                .foregroundColor(homeNotesApprovals.isEmpty ? .secondary : .primary)
+                        }
+
+                        DisclosureGroup(isExpanded: $showApprovalsPanel) {
+                            if homeClaudePending.isEmpty && homeNotesApprovals.isEmpty {
+                                Text("No pending approvals.")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            if !homeClaudePending.isEmpty {
+                                Text("Claude approvals")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                ForEach(homeClaudePending.prefix(3)) { task in
+                                    HStack {
+                                        Text(task.title)
+                                            .font(.caption2)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Button("Approve") {
+                                            Task { await approveHomeClaudeTask(task) }
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.mini)
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.mini)
                                 }
                             }
-                        }
 
-                        if !homeNotesApprovals.isEmpty {
-                            Text("Note approvals (\(homeNotesApprovals.count))")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                            ForEach(homeNotesApprovals.prefix(3)) { item in
-                                HStack {
-                                    Text(item.note_title ?? "Untitled note")
-                                        .font(.caption2)
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Button("Approve") {
-                                        Task { await approveHomeNoteTask(item.id) }
+                            if !homeNotesApprovals.isEmpty {
+                                Text("Note approvals")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                ForEach(homeNotesApprovals.prefix(3)) { item in
+                                    HStack {
+                                        Text(item.note_title ?? "Untitled note")
+                                            .font(.caption2)
+                                            .lineLimit(1)
+                                        Spacer()
+                                        Button("Approve") {
+                                            Task { await approveHomeNoteTask(item.id) }
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                        .controlSize(.mini)
                                     }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.mini)
                                 }
                             }
+                        } label: {
+                            Label("Approvals", systemImage: "checkmark.seal")
+                                .font(.subheadline)
+                        }
+
+                        DisclosureGroup(isExpanded: $showTaskCreatePanel) {
+                            TextField("New task title", text: $taskTitle)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Details (optional)", text: $taskDescription)
+                                .textFieldStyle(.roundedBorder)
+
+                            HStack {
+                                Menu {
+                                    Button("Research") { taskType = "research" }
+                                    Button("Proposal") { taskType = "proposal" }
+                                    Button("Troubleshooting") { taskType = "troubleshooting" }
+                                    Button("Documentation") { taskType = "documentation" }
+                                    Button("Integration") { taskType = "integration" }
+                                    Button("Claude (approval)") { taskType = "claude" }
+                                } label: {
+                                    Label("Type: \(taskType)", systemImage: "tag")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Menu {
+                                    Button("Critical") { taskPriority = "critical" }
+                                    Button("High") { taskPriority = "high" }
+                                    Button("Medium") { taskPriority = "medium" }
+                                    Button("Low") { taskPriority = "low" }
+                                } label: {
+                                    Label("Priority: \(taskPriority)", systemImage: "flag")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Spacer()
+                                Button("Create") {
+                                    Task { await createHomeTask() }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || taskBoardLoading)
+                            }
+                        } label: {
+                            Label("Create Task", systemImage: "plus.circle")
+                                .font(.subheadline)
+                        }
+
+                        DisclosureGroup(isExpanded: $showUploadPanel) {
+                            HStack {
+                                Menu {
+                                    Button("Proposal") { uploadCategory = "proposal" }
+                                    Button("Drawing") { uploadCategory = "drawing" }
+                                    Button("Image") { uploadCategory = "image" }
+                                    Button("Document") { uploadCategory = "document" }
+                                } label: {
+                                    Label("Category: \(uploadCategory.capitalized)", systemImage: "folder")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+
+                                Spacer()
+                                Button("Upload File") {
+                                    showTaskUploadImporter = true
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(taskBoardLoading)
+                            }
+
+                            TextField("Project name", text: $uploadProjectName)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Client name", text: $uploadClientName)
+                                .textFieldStyle(.roundedBorder)
+                            if uploadCategory == "drawing" {
+                                TextField("Discipline (e.g., AV, ELEC, LOW-VOLT)", text: $uploadDiscipline)
+                                    .textFieldStyle(.roundedBorder)
+                                HStack {
+                                    TextField("Sheet # (e.g., A1.2)", text: $uploadSheetNumber)
+                                        .textFieldStyle(.roundedBorder)
+                                    TextField("Rev (e.g., 3)", text: $uploadRevision)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                TextField("Issue date (YYYY-MM-DD)", text: $uploadIssueDate)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            Text("Naming v1: YYYYMMDD-HHMMSS--category--project--client--discipline--sheet--r-rev--issue-date--original.ext")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        } label: {
+                            Label("Upload Intake", systemImage: "square.and.arrow.up")
+                                .font(.subheadline)
+                        }
+
+                        DisclosureGroup(isExpanded: $showUploadsQueuePanel) {
+                            if uploadsQueue.isEmpty {
+                                Text("No recent uploads yet.")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                ForEach(uploadsQueue.prefix(10)) { item in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Circle()
+                                            .fill(statusColor(item.open_complete_status))
+                                            .frame(width: 8, height: 8)
+                                            .padding(.top, 5)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.stored_filename)
+                                                .font(.caption2)
+                                                .lineLimit(1)
+                                            Text("#\(item.task_id ?? 0) • \(item.task_status) • \(item.open_complete_status.capitalized)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        Spacer()
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Uploads Queue (last 10)", systemImage: "tray.full")
+                                .font(.subheadline)
                         }
                     }
+                    .padding(14)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(.horizontal, 20)
                     .fileImporter(
                         isPresented: $showTaskUploadImporter,
@@ -326,8 +524,7 @@ struct DashboardView: View {
                             quickActionResult = "❌ Upload picker failed: \(err.localizedDescription)"
                         }
                     }
-                    
-                    // Stats — single compact row
+
                     if let stats = api.stats {
                         CompactStatsBar(
                             proposals: stats.proposals.draft + stats.proposals.sent,
@@ -338,61 +535,52 @@ struct DashboardView: View {
                         )
                         .padding(.horizontal, 20)
                     }
-                    
-                    // Social / X — same as Telegram
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Social / X")
+
+                    DisclosureGroup(isExpanded: $showMoreActionsPanel) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Social")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                ToolChip(title: "Story Tweet", icon: "book.fill") {
+                                    Task { await runSocialAction("Story") { await api.socialStory() } }
+                                }
+                                .disabled(quickActionLoading)
+                                ToolChip(title: "Tip Tweet", icon: "lightbulb.fill") {
+                                    Task { await runSocialAction("Tip") { await api.socialTip() } }
+                                }
+                                .disabled(quickActionLoading)
+                                ToolChip(title: "Post Next", icon: "paperplane.fill") {
+                                    Task { await runSocialAction("Post") { await api.socialXPost() } }
+                                }
+                                .disabled(quickActionLoading)
+                            }
+
+                            Text("Diagnostics")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 10) {
+                                ToolChip(title: "Verify Ollama", icon: "checkmark.shield.fill") {
+                                    Task { await runVerifyOllama() }
+                                }
+                                .disabled(quickActionLoading)
+                                ToolChip(title: "Verify LM Studio", icon: "checkmark.shield.fill") {
+                                    Task { await runVerifyLMStudio() }
+                                }
+                                .disabled(quickActionLoading)
+                            }
+                        }
+                    } label: {
+                        Label("More Actions", systemImage: "ellipsis.circle")
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 4)
-                        
-                        HStack(spacing: 10) {
-                            ToolChip(title: "Story Tweet", icon: "book.fill") {
-                                Task { await runSocialAction("Story") { await api.socialStory() } }
-                            }
-                            .disabled(quickActionLoading)
-                            ToolChip(title: "Tip Tweet", icon: "lightbulb.fill") {
-                                Task { await runSocialAction("Tip") { await api.socialTip() } }
-                            }
-                            .disabled(quickActionLoading)
-                            ToolChip(title: "Post Next", icon: "paperplane.fill") {
-                                Task { await runSocialAction("Post") { await api.socialXPost() } }
-                            }
-                            .disabled(quickActionLoading)
-                        }
                     }
                     .padding(.horizontal, 20)
-                    
-                    // Tools — verify actions
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Tools")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 4)
-                        
-                        HStack(spacing: 10) {
-                            ToolChip(
-                                title: "Verify Ollama",
-                                icon: "checkmark.shield.fill"
-                            ) {
-                                Task { await runVerifyOllama() }
-                            }
-                            .disabled(quickActionLoading)
-                            
-                            ToolChip(
-                                title: "Verify LM Studio",
-                                icon: "checkmark.shield.fill"
-                            ) {
-                                Task { await runVerifyLMStudio() }
-                            }
-                            .disabled(quickActionLoading)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    // Result / Loading / Error
+
                     if quickActionLoading {
                         HStack(spacing: 8) {
                             ProgressView()
@@ -433,31 +621,150 @@ struct DashboardView: View {
                 await refreshHomeTaskBoard()
             }
             .onAppear {
+                restorePrimaryActionResults()
+                if selectedPrimaryAction == nil, !persistedSelectedPrimaryAction.isEmpty {
+                    selectedPrimaryAction = persistedSelectedPrimaryAction
+                }
                 Task { await api.fetchAIStatus() }
             }
         }
     }
     
     func runQuickAction(name: String, action: () async -> CommandResult?) async {
+        selectedPrimaryAction = name
+        persistedSelectedPrimaryAction = name
         quickActionLoading = true
         quickActionResult = nil
         let result = await action()
-        quickActionResult = result?.output ?? result?.error ?? (result?.success == true ? "Done" : "Failed")
+        let message = result?.output ?? result?.error ?? (result?.success == true ? "Done" : "Failed")
+        setPrimaryActionResult(name, message: message)
+        quickActionResult = message
         quickActionLoading = false
     }
     
     func runWebsiteAction() async {
+        selectedPrimaryAction = "Website"
+        persistedSelectedPrimaryAction = "Website"
         quickActionLoading = true
         quickActionResult = nil
         let result = await api.checkWebsite()
+        let message: String
         if let status = result {
             let upCount = status.sites.values.filter { $0.uptime.status == "up" }.count
             let total = status.sites.count
-            quickActionResult = "\(upCount)/\(total) sites up"
+            message = "\(upCount)/\(total) sites up"
         } else {
-            quickActionResult = api.error ?? "Failed"
+            message = api.error ?? "Failed"
         }
+        setPrimaryActionResult("Website", message: message)
+        quickActionResult = message
         quickActionLoading = false
+    }
+
+    func setPrimaryActionResult(_ action: String, message: String) {
+        primaryActionResults[action] = ActionResultEntry(
+            message: message,
+            updatedAt: Date().timeIntervalSince1970
+        )
+        persistPrimaryActionResults()
+    }
+
+    func persistPrimaryActionResults() {
+        guard let data = try? JSONEncoder().encode(primaryActionResults),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+        persistedPrimaryActionResults = json
+    }
+
+    func restorePrimaryActionResults() {
+        guard !persistedPrimaryActionResults.isEmpty,
+              let data = persistedPrimaryActionResults.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: ActionResultEntry].self, from: data) else {
+            return
+        }
+        primaryActionResults = decoded
+        if selectedPrimaryAction == nil, !persistedSelectedPrimaryAction.isEmpty {
+            selectedPrimaryAction = persistedSelectedPrimaryAction
+        }
+    }
+
+    func relativeTimeString(from timestamp: TimeInterval) -> String {
+        let date = Date(timeIntervalSince1970: timestamp)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    func actionFreshness(_ action: String) -> (label: String, color: Color)? {
+        guard let entry = primaryActionResults[action] else { return nil }
+        let age = Date().timeIntervalSince1970 - entry.updatedAt
+        if age < 4 * 3600 {
+            return ("Fresh", .green)
+        }
+        if age < 12 * 3600 {
+            return ("Needs refresh", .orange)
+        }
+        return ("Stale", .red)
+    }
+
+    var nextBestAction: (title: String, detail: String, cta: String)? {
+        if !homeClaudePending.isEmpty || !homeNotesApprovals.isEmpty {
+            return (
+                "Clear pending approvals",
+                "You have \(homeClaudePending.count + homeNotesApprovals.count) approvals waiting.",
+                "Review Approvals"
+            )
+        }
+        let openUploads = uploadsQueue.filter { $0.open_complete_status.lowercased() == "open" }.count
+        if openUploads > 0 {
+            return (
+                "Process upload queue",
+                "\(openUploads) uploads are still open and linked to tasks.",
+                "Open Uploads Queue"
+            )
+        }
+        if primaryActionResults["Morning"] == nil {
+            return ("Run morning checklist", "Kick off the day with your standard startup flow.", "Run Morning")
+        }
+        if actionFreshness("Morning")?.label == "Stale" || actionFreshness("Morning")?.label == "Needs refresh" {
+            return ("Refresh morning checklist", "Your morning status is out of date.", "Run Morning")
+        }
+        if primaryActionResults["Bids"] == nil {
+            return ("Check new bids", "Make sure no opportunities are waiting.", "Check Bids")
+        }
+        if actionFreshness("Bids")?.label == "Stale" || actionFreshness("Bids")?.label == "Needs refresh" {
+            return ("Refresh bid scan", "Your bid scan is getting stale.", "Check Bids")
+        }
+        if primaryActionResults["Website"] == nil {
+            return ("Check website health", "Run uptime checks for your sites.", "Check Website")
+        }
+        if actionFreshness("Website")?.label == "Stale" || actionFreshness("Website")?.label == "Needs refresh" {
+            return ("Refresh website health", "Website status is stale.", "Check Website")
+        }
+        return ("Open Markup", "Continue room and symbol work on active drawings.", "Open Markup")
+    }
+
+    func runNextBestAction() async {
+        guard let guidance = nextBestAction else { return }
+        switch guidance.cta {
+        case "Review Approvals":
+            showApprovalsPanel = true
+        case "Open Uploads Queue":
+            showUploadsQueuePanel = true
+        case "Run Morning":
+            await runQuickAction(name: "Morning") { await api.runMorningChecklist() }
+        case "Check Bids":
+            await runQuickAction(name: "Bids") { await api.checkBids() }
+        case "Check Website":
+            await runWebsiteAction()
+        default:
+            selectedPrimaryAction = "Markup"
+            persistedSelectedPrimaryAction = "Markup"
+            setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
+            let url = api.markupURL ?? api.fallbackMarkupURL
+            UIApplication.shared.open(url)
+        }
     }
 
     func runSocialAction(_ name: String, action: () async -> CommandResult?) async {
@@ -488,8 +795,10 @@ struct DashboardView: View {
         taskBoardLoading = true
         async let claude = api.fetchClaudePendingTasks()
         async let approvals = api.fetchNotesTaskApprovals(status: "pending_approval", limit: 8)
+        async let uploads = api.fetchUploadsQueue(limit: 10)
         homeClaudePending = await claude
         homeNotesApprovals = (await approvals)?.items ?? []
+        uploadsQueue = await uploads
         taskBoardLoading = false
     }
 
@@ -544,16 +853,32 @@ struct DashboardView: View {
             category: uploadCategory,
             projectName: cleanProject,
             clientName: cleanClient,
+            discipline: uploadDiscipline.trimmingCharacters(in: .whitespacesAndNewlines),
+            sheetNumber: uploadSheetNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+            revision: uploadRevision.trimmingCharacters(in: .whitespacesAndNewlines),
+            issueDate: uploadIssueDate.trimmingCharacters(in: .whitespacesAndNewlines),
             title: title,
             description: "Uploaded from SymphonyOps Home Task Board",
             priority: "high"
         )
         if response?.success == true {
             quickActionResult = "✅ Uploaded + task created (#\(response?.task_id ?? 0))\n\(response?.stored_filename ?? "")"
+            await refreshHomeTaskBoard()
         } else {
             quickActionResult = "❌ Upload failed: \(response?.error ?? api.error ?? "Unknown error")"
         }
         taskBoardLoading = false
+    }
+
+    func statusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "complete":
+            return .green
+        case "closed":
+            return .gray
+        default:
+            return .orange
+        }
     }
 }
 
@@ -3478,23 +3803,54 @@ struct StatusPill: View {
 
 struct PrimaryActionCard: View {
     let title: String
+    let subtitle: String
     let icon: String
     let color: Color
+    let isSelected: Bool
+    let isLoading: Bool
+    let statusLabel: String?
+    let statusColor: Color?
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: icon)
-                    .font(.title)
-                    .foregroundColor(color)
+                HStack(alignment: .center) {
+                    Image(systemName: icon)
+                        .font(.title3)
+                        .foregroundColor(color)
+                    Spacer()
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.85)
+                    }
+                }
                 Text(title)
-                    .font(.subheadline)
+                    .font(.headline)
                     .fontWeight(.semibold)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                if let statusLabel, let statusColor {
+                    Text(statusLabel)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(statusColor.opacity(0.18))
+                        .foregroundColor(statusColor)
+                        .clipShape(Capsule())
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 108)
             .padding(20)
             .background(Color(.secondarySystemGroupedBackground))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? Color.orange : Color.clear, lineWidth: 2)
+            )
             .cornerRadius(16)
         }
         .buttonStyle(.plain)

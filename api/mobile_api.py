@@ -20,6 +20,7 @@ import csv
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -71,6 +72,12 @@ CLIENTS_REGISTRY_FILE = BASE_DIR / "data" / "contacts" / "clients_registry.json"
 NOTES_PROJECT_LINKS_FILE = BASE_DIR / "data" / "notes_project_links.json"
 TASK_UPLOAD_DIR = BASE_DIR / "data" / "intake_uploads"
 TASK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+TASK_UPLOAD_QUEUE_FILE = TASK_UPLOAD_DIR / "uploads_queue.jsonl"
+TASK_UPLOAD_FINDINGS_DIR = TASK_UPLOAD_DIR / "findings"
+TASK_UPLOAD_FINDINGS_DIR.mkdir(parents=True, exist_ok=True)
+TASK_UPLOAD_EXTRACTION_QUEUE_DIR = TASK_UPLOAD_DIR / "extraction_queue"
+TASK_UPLOAD_EXTRACTION_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+TASK_BOARD_DB = BASE_DIR / "orchestrator" / "task_board.db"
 
 PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
     "auto": {
@@ -143,14 +150,323 @@ def _build_intake_filename(
     project_name: str,
     client_name: str,
     original_filename: str,
+    discipline: str = "",
+    sheet_number: str = "",
+    revision: str = "",
+    issue_date: str = "",
 ) -> str:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     cat = _slugify(category, fallback="document", max_len=20)
     project = _slugify(project_name, fallback="no-project", max_len=36)
     client = _slugify(client_name, fallback="no-client", max_len=28)
     orig_stem = _slugify(Path(original_filename or "upload").stem, fallback="file", max_len=36)
+    disc = _slugify(discipline, fallback="na", max_len=16)
+    sheet = _slugify(sheet_number, fallback="na", max_len=16)
+    rev = _slugify(revision, fallback="na", max_len=8)
+    issue = _slugify(issue_date, fallback=ts.split("-")[0], max_len=12)
     ext = (Path(original_filename or "").suffix or ".bin").lower()
-    return f"{ts}--{cat}--{project}--{client}--{orig_stem}{ext}"
+    return f"{ts}--{cat}--{project}--{client}--{disc}--{sheet}--r-{rev}--{issue}--{orig_stem}{ext}"
+
+
+def _load_markup_symbol_catalog() -> List[Dict[str, str]]:
+    """
+    Build a lightweight symbol catalog from SYMBOL_SPEC and symbols.svg.
+    Returns rows like: {"id": "spk-z1", "label": "S 1", "sku": "TS-IC62"}.
+    """
+    catalog: List[Dict[str, str]] = []
+    spec_path = BASE_DIR / "knowledge" / "symbols" / "SYMBOL_SPEC.md"
+    svg_path = BASE_DIR / "tools" / "markup_app" / "symbols" / "symbols.svg"
+
+    if spec_path.exists():
+        for line in spec_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("| `"):
+                continue
+            parts = [p.strip() for p in stripped.strip("|").split("|")]
+            if len(parts) < 6:
+                continue
+            sym_id = parts[0].strip("`")
+            label = parts[1]
+            sku = parts[5]
+            if sym_id and sym_id.lower() != "id":
+                catalog.append({"id": sym_id, "label": label, "sku": sku})
+
+    if svg_path.exists():
+        svg_text = svg_path.read_text(encoding="utf-8", errors="ignore")
+        for match in re.findall(r'id="sym-([a-zA-Z0-9\-]+)"', svg_text):
+            if not any(c.get("id") == match for c in catalog):
+                catalog.append({"id": match, "label": match.replace("-", " ").upper(), "sku": ""})
+
+    return catalog
+
+
+def _extract_text_from_dwg(path: Path) -> str:
+    """
+    Best-effort DWG text extraction without heavyweight dependencies.
+    Uses `strings` to surface embedded note text and block names.
+    """
+    try:
+        result = subprocess.run(
+            ["strings", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        if result.returncode == 0:
+            return result.stdout
+    except Exception:
+        pass
+    return ""
+
+
+def _extract_legend_terms(text: str) -> List[str]:
+    """
+    Heuristic legend extraction:
+    - pulls terms from lines containing LEGEND/SYMBOL
+    - includes known shorthand tokens common in AV drawings
+    """
+    terms: List[str] = []
+    for line in text.splitlines():
+        up = line.upper().strip()
+        if not up:
+            continue
+        if "LEGEND" in up or "SYMBOL" in up:
+            terms.extend(re.findall(r"[A-Z0-9\-]{2,}", up))
+            continue
+        if any(tok in up for tok in [" AP ", " TV ", " KP ", " DIM ", " CAM ", " DEMARC ", " DATA "]):
+            terms.extend(re.findall(r"[A-Z0-9\-]{2,}", up))
+
+    cleaned = []
+    for t in terms:
+        if t in {"LEGEND", "SYMBOL", "SCHEDULE", "NOTES"}:
+            continue
+        if len(t) < 2:
+            continue
+        cleaned.append(t)
+    return sorted(set(cleaned))[:200]
+
+
+def _extract_dtools_qv(text: str, fallback_text: str = "") -> Dict[str, str]:
+    """
+    Parse D-Tools quote/version markers such as:
+    - Q-1234|V2
+    - Q-1234 V2
+    - Quote Q-1234 Version 2
+    """
+    combined = f"{text or ''}\n{fallback_text or ''}".upper()
+    normalized = (
+        combined.replace("I", "1")
+        .replace("L", "1")
+        .replace("O", "0")
+        .replace("S", "5")
+    )
+    quote_id = ""
+    version = ""
+
+    # Prefer explicit quote/version pair candidates and choose best by frequency + quote length.
+    pair_candidates = re.findall(r"\bQ[-\s]?(\d{1,8})\s*(?:\||\s)\s*V?(\d{1,2})\b", normalized)
+    if pair_candidates:
+        max_len = max(len(q_digits) for q_digits, _ in pair_candidates)
+        score: Dict[str, int] = {}
+        q_to_versions: Dict[str, List[str]] = {}
+        for q_digits, v_digits in pair_candidates:
+            if len(q_digits) < max_len:
+                continue
+            q = f"Q-{q_digits}"
+            v = f"V{v_digits}"
+            score[q] = score.get(q, 0) + 50 + len(q_digits) * 10
+            q_to_versions.setdefault(q, []).append(v)
+        # Pick highest score; tie-break by longer numeric part.
+        quote_id = sorted(score.keys(), key=lambda q: (score[q], len(q.split("-")[-1])), reverse=True)[0]
+        versions = q_to_versions.get(quote_id, [])
+        if versions:
+            version = sorted(set(versions), key=lambda v: versions.count(v), reverse=True)[0]
+    else:
+        q_matches = re.findall(r"\bQ[-\s]?(\d{1,8})\b", normalized)
+        v_matches = re.findall(r"\bV(\d{1,2})\b", normalized)
+        if q_matches:
+            # Prefer longer quote IDs; then most frequent.
+            q_freq: Dict[str, int] = {}
+            for qd in q_matches:
+                q_freq[qd] = q_freq.get(qd, 0) + 1
+            best_q = sorted(q_freq.keys(), key=lambda qd: (len(qd), q_freq[qd]), reverse=True)[0]
+            quote_id = f"Q-{best_q}"
+        if v_matches:
+            v_freq: Dict[str, int] = {}
+            for vd in v_matches:
+                v_freq[vd] = v_freq.get(vd, 0) + 1
+            best_v = sorted(v_freq.keys(), key=lambda vd: (v_freq[vd], len(vd)), reverse=True)[0]
+            version = f"V{best_v}"
+
+    # Accept compact/boxed style: "Q-195 4" or "Q-195|4"
+    if quote_id and not version:
+        compact = re.search(r"\bQ[-\s]?\d{1,8}\s*(?:\||\s)\s*(?:V)?(\d{1,2})\b", normalized)
+        if compact:
+            version = f"V{compact.group(1)}"
+
+    # Fallback for "Version 2" formatting
+    if not version:
+        v_word = re.search(r"\bVER(?:SION)?\s*#?\s*(\d{1,2})\b", normalized)
+        if v_word:
+            version = f"V{v_word.group(1)}"
+
+    return {
+        "quote_id": quote_id,
+        "version": version,
+        "quote_version": f"{quote_id}|{version}" if quote_id and version else "",
+    }
+
+
+def _ocr_titleblock_qv_from_image(path: Path) -> str:
+    """
+    Best-effort OCR focused on title-block top-right region where Q/V appears.
+    Requires Pillow + tesseract binary. Returns extracted text (possibly empty).
+    """
+    if shutil.which("tesseract") is None:
+        return ""
+    try:
+        from PIL import Image, ImageOps  # type: ignore
+    except Exception:
+        return ""
+
+    try:
+        with Image.open(path) as img:
+            img = img.convert("RGB")
+            w, h = img.size
+
+            # Region where user said Q/V always lives: left of logo, top-right banner.
+            regions = [
+                (int(w * 0.60), int(h * 0.02), int(w * 0.84), int(h * 0.22)),
+                (int(w * 0.55), int(h * 0.00), int(w * 0.90), int(h * 0.30)),
+            ]
+
+            text_chunks: List[str] = []
+            for idx, box in enumerate(regions):
+                crop = img.crop(box)
+                gray = ImageOps.grayscale(crop)
+                boosted = ImageOps.autocontrast(gray)
+                upscaled = boosted.resize((boosted.width * 3, boosted.height * 3))
+                bw = upscaled.point(lambda p: 255 if p > 135 else 0)
+                with tempfile.NamedTemporaryFile(suffix=f"_qv_{idx}.png", delete=False) as tf:
+                    tmp_path = Path(tf.name)
+                try:
+                    bw.save(tmp_path, format="PNG")
+                    for psm in ("7", "6", "11"):
+                        result = subprocess.run(
+                            [
+                                "tesseract",
+                                str(tmp_path),
+                                "stdout",
+                                "--psm",
+                                psm,
+                                "-l",
+                                "eng",
+                                "-c",
+                                "tessedit_char_whitelist=QV0123456789|- ",
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=20,
+                        )
+                        if result.returncode == 0 and result.stdout:
+                            text_chunks.append(result.stdout)
+                finally:
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+            return "\n".join(text_chunks)
+    except Exception:
+        return ""
+
+
+def _match_legend_to_symbols(legend_terms: List[str], symbol_catalog: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    matches: List[Dict[str, str]] = []
+    for term in legend_terms:
+        term_n = term.lower().replace("_", " ").replace("-", " ")
+        for sym in symbol_catalog:
+            sid = (sym.get("id") or "").lower().replace("-", " ")
+            label = (sym.get("label") or "").lower()
+            if not sid and not label:
+                continue
+            if term_n == sid or term_n == label or term_n in sid or term_n in label:
+                matches.append(
+                    {
+                        "legend_term": term,
+                        "symbol_id": sym.get("id", ""),
+                        "symbol_label": sym.get("label", ""),
+                        "dtools_sku": sym.get("sku", ""),
+                    }
+                )
+                break
+    # De-dupe by legend_term + symbol_id
+    seen = set()
+    dedup = []
+    for m in matches:
+        key = (m["legend_term"], m["symbol_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(m)
+    return dedup[:200]
+
+
+def _first_pass_drawing_findings(stored_path: Path, project_name: str, client_name: str) -> Dict[str, Any]:
+    text = ""
+    suffix = stored_path.suffix.lower()
+    if suffix == ".pdf":
+        text = _extract_text_from_pdf(stored_path)
+    elif suffix == ".dwg":
+        text = _extract_text_from_dwg(stored_path)
+    elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        text = _ocr_titleblock_qv_from_image(stored_path)
+    else:
+        text = _extract_text_from_path(stored_path)
+
+    symbol_catalog = _load_markup_symbol_catalog()
+    legend_terms = _extract_legend_terms(text)
+    symbol_matches = _match_legend_to_symbols(legend_terms, symbol_catalog)
+    sheet_refs = sorted(set(re.findall(r"\b[A-Z]{1,3}\d{1,2}(?:\.\d{1,2})?\b", text.upper())))
+    dtools_qv = _extract_dtools_qv(text=text, fallback_text=stored_path.name)
+
+    findings = {
+        "generated_at": datetime.now().isoformat(),
+        "project_name": project_name,
+        "client_name": client_name,
+        "file_name": stored_path.name,
+        "file_path": str(stored_path),
+        "file_type": suffix.lstrip("."),
+        "text_char_count": len(text),
+        "sheet_references": sheet_refs[:200],
+        "legend_terms": legend_terms[:200],
+        "symbol_matches": symbol_matches,
+        "dtools_quote_id": dtools_qv.get("quote_id", ""),
+        "dtools_version": dtools_qv.get("version", ""),
+        "dtools_quote_version": dtools_qv.get("quote_version", ""),
+        "markup_symbol_catalog_size": len(symbol_catalog),
+    }
+    return findings
+
+
+def _append_upload_queue_record(record: Dict[str, Any]) -> None:
+    TASK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    with TASK_UPLOAD_QUEUE_FILE.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record) + "\n")
+
+
+def _task_status(task_id: Optional[int]) -> str:
+    if not task_id:
+        return "unknown"
+    try:
+        if not TASK_BOARD_DB.exists():
+            return "unknown"
+        con = sqlite3.connect(TASK_BOARD_DB)
+        cur = con.cursor()
+        row = cur.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        con.close()
+        return (row[0] if row else "unknown") or "unknown"
+    except Exception:
+        return "unknown"
 
 
 def _parse_allowed_origins(env_key: str, default_csv: str) -> list[str]:
@@ -654,11 +970,6 @@ def _product_unique_key(brand: str, part_number: str, model: str) -> str:
     p = (part_number or "").strip().lower()
     m = (model or "").strip().lower()
     return f"{b}::{p or m}"
-
-
-def _slugify(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "").strip()).strip("-").lower()
-    return cleaned or "unnamed-project"
 
 
 def _extract_text_from_path(path: Path) -> str:
@@ -2997,6 +3308,10 @@ if HAS_FASTAPI:
         category: str = Form("document"),
         project_name: str = Form(""),
         client_name: str = Form(""),
+        discipline: str = Form(""),
+        sheet_number: str = Form(""),
+        revision: str = Form(""),
+        issue_date: str = Form(""),
         title: str = Form(""),
         description: str = Form(""),
         priority: str = Form("high"),
@@ -3013,11 +3328,16 @@ if HAS_FASTAPI:
                 category_norm = "document"
 
             source_filename = (file.filename or "upload.bin").strip()
+            upload_id = uuid4().hex[:12]
             stored_filename = _build_intake_filename(
                 category=category_norm,
                 project_name=project_name,
                 client_name=client_name,
                 original_filename=source_filename,
+                discipline=discipline,
+                sheet_number=sheet_number,
+                revision=revision,
+                issue_date=issue_date,
             )
 
             day_dir = datetime.now().strftime("%Y-%m-%d")
@@ -3029,6 +3349,20 @@ if HAS_FASTAPI:
             if not data:
                 return {"success": False, "error": "Uploaded file was empty"}
             stored_path.write_bytes(data)
+
+            # Attempt to detect D-Tools quote/version tags from title-block text.
+            extracted_text = ""
+            try:
+                suffix = stored_path.suffix.lower()
+                if suffix == ".dwg":
+                    extracted_text = _extract_text_from_dwg(stored_path)
+                elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+                    extracted_text = _ocr_titleblock_qv_from_image(stored_path)
+                else:
+                    extracted_text = _extract_text_from_path(stored_path)
+            except Exception:
+                extracted_text = ""
+            dtools_qv = _extract_dtools_qv(extracted_text, fallback_text=f"{source_filename} {stored_filename}")
 
             default_title = f"Review {category_norm}: {project_name or client_name or source_filename}"
             task_title = (title or default_title).strip()
@@ -3046,9 +3380,16 @@ if HAS_FASTAPI:
                 f"Category: {category_norm}",
                 f"Project: {project_name or 'n/a'}",
                 f"Client: {client_name or 'n/a'}",
+                f"Discipline: {discipline or 'n/a'}",
+                f"Sheet: {sheet_number or 'n/a'}",
+                f"Revision: {revision or 'n/a'}",
+                f"Issue date: {issue_date or 'n/a'}",
+                f"D-Tools quote: {dtools_qv.get('quote_id') or 'n/a'}",
+                f"D-Tools version: {dtools_qv.get('version') or 'n/a'}",
                 f"Original filename: {source_filename}",
                 f"Stored path: {stored_path}",
                 "Naming scheme: YYYYMMDD-HHMMSS--category--project--client--original.ext",
+                "v1 naming metadata: discipline, sheet, revision, issue_date",
             ]
             task_description = "\n".join([x for x in desc_parts if x])
 
@@ -3062,16 +3403,148 @@ if HAS_FASTAPI:
                 priority=(priority or "high"),
             )
 
+            extraction_queued = False
+            findings_path: Optional[Path] = None
+            findings_preview: Dict[str, Any] = {}
+            if category_norm == "drawing":
+                queue_payload = {
+                    "upload_id": upload_id,
+                    "task_id": task_id,
+                    "file_path": str(stored_path),
+                    "file_name": stored_filename,
+                    "project_name": project_name,
+                    "client_name": client_name,
+                    "discipline": discipline,
+                    "sheet_number": sheet_number,
+                    "revision": revision,
+                    "issue_date": issue_date,
+                    "dtools_quote_id": dtools_qv.get("quote_id", ""),
+                    "dtools_version": dtools_qv.get("version", ""),
+                    "dtools_quote_version": dtools_qv.get("quote_version", ""),
+                    "status": "queued",
+                    "queued_at": datetime.now().isoformat(),
+                }
+                queue_file = TASK_UPLOAD_EXTRACTION_QUEUE_DIR / f"{upload_id}.json"
+                queue_file.write_text(json.dumps(queue_payload, indent=2), encoding="utf-8")
+                extraction_queued = True
+                try:
+                    findings = _first_pass_drawing_findings(
+                        stored_path=stored_path,
+                        project_name=project_name,
+                        client_name=client_name,
+                    )
+                    findings["upload_id"] = upload_id
+                    findings["task_id"] = task_id
+                    findings["metadata"] = {
+                        "discipline": discipline,
+                        "sheet_number": sheet_number,
+                        "revision": revision,
+                        "issue_date": issue_date,
+                    }
+                    findings_path = TASK_UPLOAD_FINDINGS_DIR / f"{upload_id}__findings.json"
+                    findings_path.write_text(json.dumps(findings, indent=2), encoding="utf-8")
+                    findings_preview = {
+                        "legend_terms_count": len(findings.get("legend_terms", [])),
+                        "symbol_matches_count": len(findings.get("symbol_matches", [])),
+                        "sheet_references_count": len(findings.get("sheet_references", [])),
+                    }
+                    queue_payload["status"] = "first_pass_complete"
+                    queue_payload["findings_path"] = str(findings_path)
+                    queue_file.write_text(json.dumps(queue_payload, indent=2), encoding="utf-8")
+                except Exception as extract_error:
+                    queue_payload["status"] = "first_pass_failed"
+                    queue_payload["error"] = str(extract_error)
+                    queue_file.write_text(json.dumps(queue_payload, indent=2), encoding="utf-8")
+
+            queue_record = {
+                "upload_id": upload_id,
+                "created_at": datetime.now().isoformat(),
+                "category": category_norm,
+                "project_name": project_name,
+                "client_name": client_name,
+                "discipline": discipline,
+                "sheet_number": sheet_number,
+                "revision": revision,
+                "issue_date": issue_date,
+                "dtools_quote_id": dtools_qv.get("quote_id", ""),
+                "dtools_version": dtools_qv.get("version", ""),
+                "dtools_quote_version": dtools_qv.get("quote_version", ""),
+                "source_filename": source_filename,
+                "stored_filename": stored_filename,
+                "stored_path": str(stored_path),
+                "task_id": task_id,
+            }
+            if findings_path:
+                queue_record["findings_path"] = str(findings_path)
+            _append_upload_queue_record(queue_record)
+
             return {
                 "success": True,
+                "upload_id": upload_id,
                 "task_id": task_id,
                 "category": category_norm,
                 "stored_filename": stored_filename,
                 "stored_path": str(stored_path),
                 "naming_scheme": "YYYYMMDD-HHMMSS--category--project--client--original.ext",
+                "naming_scheme_v1": "YYYYMMDD-HHMMSS--category--project--client--discipline--sheet--r-revision--issue-date--original.ext",
+                "extraction_queued": extraction_queued,
+                "findings_path": str(findings_path) if findings_path else "",
+                "findings_preview": findings_preview,
+                "dtools_quote_id": dtools_qv.get("quote_id", ""),
+                "dtools_version": dtools_qv.get("version", ""),
+                "dtools_quote_version": dtools_qv.get("quote_version", ""),
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @app.get("/tasks/uploads_queue")
+    async def get_uploads_queue(limit: int = 10):
+        """
+        Return most-recent uploaded intake files with linked task status.
+        `open` = pending/in_progress/blocked, `complete` = completed.
+        """
+        try:
+            if not TASK_UPLOAD_QUEUE_FILE.exists():
+                return {"success": True, "uploads": []}
+            raw_lines = TASK_UPLOAD_QUEUE_FILE.read_text(encoding="utf-8", errors="ignore").splitlines()
+            rows: List[Dict[str, Any]] = []
+            for line in raw_lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except Exception:
+                    continue
+            rows = rows[-max(1, min(limit, 50)) :]
+            rows.reverse()
+
+            uploads: List[Dict[str, Any]] = []
+            for row in rows:
+                task_id = row.get("task_id")
+                task_status = _task_status(task_id)
+                open_complete = "open"
+                if task_status == "completed":
+                    open_complete = "complete"
+                elif task_status in {"cancelled", "failed"}:
+                    open_complete = "closed"
+                uploads.append(
+                    {
+                        "upload_id": row.get("upload_id"),
+                        "created_at": row.get("created_at"),
+                        "category": row.get("category", "document"),
+                        "project_name": row.get("project_name", ""),
+                        "client_name": row.get("client_name", ""),
+                        "stored_filename": row.get("stored_filename", ""),
+                        "task_id": task_id,
+                        "task_status": task_status,
+                        "open_complete_status": open_complete,
+                        "findings_path": row.get("findings_path", ""),
+                    }
+                )
+            return {"success": True, "uploads": uploads}
+        except Exception as e:
+            return {"success": False, "uploads": [], "error": str(e)}
     
     @app.get("/tasks/claude_pending")
     async def get_claude_pending():

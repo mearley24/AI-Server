@@ -1188,6 +1188,10 @@ class APIClient: ObservableObject {
         category: String,
         projectName: String,
         clientName: String,
+        discipline: String,
+        sheetNumber: String,
+        revision: String,
+        issueDate: String,
         title: String,
         description: String,
         priority: String
@@ -1211,6 +1215,10 @@ class APIClient: ObservableObject {
             body.append(multipartField(name: "category", value: category, boundary: boundary))
             body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
             body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
+            body.append(multipartField(name: "discipline", value: discipline, boundary: boundary))
+            body.append(multipartField(name: "sheet_number", value: sheetNumber, boundary: boundary))
+            body.append(multipartField(name: "revision", value: revision, boundary: boundary))
+            body.append(multipartField(name: "issue_date", value: issueDate, boundary: boundary))
             body.append(multipartField(name: "title", value: title, boundary: boundary))
             body.append(multipartField(name: "description", value: description, boundary: boundary))
             body.append(multipartField(name: "priority", value: priority, boundary: boundary))
@@ -1233,6 +1241,20 @@ class APIClient: ObservableObject {
                 self.error = userFacingError(error)
             }
             return nil
+        }
+    }
+
+    func fetchUploadsQueue(limit: Int = 10) async -> [UploadQueueItem] {
+        do {
+            let url = URL(string: "\(baseURL)/tasks/uploads_queue?limit=\(max(1, min(limit, 50)))")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode(UploadsQueueResponse.self, from: data)
+            return response.uploads
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return []
         }
     }
     
@@ -1798,12 +1820,42 @@ struct TaskCreateResponse: Codable {
 
 struct TaskUploadIntakeResponse: Codable {
     let success: Bool
+    let upload_id: String?
     let task_id: Int?
     let category: String?
     let stored_filename: String?
     let stored_path: String?
     let naming_scheme: String?
+    let extraction_queued: Bool?
+    let findings_path: String?
+    let findings_preview: TaskUploadFindingsPreview?
     let error: String?
+}
+
+struct TaskUploadFindingsPreview: Codable {
+    let legend_terms_count: Int?
+    let symbol_matches_count: Int?
+    let sheet_references_count: Int?
+}
+
+struct UploadsQueueResponse: Codable {
+    let success: Bool
+    let uploads: [UploadQueueItem]
+    let error: String?
+}
+
+struct UploadQueueItem: Codable, Identifiable {
+    var id: String { upload_id }
+    let upload_id: String
+    let created_at: String?
+    let category: String
+    let project_name: String?
+    let client_name: String?
+    let stored_filename: String
+    let task_id: Int?
+    let task_status: String
+    let open_complete_status: String
+    let findings_path: String?
 }
 
 struct ClaudeTask: Codable, Identifiable {
