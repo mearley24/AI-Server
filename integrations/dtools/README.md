@@ -102,6 +102,28 @@ python3 dtools_client.py pipeline
 python3 dtools_client.py find-client --client "Smith"
 ```
 
+## Tonight Workflow (5-8 proposals fast)
+
+Use the batch runner to process multiple proposal IDs with retries:
+
+```bash
+cd ~/AI-Server
+python3 integrations/dtools/tonight_proposal_runner.py P-XXXX P-YYYY P-ZZZZ --retries 1 --api-first
+```
+
+Options:
+- `--api-first` tries API import first (auto-falls back to browser automation).
+- `--visible` runs browser non-headless if you want to watch it.
+- Reports are saved to `data/dtools/tonight_reports/`.
+
+Telegram shortcut:
+
+```text
+/dtools_auto batch P-XXXX P-YYYY P-ZZZZ
+```
+
+This runs API-first + browser fallback in sequence and returns a success/fail summary.
+
 ## Docker
 
 ```bash
@@ -132,12 +154,21 @@ The bridge handles auth automatically. Two headers are sent with every request:
 - `Authorization: Basic ...` (fixed D-Tools Cloud header)
 - `X-API-Key: <your key>` (your account-specific key)
 
+## Page Selectors (Browser Automation)
+
+The Playwright agent (`agents/dtools_browser_agent.py`) reads `page_selectors.yaml` to find UI elements. **Edit this file when the D-Tools UI changes** — it teaches the team where login, New Project, Import, etc. live.
+
+```bash
+playwright codegen https://portal.d-tools.com  # Discover selectors
+```
+
 ## Files
 
 ```
 integrations/dtools/
 ├── dtools_client.py           # Python API client (standalone + importable)
 ├── dtools_server.py           # Flask REST bridge server
+├── page_selectors.yaml        # UI selectors for browser automation (edit when UI changes)
 ├── docker-compose.dtools.yml  # Docker config
 ├── Dockerfile                 # Container build
 ├── requirements.txt           # Python dependencies

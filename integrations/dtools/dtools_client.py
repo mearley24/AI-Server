@@ -77,6 +77,25 @@ class DToolsCloudClient:
         r.raise_for_status()
         return r.json()
 
+    def _post_try(self, paths: List[str], payload: Dict) -> Dict:
+        """
+        Try multiple relative endpoint paths and return first success.
+        Useful when D-Tools endpoint names differ across accounts/versions.
+        """
+        errors: List[str] = []
+        for rel in paths:
+            url = rel if rel.startswith("http") else f"{CLOUD_BASE}/{rel.lstrip('/')}"
+            try:
+                return self._post(url, payload)
+            except Exception as exc:
+                errors.append(f"{rel}: {exc}")
+        return {
+            "status": "error",
+            "message": "All candidate endpoints failed",
+            "errors": errors,
+            "payload_keys": sorted(payload.keys()),
+        }
+
     # =====================================================================
     # CLOUD API  (dtcloudapi.d-tools.cloud)
     # =====================================================================
@@ -266,6 +285,63 @@ class DToolsCloudClient:
         except requests.HTTPError as e:
             logger.warning("Update failed (endpoint may differ): %s", e)
             return {"status": "error", "message": str(e)}
+
+    # =====================================================================
+    # API-FIRST PROPOSAL IMPORT (plug-and-play for endpoint cutover)
+    # =====================================================================
+    def create_project_api_first(self, project_name: str, client_name: str, address: str = "") -> Dict:
+        """
+        Attempt project creation via configured/candidate API endpoints.
+        Configure exact endpoint via DTOOLS_CREATE_PROJECT_ENDPOINT to make this
+        truly plug-and-play once your API contract is finalized.
+        """
+        payload = {
+            "Name": project_name,
+            "ProjectName": project_name,
+            "ClientName": client_name,
+            "Address": address,
+        }
+        custom = os.getenv("DTOOLS_CREATE_PROJECT_ENDPOINT", "").strip()
+        candidates = [custom] if custom else [
+            "Projects/CreateProject",
+            "Projects/Create",
+            "Projects/AddProject",
+        ]
+        result = self._post_try(candidates, payload)
+        return {
+            "success": "error" not in str(result).lower(),
+            "path": candidates[0] if custom else "auto-candidates",
+            "response": result,
+        }
+
+    def import_proposal_items_api_first(
+        self,
+        project_id: str,
+        items: List[Dict[str, Any]],
+        source_proposal_id: str = "",
+    ) -> Dict:
+        """
+        Attempt line-item import via configured/candidate API endpoints.
+        Configure exact endpoint via DTOOLS_IMPORT_ITEMS_ENDPOINT.
+        """
+        payload = {
+            "ProjectId": project_id,
+            "SourceProposalId": source_proposal_id,
+            "Items": items,
+        }
+        custom = os.getenv("DTOOLS_IMPORT_ITEMS_ENDPOINT", "").strip()
+        candidates = [custom] if custom else [
+            "Projects/ImportItems",
+            "Projects/ImportEquipment",
+            "Projects/AddProjectItems",
+        ]
+        result = self._post_try(candidates, payload)
+        return {
+            "success": "error" not in str(result).lower(),
+            "path": candidates[0] if custom else "auto-candidates",
+            "response": result,
+            "item_count": len(items),
+        }
 
 
 # ---------------------------------------------------------------------------

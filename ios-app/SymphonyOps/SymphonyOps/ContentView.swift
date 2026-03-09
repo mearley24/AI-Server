@@ -21,55 +21,25 @@ struct ContentView: View {
                     Label("Ask Bob", systemImage: "bubble.left.and.bubble.right")
                 }
                 .tag(1)
+
+            ActionsView()
+                .tabItem {
+                    Label("Work", systemImage: "checklist")
+                }
+                .tag(2)
             
             LeadsView()
                 .tabItem {
                     Label("Leads", systemImage: "person.3")
                 }
-                .tag(2)
-            
-            ActionsView()
-                .tabItem {
-                    Label("Actions", systemImage: "bolt.fill")
-                }
                 .tag(3)
             
-            ClaudeApprovalView()
-                .tabItem {
-                    Label("Claude", systemImage: "brain.head.profile")
-                }
-                .tag(4)
-            
-            MissionControlWebView()
-                .tabItem {
-                    Label("Mission Control", systemImage: "antenna.radiowaves.left.and.right")
-                }
-                .tag(5)
-            
-            NeuralMapWebView()
-                .tabItem {
-                    Label("Neural Map", systemImage: "brain")
-                }
-                .tag(6)
-            
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gear")
-                }
-                .tag(7)
-
-            SecretsVaultView()
+            OpsHubView()
                 .environmentObject(secretsVault)
                 .tabItem {
-                    Label("Vault", systemImage: "lock.shield")
+                    Label("Ops", systemImage: "square.grid.2x2")
                 }
-                .tag(9)
-            
-            FactsView()
-                .tabItem {
-                    Label("Facts", systemImage: "doc.text.fill")
-                }
-                .tag(8)
+                .tag(4)
         }
         .accentColor(Color.orange)
         .task {
@@ -78,6 +48,57 @@ struct ContentView: View {
             await api.checkOllama()
             await api.checkLMStudio()
             await api.fetchAIStatus()
+        }
+    }
+}
+
+struct OpsHubView: View {
+    @EnvironmentObject var secretsVault: SecretsVaultStore
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Operations") {
+                    NavigationLink {
+                        ClaudeApprovalView()
+                    } label: {
+                        Label("Claude Approvals", systemImage: "brain.head.profile")
+                    }
+                    NavigationLink {
+                        MissionControlWebView()
+                    } label: {
+                        Label("Mission Control", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                    NavigationLink {
+                        NeuralMapWebView()
+                    } label: {
+                        Label("Neural Map", systemImage: "brain")
+                    }
+                }
+
+                Section("Data") {
+                    NavigationLink {
+                        FactsView()
+                    } label: {
+                        Label("Facts Queue", systemImage: "doc.text.fill")
+                    }
+                    NavigationLink {
+                        SecretsVaultView()
+                            .environmentObject(secretsVault)
+                    } label: {
+                        Label("Secrets Vault", systemImage: "lock.shield")
+                    }
+                }
+
+                Section("Configuration") {
+                    NavigationLink {
+                        SettingsView()
+                    } label: {
+                        Label("Settings", systemImage: "gear")
+                    }
+                }
+            }
+            .navigationTitle("Ops Hub")
         }
     }
 }
@@ -1212,14 +1233,14 @@ struct ActionsView: View {
         NavigationView {
             ScrollViewReader { proxy in
                 List {
-                Section(header: Text("Workspace")) {
+                Section(header: Text("Focus Area")) {
                     Picker("Workspace", selection: $actionWorkspace) {
                         ForEach(ActionWorkspace.allCases) { workspace in
                             Text(workspace.rawValue).tag(workspace)
                         }
                     }
                     .pickerStyle(.segmented)
-                    Text("Filter actions by context so the app stays focused.")
+                    Text("Pick one focus area to reduce noise and keep priority tasks visible.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -2144,7 +2165,7 @@ struct ActionsView: View {
                 }
                 }
             }
-            .navigationTitle("Actions")
+            .navigationTitle("Work Center")
             .onChange(of: shouldScrollToProductResult) { shouldScroll in
                 guard shouldScroll else { return }
                 withAnimation {
