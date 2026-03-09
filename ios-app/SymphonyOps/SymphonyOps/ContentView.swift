@@ -111,6 +111,13 @@ struct DashboardView: View {
     @EnvironmentObject var api: APIClient
     @State private var quickActionResult: String?
     @State private var quickActionLoading = false
+    @State private var taskTitle = ""
+    @State private var taskDescription = ""
+    @State private var taskType = "research"
+    @State private var taskPriority = "medium"
+    @State private var homeClaudePending: [ClaudeTask] = []
+    @State private var homeNotesApprovals: [NotesTaskApprovalItem] = []
+    @State private var taskBoardLoading = false
     
     var body: some View {
         NavigationView {
@@ -167,6 +174,103 @@ struct DashboardView: View {
                             ) {
                                 let url = api.markupURL ?? api.fallbackMarkupURL
                                 UIApplication.shared.open(url)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+
+                    // Task Board quick panel
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Task Board")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button {
+                                Task { await refreshHomeTaskBoard() }
+                            } label: {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(taskBoardLoading)
+                        }
+
+                        TextField("New task title", text: $taskTitle)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Details (optional)", text: $taskDescription)
+                            .textFieldStyle(.roundedBorder)
+
+                        HStack {
+                            Menu {
+                                Button("Research") { taskType = "research" }
+                                Button("Proposal") { taskType = "proposal" }
+                                Button("Troubleshooting") { taskType = "troubleshooting" }
+                                Button("Documentation") { taskType = "documentation" }
+                                Button("Integration") { taskType = "integration" }
+                                Button("Claude (approval)") { taskType = "claude" }
+                            } label: {
+                                Label("Type: \(taskType)", systemImage: "tag")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Menu {
+                                Button("Critical") { taskPriority = "critical" }
+                                Button("High") { taskPriority = "high" }
+                                Button("Medium") { taskPriority = "medium" }
+                                Button("Low") { taskPriority = "low" }
+                            } label: {
+                                Label("Priority: \(taskPriority)", systemImage: "flag")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Spacer()
+                            Button("Create") {
+                                Task { await createHomeTask() }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(taskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || taskBoardLoading)
+                        }
+
+                        if !homeClaudePending.isEmpty {
+                            Text("Claude approvals (\(homeClaudePending.count))")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            ForEach(homeClaudePending.prefix(3)) { task in
+                                HStack {
+                                    Text(task.title)
+                                        .font(.caption2)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Button("Approve") {
+                                        Task { await approveHomeClaudeTask(task) }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.mini)
+                                }
+                            }
+                        }
+
+                        if !homeNotesApprovals.isEmpty {
+                            Text("Note approvals (\(homeNotesApprovals.count))")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            ForEach(homeNotesApprovals.prefix(3)) { item in
+                                HStack {
+                                    Text(item.note_title ?? "Untitled note")
+                                        .font(.caption2)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Button("Approve") {
+                                        Task { await approveHomeNoteTask(item.id) }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.mini)
+                                }
                             }
                         }
                     }
@@ -271,8 +375,12 @@ struct DashboardView: View {
             .refreshable {
                 await api.fetchDashboard()
                 await api.fetchAIStatus()
+                await refreshHomeTaskBoard()
             }
-            .task { await api.fetchMarkupURL() }
+            .task {
+                await api.fetchMarkupURL()
+                await refreshHomeTaskBoard()
+            }
             .onAppear {
                 Task { await api.fetchAIStatus() }
             }
@@ -323,6 +431,56 @@ struct DashboardView: View {
         let (ok, msg) = await api.verifyLMStudio()
         quickActionResult = ok ? "✅ \(msg)" : "❌ \(msg)"
         quickActionLoading = false
+    }
+
+    func refreshHomeTaskBoard() async {
+        taskBoardLoading = true
+        async let claude = api.fetchClaudePendingTasks()
+        async let approvals = api.fetchNotesTaskApprovals(status: "pending_approval", limit: 8)
+        homeClaudePending = await claude
+        homeNotesApprovals = (await approvals)?.items ?? []
+        taskBoardLoading = false
+    }
+
+    func createHomeTask() async {
+        taskBoardLoading = true
+        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = taskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let response = await api.createTask(
+            title: title,
+            description: description,
+            taskType: taskType,
+            priority: taskPriority
+        )
+        if response?.success == true {
+            quickActionResult = "✅ Task created (#\(response?.task_id ?? 0))"
+            taskTitle = ""
+            taskDescription = ""
+            await refreshHomeTaskBoard()
+        } else {
+            quickActionResult = response?.error ?? api.error ?? "Failed to create task"
+        }
+        taskBoardLoading = false
+    }
+
+    func approveHomeClaudeTask(_ task: ClaudeTask) async {
+        taskBoardLoading = true
+        let (success, message) = await api.approveClaudeTask(id: task.id)
+        quickActionResult = success ? "✅ \(message)" : "❌ \(message)"
+        await refreshHomeTaskBoard()
+        taskBoardLoading = false
+    }
+
+    func approveHomeNoteTask(_ approvalID: String) async {
+        taskBoardLoading = true
+        let response = await api.approveNotesTaskApproval(approvalID: approvalID)
+        if response?.success == true {
+            quickActionResult = "✅ Note task approved"
+        } else {
+            quickActionResult = response?.error ?? api.error ?? "Failed to approve note task"
+        }
+        await refreshHomeTaskBoard()
+        taskBoardLoading = false
     }
 }
 

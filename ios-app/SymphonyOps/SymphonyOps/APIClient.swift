@@ -1140,6 +1140,33 @@ class APIClient: ObservableObject {
     
     // MARK: - Claude Approval (Bridge: Task Board → iOS → Bob)
     
+    func createTask(
+        title: String,
+        description: String = "",
+        taskType: String = "research",
+        priority: String = "medium"
+    ) async -> TaskCreateResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/tasks")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = TaskCreateRequest(
+                title: title,
+                description: description,
+                task_type: taskType,
+                priority: priority
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(TaskCreateResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return nil
+        }
+    }
+
     func fetchClaudePendingTasks() async -> [ClaudeTask] {
         do {
             let url = URL(string: "\(baseURL)/tasks/claude_pending")!
@@ -1698,6 +1725,19 @@ struct ServiceUsage: Codable {
 
 struct ClaudePendingResponse: Codable {
     let tasks: [ClaudeTask]
+    let error: String?
+}
+
+struct TaskCreateRequest: Codable {
+    let title: String
+    let description: String
+    let task_type: String
+    let priority: String
+}
+
+struct TaskCreateResponse: Codable {
+    let success: Bool
+    let task_id: Int?
     let error: String?
 }
 
