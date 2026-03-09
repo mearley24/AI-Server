@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.mobile-api</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/bob/AI-Server/.venv/bin/python3</string>
+        <string>/Users/bob/AI-Server/api/mobile_api.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>MOBILE_API_PORT</key>
+        <string>8420</string>
+        <key>MOBILE_API_BIND_HOST</key>
+        <string>0.0.0.0</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/mobile_api.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/mobile_api_error.log</string>
+</dict>
+</plist>
