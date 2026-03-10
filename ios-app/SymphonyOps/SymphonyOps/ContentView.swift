@@ -5,62 +5,148 @@ import UIKit
 
 struct ContentView: View {
     @EnvironmentObject var api: APIClient
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTab = 0
+    @State private var selectedSection: AppSection = .home
+    @State private var didRunStartup = false
     @StateObject private var secretsVault = SecretsVaultStore()
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            DashboardView()
-                .tabItem {
-                    Label("Home", systemImage: "house")
+        Group {
+            if horizontalSizeClass == .regular {
+                NavigationSplitView {
+                    List(AppSection.allCases, selection: $selectedSection) { section in
+                        Label(section.title, systemImage: section.systemImage)
+                            .tag(section)
+                    }
+                    .navigationTitle("Symphony Ops")
+                } detail: {
+                    sectionView(for: selectedSection)
                 }
-                .tag(0)
-            
-            AIChatView()
-                .tabItem {
-                    Label("Ask Bob", systemImage: "bubble.left.and.bubble.right")
-                }
-                .tag(1)
+            } else {
+                TabView(selection: $selectedTab) {
+                    DashboardView()
+                        .tabItem {
+                            Label("Home", systemImage: "house")
+                        }
+                        .tag(0)
+                    
+                    AIChatView()
+                        .tabItem {
+                            Label("Ask Bob", systemImage: "bubble.left.and.bubble.right")
+                        }
+                        .tag(1)
 
-            ActionsView()
-                .tabItem {
-                    Label("Work", systemImage: "checklist")
+                    ActionsView()
+                        .tabItem {
+                            Label("Work", systemImage: "checklist")
+                        }
+                        .tag(2)
+                    
+                    LeadsView()
+                        .tabItem {
+                            Label("Leads", systemImage: "person.3")
+                        }
+                        .tag(3)
+                    
+                    OpsHubView()
+                        .environmentObject(secretsVault)
+                        .tabItem {
+                            Label("Ops", systemImage: "square.grid.2x2")
+                        }
+                        .tag(4)
                 }
-                .tag(2)
-            
-            LeadsView()
-                .tabItem {
-                    Label("Leads", systemImage: "person.3")
-                }
-                .tag(3)
-            
-            OpsHubView()
-                .environmentObject(secretsVault)
-                .tabItem {
-                    Label("Ops", systemImage: "square.grid.2x2")
-                }
-                .tag(4)
+            }
         }
         .accentColor(Color.orange)
         .task {
-            await api.checkConnection()
-            if api.isConnected {
-                await api.fetchDashboard()
-            }
-            await api.checkOllama()
-            await api.checkLMStudio()
-            await api.fetchAIStatus()
+            await runStartupIfNeeded()
+        }
+    }
+
+    @ViewBuilder
+    private func sectionView(for section: AppSection) -> some View {
+        switch section {
+        case .home:
+            DashboardView()
+        case .askBob:
+            AIChatView()
+        case .work:
+            ActionsView()
+        case .leads:
+            LeadsView()
+        case .ops:
+            OpsHubView()
+                .environmentObject(secretsVault)
+        }
+    }
+
+    @MainActor
+    private func runStartupIfNeeded() async {
+        guard !didRunStartup else { return }
+        didRunStartup = true
+
+        await api.checkConnection()
+        if api.isConnected {
+            await api.fetchDashboard()
+        }
+
+        async let ollamaTask: Void = api.checkOllama()
+        async let lmTask: Void = api.checkLMStudio()
+        async let aiStatusTask: Void = api.fetchAIStatus()
+        _ = await (ollamaTask, lmTask, aiStatusTask)
+    }
+}
+
+private enum AppSection: Int, CaseIterable, Identifiable {
+    case home
+    case askBob
+    case work
+    case leads
+    case ops
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .home: return "Home"
+        case .askBob: return "Ask Bob"
+        case .work: return "Work"
+        case .leads: return "Leads"
+        case .ops: return "Ops"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .home: return "house"
+        case .askBob: return "bubble.left.and.bubble.right"
+        case .work: return "checklist"
+        case .leads: return "person.3"
+        case .ops: return "square.grid.2x2"
         }
     }
 }
 
 struct OpsHubView: View {
     @EnvironmentObject var secretsVault: SecretsVaultStore
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Operations") {
+        Group {
+            if horizontalSizeClass == .regular {
+                opsList
+            } else {
+                NavigationStack {
+                    opsList
+                }
+            }
+        }
+    }
+
+    private var opsList: some View {
+        List {
+            Section("Operations") {
                     NavigationLink {
                         ClaudeApprovalView()
                     } label: {
@@ -78,7 +164,7 @@ struct OpsHubView: View {
                     }
                 }
 
-                Section("Data") {
+            Section("Data") {
                     NavigationLink {
                         FactsView()
                     } label: {
@@ -92,13 +178,12 @@ struct OpsHubView: View {
                     }
                 }
 
-                Section("Configuration") {
+            Section("Configuration") {
                     NavigationLink {
                         SettingsView()
                     } label: {
                         Label("Settings", systemImage: "gear")
                     }
-                }
             }
             .navigationTitle("Ops Hub")
         }
@@ -114,6 +199,7 @@ private struct ActionResultEntry: Codable {
 
 struct DashboardView: View {
     @EnvironmentObject var api: APIClient
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var quickActionResult: String?
     @State private var quickActionLoading = false
     @State private var primaryActionResults: [String: ActionResultEntry] = [:]
@@ -148,6 +234,17 @@ struct DashboardView: View {
     @State private var showMoreActionsPanel = false
     @State private var showUploadsQueuePanel = true
     @State private var showProjectWatchesPanel = true
+    
+    private var dashboardHorizontalPadding: CGFloat {
+        horizontalSizeClass == .regular ? 28 : 20
+    }
+
+    private var primaryActionColumns: [GridItem] {
+        if horizontalSizeClass == .regular {
+            return Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
+        }
+        return Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
+    }
     
     var body: some View {
         NavigationView {
@@ -201,71 +298,68 @@ struct DashboardView: View {
                     }
 
                     // Focus actions first
-                    VStack(spacing: 12) {
-                        HStack(spacing: 12) {
-                            PrimaryActionCard(
-                                title: "Morning",
-                                subtitle: "Run startup checklist",
-                                icon: "sunrise.fill",
-                                color: Color(red: 1, green: 0.85, blue: 0.4),
-                                isSelected: selectedPrimaryAction == "Morning",
-                                isLoading: quickActionLoading && selectedPrimaryAction == "Morning",
-                                statusLabel: actionFreshness("Morning")?.label,
-                                statusColor: actionFreshness("Morning")?.color
-                            ) {
-                                Task { await runQuickAction(name: "Morning") { await api.runMorningChecklist() } }
-                            }
-                            .disabled(quickActionLoading)
-                            
-                            PrimaryActionCard(
-                                title: "Check Bids",
-                                subtitle: "Scan incoming opportunities",
-                                icon: "hammer.fill",
-                                color: Color(red: 0.35, green: 0.55, blue: 0.95),
-                                isSelected: selectedPrimaryAction == "Bids",
-                                isLoading: quickActionLoading && selectedPrimaryAction == "Bids",
-                                statusLabel: actionFreshness("Bids")?.label,
-                                statusColor: actionFreshness("Bids")?.color
-                            ) {
-                                Task { await runQuickAction(name: "Bids") { await api.checkBids() } }
-                            }
-                            .disabled(quickActionLoading)
+                    LazyVGrid(columns: primaryActionColumns, spacing: 12) {
+                        PrimaryActionCard(
+                            title: "Morning",
+                            subtitle: "Run startup checklist",
+                            icon: "sunrise.fill",
+                            color: Color(red: 1, green: 0.85, blue: 0.4),
+                            isSelected: selectedPrimaryAction == "Morning",
+                            isLoading: quickActionLoading && selectedPrimaryAction == "Morning",
+                            statusLabel: actionFreshness("Morning")?.label,
+                            statusColor: actionFreshness("Morning")?.color
+                        ) {
+                            Task { await runQuickAction(name: "Morning") { await api.runMorningChecklist() } }
                         }
-                        HStack(spacing: 12) {
-                            PrimaryActionCard(
-                                title: "Website",
-                                subtitle: "Check site uptime",
-                                icon: "globe.americas.fill",
-                                color: Color(red: 0.3, green: 0.7, blue: 0.5),
-                                isSelected: selectedPrimaryAction == "Website",
-                                isLoading: quickActionLoading && selectedPrimaryAction == "Website",
-                                statusLabel: actionFreshness("Website")?.label,
-                                statusColor: actionFreshness("Website")?.color
-                            ) {
-                                Task { await runWebsiteAction() }
-                            }
-                            .disabled(quickActionLoading)
-                            
-                            PrimaryActionCard(
-                                title: "Markup",
-                                subtitle: "Open drawing workspace",
-                                icon: "pencil.and.outline",
-                                color: Color(red: 0.95, green: 0.6, blue: 0.3),
-                                isSelected: selectedPrimaryAction == "Markup",
-                                isLoading: false,
-                                statusLabel: actionFreshness("Markup")?.label,
-                                statusColor: actionFreshness("Markup")?.color
-                            ) {
-                                selectedPrimaryAction = "Markup"
-                                setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
-                                let url = api.markupURL ?? api.fallbackMarkupURL
-                                Task {
-                                    _ = await UIApplication.shared.open(url)
-                                }
+                        .disabled(quickActionLoading)
+                        
+                        PrimaryActionCard(
+                            title: "Check Bids",
+                            subtitle: "Scan incoming opportunities",
+                            icon: "hammer.fill",
+                            color: Color(red: 0.35, green: 0.55, blue: 0.95),
+                            isSelected: selectedPrimaryAction == "Bids",
+                            isLoading: quickActionLoading && selectedPrimaryAction == "Bids",
+                            statusLabel: actionFreshness("Bids")?.label,
+                            statusColor: actionFreshness("Bids")?.color
+                        ) {
+                            Task { await runQuickAction(name: "Bids") { await api.checkBids() } }
+                        }
+                        .disabled(quickActionLoading)
+                        
+                        PrimaryActionCard(
+                            title: "Website",
+                            subtitle: "Check site uptime",
+                            icon: "globe.americas.fill",
+                            color: Color(red: 0.3, green: 0.7, blue: 0.5),
+                            isSelected: selectedPrimaryAction == "Website",
+                            isLoading: quickActionLoading && selectedPrimaryAction == "Website",
+                            statusLabel: actionFreshness("Website")?.label,
+                            statusColor: actionFreshness("Website")?.color
+                        ) {
+                            Task { await runWebsiteAction() }
+                        }
+                        .disabled(quickActionLoading)
+                        
+                        PrimaryActionCard(
+                            title: "Markup",
+                            subtitle: "Open drawing workspace",
+                            icon: "pencil.and.outline",
+                            color: Color(red: 0.95, green: 0.6, blue: 0.3),
+                            isSelected: selectedPrimaryAction == "Markup",
+                            isLoading: false,
+                            statusLabel: actionFreshness("Markup")?.label,
+                            statusColor: actionFreshness("Markup")?.color
+                        ) {
+                            selectedPrimaryAction = "Markup"
+                            setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
+                            let url = api.markupURL ?? api.fallbackMarkupURL
+                            Task {
+                                _ = await UIApplication.shared.open(url)
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, dashboardHorizontalPadding)
 
                     if !primaryActionResults.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
@@ -1903,6 +1997,7 @@ struct CuratorFactRow: View {
 struct ActionsView: View {
     @EnvironmentObject var api: APIClient
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var searchQuery = ""
     @State private var result: String?
     @State private var isLoading = false
@@ -3046,7 +3141,9 @@ struct ActionsView: View {
                         }
                     }
                 }
+                .listStyle(.insetGrouped)
                 }
+                .frame(maxWidth: horizontalSizeClass == .regular ? 1080 : .infinity, alignment: .center)
             }
             .navigationTitle("Work Center")
             .onChange(of: shouldScrollToProductResult) { shouldScroll in

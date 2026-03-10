@@ -4040,11 +4040,13 @@ if HAS_FASTAPI:
         derived_url = f"{request_scheme}://{request_host}:8091"
 
         https_url = os.environ.get("MARKUP_HTTPS_URL", "").strip()
-        preferred_https = https_url if https_url and is_http_url_reachable(https_url) else None
+        preferred_https = https_url or None
         active_url = preferred_https or derived_url
         warning = None
-        if https_url and not preferred_https:
-            warning = "MARKUP_HTTPS_URL configured but unreachable; using derived URL."
+        if https_url and not is_http_url_reachable(https_url):
+            # Keep configured HTTPS as preferred output for clients even if local probe fails.
+            # Local reachability checks can fail when tailscale serve isn't up yet or DNS is transient.
+            warning = "MARKUP_HTTPS_URL configured but not currently reachable from API host."
 
         return {
             "url": active_url,
