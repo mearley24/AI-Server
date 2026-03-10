@@ -29,6 +29,35 @@
             height: 100dvh;
             width: 100%;
         }
+        #quick-flow {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            padding: 8px;
+            background: #0d2748;
+            border-bottom: 1px solid #1f3f68;
+        }
+        .flow-btn {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: left;
+        }
+        .flow-btn.load { background: #2563eb; }
+        .flow-btn.open { background: #0ea5e9; }
+        .flow-btn.legend { background: #8b5cf6; }
+        .flow-btn.save { background: #16a34a; }
+        #flow-status {
+            grid-column: 1 / -1;
+            font-size: 11px;
+            color: #9fb5cf;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         header {
             background: #0f3460;
             display: flex;
@@ -130,6 +159,24 @@
             align-items: center;
             flex-shrink: 0;
         }
+        #workspace {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #left-rail {
+            display: contents;
+        }
+        #canvas-stack {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #inspector {
+            display: none;
+        }
         #symbol-bar::-webkit-scrollbar { display: none; }
         .tool-btn {
             min-width: 44px;
@@ -212,6 +259,154 @@
             }
             .tool-divider { height: 42px; }
             #symbol-bar { padding: 6px 10px; gap: 8px; height: 64px; min-height: 64px; max-height: 64px; }
+        }
+        @media (min-width: 1024px) {
+            header {
+                height: 56px;
+                min-height: 56px;
+                max-height: 56px;
+                padding: 0 12px;
+            }
+            header h1 { font-size: 18px; }
+            .hdr-btn {
+                font-size: 14px;
+                height: 40px;
+                min-width: 44px;
+                border-radius: 8px;
+            }
+            #pdf-page, #zoom, #counts { font-size: 13px; }
+            #quick-flow {
+                grid-template-columns: repeat(4, minmax(120px, 1fr));
+                gap: 10px;
+                padding: 10px 12px;
+            }
+            .flow-btn {
+                padding: 12px 14px;
+                font-size: 14px;
+                min-height: 48px;
+            }
+            #flow-status {
+                grid-column: 1 / -1;
+                font-size: 12px;
+            }
+            #symbol-bar {
+                height: 86px;
+                min-height: 86px;
+                max-height: 86px;
+                gap: 10px;
+                padding: 10px 12px;
+            }
+            .tool-btn {
+                min-width: 72px;
+                height: 72px;
+                font-size: 10px;
+                border-radius: 8px;
+            }
+            .tool-btn .preview {
+                width: 34px;
+                height: 34px;
+                font-size: 12px;
+            }
+            #counts-bar { height: 28px; }
+        }
+        @media (min-width: 1024px) {
+            #workspace {
+                display: grid;
+                grid-template-columns: 188px 1fr 300px;
+                grid-template-rows: 1fr;
+                gap: 10px;
+                padding: 10px 12px 12px;
+                min-height: 0;
+            }
+            #left-rail {
+                display: block;
+                min-height: 0;
+                background: #122845;
+                border-radius: 10px;
+                border: 1px solid #223f63;
+                padding: 8px;
+                overflow: hidden;
+            }
+            #left-rail #symbol-bar {
+                height: 100%;
+                min-height: 0;
+                max-height: none;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+                overflow-y: auto;
+                overflow-x: hidden;
+                background: transparent;
+                padding: 0;
+            }
+            #left-rail .tool-divider {
+                width: 100%;
+                height: 1px;
+                margin: 4px 0;
+            }
+            #left-rail .tool-btn {
+                width: 100%;
+                min-width: 0;
+            }
+            #canvas-stack {
+                min-height: 0;
+                overflow: hidden;
+                border-radius: 10px;
+                border: 1px solid #223f63;
+                background: #101d2f;
+            }
+            #inspector {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                min-height: 0;
+                overflow-y: auto;
+                background: #122845;
+                border-radius: 10px;
+                border: 1px solid #223f63;
+                padding: 12px;
+            }
+            .inspector-card {
+                background: #0f223a;
+                border: 1px solid #1f3d60;
+                border-radius: 8px;
+                padding: 10px;
+            }
+            .inspector-title {
+                font-size: 12px;
+                color: #9fb5cf;
+                margin-bottom: 8px;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+            }
+            .inspector-actions {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .inspector-btn {
+                border: none;
+                border-radius: 8px;
+                padding: 10px 12px;
+                color: #fff;
+                font-size: 13px;
+                text-align: left;
+                background: #1f3f68;
+            }
+            .inspector-btn.primary { background: #16a34a; }
+            .inspector-btn.alt { background: #2563eb; }
+            .inspector-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px;
+                margin-top: 8px;
+                font-size: 13px;
+            }
+            .inspector-row select,
+            .inspector-row input[type="checkbox"] {
+                accent-color: #22c55e;
+            }
         }
         
         .modal-bg {
@@ -349,13 +544,68 @@
                 <button class="hdr-btn" onclick="zoomIn()">+</button>
             </div>
         </header>
-        <div id="canvas-container">
-            <img id="floor-plan" src="">
-            <canvas id="canvas"></canvas>
-            <div id="drop-hint">Drop floor plan or tap Load</div>
+        <div id="quick-flow">
+            <button class="flow-btn load" onclick="loadPlan()">1) Load PDF / Image</button>
+            <button class="flow-btn open" onclick="openProject()">2) Open .symphony</button>
+            <button class="flow-btn legend" onclick="generateLegendForCurrentPage()">3) Generate Legend</button>
+            <button class="flow-btn save" onclick="saveProject()">4) Save / Export</button>
+            <div id="flow-status">Ready: load a plan or open a project.</div>
         </div>
-        <div id="counts-bar"><span id="counts"></span></div>
-        <div id="symbol-bar"></div>
+        <div id="workspace">
+            <div id="left-rail">
+                <div id="symbol-bar"></div>
+            </div>
+            <div id="canvas-stack">
+                <div id="canvas-container">
+                    <img id="floor-plan" src="">
+                    <canvas id="canvas"></canvas>
+                    <div id="drop-hint">Drop floor plan or tap Load</div>
+                </div>
+                <div id="counts-bar"><span id="counts"></span></div>
+            </div>
+            <aside id="inspector">
+                <div class="inspector-card">
+                    <div class="inspector-title">Workflow</div>
+                    <div class="inspector-actions">
+                        <button class="inspector-btn alt" onclick="loadPlan()">Load PDF / Image</button>
+                        <button class="inspector-btn alt" onclick="openProject()">Open .symphony</button>
+                        <button class="inspector-btn" onclick="generateLegendForCurrentPage()">Generate Legend</button>
+                        <button class="inspector-btn primary" onclick="saveProject()">Save / Export</button>
+                    </div>
+                </div>
+                <div class="inspector-card">
+                    <div class="inspector-title">View & Performance</div>
+                    <div class="inspector-row">
+                        <label for="inspector-pdf-quality">PDF Quality</label>
+                        <select id="inspector-pdf-quality" onchange="changePDFQualityFromInspector()">
+                            <option value="2">2x</option>
+                            <option value="3">3x</option>
+                            <option value="4">4x</option>
+                            <option value="5">5x</option>
+                        </select>
+                    </div>
+                    <div class="inspector-row">
+                        <span>Freehand</span>
+                        <input id="inspector-freehand" type="checkbox" onchange="toggleFreehandFromInspector(this)">
+                    </div>
+                    <div class="inspector-row">
+                        <span>Snap to corners</span>
+                        <input id="inspector-snap" type="checkbox" onchange="toggleSnapFromInspector(this)">
+                    </div>
+                    <div class="inspector-row">
+                        <span>Room counts</span>
+                        <input id="inspector-counts" type="checkbox" onchange="toggleRoomCountsFromInspector(this)">
+                    </div>
+                </div>
+                <div class="inspector-card">
+                    <div class="inspector-title">Project</div>
+                    <div id="inspector-project-name" style="font-size:12px;color:#cfe0f2;line-height:1.4;">No project loaded</div>
+                    <div style="margin-top:10px;">
+                        <button class="inspector-btn" onclick="openOptionsModal()">More Options</button>
+                    </div>
+                </div>
+            </aside>
+        </div>
     </div>
     
     <input type="file" id="file-input" accept="image/*,.pdf,application/pdf">
@@ -532,8 +782,8 @@
                 <div style="font-size:11px;color:#888;margin-bottom:8px;">PDF QUALITY</div>
                 <div style="font-size:11px;color:#666;margin-bottom:6px;">Higher = sharper print, more memory</div>
                 <select id="pdf-quality" onchange="changePDFQuality()" style="width:100%;padding:8px;border-radius:6px;border:1px solid #333;background:#0f0f23;color:#eee;">
-                    <option value="2">Standard (2x)</option>
-                    <option value="3" selected>High (3x)</option>
+                    <option value="2" selected>Standard (2x)</option>
+                    <option value="3">High (3x)</option>
                     <option value="4">Ultra (4x)</option>
                     <option value="5">Maximum (5x)</option>
                 </select>
@@ -849,6 +1099,7 @@ function toggleRoomCounts() {
     showRoomCounts = !showRoomCounts;
     localStorage.setItem('showRoomCounts', showRoomCounts ? '1' : '0');
     document.getElementById('counts-toggle').checked = showRoomCounts;
+    syncInspectorControls();
     render();
 }
 
@@ -856,6 +1107,7 @@ function toggleFreehand() {
     freehandEnabled = !freehandEnabled;
     localStorage.setItem('freehandEnabled', freehandEnabled ? '1' : '0');
     document.getElementById('freehand-toggle').checked = freehandEnabled;
+    syncInspectorControls();
     if (freehandEnabled) {
         selectTool('freehand');
     }
@@ -865,6 +1117,7 @@ function toggleSnap() {
     snapEnabled = !snapEnabled;
     localStorage.setItem('snapEnabled', snapEnabled ? '1' : '0');
     document.getElementById('snap-toggle').checked = snapEnabled;
+    syncInspectorControls();
 }
 
 // Find closest point on a line segment
@@ -1575,6 +1828,8 @@ function changePDFQuality() {
     const newQuality = parseInt(document.getElementById('pdf-quality').value);
     pdfScale = newQuality;
     localStorage.setItem('pdfQuality', newQuality);
+    clearPDFRenderCache();
+    syncInspectorControls();
     if (pdfDoc) {
         showToast(`Re-rendering at ${newQuality}x quality...`);
         renderPDFPage(currentPageNum);
@@ -2394,6 +2649,7 @@ function updateCounts() {
     let html = Object.entries(c).map(([k,v]) => `${v} ${k}`).join(' | ');
     if (rooms.length) html += (html ? ' | ' : '') + rooms.length + ' room' + (rooms.length > 1 ? 's' : '');
     document.getElementById('counts').innerHTML = html;
+    syncInspectorControls();
 }
 
 // Events handled by pointer event system above
@@ -2926,17 +3182,70 @@ function updateImageTransform() {
     planImg.style.transform = `translate(${panX}px,${panY}px) scale(${scale}) rotate(${rotation}deg)`;
 }
 
-function loadPlan() { document.getElementById('file-input').click(); }
+function loadPlan() {
+    setFlowStatus('Choose a PDF/image from Files...');
+    document.getElementById('file-input').click();
+}
+
+function setFlowStatus(text) {
+    const el = document.getElementById('flow-status');
+    if (el) el.textContent = text;
+}
+
+function syncInspectorControls() {
+    const q = document.getElementById('inspector-pdf-quality');
+    if (q) q.value = String(pdfScale);
+    const fh = document.getElementById('inspector-freehand');
+    if (fh) fh.checked = !!freehandEnabled;
+    const sn = document.getElementById('inspector-snap');
+    if (sn) sn.checked = !!snapEnabled;
+    const rc = document.getElementById('inspector-counts');
+    if (rc) rc.checked = !!showRoomCounts;
+}
+
+function changePDFQualityFromInspector() {
+    const inspector = document.getElementById('inspector-pdf-quality');
+    const source = document.getElementById('pdf-quality');
+    if (!inspector || !source) return;
+    source.value = inspector.value;
+    changePDFQuality();
+}
+
+function toggleFreehandFromInspector(el) {
+    if (!!el.checked !== !!freehandEnabled) {
+        toggleFreehand();
+    }
+}
+
+function toggleSnapFromInspector(el) {
+    if (!!el.checked !== !!snapEnabled) {
+        toggleSnap();
+    }
+}
+
+function toggleRoomCountsFromInspector(el) {
+    if (!!el.checked !== !!showRoomCounts) {
+        toggleRoomCounts();
+    }
+}
 
 // PDF state
 let pdfDoc = null;
 let pdfPage = null;
-let pdfScale = parseInt(localStorage.getItem('pdfQuality')) || 3; // Render PDF at Nx for quality
+let pdfScale = parseInt(localStorage.getItem('pdfQuality')) || 2; // Render PDF at Nx for quality
 let currentPageNum = parseInt(localStorage.getItem('lastPageNum')) || 1;
 let currentPdfName = localStorage.getItem('lastPdfName') || ''; // Track current PDF filename for per-page saves
 let currentPdfBytes = null; // Uint8Array for export/reopen
 let currentPdfMime = 'application/pdf';
 let currentPdfOriginalName = '';
+const pdfRenderCache = new Map(); // key: page@quality -> object URL
+
+function clearPDFRenderCache() {
+    for (const url of pdfRenderCache.values()) {
+        try { URL.revokeObjectURL(url); } catch (e) {}
+    }
+    pdfRenderCache.clear();
+}
 
 // Per-page markup storage key
 function getPageStorageKey(pageNum) {
@@ -3001,14 +3310,21 @@ function closeFileModal() {
 // Update project info display in modal
 function updateProjectInfo() {
     const info = document.getElementById('current-project');
+    const inspectorInfo = document.getElementById('inspector-project-name');
     if (currentPdfName) {
         const pageCount = pdfDoc ? pdfDoc.numPages : 1;
         info.innerHTML = `
             <strong>📄 ${currentPdfName}</strong><br>
             <span style="color:#666;">Page ${currentPageNum} of ${pageCount}</span>
         `;
+        if (inspectorInfo) {
+            inspectorInfo.textContent = `${currentPdfName} • page ${currentPageNum}/${pageCount}`;
+        }
     } else {
         info.innerHTML = 'No project loaded';
+        if (inspectorInfo) {
+            inspectorInfo.textContent = 'No project loaded';
+        }
     }
 }
 
@@ -3627,12 +3943,13 @@ async function loadPDF(arrayBuffer) {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         
         showToast('Loading PDF...');
+        setFlowStatus('Loading PDF document...');
+        clearPDFRenderCache();
         pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         
-        // If multiple pages, let user choose starting page
+        // Start on page 1 and show page navigation for multi-page PDFs
         if (pdfDoc.numPages > 1) {
-            const pageNum = prompt(`PDF has ${pdfDoc.numPages} pages. Enter page number (1-${pdfDoc.numPages}):`, '1');
-            currentPageNum = Math.max(1, Math.min(pdfDoc.numPages, parseInt(pageNum) || 1));
+            currentPageNum = 1;
             document.getElementById('pdf-nav').style.display = 'inline-flex';
         } else {
             currentPageNum = 1;
@@ -3654,9 +3971,13 @@ async function loadPDF(arrayBuffer) {
         if (hasSaved) {
             showToast(`Page ${currentPageNum} loaded with saved markups`);
         }
+        updateProjectInfo();
+        syncInspectorControls();
+        setFlowStatus(`Loaded page ${currentPageNum}/${pdfDoc.numPages}. Mark up, then tap Save / Export.`);
     } catch (err) {
         console.error('PDF load error:', err);
         alert('Error loading PDF: ' + err.message);
+        setFlowStatus('PDF load failed. Try a different file.');
     }
 }
 
@@ -3668,8 +3989,14 @@ function updatePDFPageDisplay() {
 
 async function renderPDFPage(pageNum) {
     if (!pdfDoc) return;
+    const cacheKey = `${pageNum}@${pdfScale}`;
+    const cachedUrl = pdfRenderCache.get(cacheKey);
+    if (cachedUrl) {
+        planImg.src = cachedUrl;
+        return;
+    }
     
-    showToast(`Rendering page ${pageNum} at high resolution...`);
+    showToast(`Rendering page ${pageNum}...`);
     pdfPage = await pdfDoc.getPage(pageNum);
     
     // Get page dimensions at high scale for quality
@@ -3687,9 +4014,16 @@ async function renderPDFPage(pageNum) {
         viewport: viewport
     }).promise;
     
-    // Convert to image data URL and load into planImg
-    const dataUrl = pdfCanvas.toDataURL('image/png');
-    planImg.src = dataUrl;
+    // Convert to object URL to avoid large synchronous base64 payloads.
+    let pageUrl = '';
+    const pageBlob = await new Promise((resolve) => pdfCanvas.toBlob(resolve, 'image/png'));
+    if (pageBlob) {
+        pageUrl = URL.createObjectURL(pageBlob);
+    } else {
+        pageUrl = pdfCanvas.toDataURL('image/png');
+    }
+    pdfRenderCache.set(cacheKey, pageUrl);
+    planImg.src = pageUrl;
     
     planImg.onload = () => {
         document.getElementById('drop-hint').style.display = 'none';
@@ -3705,6 +4039,7 @@ async function renderPDFPage(pageNum) {
         updateImageTransform();
         render();
         showToast(`Page ${pageNum} loaded (${planImg.naturalWidth}x${planImg.naturalHeight})`);
+        setFlowStatus(`Viewing page ${pageNum}/${pdfDoc.numPages}.`);
     };
 }
 
@@ -3718,6 +4053,7 @@ function changePDFPage(delta) {
         
         currentPageNum = newPage;
         updatePDFPageDisplay();
+        updateProjectInfo();
         
         // Try to load saved markups for the new page
         const hasMarkups = loadPageMarkups(newPage);
@@ -3743,6 +4079,7 @@ document.getElementById('file-input').onchange = (e) => {
         currentPdfName = f.name.replace(/[^a-zA-Z0-9_-]/g, '_');
         currentPdfOriginalName = f.name;
         currentPdfMime = f.type || 'application/pdf';
+        setFlowStatus(`Loading ${f.name}...`);
         
         const r = new FileReader();
         r.onload = (ev) => {
@@ -3756,6 +4093,7 @@ document.getElementById('file-input').onchange = (e) => {
     
     // Clear PDF name for regular images
     currentPdfName = '';
+    clearPDFRenderCache();
     currentPdfBytes = null;
     currentPdfOriginalName = '';
     
@@ -3778,6 +4116,9 @@ document.getElementById('file-input').onchange = (e) => {
             document.getElementById('zoom').textContent = Math.round(scale*100)+'%';
             updateImageTransform();
             render();
+            updateProjectInfo();
+            syncInspectorControls();
+            setFlowStatus(`Loaded ${f.name}. Add symbols, rooms, labels, then Save / Export.`);
         };
     };
     r.readAsDataURL(f);
@@ -4164,6 +4505,8 @@ function resetSymbolsToDefault() {
 window.onresize = resize;
 resize();
 buildToolbar();
+updateProjectInfo();
+syncInspectorControls();
 
 // Show HTTPS banner when on HTTP and MARKUP_HTTPS_URL is configured
 fetch('/api/config').then(r => r.json()).then(c => {
