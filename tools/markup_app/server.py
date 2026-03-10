@@ -112,6 +112,12 @@ class MarkupHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', content_type)
             self.send_header('Access-Control-Allow-Origin', '*')
+            # Avoid stale PWA UI after deploys (especially index + service worker).
+            rel = filepath.relative_to(WEB_DIR).as_posix()
+            if rel in {"index.html", "sw.js"}:
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
             self.end_headers()
             
             with open(filepath, 'rb') as f:
