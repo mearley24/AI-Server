@@ -46,6 +46,8 @@ class APIClient: ObservableObject {
     @Published var lastConnectionMessage: String?
     private let apiTokenKeychainService = "com.symphonysh.SymphonyOps.APIClient"
     private let apiTokenKeychainAccount = "symphony-api-token"
+    private var lastAIStatusFetchAt: Date?
+    private var lastMarkupURLFetchAt: Date?
 
     init() {
         AuthenticatedURLSession.shared.apiClient = self
@@ -402,7 +404,10 @@ class APIClient: ObservableObject {
         }
     }
 
-    func fetchMarkupURL() async {
+    func fetchMarkupURL(force: Bool = false) async {
+        if !force, let last = lastMarkupURLFetchAt, Date().timeIntervalSince(last) < 60 {
+            return
+        }
         struct MarkupURLResponse: Decodable {
             let url: String?
             let httpsUrl: String?
@@ -415,6 +420,7 @@ class APIClient: ObservableObject {
             await MainActor.run {
                 self.markupURL = preferred.flatMap { URL(string: $0) }
             }
+            lastMarkupURLFetchAt = Date()
         } catch {
             await MainActor.run { self.markupURL = nil }
         }
@@ -1496,7 +1502,7 @@ class APIClient: ObservableObject {
         do {
             let url = URL(string: "\(ollamaURL)/api/tags")!
             var request = URLRequest(url: url)
-            request.timeoutInterval = 5
+            request.timeoutInterval = 2.5
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 await MainActor.run {
@@ -1514,7 +1520,7 @@ class APIClient: ObservableObject {
         do {
             let url = URL(string: "\(lmStudioURL)/v1/models")!
             var request = URLRequest(url: url)
-            request.timeoutInterval = 5
+            request.timeoutInterval = 2.5
             let (_, response) = try await URLSession.shared.data(for: request)
             if let httpResponse = response as? HTTPURLResponse {
                 await MainActor.run {
@@ -1528,7 +1534,10 @@ class APIClient: ObservableObject {
         }
     }
     
-    func fetchAIStatus() async {
+    func fetchAIStatus(force: Bool = false) async {
+        if !force, let last = lastAIStatusFetchAt, Date().timeIntervalSince(last) < 20 {
+            return
+        }
         do {
             let url = URL(string: "\(baseURL)/ai/status")!
             let (data, _) = try await URLSession.shared.data(from: url)
@@ -1538,6 +1547,7 @@ class APIClient: ObservableObject {
                 self.ollamaAvailable = self.ollamaAvailable || status.ollama
                 self.lmStudioAvailable = self.lmStudioAvailable || status.lm_studio
             }
+            lastAIStatusFetchAt = Date()
         } catch {
             await MainActor.run {
                 self.aiBackendStatus = nil

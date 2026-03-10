@@ -257,6 +257,7 @@ struct DashboardView: View {
     @State private var showMoreActionsPanel = false
     @State private var showUploadsQueuePanel = true
     @State private var showProjectWatchesPanel = true
+    @State private var didInitialDashboardLoad = false
     
     private var dashboardHorizontalPadding: CGFloat {
         horizontalSizeClass == .regular ? 28 : 20
@@ -826,12 +827,15 @@ struct DashboardView: View {
             .navigationTitle("Symphony Ops")
             .refreshable {
                 await api.fetchDashboard()
-                await api.fetchAIStatus()
+                await api.fetchAIStatus(force: true)
                 await refreshHomeTaskBoard()
             }
             .task {
-                await api.fetchMarkupURL()
-                await refreshHomeTaskBoard()
+                guard !didInitialDashboardLoad else { return }
+                didInitialDashboardLoad = true
+                async let markupTask: Void = api.fetchMarkupURL()
+                async let taskBoardTask: Void = refreshHomeTaskBoard()
+                _ = await (markupTask, taskBoardTask)
             }
             .onAppear {
                 restorePrimaryActionResults()
@@ -2071,6 +2075,7 @@ struct ActionsView: View {
     @State private var showTemplateShareSheet = false
     @State private var exportFileURL: URL?
     @State private var showExportShareSheet = false
+    @State private var didInitialActionsLoad = false
 
     enum ActionWorkspace: String, CaseIterable, Identifiable {
         case dailyOps = "Daily Ops"
@@ -3179,12 +3184,15 @@ struct ActionsView: View {
         }
         }
         .task {
-            await api.fetchMarkupURL()
-            await refreshNotesPipelineStatus()
-            await refreshOpsHealth()
-            await refreshIncidentQueue()
-            await refreshContactsPanel()
-            await refreshNotesTaskApprovalPanel()
+            guard !didInitialActionsLoad else { return }
+            didInitialActionsLoad = true
+            async let markupTask: Void = api.fetchMarkupURL()
+            async let notesPipelineTask: Void = refreshNotesPipelineStatus()
+            async let opsTask: Void = refreshOpsHealth()
+            async let incidentsTask: Void = refreshIncidentQueue()
+            async let contactsTask: Void = refreshContactsPanel()
+            async let approvalsTask: Void = refreshNotesTaskApprovalPanel()
+            _ = await (markupTask, notesPipelineTask, opsTask, incidentsTask, contactsTask, approvalsTask)
         }
         .task {
             // Lightweight live feed polling while Actions view is visible.
@@ -3192,7 +3200,7 @@ struct ActionsView: View {
                 if scenePhase == .active && actionWorkspace == .dailyOps {
                     await refreshRecentWorkTexts()
                 }
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                try? await Task.sleep(nanoseconds: 45_000_000_000)
             }
         }
         .sheet(isPresented: $showTemplateShareSheet) {
