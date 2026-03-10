@@ -259,7 +259,9 @@ struct DashboardView: View {
                                 selectedPrimaryAction = "Markup"
                                 setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
                                 let url = api.markupURL ?? api.fallbackMarkupURL
-            _ = await UIApplication.shared.open(url)
+                                Task {
+                                    _ = await UIApplication.shared.open(url)
+                                }
                             }
                         }
                     }
