@@ -268,7 +268,7 @@ class APIClient: ObservableObject {
             guard let healthURL = URL(string: "\(candidate)/health") else { continue }
             do {
                 var request = URLRequest(url: healthURL)
-                request.timeoutInterval = 5
+                request.timeoutInterval = 2.5
                 let (_, response) = try await Foundation.URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     reachableBase = candidate
@@ -1701,12 +1701,13 @@ class APIClient: ObservableObject {
     private func connectionCandidates(from base: String) -> [String] {
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
         var ordered = [trimmed]
-        let fallbacks = [
+        var fallbacks = [
             tailscaleFallbackURL.trimmingCharacters(in: .whitespacesAndNewlines),
-            mdnsFallbackURL,
-            lanFallbackURL,
             localhostFallbackURL,
         ]
+        if trimmed.contains("localhost") || trimmed.contains("127.0.0.1") {
+            fallbacks.append(contentsOf: [mdnsFallbackURL, lanFallbackURL])
+        }
         for candidate in fallbacks where !candidate.isEmpty && !ordered.contains(candidate) {
             ordered.append(candidate)
         }

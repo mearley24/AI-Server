@@ -9,17 +9,29 @@ struct ContentView: View {
     @State private var selectedTab = 0
     @State private var selectedSection: AppSection = .home
     @State private var didRunStartup = false
+    @State private var sidebarQuery = ""
     @StateObject private var secretsVault = SecretsVaultStore()
     
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
                 NavigationSplitView {
-                    List(AppSection.allCases, selection: $selectedSection) { section in
+                    List(filteredSections, selection: $selectedSection) { section in
                         Label(section.title, systemImage: section.systemImage)
                             .tag(section)
                     }
+                    .listStyle(.sidebar)
+                    .searchable(text: $sidebarQuery, placement: .sidebar, prompt: "Search")
                     .navigationTitle("Symphony Ops")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Edit") {}
+                                .disabled(true)
+                        }
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Image(systemName: "circle.grid.2x2")
+                        }
+                    }
                 } detail: {
                     sectionView(for: selectedSection)
                 }
@@ -64,6 +76,14 @@ struct ContentView: View {
         }
     }
 
+    private var filteredSections: [AppSection] {
+        let q = sidebarQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return AppSection.allCases }
+        return AppSection.allCases.filter { section in
+            section.title.lowercased().contains(q)
+        }
+    }
+
     @ViewBuilder
     private func sectionView(for section: AppSection) -> some View {
         switch section {
@@ -81,20 +101,23 @@ struct ContentView: View {
         }
     }
 
-    @MainActor
     private func runStartupIfNeeded() async {
-        guard !didRunStartup else { return }
-        didRunStartup = true
+        if didRunStartup { return }
+        await MainActor.run { didRunStartup = true }
 
+        // Start fast: lightweight connection check first.
         await api.checkConnection()
-        if api.isConnected {
-            await api.fetchDashboard()
-        }
 
+        // Load heavy startup tasks concurrently without blocking UI responsiveness.
+        async let dashboardTask: Void = {
+            if api.isConnected {
+                await api.fetchDashboard()
+            }
+        }()
         async let ollamaTask: Void = api.checkOllama()
         async let lmTask: Void = api.checkLMStudio()
         async let aiStatusTask: Void = api.fetchAIStatus()
-        _ = await (ollamaTask, lmTask, aiStatusTask)
+        _ = await (dashboardTask, ollamaTask, lmTask, aiStatusTask)
     }
 }
 
