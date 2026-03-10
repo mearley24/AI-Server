@@ -18,9 +18,20 @@ struct ContentView: View {
         Group {
             if horizontalSizeClass == .regular {
                 NavigationSplitView {
-                    List(filteredSections, selection: $selectedSection) { section in
-                        Label(section.title, systemImage: section.systemImage)
-                            .tag(section)
+                    List(filteredSections) { section in
+                        Button {
+                            selectedSection = section
+                        } label: {
+                            HStack {
+                                Label(section.title, systemImage: section.systemImage)
+                                Spacer()
+                                if selectedSection == section {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                     .listStyle(.sidebar)
                     .searchable(text: $sidebarQuery, placement: .sidebar, prompt: "Search")
@@ -103,9 +114,10 @@ struct ContentView: View {
         }
     }
 
+    @MainActor
     private func runStartupIfNeeded() async {
         if didRunStartup { return }
-        await MainActor.run { didRunStartup = true }
+        didRunStartup = true
         let startupStart = Date()
 
         // Start fast: lightweight connection check first.
@@ -114,8 +126,9 @@ struct ContentView: View {
 
         // Load heavy startup tasks concurrently without blocking UI responsiveness.
         let heavyStart = Date()
+        let isConnectedNow = api.isConnected
         async let dashboardTask: Void = {
-            if api.isConnected {
+            if isConnectedNow {
                 await api.fetchDashboard()
             }
         }()
@@ -2116,6 +2129,380 @@ struct ActionsView: View {
     private func opsStatusColor(_ status: String) -> Color {
         status.lowercased() == "healthy" ? .green : .orange
     }
+
+    @ViewBuilder
+    private var projectsWorkspaceSections: some View {
+        Section(header: Text("Symphony Markup")) {
+            Link(destination: markupURL) {
+                HStack {
+                    Image(systemName: "pencil.and.outline")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                        .frame(width: 40)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Open Markup Tool")
+                            .font(.headline)
+                        Text("Floor plans, symbols, D-Tools export")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("Saves to iCloud + Bob • Add to Home Screen")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    }
+                    Spacer()
+                    Image(systemName: "safari")
+                        .foregroundColor(.blue)
+                }
+                .padding(.vertical, 8)
+            }
+            .foregroundColor(.primary)
+        }
+
+        Section(header: Text("D-Tools Product Agent")) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Upload a price/data sheet, parse products, and optionally create products in d-tools.cloud.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button {
+                    if !showProductImporter {
+                        showProductImporter = true
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.plus")
+                        Text(selectedSheetURL == nil ? "Choose PDF/CSV Sheet" : selectedSheetURL!.lastPathComponent)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fileImporter(
+                    isPresented: $showProductImporter,
+                    allowedContentTypes: [.pdf, .commaSeparatedText, .plainText, .data],
+                    allowsMultipleSelection: false
+                ) { result in
+                    showProductImporter = false
+                    switch result {
+                    case .success(let urls):
+                        selectedSheetURL = urls.first
+                    case .failure(let err):
+                        self.result = "File picker failed: \(err.localizedDescription)"
+                    }
+                }
+
+                Picker("Dealer Tier", selection: $dealerTier) {
+                    Text("Standard").tag("standard")
+                    Text("Silver").tag("silver")
+                    Text("Gold").tag("gold")
+                    Text("Fabricator").tag("fabricator")
+                }
+                .pickerStyle(.menu)
+
+                Picker("Document Profile", selection: $parseProfile) {
+                    Text("Auto Detect").tag("auto")
+                    Text("MSRP + Standard/Silver/Gold").tag("msrp_three_tiers")
+                    Text("MSRP + Standard only").tag("msrp_standard_only")
+                    Text("Minimal").tag("minimal")
+                    Text("Custom Columns").tag("custom")
+                }
+                .pickerStyle(.menu)
+
+                if parseProfile == "custom" {
+                    TextField(
+                        "Comma-separated columns",
+                        text: $customExpectedColumns,
+                        axis: .vertical
+                    )
+                    .lineLimit(2...4)
+                    .textInputAutocapitalization(.characters)
+                    .font(.caption)
+                }
+
+                Stepper("Max Products: \(maxProducts)", value: $maxProducts, in: 1...250)
+
+                Toggle("Create in D-Tools", isOn: $createInDTools)
+                Toggle("Dry Run", isOn: $dryRun)
+                    .onChange(of: dryRun) { newValue in
+                        if !newValue { createInDTools = true }
+                    }
+                    .onChange(of: createInDTools) { newValue in
+                        if !newValue { dryRun = true }
+                    }
+
+                Button {
+                    Task { await runDToolsAuthCheck() }
+                } label: {
+                    HStack {
+                        Image(systemName: "checkmark.shield")
+                        Text("Check D-Tools Product Auth")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isLoading)
+
+                if let auth = dtoolsAuthStatus {
+                    Text((auth.success ? "✅ " : "❌ ") + (auth.message ?? auth.error ?? "Auth check complete"))
+                        .font(.caption2)
+                        .foregroundColor(auth.success ? .green : .orange)
+                }
+
+                Button {
+                    Task { await runProductImport() }
+                } label: {
+                    HStack {
+                        Image(systemName: "wand.and.stars")
+                        Text("Run Product Agent")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading || selectedSheetURL == nil)
+            }
+        }
+
+        Section(header: Text("New Project Manual Digest")) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Upload manuals, notes, and docs for a new project. The agent extracts recommended devices, scope clues, risks, and questions.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if let intakeURL = api.manualDigestIntakeTemplateURL {
+                    HStack(spacing: 8) {
+                        Link(destination: intakeURL) {
+                            HStack {
+                                Image(systemName: "square.and.arrow.down")
+                                Text("Download Intake PDF")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            Task { await shareIntakeTemplate() }
+                        } label: {
+                            HStack {
+                                Image(systemName: "square.and.arrow.up")
+                                Text("Share Intake PDF")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isLoading)
+                    }
+                }
+
+                TextField("Project name (e.g. Wildridge Residence)", text: $manualDigestProjectName)
+                    .textFieldStyle(.roundedBorder)
+
+                Button {
+                    if !showManualDigestImporter {
+                        showManualDigestImporter = true
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.on.doc.fill")
+                        Text(selectedManualDigestFiles.isEmpty ? "Choose Project Files" : "\(selectedManualDigestFiles.count) file(s) selected")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fileImporter(
+                    isPresented: $showManualDigestImporter,
+                    allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
+                    allowsMultipleSelection: true
+                ) { result in
+                    showManualDigestImporter = false
+                    switch result {
+                    case .success(let urls):
+                        selectedManualDigestFiles = urls
+                    case .failure(let err):
+                        self.result = "Manual Digest picker failed: \(err.localizedDescription)"
+                    }
+                }
+
+                Toggle("Run AI summary", isOn: $manualDigestRunAI)
+
+                Button {
+                    Task { await runManualDigest() }
+                } label: {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                        Text("Run Manual Digest Agent")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading || selectedManualDigestFiles.isEmpty)
+            }
+        }
+
+        Section(header: Text("Proposal Scope Agent")) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Upload a finished proposal and get a structured scope of work, inclusions, exclusions, assumptions, and risks.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                TextField("Project name", text: $proposalScopeProjectName)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Client name", text: $proposalScopeClientName)
+                    .textFieldStyle(.roundedBorder)
+
+                Button {
+                    if !showProposalScopeImporter {
+                        showProposalScopeImporter = true
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text.magnifyingglass")
+                        Text(selectedProposalScopeFile == nil ? "Choose Finished Proposal" : selectedProposalScopeFile!.lastPathComponent)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fileImporter(
+                    isPresented: $showProposalScopeImporter,
+                    allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
+                    allowsMultipleSelection: false
+                ) { result in
+                    showProposalScopeImporter = false
+                    switch result {
+                    case .success(let urls):
+                        selectedProposalScopeFile = urls.first
+                    case .failure(let err):
+                        self.result = "Proposal Scope picker failed: \(err.localizedDescription)"
+                    }
+                }
+
+                Toggle("Run AI summary", isOn: $proposalScopeRunAI)
+
+                Button {
+                    Task { await runProposalScopeAgent() }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.badge.gearshape")
+                        Text("Run Proposal Scope Agent")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading || selectedProposalScopeFile == nil)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dailyOpsWorkspaceSections: some View {
+        Section(header: Text("Automation Health")) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Unified ops status + one-tap autonomous recovery.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Button {
+                        Task { await runOpsRecoveryNow() }
+                    } label: {
+                        Label("Run Recovery Now", systemImage: "cross.case.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading)
+
+                    Button {
+                        Task { await refreshOpsHealth() }
+                    } label: {
+                        Label("Refresh Ops", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+                }
+
+                if let health = opsHealth {
+                    Text("Ops: \(opsStatusLabel(health.status))")
+                        .font(.caption2)
+                        .foregroundColor(opsStatusColor(health.status))
+                }
+                if let queue = incidentQueue {
+                    Text("Incident Queue: \(queue.count)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+
+        Section(header: Text("Notes Automation")) {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Note ID (optional) or project hint", text: $notesProcessTarget)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Button {
+                        Task { await processNotesNow() }
+                    } label: {
+                        Label("Process Note Now", systemImage: "bolt.horizontal.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading)
+
+                    Button {
+                        Task { await refreshNotesPipelineStatus() }
+                    } label: {
+                        Label("Refresh Status", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+                }
+            }
+        }
+
+        Section(header: Text("Contacts + iMessages")) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Button {
+                        Task { await syncContactsAndRefresh() }
+                    } label: {
+                        Label("Sync Contacts", systemImage: "person.2.badge.gearshape")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+
+                    Button {
+                        Task { await processIMessagesNow() }
+                    } label: {
+                        Label("Process Texts Now", systemImage: "bolt.badge.clock")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading)
+                }
+
+                TextField("Search contacts by name/phone/email", text: $contactsSearch)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        Task { await refreshContactsList() }
+                    }
+
+                if !contactsList.isEmpty {
+                    ForEach(contactsList.prefix(6)) { contact in
+                        Text(contact.name)
+                            .font(.caption2)
+                    }
+                }
+            }
+        }
+
+        Section(header: Text("Project Note Linking + Approval")) {
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Match text (e.g. mitchell)", text: $noteLinkMatchText)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Project name (e.g. Mitchell Residence)", text: $noteLinkProjectName)
+                    .textFieldStyle(.roundedBorder)
+
+                Button {
+                    Task { await refreshNotesTaskApprovalPanel() }
+                } label: {
+                    Label("Refresh Queue", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isLoading)
+
+                Text("Pending Approvals: \(notesTaskApprovals.count)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
     
     var body: some View {
         NavigationView {
@@ -2134,650 +2521,11 @@ struct ActionsView: View {
                 }
 
                 if actionWorkspace == .projects {
-                Section(header: Text("Symphony Markup")) {
-                    Link(destination: markupURL) {
-                        HStack {
-                            Image(systemName: "pencil.and.outline")
-                                .font(.title2)
-                                .foregroundColor(.orange)
-                                .frame(width: 40)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Open Markup Tool")
-                                    .font(.headline)
-                                Text("Floor plans, symbols, D-Tools export")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Text("Saves to iCloud + Bob • Add to Home Screen")
-                                    .font(.caption2)
-                                    .foregroundColor(.green)
-                            }
-                            Spacer()
-                            Image(systemName: "safari")
-                                .foregroundColor(.blue)
-                        }
-                        .padding(.vertical, 8)
-                    }
-                    .foregroundColor(.primary)
-                }
-
-                Section(header: Text("D-Tools Product Agent")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Upload a price/data sheet, parse products, and optionally create products in d-tools.cloud.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Button {
-                            if !showProductImporter {
-                                showProductImporter = true
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc.badge.plus")
-                                Text(selectedSheetURL == nil ? "Choose PDF/CSV Sheet" : selectedSheetURL!.lastPathComponent)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .fileImporter(
-                            isPresented: $showProductImporter,
-                            allowedContentTypes: [.pdf, .commaSeparatedText, .plainText, .data],
-                            allowsMultipleSelection: false
-                        ) { result in
-                            showProductImporter = false
-                            switch result {
-                            case .success(let urls):
-                                selectedSheetURL = urls.first
-                            case .failure(let err):
-                                self.result = "File picker failed: \(err.localizedDescription)"
-                            }
-                        }
-
-                        Picker("Dealer Tier", selection: $dealerTier) {
-                            Text("Standard").tag("standard")
-                            Text("Silver").tag("silver")
-                            Text("Gold").tag("gold")
-                            Text("Fabricator").tag("fabricator")
-                        }
-                        .pickerStyle(.menu)
-
-                        Picker("Document Profile", selection: $parseProfile) {
-                            Text("Auto Detect").tag("auto")
-                            Text("MSRP + Standard/Silver/Gold").tag("msrp_three_tiers")
-                            Text("MSRP + Standard only").tag("msrp_standard_only")
-                            Text("Minimal").tag("minimal")
-                            Text("Custom Columns").tag("custom")
-                        }
-                        .pickerStyle(.menu)
-
-                        if parseProfile == "custom" {
-                            TextField(
-                                "Comma-separated columns",
-                                text: $customExpectedColumns,
-                                axis: .vertical
-                            )
-                            .lineLimit(2...4)
-                            .textInputAutocapitalization(.characters)
-                            .font(.caption)
-                        }
-
-                        Stepper("Max Products: \(maxProducts)", value: $maxProducts, in: 1...250)
-
-                        Toggle("Create in D-Tools", isOn: $createInDTools)
-                        Toggle("Dry Run", isOn: $dryRun)
-                            .onChange(of: dryRun) { newValue in
-                                if !newValue { createInDTools = true }
-                            }
-                            .onChange(of: createInDTools) { newValue in
-                                if !newValue { dryRun = true }
-                            }
-
-                        Button {
-                            Task { await runDToolsAuthCheck() }
-                        } label: {
-                            HStack {
-                                Image(systemName: "checkmark.shield")
-                                Text("Check D-Tools Product Auth")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(isLoading)
-
-                        if let auth = dtoolsAuthStatus {
-                            Text((auth.success ? "✅ " : "❌ ") + (auth.message ?? auth.error ?? "Auth check complete"))
-                                .font(.caption2)
-                                .foregroundColor(auth.success ? .green : .orange)
-                        }
-
-                        Button {
-                            Task { await runProductImport() }
-                        } label: {
-                            HStack {
-                                Image(systemName: "wand.and.stars")
-                                Text("Run Product Agent")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isLoading || selectedSheetURL == nil)
-                    }
-                }
-
-                Section(header: Text("New Project Manual Digest")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Upload manuals, notes, and docs for a new project. The agent extracts recommended devices, scope clues, risks, and questions.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        if let intakeURL = api.manualDigestIntakeTemplateURL {
-                            HStack(spacing: 8) {
-                                Link(destination: intakeURL) {
-                                    HStack {
-                                        Image(systemName: "square.and.arrow.down")
-                                        Text("Download Intake PDF")
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-
-                                Button {
-                                    Task { await shareIntakeTemplate() }
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "square.and.arrow.up")
-                                        Text("Share Intake PDF")
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(isLoading)
-                            }
-                        }
-
-                        TextField("Project name (e.g. Wildridge Residence)", text: $manualDigestProjectName)
-                            .textFieldStyle(.roundedBorder)
-
-                        Button {
-                            if !showManualDigestImporter {
-                                showManualDigestImporter = true
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc.on.doc.fill")
-                                Text(selectedManualDigestFiles.isEmpty ? "Choose Project Files" : "\(selectedManualDigestFiles.count) file(s) selected")
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .fileImporter(
-                            isPresented: $showManualDigestImporter,
-                            allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
-                            allowsMultipleSelection: true
-                        ) { result in
-                            showManualDigestImporter = false
-                            switch result {
-                            case .success(let urls):
-                                selectedManualDigestFiles = urls
-                            case .failure(let err):
-                                self.result = "Manual Digest picker failed: \(err.localizedDescription)"
-                            }
-                        }
-
-                        Toggle("Run AI summary", isOn: $manualDigestRunAI)
-
-                        Button {
-                            Task { await runManualDigest() }
-                        } label: {
-                            HStack {
-                                Image(systemName: "brain.head.profile")
-                                Text("Run Manual Digest Agent")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isLoading || selectedManualDigestFiles.isEmpty)
-                    }
-                }
-
-                Section(header: Text("Proposal Scope Agent")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Upload a finished proposal and get a structured scope of work, inclusions, exclusions, assumptions, and risks.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        TextField("Project name", text: $proposalScopeProjectName)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Client name", text: $proposalScopeClientName)
-                            .textFieldStyle(.roundedBorder)
-
-                        Button {
-                            if !showProposalScopeImporter {
-                                showProposalScopeImporter = true
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                Text(selectedProposalScopeFile == nil ? "Choose Finished Proposal" : selectedProposalScopeFile!.lastPathComponent)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .buttonStyle(.bordered)
-                        .fileImporter(
-                            isPresented: $showProposalScopeImporter,
-                            allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
-                            allowsMultipleSelection: false
-                        ) { result in
-                            showProposalScopeImporter = false
-                            switch result {
-                            case .success(let urls):
-                                selectedProposalScopeFile = urls.first
-                            case .failure(let err):
-                                self.result = "Proposal Scope picker failed: \(err.localizedDescription)"
-                            }
-                        }
-
-                        Toggle("Run AI summary", isOn: $proposalScopeRunAI)
-
-                        Button {
-                            Task { await runProposalScopeAgent() }
-                        } label: {
-                            HStack {
-                                Image(systemName: "doc.badge.gearshape")
-                                Text("Run Proposal Scope Agent")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isLoading || selectedProposalScopeFile == nil)
-                    }
-                }
+                    projectsWorkspaceSections
                 }
 
                 if actionWorkspace == .dailyOps {
-                Section(header: Text("Automation Health")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Unified ops status + one-tap autonomous recovery.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        HStack {
-                            Button {
-                                Task { await runOpsRecoveryNow() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "cross.case.fill")
-                                    Text("Run Recovery Now")
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isLoading)
-
-                            Button {
-                                Task { await refreshOpsHealth() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.clockwise")
-                                    Text("Refresh Ops")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isLoading)
-
-                            Button {
-                                Task { await refreshIncidentQueue() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "list.bullet.clipboard")
-                                    Text("Open Incident Queue")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isLoading)
-                        }
-
-                        if let health = opsHealth {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Ops: \(opsStatusLabel(health.status))")
-                                    .font(.caption2)
-                                    .foregroundColor(opsStatusColor(health.status))
-                                Text("Build Guardian: \((health.ios_build_guardian?.overall_ok ?? false) ? "OK" : "Check")")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text("Recovery: detected \(health.autonomous_recovery?.detected_count ?? 0), applied \(health.autonomous_recovery?.applied_count ?? 0)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                if let problems = health.problems, !problems.isEmpty {
-                                    Text("Problems: \(problems.prefix(4).joined(separator: ", "))")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-
-                        if let queue = incidentQueue {
-                            Divider()
-                            Text("Incident Queue (\(queue.count))")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                            if queue.incidents.isEmpty {
-                                Text("No high-priority troubleshooting incidents.")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                ForEach(queue.incidents.prefix(8)) { incident in
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("[\(incident.priority.uppercased())] #\(incident.id) \(incident.title)")
-                                            .font(.caption2)
-                                            .fontWeight(.semibold)
-                                        Text("Status: \(incident.status)\(incident.assigned_to == nil ? "" : " • @\(incident.assigned_to!)")")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section(header: Text("Notes Automation")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Force-process one note by ID, or leave blank to process latest changes now.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        TextField("Note ID (optional) or project hint", text: $notesProcessTarget)
-                            .textFieldStyle(.roundedBorder)
-
-                        HStack {
-                            Button {
-                                Task { await processNotesNow() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "bolt.horizontal.circle")
-                                    Text("Process Note Now")
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isLoading)
-
-                            Button {
-                                Task { await refreshNotesPipelineStatus() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.clockwise")
-                                    Text("Refresh Status")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isLoading)
-                        }
-
-                        if let status = notesPipelineStatus {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Watcher: \(jobBadge(status.jobs?.notes_watcher))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text("Incoming Tasks: \(jobBadge(status.jobs?.incoming_tasks))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text("Photo Sync: \(jobBadge(status.jobs?.notes_sync_photos))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                if let count = status.state?.notes_watcher_processed_count {
-                                    Text("Processed notes: \(count)")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Section(header: Text("Contacts + iMessages")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Pick existing contacts to monitor, or add new client contacts and auto-monitor their numbers.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        HStack {
-                            Button {
-                                Task { await syncContactsAndRefresh() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "person.2.badge.gearshape")
-                                    Text("Sync Contacts")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isLoading)
-
-                            Button {
-                                Task { await refreshContactsPanel() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.clockwise")
-                                    Text("Refresh")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isLoading)
-
-                            Button {
-                                Task { await processIMessagesNow() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "bolt.badge.clock")
-                                    Text("Process Texts Now")
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isLoading)
-                        }
-
-                        if let count = contactsStatus?.contacts?.contacts_count {
-                            Text("Contacts indexed: \(count) • Watchlist: \(iMessageWatchlist.count)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-
-                        TextField("Search contacts by name/phone/email", text: $contactsSearch)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit {
-                                Task { await refreshContactsList() }
-                            }
-
-                        if !contactsList.isEmpty {
-                            ForEach(contactsList.prefix(8)) { contact in
-                                Button {
-                                    toggleContactSelection(contact.id)
-                                } label: {
-                                    HStack {
-                                        Image(systemName: selectedContactIDs.contains(contact.id) ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(selectedContactIDs.contains(contact.id) ? .green : .secondary)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(contact.name)
-                                                .font(.caption)
-                                            Text(contact.phones.first ?? contact.emails.first ?? "No phone/email")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                        Spacer()
-                                        if !contact.linked_projects.isEmpty {
-                                            Text(contact.linked_projects[0])
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            Button {
-                                Task { await addSelectedContactsToWatchlist() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "phone.badge.plus")
-                                    Text("Monitor Selected Contacts")
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isLoading || selectedContactIDs.isEmpty)
-                        }
-
-                        Divider()
-                        Text("Add New Client")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                        TextField("Client name", text: $newClientName)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Client phone", text: $newClientPhone)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.phonePad)
-                        TextField("Client email (optional)", text: $newClientEmail)
-                            .textFieldStyle(.roundedBorder)
-                            .keyboardType(.emailAddress)
-
-                        Button {
-                            Task { await addNewClientAndMonitor() }
-                        } label: {
-                            HStack {
-                                Image(systemName: "person.badge.plus")
-                                Text("Add Client + Monitor")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isLoading || newClientName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newClientPhone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        Divider()
-                        HStack {
-                            Text("Recent Work Texts")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                            Spacer()
-                            Button {
-                                Task { await refreshRecentWorkTexts() }
-                            } label: {
-                                Label("Refresh Feed", systemImage: "arrow.clockwise")
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(isLoading)
-                        }
-
-                        if recentWorkTexts.isEmpty {
-                            Text("No monitored texts yet.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        } else {
-                            ForEach(recentWorkTexts.prefix(10)) { item in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack {
-                                        Text(item.contact_name ?? item.handle ?? "Unknown sender")
-                                            .font(.caption)
-                                            .fontWeight(.semibold)
-                                        Spacer()
-                                        if let taskID = item.task_id {
-                                            Text("Task #\(taskID)")
-                                                .font(.caption2)
-                                                .foregroundColor(.green)
-                                        } else {
-                                            Text("Parsed")
-                                                .font(.caption2)
-                                                .foregroundColor(.secondary)
-                                        }
-                                    }
-                                    Text(item.text ?? "")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(2)
-                                    if let projects = item.linked_projects, !projects.isEmpty {
-                                        Text("Project: \(projects[0])")
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-                                .padding(.vertical, 2)
-                            }
-                        }
-                    }
-                }
-
-                Section(header: Text("Project Note Linking + Approval")) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Link note text to a project, auto-parse on ingest, then approve before task creation.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        TextField("Match text (e.g. mitchell)", text: $noteLinkMatchText)
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Project name (e.g. Mitchell Residence)", text: $noteLinkProjectName)
-                            .textFieldStyle(.roundedBorder)
-
-                        HStack {
-                            Button {
-                                Task { await addNotesProjectLinkRule() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "link.badge.plus")
-                                    Text("Add Link Rule")
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(isLoading || noteLinkMatchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || noteLinkProjectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                            Button {
-                                Task { await refreshNotesTaskApprovalPanel() }
-                            } label: {
-                                HStack {
-                                    Image(systemName: "arrow.clockwise")
-                                    Text("Refresh Queue")
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(isLoading)
-                        }
-
-                        if !notesProjectLinkRules.isEmpty {
-                            Text("Link rules: \(notesProjectLinkRules.count)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                            ForEach(notesProjectLinkRules.prefix(4)) { rule in
-                                Text("• '\(rule.match_text)' -> \(rule.project_name)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        Divider()
-                        Text("Pending Approvals (\(notesTaskApprovals.count))")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-
-                        if notesTaskApprovals.isEmpty {
-                            Text("No pending note approvals.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        } else {
-                            ForEach(notesTaskApprovals.prefix(6)) { item in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.note_title ?? "Untitled note")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                    Text("Project: \(item.project_name ?? "Unknown")")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    HStack {
-                                        Button("Approve") {
-                                            Task { await approveNoteTask(item.id) }
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                        .controlSize(.small)
-                                        .disabled(isLoading)
-                                        Button("Reject") {
-                                            Task { await rejectNoteTask(item.id) }
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .controlSize(.small)
-                                        .disabled(isLoading)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                    dailyOpsWorkspaceSections
                 }
 
                 if actionWorkspace == .projects {
@@ -3180,9 +2928,7 @@ struct ActionsView: View {
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
                 }
-                .frame(maxWidth: horizontalSizeClass == .regular ? 1080 : .infinity, alignment: .center)
             }
             .navigationTitle("Work Center")
             .onChange(of: shouldScrollToProductResult) { shouldScroll in
