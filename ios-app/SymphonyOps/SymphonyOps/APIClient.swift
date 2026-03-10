@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import UniformTypeIdentifiers
 import Security
+import os
 
 extension UserDefaults {
     func contains(key: String) -> Bool {
@@ -48,6 +49,7 @@ class APIClient: ObservableObject {
     private let apiTokenKeychainAccount = "symphony-api-token"
     private var lastAIStatusFetchAt: Date?
     private var lastMarkupURLFetchAt: Date?
+    private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
 
     init() {
         AuthenticatedURLSession.shared.apiClient = self
@@ -261,6 +263,7 @@ class APIClient: ObservableObject {
     // MARK: - Health Check
     
     func checkConnection() async {
+        let start = Date()
         let candidates = connectionCandidates(from: baseURL)
         var reachableBase: String?
         var atsBlocked = false
@@ -274,6 +277,7 @@ class APIClient: ObservableObject {
                 let (_, response) = try await Foundation.URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     reachableBase = candidate
+                    perfLogger.info("connection.candidate.ok candidate=\(candidate, privacy: .public)")
                     break
                 }
                 if let http = response as? HTTPURLResponse {
@@ -330,6 +334,7 @@ class APIClient: ObservableObject {
                 self.error = self.isConnected ? nil : "Server reachable but returned HTTP \(code)"
                 self.lastConnectionMessage = self.isConnected ? "Connected to \(chosenBase)" : self.error
             }
+            perfLogger.info("connection.total.ms=\(Int(Date().timeIntervalSince(start) * 1000)) base=\(chosenBase, privacy: .public)")
         } catch {
             await MainActor.run {
                 self.isConnected = false

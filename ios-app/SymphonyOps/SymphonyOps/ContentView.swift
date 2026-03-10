@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import UniformTypeIdentifiers
 import UIKit
+import os
 
 struct ContentView: View {
     @EnvironmentObject var api: APIClient
@@ -11,6 +12,7 @@ struct ContentView: View {
     @State private var didRunStartup = false
     @State private var sidebarQuery = ""
     @StateObject private var secretsVault = SecretsVaultStore()
+    private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     var body: some View {
         Group {
@@ -104,11 +106,14 @@ struct ContentView: View {
     private func runStartupIfNeeded() async {
         if didRunStartup { return }
         await MainActor.run { didRunStartup = true }
+        let startupStart = Date()
 
         // Start fast: lightweight connection check first.
         await api.checkConnection()
+        perfLogger.info("startup.checkConnection.ms=\(Int(Date().timeIntervalSince(startupStart) * 1000))")
 
         // Load heavy startup tasks concurrently without blocking UI responsiveness.
+        let heavyStart = Date()
         async let dashboardTask: Void = {
             if api.isConnected {
                 await api.fetchDashboard()
@@ -118,6 +123,8 @@ struct ContentView: View {
         async let lmTask: Void = api.checkLMStudio()
         async let aiStatusTask: Void = api.fetchAIStatus()
         _ = await (dashboardTask, ollamaTask, lmTask, aiStatusTask)
+        perfLogger.info("startup.heavyTasks.ms=\(Int(Date().timeIntervalSince(heavyStart) * 1000))")
+        perfLogger.info("startup.total.ms=\(Int(Date().timeIntervalSince(startupStart) * 1000))")
     }
 }
 
@@ -258,6 +265,7 @@ struct DashboardView: View {
     @State private var showUploadsQueuePanel = true
     @State private var showProjectWatchesPanel = true
     @State private var didInitialDashboardLoad = false
+    private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     private var dashboardHorizontalPadding: CGFloat {
         horizontalSizeClass == .regular ? 28 : 20
@@ -833,9 +841,11 @@ struct DashboardView: View {
             .task {
                 guard !didInitialDashboardLoad else { return }
                 didInitialDashboardLoad = true
+                let loadStart = Date()
                 async let markupTask: Void = api.fetchMarkupURL()
                 async let taskBoardTask: Void = refreshHomeTaskBoard()
                 _ = await (markupTask, taskBoardTask)
+                perfLogger.info("dashboard.initialLoad.ms=\(Int(Date().timeIntervalSince(loadStart) * 1000))")
             }
             .onAppear {
                 restorePrimaryActionResults()
@@ -2076,6 +2086,7 @@ struct ActionsView: View {
     @State private var exportFileURL: URL?
     @State private var showExportShareSheet = false
     @State private var didInitialActionsLoad = false
+    private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
 
     enum ActionWorkspace: String, CaseIterable, Identifiable {
         case dailyOps = "Daily Ops"
@@ -3186,6 +3197,7 @@ struct ActionsView: View {
         .task {
             guard !didInitialActionsLoad else { return }
             didInitialActionsLoad = true
+            let loadStart = Date()
             async let markupTask: Void = api.fetchMarkupURL()
             async let notesPipelineTask: Void = refreshNotesPipelineStatus()
             async let opsTask: Void = refreshOpsHealth()
@@ -3193,6 +3205,7 @@ struct ActionsView: View {
             async let contactsTask: Void = refreshContactsPanel()
             async let approvalsTask: Void = refreshNotesTaskApprovalPanel()
             _ = await (markupTask, notesPipelineTask, opsTask, incidentsTask, contactsTask, approvalsTask)
+            perfLogger.info("actions.initialLoad.ms=\(Int(Date().timeIntervalSince(loadStart) * 1000))")
         }
         .task {
             // Lightweight live feed polling while Actions view is visible.
