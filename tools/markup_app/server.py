@@ -132,7 +132,7 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 data = json.loads(post_data)
                 project = (data.get('project') or data.get('projectName') or 'untitled').replace(' ', '_').replace('/', '-')
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"{project}_{timestamp}.json"
+                filename = f"{project}_{timestamp}.symphony"
                 
                 # Save to project subfolder (so files are organized by project)
                 icloud_dir = ICLOUD_EXPORTS / project

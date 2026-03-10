@@ -262,6 +262,7 @@ class APIClient: ObservableObject {
         let candidates = connectionCandidates(from: baseURL)
         var reachableBase: String?
         var atsBlocked = false
+        var failureNotes: [String] = []
 
         for candidate in candidates {
             guard let healthURL = URL(string: "\(candidate)/health") else { continue }
@@ -273,19 +274,35 @@ class APIClient: ObservableObject {
                     reachableBase = candidate
                     break
                 }
+                if let http = response as? HTTPURLResponse {
+                    failureNotes.append("\(candidate): HTTP \(http.statusCode)")
+                } else {
+                    failureNotes.append("\(candidate): non-HTTP response")
+                }
             } catch {
-                if isATSError(error) { atsBlocked = true }
+                if isATSError(error) {
+                    atsBlocked = true
+                    failureNotes.append("\(candidate): ATS blocked")
+                } else {
+                    failureNotes.append("\(candidate): \(userFacingError(error))")
+                }
                 continue
             }
         }
 
         guard let chosenBase = reachableBase else {
+            let atsBlockedSnapshot = atsBlocked
+            let failureNotesSnapshot = failureNotes
+            let candidatesSnapshot = candidates
             await MainActor.run {
                 self.isConnected = false
-                if atsBlocked {
-                    self.error = "App Transport Security blocked HTTP. Update app/build then retry One-Tap Fix."
+                if atsBlockedSnapshot {
+                    self.error = "App Transport Security blocked HTTP. Update app/build then retry One-Tap Fix. Checked: \(candidatesSnapshot.joined(separator: ", "))"
                 } else {
-                    self.error = "Could not connect to server. Checked: \(candidates.joined(separator: ", "))"
+                    let details = failureNotesSnapshot.prefix(3).joined(separator: " | ")
+                    self.error = details.isEmpty
+                        ? "Could not connect to server. Checked: \(candidatesSnapshot.joined(separator: ", "))"
+                        : "Could not connect to server. Checked: \(candidatesSnapshot.joined(separator: ", ")). Failures: \(details)"
                 }
                 self.lastConnectionMessage = self.error
             }

@@ -259,7 +259,7 @@ struct DashboardView: View {
                                 selectedPrimaryAction = "Markup"
                                 setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
                                 let url = api.markupURL ?? api.fallbackMarkupURL
-                                UIApplication.shared.open(url)
+            _ = await UIApplication.shared.open(url)
                             }
                         }
                     }
@@ -867,7 +867,7 @@ struct DashboardView: View {
             persistedSelectedPrimaryAction = "Markup"
             setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
             let url = api.markupURL ?? api.fallbackMarkupURL
-            UIApplication.shared.open(url)
+            _ = await UIApplication.shared.open(url)
         }
     }
 

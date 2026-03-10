@@ -665,6 +665,12 @@
                     📤 Export Current Page (JSON)
                 </button>
             </div>
+
+            <div style="margin-bottom:12px;">
+                <button style="width:100%;padding:12px;font-size:14px;background:#8b5cf6;" onclick="generateLegendForCurrentPage()">
+                    🧾 Generate Legend (Used Symbols)
+                </button>
+            </div>
             
             <div style="margin-bottom:12px;">
                 <button style="width:100%;padding:12px;font-size:14px;" onclick="sendToBob()">
@@ -678,7 +684,7 @@
         </div>
     </div>
     
-    <input type="file" id="project-input" accept=".symphony,.json" style="display:none;">
+    <input type="file" id="project-input" accept=".symphony,.json,application/json,text/plain" style="display:none;">
 
 <script>
 // State
@@ -3256,10 +3262,12 @@ async function saveDownloadFromModal() {
 
 function fallbackDownload(blob, filename) {
     const a = document.createElement('a');
-    const forceBlob = new Blob([blob], { type: 'application/octet-stream' });
-    a.href = URL.createObjectURL(forceBlob);
+    a.href = URL.createObjectURL(blob);
     a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
     showToast('Downloaded: ' + filename);
 }
@@ -3281,7 +3289,8 @@ function buildSaveProjectData() {
         symbolScale: symbolScale,
         createdAt: new Date().toISOString(),
         pages: gatherAllPageMarkups(),
-        symbols: symbols
+        symbols: symbols,
+        currentPageLegend: buildLegendEntriesForPlaced(placed)
     };
 }
 
@@ -3374,6 +3383,50 @@ function loadProjectData(project) {
     render();
     
     showToast(`Project loaded: ${projectName}. Now load the PDF: ${project.pdfName}`);
+}
+
+function parseProjectJsonText(rawText) {
+    const txt = (rawText || '').replace(/^\uFEFF/, '').trim();
+    return JSON.parse(txt);
+}
+
+function normalizeProjectFile(project) {
+    if (project && project.type === 'symphony-markup-project') {
+        return project;
+    }
+
+    const hasLegacyMarkup =
+        project &&
+        (
+            Array.isArray(project.symbols) ||
+            Array.isArray(project.placed) ||
+            Array.isArray(project.rooms) ||
+            Array.isArray(project.textLabels)
+        );
+
+    if (!hasLegacyMarkup) return null;
+
+    const inferredPdf = project.pdfName || project.project || project.projectName || 'markup';
+    return {
+        version: '1.0',
+        type: 'symphony-markup-project',
+        projectName: project.projectName || project.project || inferredPdf,
+        pdfName: inferredPdf,
+        currentPage: project.page || 1,
+        pageCount: 1,
+        symbolScale: project.symbolScale || symbolScale || 1,
+        createdAt: project.exported || project.createdAt || new Date().toISOString(),
+        pages: {
+            1: {
+                placed: project.placed || project.symbols || [],
+                rooms: project.rooms || [],
+                textLabels: project.textLabels || [],
+                freehandLines: project.freehandLines || [],
+                measureScale: project.measureScale || 0,
+            }
+        },
+        symbols: project.definitions || symbols,
+    };
 }
 
 // Export current page only (legacy format)
@@ -3727,7 +3780,87 @@ function buildExportData(name) {
         }
     }
     
+    data.legend = buildLegendEntriesForPlaced(placed);
     return data;
+}
+
+function buildLegendEntriesForPlaced(placedItems) {
+    const countsByType = {};
+    for (const p of (placedItems || [])) {
+        if (!p || !p.type) continue;
+        countsByType[p.type] = (countsByType[p.type] || 0) + 1;
+    }
+
+    const entries = [];
+    for (const [typeId, count] of Object.entries(countsByType)) {
+        const def = symbols[typeId] || {};
+        entries.push({
+            symbolId: typeId,
+            label: def.label || typeId,
+            category: def.category || 'custom',
+            sku: def.sku || '',
+            color: def.color || '',
+            shape: def.shape || '',
+            count
+        });
+    }
+
+    entries.sort((a, b) => {
+        const cat = String(a.category).localeCompare(String(b.category));
+        if (cat !== 0) return cat;
+        return String(a.label).localeCompare(String(b.label));
+    });
+    return entries;
+}
+
+function clearAutoLegendLabels() {
+    textLabels = (textLabels || []).filter(t => !t.__autoLegend);
+}
+
+function generateLegendForCurrentPage() {
+    if (!placed || placed.length === 0) {
+        showToast('No placed symbols yet to build a legend');
+        return;
+    }
+
+    const entries = buildLegendEntriesForPlaced(placed);
+    if (!entries.length) {
+        showToast('No legend entries found');
+        return;
+    }
+
+    clearAutoLegendLabels();
+
+    const startX = 24;
+    let y = 24;
+    const lineHeight = 18;
+
+    textLabels.push({
+        text: 'LEGEND',
+        x: startX,
+        y,
+        color: '#ffffff',
+        size: 18,
+        __autoLegend: true
+    });
+    y += 24;
+
+    for (const entry of entries) {
+        const skuSuffix = entry.sku ? ` • ${entry.sku}` : '';
+        textLabels.push({
+            text: `${entry.label} x${entry.count}${skuSuffix}`,
+            x: startX,
+            y,
+            color: '#ffffff',
+            size: 13,
+            __autoLegend: true
+        });
+        y += lineHeight;
+    }
+
+    saveState();
+    render();
+    showToast(`Legend generated (${entries.length} items)`);
 }
 
 function downloadExport(data, name) {
@@ -3791,6 +3924,21 @@ function exportImage() {
         exportCtx.textAlign = 'left';
         exportCtx.textBaseline = 'top';
         exportCtx.fillText(t.text, t.x, t.y);
+    }
+
+    // Draw freehand lines (pencil marks)
+    for (const line of freehandLines) {
+        if (!line || !line.points || line.points.length < 2) continue;
+        exportCtx.beginPath();
+        exportCtx.moveTo(line.points[0].x, line.points[0].y);
+        for (let i = 1; i < line.points.length; i++) {
+            exportCtx.lineTo(line.points[i].x, line.points[i].y);
+        }
+        exportCtx.strokeStyle = line.color || '#f59e0b';
+        exportCtx.lineWidth = line.width || 2;
+        exportCtx.lineCap = 'round';
+        exportCtx.lineJoin = 'round';
+        exportCtx.stroke();
     }
     
     // Draw all symbols
@@ -3953,10 +4101,11 @@ document.getElementById('project-input').addEventListener('change', function(e) 
     const reader = new FileReader();
     reader.onload = function(evt) {
         try {
-            const project = JSON.parse(evt.target.result);
-            
-            if (project.type !== 'symphony-markup-project') {
-                showToast('Invalid project file');
+            const parsed = parseProjectJsonText(evt.target.result);
+            const project = normalizeProjectFile(parsed);
+
+            if (!project) {
+                showToast('Unsupported project file format');
                 return;
             }
             
