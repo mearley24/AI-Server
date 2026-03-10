@@ -596,37 +596,16 @@
     <div id="save-modal" class="modal-bg">
         <div class="modal">
             <h2>Save Markup</h2>
-            <p style="font-size:12px;color:#888;margin-bottom:16px;">Choose where to save your markup</p>
-            <div style="margin-bottom:12px;">
-                <div style="font-size:11px;color:#888;margin-bottom:6px;">PROJECT FOLDER</div>
-                <input
-                    id="save-project-name"
-                    type="text"
-                    list="server-folder-options"
-                    placeholder="Project folder name"
-                    style="width:100%;padding:10px;border-radius:8px;border:1px solid #2b2b4a;background:#111;color:#fff;box-sizing:border-box;"
-                />
-                <datalist id="server-folder-options"></datalist>
-                <div id="server-folder-matches" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
-                <div style="font-size:11px;color:#666;margin-top:6px;">Shows existing folders and best matches from the source file name.</div>
-            </div>
+            <p style="font-size:12px;color:#888;margin-bottom:16px;">Simple export: save project data and export project deliverables.</p>
             <div style="display:flex;flex-direction:column;gap:10px;">
-                <button style="width:100%;padding:14px;font-size:15px;background:#22c55e;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="saveToServerFromModal()">
-                    📡 Save to Server
+                <button style="width:100%;padding:14px;font-size:15px;background:#22c55e;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="saveProjectToFiles()">
+                    💾 Save Project (.symphony)
                 </button>
-                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ iCloud Symphony SH/Markup_Exports/ProjectName/ &amp; Bob</div>
-                <button style="width:100%;padding:14px;font-size:15px;background:#0ea5e9;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="saveShareFromModal()">
-                    📤 Share
+                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Reopen later with all markups and page state</div>
+                <button style="width:100%;padding:14px;font-size:15px;background:#3b82f6;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="exportProjectBundleToFiles()">
+                    📦 Export PDF + Markup Data
                 </button>
-                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Share sheet → "Save to Files" → pick folder (needs HTTPS)</div>
-                <button style="width:100%;padding:14px;font-size:15px;background:#3b82f6;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="saveDownloadFromModal()">
-                    📥 Download
-                </button>
-                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Chrome: folder picker. Safari: saves to Downloads</div>
-                <button style="width:100%;padding:14px;font-size:15px;background:#8b5cf6;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="saveExportImageFromModal()">
-                    🖼 Export as Image
-                </button>
-                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Floor plan + symbols as PNG</div>
+                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Outputs exactly two files to Files app</div>
             </div>
             <div class="btns" style="margin-top:16px;">
                 <button onclick="closeSaveModal()">Cancel</button>
@@ -655,26 +634,14 @@
             </div>
             
             <div style="margin-bottom:12px;">
-                <button style="width:100%;padding:12px;font-size:14px;" onclick="saveProjectAs()">
-                    💾 Save Project As...
-                </button>
-            </div>
-            
-            <div style="margin-bottom:12px;">
-                <button style="width:100%;padding:12px;font-size:14px;" onclick="exportCurrentPage()">
-                    📤 Export Current Page (JSON)
+                <button style="width:100%;padding:12px;font-size:14px;background:#22c55e;" onclick="saveProject()">
+                    💾 Save / Export
                 </button>
             </div>
 
             <div style="margin-bottom:12px;">
                 <button style="width:100%;padding:12px;font-size:14px;background:#8b5cf6;" onclick="generateLegendForCurrentPage()">
                     🧾 Generate Legend (Used Symbols)
-                </button>
-            </div>
-            
-            <div style="margin-bottom:12px;">
-                <button style="width:100%;padding:12px;font-size:14px;" onclick="sendToBob()">
-                    📡 Send to Bob (Server)
                 </button>
             </div>
             
@@ -2967,6 +2934,9 @@ let pdfPage = null;
 let pdfScale = parseInt(localStorage.getItem('pdfQuality')) || 3; // Render PDF at Nx for quality
 let currentPageNum = parseInt(localStorage.getItem('lastPageNum')) || 1;
 let currentPdfName = localStorage.getItem('lastPdfName') || ''; // Track current PDF filename for per-page saves
+let currentPdfBytes = null; // Uint8Array for export/reopen
+let currentPdfMime = 'application/pdf';
+let currentPdfOriginalName = '';
 
 // Per-page markup storage key
 function getPageStorageKey(pageNum) {
@@ -3077,7 +3047,6 @@ function saveProject() {
     }
     savePageMarkups();
     document.getElementById('save-modal').classList.add('open');
-    prepareServerSaveUI();
 }
 
 function closeSaveModal() {
@@ -3272,6 +3241,93 @@ function fallbackDownload(blob, filename) {
     showToast('Downloaded: ' + filename);
 }
 
+function uint8ArrayToBase64(bytes) {
+    if (!bytes || !bytes.length) return '';
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+}
+
+function base64ToUint8Array(b64) {
+    const binary = atob(b64 || '');
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        out[i] = binary.charCodeAt(i);
+    }
+    return out;
+}
+
+async function shareFilesOrDownload(files) {
+    const canShareFiles = (() => {
+        try {
+            return navigator.canShare && navigator.canShare({ files });
+        } catch (_) {
+            return false;
+        }
+    })();
+
+    if (canShareFiles) {
+        await navigator.share({ files, title: 'Symphony Markup Export' });
+        showToast('Shared — pick "Save to Files"');
+        return;
+    }
+
+    for (const file of files) {
+        fallbackDownload(file, file.name);
+    }
+}
+
+async function saveProjectToFiles() {
+    const project = buildSaveProjectData();
+    const baseName = (project.projectName || currentPdfName.replace(/\.[^/.]+$/, '') || 'markup').replace(/\s/g, '-');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `${baseName}_${timestamp}.symphony`;
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: 'application/json' });
+    const file = new File([blob], filename, { type: 'application/json' });
+    try {
+        await shareFilesOrDownload([file]);
+        closeSaveModal();
+        updateSaveStatus(true);
+    } catch (e) {
+        if (e && e.name !== 'AbortError') {
+            showToast('Save failed: ' + (e.message || 'Unknown error'));
+        }
+    }
+}
+
+async function exportProjectBundleToFiles() {
+    if (!currentPdfBytes || !currentPdfBytes.length) {
+        showToast('Load the source PDF first to export PDF + markup data');
+        return;
+    }
+    const baseName = ((projectName || currentPdfName || 'markup').replace(/\.[^/.]+$/, '')).replace(/\s/g, '-');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const markupData = buildExportData(projectName || baseName);
+    const markupFile = new File(
+        [new Blob([JSON.stringify(markupData, null, 2)], { type: 'application/json' })],
+        `${baseName}_${timestamp}.markup.json`,
+        { type: 'application/json' }
+    );
+    const pdfFile = new File(
+        [new Blob([currentPdfBytes], { type: currentPdfMime || 'application/pdf' })],
+        currentPdfOriginalName || `${baseName}.pdf`,
+        { type: currentPdfMime || 'application/pdf' }
+    );
+    try {
+        await shareFilesOrDownload([pdfFile, markupFile]);
+        closeSaveModal();
+        updateSaveStatus(true);
+    } catch (e) {
+        if (e && e.name !== 'AbortError') {
+            showToast('Export failed: ' + (e.message || 'Unknown error'));
+        }
+    }
+}
+
 function saveExportImageFromModal() {
     closeSaveModal();
     exportImage();
@@ -3279,6 +3335,13 @@ function saveExportImageFromModal() {
 
 function buildSaveProjectData() {
     const name = projectName || currentPdfName.replace(/\.[^/.]+$/, '');
+    const sourcePdf = currentPdfBytes
+        ? {
+            filename: currentPdfOriginalName || `${currentPdfName || 'plan'}.pdf`,
+            mimeType: currentPdfMime || 'application/pdf',
+            bytes_b64: uint8ArrayToBase64(currentPdfBytes)
+        }
+        : null;
     return {
         version: '1.0',
         type: 'symphony-markup-project',
@@ -3290,7 +3353,8 @@ function buildSaveProjectData() {
         createdAt: new Date().toISOString(),
         pages: gatherAllPageMarkups(),
         symbols: symbols,
-        currentPageLegend: buildLegendEntriesForPlaced(placed)
+        currentPageLegend: buildLegendEntriesForPlaced(placed),
+        sourcePdf
     };
 }
 
@@ -3343,7 +3407,7 @@ function openProject() {
 }
 
 // Load project data into app state
-function loadProjectData(project) {
+async function loadProjectData(project) {
     projectData = project;
     projectName = project.projectName || project.pdfName;
     currentPdfName = project.pdfName;
@@ -3373,6 +3437,20 @@ function loadProjectData(project) {
         if (label) label.textContent = symbolScale + 'x';
     }
     
+    // Restore embedded source PDF when present for true one-file reopen.
+    if (project.sourcePdf && project.sourcePdf.bytes_b64) {
+        try {
+            currentPdfBytes = base64ToUint8Array(project.sourcePdf.bytes_b64);
+            currentPdfMime = project.sourcePdf.mimeType || 'application/pdf';
+            currentPdfOriginalName = project.sourcePdf.filename || `${projectName || 'project'}.pdf`;
+            await loadPDF(currentPdfBytes.buffer.slice(0));
+            showToast(`Project loaded with embedded PDF: ${currentPdfOriginalName}`);
+            return;
+        } catch (e) {
+            console.error('Embedded PDF restore failed:', e);
+        }
+    }
+
     // Save current pdf name for auto-recovery
     localStorage.setItem('lastPdfName', currentPdfName);
     localStorage.setItem('lastPageNum', project.currentPage || 1);
@@ -3663,9 +3741,12 @@ document.getElementById('file-input').onchange = (e) => {
     if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) {
         // Save filename for per-page storage (sanitize for localStorage key)
         currentPdfName = f.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        currentPdfOriginalName = f.name;
+        currentPdfMime = f.type || 'application/pdf';
         
         const r = new FileReader();
         r.onload = (ev) => {
+            currentPdfBytes = new Uint8Array(ev.target.result);
             loadPDF(ev.target.result);
         };
         r.readAsArrayBuffer(f);
@@ -3675,6 +3756,8 @@ document.getElementById('file-input').onchange = (e) => {
     
     // Clear PDF name for regular images
     currentPdfName = '';
+    currentPdfBytes = null;
+    currentPdfOriginalName = '';
     
     // Regular image
     pdfDoc = null; // Clear any previous PDF
@@ -4099,7 +4182,7 @@ document.getElementById('project-input').addEventListener('change', function(e) 
     if (!file) return;
     
     const reader = new FileReader();
-    reader.onload = function(evt) {
+    reader.onload = async function(evt) {
         try {
             const parsed = parseProjectJsonText(evt.target.result);
             const project = normalizeProjectFile(parsed);
@@ -4109,7 +4192,7 @@ document.getElementById('project-input').addEventListener('change', function(e) 
                 return;
             }
             
-            loadProjectData(project);
+            await loadProjectData(project);
             closeFileModal();
             
         } catch(err) {
