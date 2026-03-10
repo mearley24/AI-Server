@@ -128,19 +128,26 @@ struct DashboardView: View {
     @State private var homeNotesApprovals: [NotesTaskApprovalItem] = []
     @State private var taskBoardLoading = false
     @State private var showTaskUploadImporter = false
+    @State private var showProjectBundleImporter = false
     @State private var uploadCategory = "proposal"
     @State private var uploadProjectName = ""
     @State private var uploadClientName = ""
+    @State private var uploadAddressLine = ""
+    @State private var uploadLocationName = ""
+    @State private var uploadWatchFolderPath = ""
     @State private var uploadDiscipline = ""
     @State private var uploadSheetNumber = ""
     @State private var uploadRevision = ""
     @State private var uploadIssueDate = ""
     @State private var uploadsQueue: [UploadQueueItem] = []
+    @State private var projectWatches: [ProjectWatchItem] = []
+    @State private var projectSummaries: [String: ProjectSummaryPayload] = [:]
     @State private var showApprovalsPanel = true
     @State private var showTaskCreatePanel = false
     @State private var showUploadPanel = false
     @State private var showMoreActionsPanel = false
     @State private var showUploadsQueuePanel = true
+    @State private var showProjectWatchesPanel = true
     
     var body: some View {
         NavigationView {
@@ -451,12 +458,26 @@ struct DashboardView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .disabled(taskBoardLoading)
+                                Button("Upload Project ZIP") {
+                                    showProjectBundleImporter = true
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(taskBoardLoading)
                             }
 
                             TextField("Project name", text: $uploadProjectName)
                                 .textFieldStyle(.roundedBorder)
                             TextField("Client name", text: $uploadClientName)
                                 .textFieldStyle(.roundedBorder)
+                            TextField("Address (# + street)", text: $uploadAddressLine)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Location (city/town/suburb)", text: $uploadLocationName)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("Watch folder path on server (optional)", text: $uploadWatchFolderPath)
+                                .textFieldStyle(.roundedBorder)
+                            Text("If set, new files dropped into this folder auto-ingest into project knowledge.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                             if uploadCategory == "drawing" {
                                 TextField("Discipline (e.g., AV, ELEC, LOW-VOLT)", text: $uploadDiscipline)
                                     .textFieldStyle(.roundedBorder)
@@ -470,7 +491,7 @@ struct DashboardView: View {
                                     .textFieldStyle(.roundedBorder)
                             }
 
-                            Text("Naming v1: YYYYMMDD-HHMMSS--category--project--client--discipline--sheet--r-rev--issue-date--original.ext")
+                            Text("Naming v2: Mitchell - 182 Stage Coach Way - Singletree + metadata suffix")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         } label: {
@@ -506,6 +527,66 @@ struct DashboardView: View {
                             Label("Uploads Queue (last 10)", systemImage: "tray.full")
                                 .font(.subheadline)
                         }
+
+                        DisclosureGroup(isExpanded: $showProjectWatchesPanel) {
+                            HStack {
+                                Button("Run Scan Now") {
+                                    Task { await runWatchScanNow() }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                                .disabled(taskBoardLoading)
+
+                                Button("Discover New Projects") {
+                                    Task { await discoverProjectWatchesNow() }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .disabled(taskBoardLoading)
+                            }
+
+                            if projectWatches.isEmpty {
+                                Text("No project watches yet.")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                ForEach(projectWatches.prefix(6)) { watch in
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack {
+                                            Circle()
+                                                .fill((watch.enabled ? Color.green : Color.gray))
+                                                .frame(width: 8, height: 8)
+                                            Text(watch.project_name ?? "Project")
+                                                .font(.caption)
+                                                .fontWeight(.semibold)
+                                            Spacer()
+                                            if let taskId = watch.task_id {
+                                                Text("Task #\(taskId)")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                            }
+                                        }
+                                        Text("Last scan: \(watch.last_scan_at ?? "never") • processed \(watch.last_processed_count ?? 0)")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        if let slug = watch.project_slug, let summary = projectSummaries[slug] {
+                                            Text("Signals • RFI \(summary.signals?.rfi_tags?.count ?? 0) • Wants/Needs \(summary.signals?.wants_needs_tags?.count ?? 0)")
+                                                .font(.caption2)
+                                                .foregroundColor(.secondary)
+                                        }
+                                        if let err = watch.last_error, !err.isEmpty {
+                                            Text("⚠️ \(err)")
+                                                .font(.caption2)
+                                                .foregroundColor(.orange)
+                                        }
+                                    }
+                                    .padding(.vertical, 3)
+                                }
+                            }
+                        } label: {
+                            Label("Project Watches", systemImage: "eye")
+                                .font(.subheadline)
+                        }
                     }
                     .padding(14)
                     .background(Color(.secondarySystemGroupedBackground))
@@ -522,6 +603,19 @@ struct DashboardView: View {
                             Task { await uploadTaskIntakeFile(url) }
                         case .failure(let err):
                             quickActionResult = "❌ Upload picker failed: \(err.localizedDescription)"
+                        }
+                    }
+                    .fileImporter(
+                        isPresented: $showProjectBundleImporter,
+                        allowedContentTypes: [.archive, .data],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        switch result {
+                        case .success(let urls):
+                            guard let url = urls.first else { return }
+                            Task { await uploadProjectBundleFile(url) }
+                        case .failure(let err):
+                            quickActionResult = "❌ ZIP picker failed: \(err.localizedDescription)"
                         }
                     }
 
@@ -724,6 +818,14 @@ struct DashboardView: View {
                 "Open Uploads Queue"
             )
         }
+        let stalledWatches = projectWatches.filter { ($0.last_processed_count ?? 0) == 0 && ($0.scan_in_progress ?? false) == false }
+        if !stalledWatches.isEmpty {
+            return (
+                "Run project watch scan",
+                "\(stalledWatches.count) watches have no recent new items. Run a scan check.",
+                "Run Watch Scan"
+            )
+        }
         if primaryActionResults["Morning"] == nil {
             return ("Run morning checklist", "Kick off the day with your standard startup flow.", "Run Morning")
         }
@@ -752,6 +854,8 @@ struct DashboardView: View {
             showApprovalsPanel = true
         case "Open Uploads Queue":
             showUploadsQueuePanel = true
+        case "Run Watch Scan":
+            await runWatchScanNow()
         case "Run Morning":
             await runQuickAction(name: "Morning") { await api.runMorningChecklist() }
         case "Check Bids":
@@ -796,9 +900,17 @@ struct DashboardView: View {
         async let claude = api.fetchClaudePendingTasks()
         async let approvals = api.fetchNotesTaskApprovals(status: "pending_approval", limit: 8)
         async let uploads = api.fetchUploadsQueue(limit: 10)
+        async let watches = api.fetchProjectWatches()
         homeClaudePending = await claude
         homeNotesApprovals = (await approvals)?.items ?? []
         uploadsQueue = await uploads
+        projectWatches = await watches
+        for watch in projectWatches.prefix(3) {
+            guard let slug = watch.project_slug, !slug.isEmpty else { continue }
+            if let summaryResp = await api.fetchProjectSummary(projectSlug: slug), summaryResp.success == true, let summary = summaryResp.summary {
+                projectSummaries[slug] = summary
+            }
+        }
         taskBoardLoading = false
     }
 
@@ -847,12 +959,16 @@ struct DashboardView: View {
         taskBoardLoading = true
         let cleanProject = uploadProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanClient = uploadClientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanAddress = uploadAddressLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanLocation = uploadLocationName.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = "Review \(uploadCategory): \(cleanProject.isEmpty ? (cleanClient.isEmpty ? fileURL.lastPathComponent : cleanClient) : cleanProject)"
         let response = await api.uploadTaskIntake(
             fileURL: fileURL,
             category: uploadCategory,
             projectName: cleanProject,
             clientName: cleanClient,
+            addressLine: cleanAddress,
+            locationName: cleanLocation,
             discipline: uploadDiscipline.trimmingCharacters(in: .whitespacesAndNewlines),
             sheetNumber: uploadSheetNumber.trimmingCharacters(in: .whitespacesAndNewlines),
             revision: uploadRevision.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -866,6 +982,62 @@ struct DashboardView: View {
             await refreshHomeTaskBoard()
         } else {
             quickActionResult = "❌ Upload failed: \(response?.error ?? api.error ?? "Unknown error")"
+        }
+        taskBoardLoading = false
+    }
+
+    func uploadProjectBundleFile(_ fileURL: URL) async {
+        taskBoardLoading = true
+        guard fileURL.pathExtension.lowercased() == "zip" else {
+            quickActionResult = "❌ Select a .zip file for project bundle upload."
+            taskBoardLoading = false
+            return
+        }
+        let cleanProject = uploadProjectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanClient = uploadClientName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanAddress = uploadAddressLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanLocation = uploadLocationName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanWatchPath = uploadWatchFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let response = await api.uploadProjectBundle(
+            fileURL: fileURL,
+            projectName: cleanProject,
+            clientName: cleanClient,
+            addressLine: cleanAddress,
+            locationName: cleanLocation,
+            sourceFolderPath: cleanWatchPath,
+            enableWatch: !cleanWatchPath.isEmpty,
+            priority: "high"
+        )
+        if response?.success == true {
+            let watchBadge = (response?.watch_registered ?? false) ? " • watch on" : ""
+            quickActionResult = "✅ Project bundle queued (#\(response?.task_id ?? 0)) • files: \(response?.extracted_count ?? 0)\(watchBadge)"
+            await refreshHomeTaskBoard()
+        } else {
+            quickActionResult = "❌ Bundle upload failed: \(response?.error ?? api.error ?? "Unknown error")"
+        }
+        taskBoardLoading = false
+    }
+
+    func runWatchScanNow() async {
+        taskBoardLoading = true
+        let response = await api.runProjectWatches()
+        if response?.success == true {
+            quickActionResult = "✅ Watch scan complete • processed \(response?.processed_total ?? 0) files"
+            await refreshHomeTaskBoard()
+        } else {
+            quickActionResult = "❌ Watch scan failed: \(response?.error ?? api.error ?? "Unknown error")"
+        }
+        taskBoardLoading = false
+    }
+
+    func discoverProjectWatchesNow() async {
+        taskBoardLoading = true
+        let response = await api.discoverProjectWatches()
+        if response?.success == true {
+            quickActionResult = "✅ Discovery complete • new watches \(response?.registered ?? 0)"
+            await refreshHomeTaskBoard()
+        } else {
+            quickActionResult = "❌ Watch discovery failed: \(response?.error ?? api.error ?? "Unknown error")"
         }
         taskBoardLoading = false
     }
@@ -1744,12 +1916,19 @@ struct ActionsView: View {
     @State private var shouldScrollToProductResult = false
     @State private var approveStoreResult: DToolsProductStoreResponse?
     @State private var retryCreateResult: DToolsProductRetryResponse?
+    @State private var dtoolsAuthStatus: DToolsAuthCheckResponse?
     @State private var editableProducts: [EditableProductDraft] = []
     @State private var manualDigestProjectName = ""
     @State private var manualDigestRunAI = true
     @State private var showManualDigestImporter = false
     @State private var selectedManualDigestFiles: [URL] = []
     @State private var manualDigestResponse: ProjectManualDigestResponse?
+    @State private var proposalScopeProjectName = ""
+    @State private var proposalScopeClientName = ""
+    @State private var proposalScopeRunAI = true
+    @State private var showProposalScopeImporter = false
+    @State private var selectedProposalScopeFile: URL?
+    @State private var proposalScopeResponse: ProposalScopeResponse?
     @State private var notesProcessTarget = ""
     @State private var notesPipelineStatus: NotesPipelineStatusResponse?
     @State private var opsHealth: OpsHealthResponse?
@@ -1917,6 +2096,23 @@ struct ActionsView: View {
                             }
 
                         Button {
+                            Task { await runDToolsAuthCheck() }
+                        } label: {
+                            HStack {
+                                Image(systemName: "checkmark.shield")
+                                Text("Check D-Tools Product Auth")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isLoading)
+
+                        if let auth = dtoolsAuthStatus {
+                            Text((auth.success ? "✅ " : "❌ ") + (auth.message ?? auth.error ?? "Auth check complete"))
+                                .font(.caption2)
+                                .foregroundColor(auth.success ? .green : .orange)
+                        }
+
+                        Button {
                             Task { await runProductImport() }
                         } label: {
                             HStack {
@@ -1998,6 +2194,58 @@ struct ActionsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(isLoading || selectedManualDigestFiles.isEmpty)
+                    }
+                }
+
+                Section(header: Text("Proposal Scope Agent")) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Upload a finished proposal and get a structured scope of work, inclusions, exclusions, assumptions, and risks.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        TextField("Project name", text: $proposalScopeProjectName)
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Client name", text: $proposalScopeClientName)
+                            .textFieldStyle(.roundedBorder)
+
+                        Button {
+                            if !showProposalScopeImporter {
+                                showProposalScopeImporter = true
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                Text(selectedProposalScopeFile == nil ? "Choose Finished Proposal" : selectedProposalScopeFile!.lastPathComponent)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .fileImporter(
+                            isPresented: $showProposalScopeImporter,
+                            allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
+                            allowsMultipleSelection: false
+                        ) { result in
+                            showProposalScopeImporter = false
+                            switch result {
+                            case .success(let urls):
+                                selectedProposalScopeFile = urls.first
+                            case .failure(let err):
+                                self.result = "Proposal Scope picker failed: \(err.localizedDescription)"
+                            }
+                        }
+
+                        Toggle("Run AI summary", isOn: $proposalScopeRunAI)
+
+                        Button {
+                            Task { await runProposalScopeAgent() }
+                        } label: {
+                            HStack {
+                                Image(systemName: "doc.badge.gearshape")
+                                Text("Run Proposal Scope Agent")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isLoading || selectedProposalScopeFile == nil)
                     }
                 }
                 }
@@ -2450,6 +2698,66 @@ struct ActionsView: View {
                     .id("manual-digest-result")
                 }
 
+                if let proposalScope = proposalScopeResponse {
+                    Section(header: Text("Proposal Scope Result")) {
+                        Text("Project: \(proposalScope.project_name ?? proposalScopeProjectName)")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        if let quote = proposalScope.dtools_quote_version, !quote.isEmpty {
+                            Text("D-Tools: \(quote)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        if let scope = proposalScope.scope {
+                            if let lines = scope.scope_of_work, !lines.isEmpty {
+                                Text("Scope of work")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                ForEach(Array(lines.prefix(8).enumerated()), id: \.offset) { _, line in
+                                    Text("• \(line)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            if let included = scope.included_items, !included.isEmpty {
+                                Text("Included")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                ForEach(Array(included.prefix(8).enumerated()), id: \.offset) { _, line in
+                                    Text("• \(line)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            if let excluded = scope.excluded_items, !excluded.isEmpty {
+                                Text("Excluded")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                ForEach(Array(excluded.prefix(6).enumerated()), id: \.offset) { _, line in
+                                    Text("• \(line)")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            if let risks = scope.risk_tags, !risks.isEmpty {
+                                Text("Risk tags: \(risks.joined(separator: ", "))")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        if let next = proposalScope.ai_summary?.next_steps, !next.isEmpty {
+                            Text("Next steps")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            ForEach(Array(next.prefix(6).enumerated()), id: \.offset) { _, line in
+                                Text("• \(line)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+
                 if let importResponse = productImportResponse {
                     Section(header: Text("Product Agent Result")) {
                         Text("Parsed: \(importResponse.parsed_count ?? 0) • Attempted: \(importResponse.attempted_count ?? 0) • Created: \(importResponse.created_count ?? 0)")
@@ -2817,6 +3125,20 @@ struct ActionsView: View {
         shouldScrollToProductResult = true
     }
 
+    func runDToolsAuthCheck() async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.checkDToolsProductAuth()
+        dtoolsAuthStatus = response
+        if response == nil {
+            result = api.error ?? "Auth check failed"
+        } else if response?.success == true {
+            result = "D-Tools browser auth is healthy."
+        } else {
+            result = response?.message ?? response?.error ?? "D-Tools auth failed"
+        }
+    }
+
     func runManualDigest() async {
         guard !selectedManualDigestFiles.isEmpty else { return }
         isLoading = true
@@ -2833,6 +3155,26 @@ struct ActionsView: View {
             result = response?.error ?? "Manual digest failed"
         } else {
             result = "Manual digest completed."
+        }
+    }
+
+    func runProposalScopeAgent() async {
+        guard let proposalFile = selectedProposalScopeFile else { return }
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.runProposalScopeAgent(
+            projectName: proposalScopeProjectName.trimmingCharacters(in: .whitespacesAndNewlines),
+            clientName: proposalScopeClientName.trimmingCharacters(in: .whitespacesAndNewlines),
+            fileURL: proposalFile,
+            runAISummary: proposalScopeRunAI
+        )
+        proposalScopeResponse = response
+        if response == nil {
+            result = api.error ?? "Proposal scope agent failed"
+        } else if response?.success == false {
+            result = response?.error ?? "Proposal scope agent failed"
+        } else {
+            result = "Proposal scope agent completed."
         }
     }
 

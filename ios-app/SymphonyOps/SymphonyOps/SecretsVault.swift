@@ -35,6 +35,18 @@ struct VaultImportPreviewRow: Identifiable, Hashable {
     var reason: String
 }
 
+struct VaultReconciledCandidate: Identifiable, Hashable {
+    let id = UUID()
+    var sourceKeyName: String
+    var resolvedKeyName: String
+    var provider: String
+    var tags: [String]
+    var value: String
+    var confidence: Int
+    var fingerprintPrefix: String
+    var warning: String
+}
+
 @MainActor
 final class SecretsVaultStore: ObservableObject {
     @Published var records: [VaultSecretRecord] = []
@@ -43,6 +55,30 @@ final class SecretsVaultStore: ObservableObject {
     private let storageURL: URL
     private let keychainService = "com.symphonysh.SymphonyOps.SecretsVault"
     private let keychainAccount = "vault-master-key-v1"
+    private let canonicalKeyNames: [String] = [
+        "SYMPHONY_API_TOKEN",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "PERPLEXITY_API_KEY",
+        "TELEGRAM_BOT_TOKEN",
+        "BETTY_BOT_TOKEN",
+        "BEATRICE_BOT_TOKEN",
+        "DTOOLS_API_KEY",
+        "SUPABASE_URL",
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "TWILIO_ACCOUNT_SID",
+        "TWILIO_AUTH_TOKEN",
+        "TWILIO_PHONE_NUMBER",
+        "GITHUB_TOKEN",
+        "CLOUDFLARE_API_TOKEN",
+        "ZOHO_CLIENT_ID",
+        "ZOHO_CLIENT_SECRET",
+        "ZOHO_REFRESH_TOKEN",
+        "FINNHUB_API_KEY",
+        "ALPACA_API_KEY",
+        "ALPACA_SECRET_KEY"
+    ]
 
     init() {
         let fm = FileManager.default
@@ -100,7 +136,7 @@ final class SecretsVaultStore: ObservableObject {
                 provider: provider.trimmingCharacters(in: .whitespacesAndNewlines),
                 tags: Array(Set(tags)).sorted(),
                 encryptedValueB64: encrypted,
-                valueHashPrefix: Self.hashPrefix(trimmedValue),
+                valueHashPrefix: secureFingerprintPrefix(trimmedValue),
                 last4: Self.last4(trimmedValue),
                 createdAt: now,
                 updatedAt: now,
@@ -137,7 +173,7 @@ final class SecretsVaultStore: ObservableObject {
             let key = try fetchOrCreateMasterKey()
             var r = records[idx]
             r.encryptedValueB64 = try encryptString(trimmed, key: key)
-            r.valueHashPrefix = Self.hashPrefix(trimmed)
+            r.valueHashPrefix = secureFingerprintPrefix(trimmed)
             r.last4 = Self.last4(trimmed)
             r.updatedAt = Date()
             r.lastRotatedAt = Date()
@@ -208,14 +244,8 @@ final class SecretsVaultStore: ObservableObject {
                 }
             }
         }
-        // dedupe by key, keep first
-        var seen: Set<String> = []
-        return out.filter { item in
-            let k = item.keyName.lowercased()
-            if seen.contains(k) { return false }
-            seen.insert(k)
-            return true
-        }
+        // Preserve source order from the user's note to support sequential rotation.
+        return out
     }
 
     func importCandidates(_ candidates: [VaultImportCandidate]) {
@@ -226,6 +256,55 @@ final class SecretsVaultStore: ObservableObject {
                 tagsCSV: c.tags.joined(separator: ","),
                 value: c.value,
                 notes: "Imported into encrypted vault",
+                expiresAt: nil
+            )
+        }
+    }
+
+    func reconcileImportCandidates(rawText: String) -> [VaultReconciledCandidate] {
+        let parsed = parseImportCandidates(rawText: rawText)
+        var out: [VaultReconciledCandidate] = []
+        var seenFingerprints: Set<String> = []
+        var seenResolvedKeys: Set<String> = []
+
+        for item in parsed {
+            let suggestion = canonicalKeySuggestion(from: item.keyName)
+            let resolved = suggestion.keyName
+            let fingerprint = secureFingerprintPrefix(item.value)
+            var warning = ""
+            if seenFingerprints.contains(fingerprint) {
+                warning = "Duplicate value fingerprint; verify this is intentional."
+            } else if seenResolvedKeys.contains(resolved.lowercased()) {
+                warning = "Multiple values mapped to same key; verify latest is correct."
+            } else if suggestion.confidence < 65 {
+                warning = "Low-confidence label match; verify destination key."
+            }
+            seenFingerprints.insert(fingerprint)
+            seenResolvedKeys.insert(resolved.lowercased())
+            out.append(
+                VaultReconciledCandidate(
+                    sourceKeyName: item.keyName,
+                    resolvedKeyName: resolved,
+                    provider: providerGuess(resolved),
+                    tags: tagGuess(resolved),
+                    value: item.value,
+                    confidence: suggestion.confidence,
+                    fingerprintPrefix: fingerprint,
+                    warning: warning
+                )
+            )
+        }
+        return out
+    }
+
+    func importReconciledCandidates(_ candidates: [VaultReconciledCandidate]) {
+        for c in candidates where !c.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            addSecret(
+                keyName: c.resolvedKeyName,
+                provider: c.provider,
+                tagsCSV: c.tags.joined(separator: ","),
+                value: c.value,
+                notes: "Imported via Key Reconciliation Mode (\(c.sourceKeyName))",
                 expiresAt: nil
             )
         }
@@ -310,9 +389,60 @@ final class SecretsVaultStore: ObservableObject {
         return v.rangeOfCharacter(from: charset.inverted) == nil
     }
 
-    private static func hashPrefix(_ value: String) -> String {
-        let digest = SHA256.hash(data: Data(value.utf8))
-        return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(12).description
+    private func secureFingerprintPrefix(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "empty" }
+        do {
+            let key = try fetchOrCreateMasterKey()
+            let digest = HMAC<SHA256>.authenticationCode(for: Data(trimmed.utf8), using: key)
+            let hex = digest.map { String(format: "%02x", $0) }.joined()
+            return String(hex.prefix(12))
+        } catch {
+            let digest = SHA256.hash(data: Data(trimmed.utf8))
+            return digest.map { String(format: "%02x", $0) }.joined().prefix(12).description
+        }
+    }
+
+    private func normalizeKeyLabel(_ value: String) -> String {
+        value.lowercased().replacingOccurrences(
+            of: "[^a-z0-9]+",
+            with: "",
+            options: .regularExpression
+        )
+    }
+
+    private func tokenSet(_ value: String) -> Set<String> {
+        let tokens = value.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return Set(tokens.map(String.init).filter { !$0.isEmpty })
+    }
+
+    private func canonicalKeySuggestion(from rawKey: String) -> (keyName: String, confidence: Int) {
+        let rawNormalized = normalizeKeyLabel(rawKey)
+        var best = canonicalKeyNames.first ?? rawKey
+        var bestScore = 0
+        let rawTokens = tokenSet(rawKey)
+
+        for candidate in canonicalKeyNames {
+            let candidateNormalized = normalizeKeyLabel(candidate)
+            if rawNormalized == candidateNormalized {
+                return (candidate, 100)
+            }
+            let candidateTokens = tokenSet(candidate)
+            let overlap = rawTokens.intersection(candidateTokens).count
+            let union = max(1, rawTokens.union(candidateTokens).count)
+            let tokenScore = Int((Double(overlap) / Double(union)) * 70.0)
+            let containsBonus = candidateNormalized.contains(rawNormalized) || rawNormalized.contains(candidateNormalized) ? 20 : 0
+            let providerBonus = providerGuess(rawKey) == providerGuess(candidate) ? 10 : 0
+            let score = min(99, tokenScore + containsBonus + providerBonus)
+            if score > bestScore {
+                bestScore = score
+                best = candidate
+            }
+        }
+        if bestScore < 45 {
+            return (rawKey.trimmingCharacters(in: .whitespacesAndNewlines), 40)
+        }
+        return (best, bestScore)
     }
 
     private static func last4(_ value: String) -> String {
@@ -422,6 +552,9 @@ struct SecretsVaultView: View {
     @State private var importRawText = ""
     @State private var importCandidates: [VaultImportCandidate] = []
     @State private var importPreviewRows: [VaultImportPreviewRow] = []
+    @State private var reconciledCandidates: [VaultReconciledCandidate] = []
+    @State private var strictReconciliationMode = true
+    @State private var allowUnsafeImports = false
     @State private var pendingDeleteRecord: VaultSecretRecord?
     @State private var rotationStatusMessage = ""
     private let commonKeyNameTemplates: [String] = [
@@ -470,6 +603,25 @@ struct SecretsVaultView: View {
         return list.filter { $0.lowercased().contains(q) }.prefix(8).map { $0 }
     }
 
+    private var savedKeyNameOptions: [String] {
+        let merged = Set(vault.records.map(\.keyName)).union(commonKeyNameTemplates)
+        return merged.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var blockedReconciledCount: Int {
+        guard strictReconciliationMode && !allowUnsafeImports else { return 0 }
+        return reconciledCandidates.filter { c in
+            c.confidence < 70 || c.warning.lowercased().contains("duplicate")
+        }.count
+    }
+
+    private var importReadyCandidates: [VaultReconciledCandidate] {
+        guard strictReconciliationMode && !allowUnsafeImports else { return reconciledCandidates }
+        return reconciledCandidates.filter { c in
+            c.confidence >= 70 && !c.warning.lowercased().contains("duplicate")
+        }
+    }
+
     var body: some View {
         NavigationView {
             List {
@@ -483,7 +635,7 @@ struct SecretsVaultView: View {
                     HStack {
                         Button("Add Secret") { showAdd = true }
                             .buttonStyle(.borderedProminent)
-                        Button("Import From Note Text") { showImport = true }
+                        Button("Key Reconciliation Import") { showImport = true }
                             .buttonStyle(.bordered)
                     }
                     TextField("Search by key/provider/tag", text: $filter)
@@ -591,6 +743,23 @@ struct SecretsVaultView: View {
                         TextField("Env key (e.g. OPENAI_API_KEY)", text: $addName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled(true)
+                        Menu {
+                            ForEach(savedKeyNameOptions.prefix(80), id: \.self) { keyName in
+                                Button(keyName) {
+                                    addName = keyName
+                                    if addProvider == "General" || addProvider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        addProvider = inferredProvider(from: keyName)
+                                    }
+                                    if addTags.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        addTags = inferredTagsCSV(from: keyName)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label("Choose Key Format (saved + standard)", systemImage: "list.bullet")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
                         if !addNameSuggestions.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
@@ -650,9 +819,17 @@ struct SecretsVaultView: View {
                             Button("Parse Candidates") {
                                 importPreviewRows = vault.previewImportCandidates(rawText: importRawText)
                                 importCandidates = vault.parseImportCandidates(rawText: importRawText)
-                                importRawText = ""
+                                reconciledCandidates = vault.reconcileImportCandidates(rawText: importRawText)
                             }
                             .buttonStyle(.bordered)
+                        }
+                        Section(header: Text("Import Safety")) {
+                            Toggle("Strict mode (block low confidence + duplicates)", isOn: $strictReconciliationMode)
+                            Toggle("Allow unsafe imports (manual override)", isOn: $allowUnsafeImports)
+                                .disabled(!strictReconciliationMode)
+                            Text("Ready: \(importReadyCandidates.count) • Blocked: \(blockedReconciledCount)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
                         if !importPreviewRows.isEmpty {
                             Section(header: Text("Preview (\(importPreviewRows.count) lines)")) {
@@ -672,13 +849,20 @@ struct SecretsVaultView: View {
                                 }
                             }
                         }
-                        Section(header: Text("Candidates (\(importCandidates.count))")) {
-                            ForEach(importCandidates) { c in
+                        Section(header: Text("Reconciled Keys (\(reconciledCandidates.count))")) {
+                            ForEach(reconciledCandidates) { c in
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(c.keyName).font(.subheadline).fontWeight(.semibold)
-                                    Text("\(c.provider) • \(c.tags.joined(separator: ", "))")
+                                    Text("\(c.sourceKeyName) → \(c.resolvedKeyName)")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text("\(c.provider) • confidence \(c.confidence)% • fp \(c.fingerprintPrefix)")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
+                                    if !c.warning.isEmpty {
+                                        Text(c.warning)
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    }
                                     Text("value hidden")
                                         .font(.caption2)
                                         .foregroundColor(.secondary)
@@ -686,24 +870,30 @@ struct SecretsVaultView: View {
                             }
                         }
                     }
-                    .navigationTitle("Import to Vault")
+                    .navigationTitle("Key Reconciliation")
                     .toolbar {
                         ToolbarItem(placement: .cancellationAction) {
                             Button("Cancel") {
                                 importRawText = ""
                                 importCandidates = []
                                 importPreviewRows = []
+                                reconciledCandidates = []
+                                strictReconciliationMode = true
+                                allowUnsafeImports = false
                                 showImport = false
                             }
                         }
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Import") {
-                                vault.importCandidates(importCandidates)
+                                vault.importReconciledCandidates(importReadyCandidates)
                                 importRawText = ""
                                 importCandidates = []
                                 importPreviewRows = []
+                                reconciledCandidates = []
+                                strictReconciliationMode = true
+                                allowUnsafeImports = false
                                 showImport = false
-                            }.disabled(importCandidates.isEmpty)
+                            }.disabled(importReadyCandidates.isEmpty)
                         }
                     }
                 }

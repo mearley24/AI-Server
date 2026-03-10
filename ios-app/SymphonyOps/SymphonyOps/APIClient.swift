@@ -668,6 +668,21 @@ class APIClient: ObservableObject {
         }
     }
 
+    func checkDToolsProductAuth() async -> DToolsAuthCheckResponse? {
+        do {
+            let url = URL(string: "\(baseURL)/dtools/products/auth_check")!
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 120
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(DToolsAuthCheckResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
     func runProjectManualDigest(
         projectName: String,
         fileURLs: [URL],
@@ -709,6 +724,54 @@ class APIClient: ObservableObject {
 
             let (data, _) = try await URLSession.shared.data(for: request)
             return try JSONDecoder().decode(ProjectManualDigestResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func runProposalScopeAgent(
+        projectName: String,
+        clientName: String,
+        fileURL: URL,
+        runAISummary: Bool
+    ) async -> ProposalScopeResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/projects/proposal_scope")!)
+            request.httpMethod = "POST"
+
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 240
+
+            let started = fileURL.startAccessingSecurityScopedResource()
+            defer {
+                if started { fileURL.stopAccessingSecurityScopedResource() }
+            }
+            let fileData = try Data(contentsOf: fileURL)
+            let filename = fileURL.lastPathComponent
+            let mimeType = mimeTypeForFile(url: fileURL)
+
+            var body = Data()
+            body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
+            body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
+            body.append(multipartField(name: "run_ai_summary", value: runAISummary ? "true" : "false", boundary: boundary))
+            body.append(
+                multipartFileField(
+                    name: "proposal_file",
+                    filename: filename,
+                    mimeType: mimeType,
+                    data: fileData,
+                    boundary: boundary
+                )
+            )
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(ProposalScopeResponse.self, from: data)
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
@@ -1188,6 +1251,8 @@ class APIClient: ObservableObject {
         category: String,
         projectName: String,
         clientName: String,
+        addressLine: String,
+        locationName: String,
         discipline: String,
         sheetNumber: String,
         revision: String,
@@ -1215,6 +1280,8 @@ class APIClient: ObservableObject {
             body.append(multipartField(name: "category", value: category, boundary: boundary))
             body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
             body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
+            body.append(multipartField(name: "address_line", value: addressLine, boundary: boundary))
+            body.append(multipartField(name: "location_name", value: locationName, boundary: boundary))
             body.append(multipartField(name: "discipline", value: discipline, boundary: boundary))
             body.append(multipartField(name: "sheet_number", value: sheetNumber, boundary: boundary))
             body.append(multipartField(name: "revision", value: revision, boundary: boundary))
@@ -1255,6 +1322,124 @@ class APIClient: ObservableObject {
                 self.error = userFacingError(error)
             }
             return []
+        }
+    }
+
+    func fetchProjectWatches() async -> [ProjectWatchItem] {
+        do {
+            let url = URL(string: "\(baseURL)/tasks/project_watches")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let response = try JSONDecoder().decode(ProjectWatchesResponse.self, from: data)
+            return response.watches
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return []
+        }
+    }
+
+    func runProjectWatches(watchID: String? = nil) async -> ProjectWatchesRunResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/tasks/project_watches/run")!)
+            request.httpMethod = "POST"
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            var body = Data()
+            body.append(multipartField(name: "watch_id", value: watchID ?? "", boundary: boundary))
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(ProjectWatchesRunResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return nil
+        }
+    }
+
+    func discoverProjectWatches() async -> ProjectWatchesDiscoverResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/tasks/project_watches/discover")!)
+            request.httpMethod = "POST"
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(ProjectWatchesDiscoverResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return nil
+        }
+    }
+
+    func fetchProjectSummary(projectSlug: String) async -> ProjectSummaryResponse? {
+        do {
+            guard
+                let escaped = projectSlug.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                let url = URL(string: "\(baseURL)/tasks/project_summary?project_slug=\(escaped)")
+            else { return nil }
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(ProjectSummaryResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return nil
+        }
+    }
+
+    func uploadProjectBundle(
+        fileURL: URL,
+        projectName: String,
+        clientName: String,
+        addressLine: String,
+        locationName: String,
+        sourceFolderPath: String,
+        enableWatch: Bool,
+        priority: String
+    ) async -> ProjectBundleUploadResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/tasks/upload_project_bundle")!)
+            request.httpMethod = "POST"
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 180
+
+            let started = fileURL.startAccessingSecurityScopedResource()
+            defer {
+                if started { fileURL.stopAccessingSecurityScopedResource() }
+            }
+            let fileData = try Data(contentsOf: fileURL)
+            let filename = fileURL.lastPathComponent
+
+            var body = Data()
+            body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
+            body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
+            body.append(multipartField(name: "address_line", value: addressLine, boundary: boundary))
+            body.append(multipartField(name: "location_name", value: locationName, boundary: boundary))
+            body.append(multipartField(name: "source_folder_path", value: sourceFolderPath, boundary: boundary))
+            body.append(multipartField(name: "enable_watch", value: enableWatch ? "true" : "false", boundary: boundary))
+            body.append(multipartField(name: "priority", value: priority, boundary: boundary))
+            body.append(
+                multipartFileField(
+                    name: "bundle",
+                    filename: filename,
+                    mimeType: "application/zip",
+                    data: fileData,
+                    boundary: boundary
+                )
+            )
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(ProjectBundleUploadResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = userFacingError(error)
+            }
+            return nil
         }
     }
     
@@ -1838,6 +2023,19 @@ struct TaskUploadFindingsPreview: Codable {
     let sheet_references_count: Int?
 }
 
+struct ProjectBundleUploadResponse: Codable {
+    let success: Bool
+    let bundle_id: String?
+    let task_id: Int?
+    let zip_path: String?
+    let extracted_count: Int?
+    let category_counts: [String: Int]?
+    let drawing_findings_count: Int?
+    let watch_registered: Bool?
+    let message: String?
+    let error: String?
+}
+
 struct UploadsQueueResponse: Codable {
     let success: Bool
     let uploads: [UploadQueueItem]
@@ -1856,6 +2054,68 @@ struct UploadQueueItem: Codable, Identifiable {
     let task_status: String
     let open_complete_status: String
     let findings_path: String?
+}
+
+struct ProjectWatchesResponse: Codable {
+    let success: Bool
+    let watches: [ProjectWatchItem]
+    let auto_discover_enabled: Bool?
+    let projects_root: String?
+    let error: String?
+}
+
+struct ProjectWatchItem: Codable, Identifiable {
+    var id: String { watch_id }
+    let watch_id: String
+    let enabled: Bool
+    let project_name: String?
+    let client_name: String?
+    let folder_path: String
+    let task_id: Int?
+    let project_slug: String?
+    let last_scan_at: String?
+    let last_processed_count: Int?
+    let last_candidate_count: Int?
+    let last_skipped_too_large: Int?
+    let last_skipped_ignored: Int?
+    let scan_duration_sec: Double?
+    let scan_in_progress: Bool?
+    let last_error: String?
+    let summary_path: String?
+}
+
+struct ProjectWatchesRunResponse: Codable {
+    let success: Bool
+    let ran: Int?
+    let processed_total: Int?
+    let error: String?
+}
+
+struct ProjectWatchesDiscoverResponse: Codable {
+    let success: Bool
+    let root: String?
+    let discovered: Int?
+    let registered: Int?
+    let error: String?
+}
+
+struct ProjectSummaryPayload: Codable {
+    let total_ingested_files: Int?
+    let category_counts: [String: Int]?
+    let signals: ProjectSummarySignals?
+}
+
+struct ProjectSummarySignals: Codable {
+    let rfi_tags: [String]?
+    let wants_needs_tags: [String]?
+    let scope_risk_tags: [String]?
+}
+
+struct ProjectSummaryResponse: Codable {
+    let success: Bool
+    let project_slug: String?
+    let summary: ProjectSummaryPayload?
+    let error: String?
 }
 
 struct ClaudeTask: Codable, Identifiable {
@@ -1951,6 +2211,13 @@ struct DToolsProductRetryResponse: Codable {
     let error: String?
 }
 
+struct DToolsAuthCheckResponse: Codable {
+    let success: Bool
+    let message: String?
+    let error: String?
+    let timestamp: String?
+}
+
 struct ProjectManualDigestResponse: Codable {
     let success: Bool
     let project_name: String?
@@ -1994,6 +2261,37 @@ struct ProjectManualAISummary: Codable {
     let risks: [String]?
     let clarifying_questions: [String]?
     let next_steps: [String]?
+}
+
+struct ProposalScopeResponse: Codable {
+    let success: Bool
+    let project_name: String?
+    let client_name: String?
+    let project_slug: String?
+    let batch_timestamp: String?
+    let file_name: String?
+    let file_path: String?
+    let text_chars: Int?
+    let dtools_quote_id: String?
+    let dtools_version: String?
+    let dtools_quote_version: String?
+    let scope: ProposalScopeData?
+    let ai_summary: ProjectManualAISummary?
+    let timestamp: String?
+    let error: String?
+}
+
+struct ProposalScopeData: Codable {
+    let scope_of_work: [String]?
+    let included_items: [String]?
+    let excluded_items: [String]?
+    let allowances: [String]?
+    let assumptions: [String]?
+    let schedule_notes: [String]?
+    let risk_tags: [String]?
+    let open_questions: [String]?
+    let detected_skus: [String]?
+    let detected_brands: [String]?
 }
 
 struct NotesProcessNowRequest: Codable {

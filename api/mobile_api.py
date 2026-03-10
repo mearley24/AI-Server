@@ -25,7 +25,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -77,7 +79,52 @@ TASK_UPLOAD_FINDINGS_DIR = TASK_UPLOAD_DIR / "findings"
 TASK_UPLOAD_FINDINGS_DIR.mkdir(parents=True, exist_ok=True)
 TASK_UPLOAD_EXTRACTION_QUEUE_DIR = TASK_UPLOAD_DIR / "extraction_queue"
 TASK_UPLOAD_EXTRACTION_QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+PROJECT_WATCHES_FILE = TASK_UPLOAD_DIR / "project_watches.json"
+PROJECT_WATCH_STATE_FILE = TASK_UPLOAD_DIR / "project_watch_state.json"
+PROJECT_WATCH_LOG_DIR = TASK_UPLOAD_DIR / "project_watch_logs"
+PROJECT_WATCH_LOG_DIR.mkdir(parents=True, exist_ok=True)
 TASK_BOARD_DB = BASE_DIR / "orchestrator" / "task_board.db"
+KNOWLEDGE_PROJECTS_DIR = BASE_DIR / "knowledge" / "projects"
+KNOWLEDGE_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+PROJECT_WATCH_INTERVAL_SEC = int(os.environ.get("PROJECT_WATCH_INTERVAL_SEC", "300"))
+PROJECT_WATCH_AUTORUN = os.environ.get("PROJECT_WATCH_AUTORUN", "1").strip().lower() not in {"0", "false", "no"}
+PROJECT_WATCH_AUTO_DISCOVER = os.environ.get("PROJECT_WATCH_AUTO_DISCOVER", "1").strip().lower() not in {"0", "false", "no"}
+PROJECT_WATCH_PROJECTS_ROOT = os.environ.get(
+    "PROJECT_WATCH_PROJECTS_ROOT",
+    str(Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/Symphony SH/Projects"),
+).strip()
+PROJECT_WATCH_MAX_FILE_BYTES = int(os.environ.get("PROJECT_WATCH_MAX_FILE_BYTES", str(200 * 1024 * 1024)))
+PROJECT_WATCH_STALE_SCAN_MIN = int(os.environ.get("PROJECT_WATCH_STALE_SCAN_MIN", "30"))
+PROJECT_WATCH_IGNORE_DIR_PATTERNS = tuple(
+    p.strip()
+    for p in os.environ.get(
+        "PROJECT_WATCH_IGNORE_DIR_PATTERNS",
+        "__MACOSX,.git,.cursor,node_modules,.venv,venv,.idea,DerivedData",
+    ).split(",")
+    if p.strip()
+)
+PROJECT_WATCH_IGNORE_FILE_PATTERNS = tuple(
+    p.strip().lower()
+    for p in os.environ.get(
+        "PROJECT_WATCH_IGNORE_FILE_PATTERNS",
+        ".ds_store,thumbs.db,desktop.ini,.tmp,.swp,.crdownload,.part,.icloud",
+    ).split(",")
+    if p.strip()
+)
+PDF_EXTRACT_MAX_PAGES = int(os.environ.get("PDF_EXTRACT_MAX_PAGES", "80"))
+PDF_EXTRACT_MAX_CHARS = int(os.environ.get("PDF_EXTRACT_MAX_CHARS", "300000"))
+MANUALS_AUTO_DIGEST_ENABLED = os.environ.get("MANUALS_AUTO_DIGEST_ENABLED", "1").strip().lower() not in {"0", "false", "no"}
+MANUALS_LIBRARY_ROOT = Path(
+    os.environ.get(
+        "MANUALS_LIBRARY_ROOT",
+        str(Path.home() / "Library/Mobile Documents/com~apple~CloudDocs/Symphony SH/Manuals"),
+    )
+).expanduser()
+MANUALS_AUTO_DIGEST_STATE_FILE = MANUAL_DIGEST_DIR / "manuals_auto_digest_state.json"
+MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE = BASE_DIR / "knowledge" / "cortex" / "company" / "manuals_auto_digest.jsonl"
+MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+MANUALS_AUTO_DIGEST_MAX_FILE_BYTES = int(os.environ.get("MANUALS_AUTO_DIGEST_MAX_FILE_BYTES", str(200 * 1024 * 1024)))
+PROJECT_WATCH_TASK: Optional[asyncio.Task] = None
 
 PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
     "auto": {
@@ -145,27 +192,88 @@ def _slugify(value: str, fallback: str = "na", max_len: int = 48) -> str:
     return cleaned[:max_len]
 
 
+def _safe_filename_segment(value: str, fallback: str, max_len: int = 64) -> str:
+    # Keep human-readable capitalization/spaces; strip filename-unsafe chars.
+    cleaned = re.sub(r'[\\/:*?"<>|]+', "", (value or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .-_")
+    if not cleaned:
+        cleaned = fallback
+    return cleaned[:max_len]
+
+
+def _categorize_bundle_file(filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    if ext in {".dwg"}:
+        return "drawing"
+    if ext in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".heic", ".tif", ".tiff"}:
+        return "image"
+    if ext in {".xlsx", ".xls", ".csv"}:
+        return "proposal"
+    if ext in {".pdf"}:
+        return "drawing"
+    return "document"
+
+
+def _safe_extract_zip(zip_path: Path, dest_dir: Path, max_files: int = 250) -> List[Path]:
+    extracted: List[Path] = []
+    root = dest_dir.resolve()
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        for info in zf.infolist():
+            if len(extracted) >= max_files:
+                break
+            if info.is_dir():
+                continue
+            member = (info.filename or "").replace("\\", "/").strip("/")
+            if not member or member.startswith("__MACOSX/") or member.endswith(".DS_Store"):
+                continue
+            target = (dest_dir / member).resolve()
+            if not str(target).startswith(str(root) + os.sep):
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info, "r") as src, target.open("wb") as out:
+                shutil.copyfileobj(src, out)
+            extracted.append(target)
+    return extracted
+
+
 def _build_intake_filename(
     category: str,
     project_name: str,
     client_name: str,
     original_filename: str,
+    address_line: str = "",
+    location_name: str = "",
     discipline: str = "",
     sheet_number: str = "",
     revision: str = "",
     issue_date: str = "",
 ) -> str:
+    def _client_last_name(value: str) -> str:
+        tokens = re.findall(r"[A-Za-z0-9]+", value or "")
+        return tokens[-1] if tokens else ""
+
+    def _address_number_street(value: str, fallback_project: str) -> str:
+        source = value or fallback_project or ""
+        match = re.search(
+            r"(\d{1,6}\s+[A-Za-z0-9.\-']+(?:\s+[A-Za-z0-9.\-']+){0,4})",
+            source,
+            flags=re.IGNORECASE,
+        )
+        return match.group(1) if match else ""
+
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    cat = _slugify(category, fallback="document", max_len=20)
-    project = _slugify(project_name, fallback="no-project", max_len=36)
-    client = _slugify(client_name, fallback="no-client", max_len=28)
-    orig_stem = _slugify(Path(original_filename or "upload").stem, fallback="file", max_len=36)
-    disc = _slugify(discipline, fallback="na", max_len=16)
-    sheet = _slugify(sheet_number, fallback="na", max_len=16)
-    rev = _slugify(revision, fallback="na", max_len=8)
+    client_last = _safe_filename_segment(_client_last_name(client_name), fallback="Client", max_len=28)
+    addr = _safe_filename_segment(_address_number_street(address_line, project_name), fallback="Address", max_len=48)
+    location = _safe_filename_segment(location_name, fallback="Location", max_len=32)
+    cat = _slugify(category, fallback="document", max_len=16)
+    orig_stem = _slugify(Path(original_filename or "upload").stem, fallback="file", max_len=28)
+    disc = _slugify(discipline, fallback="na", max_len=12)
+    sheet = _slugify(sheet_number, fallback="na", max_len=12)
+    rev = _slugify(revision, fallback="na", max_len=6)
     issue = _slugify(issue_date, fallback=ts.split("-")[0], max_len=12)
     ext = (Path(original_filename or "").suffix or ".bin").lower()
-    return f"{ts}--{cat}--{project}--{client}--{disc}--{sheet}--r-{rev}--{issue}--{orig_stem}{ext}"
+    prefix = f"{client_last} - {addr} - {location}"
+    return f"{prefix} -- {cat} -- {disc} -- {sheet} -- r-{rev} -- {issue} -- {orig_stem}{ext}"
 
 
 def _load_markup_symbol_catalog() -> List[Dict[str, str]]:
@@ -448,6 +556,737 @@ def _first_pass_drawing_findings(stored_path: Path, project_name: str, client_na
     return findings
 
 
+def _load_project_watches() -> List[Dict[str, Any]]:
+    try:
+        if not PROJECT_WATCHES_FILE.exists():
+            return []
+        raw = json.loads(PROJECT_WATCHES_FILE.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            return [x for x in raw if isinstance(x, dict)]
+    except Exception:
+        pass
+    return []
+
+
+def _save_project_watches(watches: List[Dict[str, Any]]) -> None:
+    PROJECT_WATCHES_FILE.write_text(json.dumps(watches, indent=2), encoding="utf-8")
+
+
+def _load_project_watch_state() -> Dict[str, Any]:
+    try:
+        if not PROJECT_WATCH_STATE_FILE.exists():
+            return {}
+        raw = json.loads(PROJECT_WATCH_STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw
+    except Exception:
+        pass
+    return {}
+
+
+def _save_project_watch_state(state: Dict[str, Any]) -> None:
+    PROJECT_WATCH_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _project_slug(project_name: str, client_name: str, location_name: str) -> str:
+    if project_name.strip():
+        return _slugify(project_name, fallback="project", max_len=64)
+    combined = " ".join([client_name.strip(), location_name.strip()]).strip()
+    return _slugify(combined, fallback="project", max_len=64)
+
+
+def _metadata_from_project_folder_name(folder_name: str) -> Dict[str, str]:
+    """
+    Parse expected naming style:
+      <Client Last Name>-<Address(#+street)>-<Location>
+    Accepts minor spacing inconsistencies around hyphens.
+    """
+    cleaned = re.sub(r"\s+", " ", (folder_name or "").strip())
+    parts = [p.strip() for p in re.split(r"\s*-\s*", cleaned) if p.strip()]
+    if len(parts) >= 3:
+        client_last = parts[0]
+        address = parts[1]
+        location = " - ".join(parts[2:])
+        project_name = f"{client_last} - {address}"
+        return {
+            "project_name": project_name,
+            "client_name": client_last,
+            "address_line": address,
+            "location_name": location,
+        }
+    return {
+        "project_name": cleaned,
+        "client_name": "",
+        "address_line": "",
+        "location_name": "",
+    }
+
+
+def _should_ignore_watch_path(rel_path: str, filename: str) -> bool:
+    rel_lower = rel_path.lower()
+    file_lower = filename.lower()
+    for pat in PROJECT_WATCH_IGNORE_DIR_PATTERNS:
+        token = pat.lower().strip()
+        if not token:
+            continue
+        if rel_lower.startswith(token + "/") or f"/{token}/" in rel_lower:
+            return True
+    for pat in PROJECT_WATCH_IGNORE_FILE_PATTERNS:
+        token = pat.lower().strip()
+        if not token:
+            continue
+        if token.startswith(".") and file_lower.endswith(token):
+            return True
+        if file_lower == token:
+            return True
+    return False
+
+
+def _extract_project_signals_from_text(text: str) -> Dict[str, List[str]]:
+    upper = (text or "").upper()
+    rfi_matches = re.findall(r"\bRFI[-\s:]?\d{1,4}\b", upper)
+    wants_matches = re.findall(r"(?:CLIENT\s+WANTS?|WANTS/NEEDS|WANTS|NEEDS)", upper)
+    scope_matches = re.findall(r"(?:CHANGE\s+ORDER|ALLOWANCE|EXCLUSION|ASSUMPTION)", upper)
+    return {
+        "rfi_tags": sorted(set(rfi_matches))[:50],
+        "wants_needs_tags": sorted(set(wants_matches))[:50],
+        "scope_risk_tags": sorted(set(scope_matches))[:50],
+    }
+
+
+def _load_manuals_auto_digest_state() -> Dict[str, Any]:
+    try:
+        if not MANUALS_AUTO_DIGEST_STATE_FILE.exists():
+            return {}
+        raw = json.loads(MANUALS_AUTO_DIGEST_STATE_FILE.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            return raw
+    except Exception:
+        pass
+    return {}
+
+
+def _save_manuals_auto_digest_state(state: Dict[str, Any]) -> None:
+    MANUALS_AUTO_DIGEST_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+
+def _manuals_auto_digest_once(max_new_files: int = 25) -> Dict[str, Any]:
+    root = MANUALS_LIBRARY_ROOT.resolve()
+    if not root.exists() or not root.is_dir():
+        return {"success": False, "error": f"Manuals root missing: {root}"}
+
+    state = _load_manuals_auto_digest_state()
+    seen: Dict[str, str] = state.get("files", {})
+    supported = {".pdf", ".txt", ".md", ".doc", ".docx", ".xlsx", ".xls", ".csv", ".png", ".jpg", ".jpeg", ".webp"}
+
+    candidates: List[Path] = []
+    for p in root.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(root))
+        if rel.startswith(".") or "/." in rel or p.name == ".DS_Store":
+            continue
+        if p.suffix.lower() not in supported:
+            continue
+        try:
+            st = p.stat()
+            if st.st_size > MANUALS_AUTO_DIGEST_MAX_FILE_BYTES:
+                continue
+            sig = f"{st.st_size}:{int(st.st_mtime)}"
+        except Exception:
+            continue
+        if seen.get(rel) != sig:
+            seen[rel] = sig
+            candidates.append(p)
+
+    candidates = sorted(candidates, key=lambda x: x.stat().st_mtime)[: max(1, min(max_new_files, 300))]
+    processed = 0
+    errors = 0
+    for p in candidates:
+        try:
+            text = _extract_text_from_path(p)
+            signals = _extract_manual_digest_signals(text) if text else {}
+            row = {
+                "timestamp": datetime.now().isoformat(),
+                "source": "manuals_auto_digest",
+                "manual_root": str(root),
+                "file_path": str(p),
+                "file_name": p.name,
+                "text_chars": len(text),
+                "signals": signals,
+            }
+            with MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+            processed += 1
+        except Exception:
+            errors += 1
+
+    state["files"] = seen
+    state["last_run_at"] = datetime.now().isoformat()
+    state["last_processed"] = processed
+    state["last_errors"] = errors
+    state["root"] = str(root)
+    _save_manuals_auto_digest_state(state)
+    return {
+        "success": True,
+        "root": str(root),
+        "processed": processed,
+        "errors": errors,
+        "candidate_count": len(candidates),
+        "knowledge_file": str(MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE),
+        "last_run_at": state["last_run_at"],
+    }
+
+
+def _update_project_intelligence_summary(project_slug: str) -> Optional[Path]:
+    ingest_dir = KNOWLEDGE_PROJECTS_DIR / project_slug / "ingest"
+    if not ingest_dir.exists():
+        return None
+    records: List[Dict[str, Any]] = []
+    for p in sorted(ingest_dir.glob("*.json"), key=lambda x: x.stat().st_mtime)[-300:]:
+        try:
+            records.append(json.loads(p.read_text(encoding="utf-8")))
+        except Exception:
+            continue
+    if not records:
+        return None
+
+    category_counts: Dict[str, int] = {}
+    rfi_tags: set[str] = set()
+    wants_tags: set[str] = set()
+    scope_risk_tags: set[str] = set()
+    recent_files: List[Dict[str, Any]] = []
+
+    for rec in records:
+        cat = (rec.get("category", "unknown") or "unknown").lower()
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+        stored_path = rec.get("stored_path", "")
+        stored_name = Path(stored_path).name if stored_path else ""
+        if stored_name:
+            recent_files.append(
+                {
+                    "file_name": stored_name,
+                    "category": cat,
+                    "ingested_at": rec.get("ingested_at", ""),
+                }
+            )
+
+        # Signal extraction for text-like documents and PDFs.
+        try:
+            suffix = Path(stored_path).suffix.lower()
+            if Path(stored_path).exists():
+                text = ""
+                if suffix in {".txt", ".md", ".csv", ".json"}:
+                    text = Path(stored_path).read_text(encoding="utf-8", errors="ignore")[:120000]
+                elif suffix == ".pdf":
+                    text = _extract_text_from_pdf(Path(stored_path))[:120000]
+                if not text:
+                    continue
+                signals = _extract_project_signals_from_text(text)
+                rfi_tags.update(signals["rfi_tags"])
+                wants_tags.update(signals["wants_needs_tags"])
+                scope_risk_tags.update(signals["scope_risk_tags"])
+        except Exception:
+            pass
+
+    summary = {
+        "generated_at": datetime.now().isoformat(),
+        "project_slug": project_slug,
+        "total_ingested_files": len(records),
+        "category_counts": category_counts,
+        "signals": {
+            "rfi_tags": sorted(rfi_tags)[:100],
+            "wants_needs_tags": sorted(wants_tags)[:100],
+            "scope_risk_tags": sorted(scope_risk_tags)[:100],
+        },
+        "recent_files": recent_files[-25:],
+        "recommended_next_actions": [
+            "Review files with RFI tags and create/merge formal RFI tasks.",
+            "Confirm client wants/needs mentions against proposal scope.",
+            "Flag scope risk tags (allowance/exclusion/assumption/change order) for PM review.",
+        ],
+    }
+    out_path = KNOWLEDGE_PROJECTS_DIR / project_slug / "project_intelligence_summary.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    return out_path
+
+
+def _backfill_recent_watch_files(hours: int = 24, max_files: int = 250) -> Dict[str, Any]:
+    cutoff = datetime.now().timestamp() - max(1, hours) * 3600
+    watches = [w for w in _load_project_watches() if w.get("enabled", True)]
+    if not watches:
+        return {"watches": 0, "candidates": 0, "processed": 0}
+
+    existing_source_paths: set[str] = set()
+    if TASK_UPLOAD_QUEUE_FILE.exists():
+        for line in TASK_UPLOAD_QUEUE_FILE.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            src = (row.get("source_path") or "").strip()
+            if src:
+                existing_source_paths.add(src)
+
+    candidates: List[tuple[float, Dict[str, Any], Path]] = []
+    for watch in watches:
+        folder = Path(watch.get("folder_path", "")).expanduser().resolve()
+        if not folder.exists() or not folder.is_dir():
+            continue
+        for p in folder.rglob("*"):
+            if not p.is_file():
+                continue
+            rel = str(p.relative_to(folder))
+            if rel.startswith(".") or "/." in rel or _should_ignore_watch_path(rel, p.name):
+                continue
+            try:
+                st = p.stat()
+                if st.st_mtime < cutoff:
+                    continue
+                if st.st_size > PROJECT_WATCH_MAX_FILE_BYTES:
+                    continue
+            except Exception:
+                continue
+            source_path = str(p.resolve())
+            if source_path in existing_source_paths:
+                continue
+            candidates.append((st.st_mtime, watch, p))
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    candidates = candidates[: max(1, min(max_files, 1000))]
+
+    processed = 0
+    errors = 0
+    error_samples: List[str] = []
+    touched_slugs: set[str] = set()
+    for _, watch, path in candidates:
+        try:
+            _ingest_watch_file(watch, path)
+            processed += 1
+            if watch.get("project_slug"):
+                touched_slugs.add(str(watch["project_slug"]))
+        except Exception as e:
+            errors += 1
+            if len(error_samples) < 5:
+                error_samples.append(f"{path}: {e}")
+
+    for slug in touched_slugs:
+        _update_project_intelligence_summary(slug)
+
+    return {
+        "watches": len(watches),
+        "candidates": len(candidates),
+        "processed": processed,
+        "errors": errors,
+        "error_samples": error_samples,
+        "hours": hours,
+        "max_files": max_files,
+    }
+
+
+def _write_project_ingest_record(project_slug: str, record: Dict[str, Any]) -> None:
+    project_dir = KNOWLEDGE_PROJECTS_DIR / project_slug / "ingest"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    rec_path = project_dir / f"{ts}--{record.get('upload_id', uuid4().hex[:8])}.json"
+    rec_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    _update_project_intelligence_summary(project_slug)
+
+
+def _register_project_watch(
+    project_name: str,
+    client_name: str,
+    address_line: str,
+    location_name: str,
+    folder_path: str,
+) -> Dict[str, Any]:
+    folder = Path(folder_path).expanduser().resolve()
+    if not folder.exists() or not folder.is_dir():
+        raise ValueError("Watch folder does not exist or is not a directory")
+
+    watches = _load_project_watches()
+    for w in watches:
+        if Path(w.get("folder_path", "")).expanduser().resolve() == folder:
+            return w
+
+    task_id: Optional[int] = None
+    try:
+        sys.path.insert(0, str(BASE_DIR))
+        from orchestrator.task_board import add_task as tb_add_task
+
+        task_title = f"Watch ingest synthesis: {project_name or client_name or folder.name}"
+        task_desc = "\n".join(
+            [
+                "Auto-created project watch synthesis task.",
+                f"Project: {project_name or 'n/a'}",
+                f"Client: {client_name or 'n/a'}",
+                f"Address: {address_line or 'n/a'}",
+                f"Location: {location_name or 'n/a'}",
+                f"Watch folder: {folder}",
+                "Purpose: aggregate new watched files into one running synthesis task.",
+            ]
+        )
+        task_id = tb_add_task(
+            title=task_title,
+            description=task_desc,
+            task_type="documentation",
+            priority="high",
+        )
+    except Exception:
+        task_id = None
+
+    watch = {
+        "watch_id": uuid4().hex[:12],
+        "created_at": datetime.now().isoformat(),
+        "enabled": True,
+        "project_name": project_name or "",
+        "client_name": client_name or "",
+        "address_line": address_line or "",
+        "location_name": location_name or "",
+        "folder_path": str(folder),
+        "project_slug": _project_slug(project_name, client_name, location_name),
+        "task_id": task_id,
+    }
+    watches.append(watch)
+    _save_project_watches(watches)
+    return watch
+
+
+def _seed_watch_state_from_existing_files(watch: Dict[str, Any]) -> Dict[str, Any]:
+    folder = Path(watch.get("folder_path", "")).expanduser().resolve()
+    if not folder.exists() or not folder.is_dir():
+        return {"watch_id": watch.get("watch_id", ""), "seeded": 0, "error": "Watch folder missing"}
+    state = _load_project_watch_state()
+    watch_id = watch.get("watch_id", "")
+    watch_state = state.get(watch_id, {"files": {}})
+    files_map: Dict[str, str] = watch_state.get("files", {})
+    seeded = 0
+    for p in folder.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(folder))
+        if rel.startswith(".") or "/." in rel:
+            continue
+        if _should_ignore_watch_path(rel, p.name):
+            continue
+        try:
+            stat = p.stat()
+            sig = f"{stat.st_size}:{int(stat.st_mtime)}"
+            if rel not in files_map:
+                files_map[rel] = sig
+                seeded += 1
+        except Exception:
+            continue
+    watch_state["files"] = files_map
+    watch_state["seeded_at"] = datetime.now().isoformat()
+    watch_state["last_scan_at"] = datetime.now().isoformat()
+    watch_state["last_processed_count"] = 0
+    watch_state["last_error"] = ""
+    state[watch_id] = watch_state
+    _save_project_watch_state(state)
+    return {"watch_id": watch_id, "seeded": seeded}
+
+
+def _auto_discover_project_watches(max_new: int = 25) -> Dict[str, Any]:
+    root = Path(PROJECT_WATCH_PROJECTS_ROOT).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        return {"root": str(root), "discovered": 0, "registered": 0, "error": "Projects root missing"}
+
+    existing = _load_project_watches()
+    existing_paths = {
+        str(Path(w.get("folder_path", "")).expanduser().resolve())
+        for w in existing
+        if w.get("folder_path")
+    }
+
+    discovered = 0
+    registered = 0
+    for child in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+        if not child.is_dir():
+            continue
+        discovered += 1
+        child_resolved = str(child.resolve())
+        if child_resolved in existing_paths:
+            continue
+        if registered >= max_new:
+            break
+        meta = _metadata_from_project_folder_name(child.name)
+        try:
+            watch = _register_project_watch(
+                project_name=meta["project_name"],
+                client_name=meta["client_name"],
+                address_line=meta["address_line"],
+                location_name=meta["location_name"],
+                folder_path=child_resolved,
+            )
+            _seed_watch_state_from_existing_files(watch)
+            registered += 1
+            existing_paths.add(child_resolved)
+        except Exception:
+            continue
+
+    return {
+        "root": str(root),
+        "discovered": discovered,
+        "registered": registered,
+    }
+
+
+def _ingest_watch_file(watch: Dict[str, Any], source_path: Path) -> Dict[str, Any]:
+    category_norm = _categorize_bundle_file(source_path.name)
+    day_dir = datetime.now().strftime("%Y-%m-%d")
+    upload_id = uuid4().hex[:12]
+    stored_filename = _build_intake_filename(
+        category=category_norm,
+        project_name=watch.get("project_name", ""),
+        client_name=watch.get("client_name", ""),
+        original_filename=source_path.name,
+        address_line=watch.get("address_line", ""),
+        location_name=watch.get("location_name", ""),
+    )
+    target_dir = TASK_UPLOAD_DIR / category_norm / day_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stored_path = target_dir / stored_filename
+    last_error: Optional[Exception] = None
+    for _ in range(4):
+        try:
+            shutil.copy2(source_path, stored_path)
+            last_error = None
+            break
+        except OSError as e:
+            last_error = e
+            time.sleep(0.6)
+    if last_error:
+        # iCloud-backed files can fail metadata-preserving copy with deadlock errors;
+        # retry with plain bytes copy and then shell cp as a final fallback.
+        for _ in range(3):
+            try:
+                data = source_path.read_bytes()
+                stored_path.write_bytes(data)
+                last_error = None
+                break
+            except OSError as e:
+                last_error = e
+                time.sleep(0.6)
+    if last_error:
+        try:
+            subprocess.run(["/bin/cp", "-f", str(source_path), str(stored_path)], check=True, timeout=20)
+            last_error = None
+        except Exception as e:
+            last_error = e
+    if last_error:
+        raise last_error
+
+    queue_record = {
+        "upload_id": upload_id,
+        "watch_id": watch.get("watch_id", ""),
+        "created_at": datetime.now().isoformat(),
+        "category": category_norm,
+        "project_name": watch.get("project_name", ""),
+        "client_name": watch.get("client_name", ""),
+        "address_line": watch.get("address_line", ""),
+        "location_name": watch.get("location_name", ""),
+        "source_filename": source_path.name,
+        "source_path": str(source_path),
+        "stored_filename": stored_filename,
+        "stored_path": str(stored_path),
+        "task_id": watch.get("task_id"),
+    }
+
+    findings: Dict[str, Any] = {}
+    if category_norm == "drawing":
+        try:
+            findings = _first_pass_drawing_findings(
+                stored_path=stored_path,
+                project_name=watch.get("project_name", ""),
+                client_name=watch.get("client_name", ""),
+            )
+            findings["upload_id"] = upload_id
+            findings["watch_id"] = watch.get("watch_id", "")
+            findings_path = TASK_UPLOAD_FINDINGS_DIR / f"{upload_id}__findings.json"
+            findings_path.write_text(json.dumps(findings, indent=2), encoding="utf-8")
+            queue_record["findings_path"] = str(findings_path)
+        except Exception as extract_error:
+            queue_record["findings_error"] = str(extract_error)
+
+    _append_upload_queue_record(queue_record)
+    _write_project_ingest_record(
+        project_slug=watch.get("project_slug", "project"),
+        record={
+            "ingested_at": datetime.now().isoformat(),
+            "watch_id": watch.get("watch_id", ""),
+            "upload_id": upload_id,
+            "category": category_norm,
+            "source_path": str(source_path),
+            "stored_path": str(stored_path),
+            "project_name": watch.get("project_name", ""),
+            "client_name": watch.get("client_name", ""),
+            "address_line": watch.get("address_line", ""),
+            "location_name": watch.get("location_name", ""),
+            "findings_summary": {
+                "legend_terms_count": len(findings.get("legend_terms", [])) if findings else 0,
+                "symbol_matches_count": len(findings.get("symbol_matches", [])) if findings else 0,
+                "sheet_references_count": len(findings.get("sheet_references", [])) if findings else 0,
+                "dtools_quote_version": findings.get("dtools_quote_version", "") if findings else "",
+            },
+        },
+    )
+    return queue_record
+
+
+def _ensure_watch_task_id(watch: Dict[str, Any]) -> Dict[str, Any]:
+    if watch.get("task_id"):
+        return watch
+    try:
+        sys.path.insert(0, str(BASE_DIR))
+        from orchestrator.task_board import add_task as tb_add_task
+
+        title = f"Watch ingest synthesis: {watch.get('project_name') or watch.get('client_name') or watch.get('watch_id')}"
+        desc = "\n".join(
+            [
+                "Backfilled watch synthesis task.",
+                f"Watch ID: {watch.get('watch_id')}",
+                f"Project: {watch.get('project_name') or 'n/a'}",
+                f"Folder: {watch.get('folder_path') or 'n/a'}",
+            ]
+        )
+        watch["task_id"] = tb_add_task(
+            title=title,
+            description=desc,
+            task_type="documentation",
+            priority="high",
+        )
+    except Exception:
+        return watch
+
+    watches = _load_project_watches()
+    changed = False
+    for idx, item in enumerate(watches):
+        if item.get("watch_id") == watch.get("watch_id"):
+            watches[idx] = watch
+            changed = True
+            break
+    if changed:
+        _save_project_watches(watches)
+    return watch
+
+
+def _scan_project_watch(watch: Dict[str, Any], max_new_files: int = 40) -> Dict[str, Any]:
+    watch = _ensure_watch_task_id(watch)
+    folder = Path(watch.get("folder_path", "")).expanduser().resolve()
+    if not folder.exists() or not folder.is_dir():
+        return {"watch_id": watch.get("watch_id", ""), "processed": 0, "error": "Watch folder missing"}
+
+    started_at = datetime.now()
+    state = _load_project_watch_state()
+    watch_id = watch.get("watch_id", "")
+    watch_state = state.get(watch_id, {"files": {}})
+    stale_age_min = 0
+    previous_start = watch_state.get("scan_started_at", "")
+    if watch_state.get("scan_in_progress") and previous_start:
+        try:
+            prev_dt = datetime.fromisoformat(previous_start)
+            stale_age_min = int((started_at - prev_dt).total_seconds() // 60)
+        except Exception:
+            stale_age_min = 0
+    watch_state["scan_started_at"] = started_at.isoformat()
+    watch_state["scan_in_progress"] = True
+    known: Dict[str, str] = watch_state.get("files", {})
+
+    candidates: List[Path] = []
+    skipped_too_large = 0
+    skipped_ignored = 0
+    for p in folder.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = str(p.relative_to(folder))
+        if rel.startswith(".") or "/." in rel:
+            continue
+        if _should_ignore_watch_path(rel, p.name):
+            skipped_ignored += 1
+            continue
+        try:
+            stat = p.stat()
+            if stat.st_size > PROJECT_WATCH_MAX_FILE_BYTES:
+                skipped_too_large += 1
+                continue
+            sig = f"{stat.st_size}:{int(stat.st_mtime)}"
+            if known.get(rel) != sig:
+                known[rel] = sig
+                candidates.append(p)
+        except Exception:
+            continue
+
+    candidates = sorted(candidates, key=lambda x: x.stat().st_mtime)[:max_new_files]
+    processed_records: List[Dict[str, Any]] = []
+    for path in candidates:
+        try:
+            processed_records.append(_ingest_watch_file(watch, path))
+        except Exception:
+            continue
+
+    watch_state["files"] = known
+    watch_state["last_scan_at"] = datetime.now().isoformat()
+    watch_state["last_processed_count"] = len(processed_records)
+    watch_state["last_candidate_count"] = len(candidates)
+    watch_state["last_skipped_too_large"] = skipped_too_large
+    watch_state["last_skipped_ignored"] = skipped_ignored
+    watch_state["scan_duration_sec"] = round((datetime.now() - started_at).total_seconds(), 2)
+    watch_state["scan_in_progress"] = False
+    watch_state["last_error"] = ""
+    if stale_age_min >= PROJECT_WATCH_STALE_SCAN_MIN:
+        watch_state["stale_scan_detected"] = True
+        watch_state["stale_scan_age_min"] = stale_age_min
+    state[watch_id] = watch_state
+    _save_project_watch_state(state)
+
+    log_file = PROJECT_WATCH_LOG_DIR / f"{watch_id}.jsonl"
+    with log_file.open("a", encoding="utf-8") as fh:
+        fh.write(
+            json.dumps(
+                {
+                    "scanned_at": datetime.now().isoformat(),
+                    "processed_count": len(processed_records),
+                    "candidate_count": len(candidates),
+                    "skipped_too_large": skipped_too_large,
+                    "skipped_ignored": skipped_ignored,
+                    "processed_upload_ids": [r.get("upload_id") for r in processed_records],
+                }
+            )
+            + "\n"
+        )
+
+    return {
+        "watch_id": watch_id,
+        "folder_path": str(folder),
+        "processed": len(processed_records),
+        "candidate_count": len(candidates),
+        "skipped_too_large": skipped_too_large,
+        "skipped_ignored": skipped_ignored,
+        "task_id": watch.get("task_id"),
+        "last_scan_at": watch_state.get("last_scan_at"),
+    }
+
+
+async def _project_watch_loop() -> None:
+    while True:
+        try:
+            if PROJECT_WATCH_AUTO_DISCOVER:
+                _auto_discover_project_watches(max_new=10)
+            watches = [w for w in _load_project_watches() if w.get("enabled", True)]
+            for watch in watches:
+                _scan_project_watch(watch, max_new_files=40)
+            if MANUALS_AUTO_DIGEST_ENABLED:
+                _manuals_auto_digest_once(max_new_files=15)
+        except Exception:
+            pass
+        await asyncio.sleep(max(30, PROJECT_WATCH_INTERVAL_SEC))
+
+
 def _append_upload_queue_record(record: Dict[str, Any]) -> None:
     TASK_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     with TASK_UPLOAD_QUEUE_FILE.open("a", encoding="utf-8") as fh:
@@ -499,6 +1338,19 @@ if HAS_FASTAPI:
         allow_methods=["*"],
         allow_headers=["Content-Type", "Authorization", "X-Symphony-Token"],
     )
+
+    @app.on_event("startup")
+    async def project_watch_startup():
+        global PROJECT_WATCH_TASK
+        if PROJECT_WATCH_AUTORUN and PROJECT_WATCH_INTERVAL_SEC >= 30:
+            PROJECT_WATCH_TASK = asyncio.create_task(_project_watch_loop())
+
+    @app.on_event("shutdown")
+    async def project_watch_shutdown():
+        global PROJECT_WATCH_TASK
+        if PROJECT_WATCH_TASK and not PROJECT_WATCH_TASK.done():
+            PROJECT_WATCH_TASK.cancel()
+        PROJECT_WATCH_TASK = None
 
     @app.middleware("http")
     async def symphony_api_auth(request: Request, call_next):
@@ -675,9 +1527,15 @@ def _extract_text_from_pdf(path: Path) -> str:
         from pypdf import PdfReader  # type: ignore
         reader = PdfReader(str(path))
         chunks: List[str] = []
-        for page in reader.pages:
+        total = 0
+        for idx, page in enumerate(reader.pages):
+            if idx >= max(1, PDF_EXTRACT_MAX_PAGES):
+                break
             chunks.append(page.extract_text() or "")
-        return "\n".join(chunks)
+            total += len(chunks[-1])
+            if total >= max(1000, PDF_EXTRACT_MAX_CHARS):
+                break
+        return "\n".join(chunks)[: max(1000, PDF_EXTRACT_MAX_CHARS)]
     except Exception:
         try:
             # macOS/homebrew fallback.
@@ -685,10 +1543,10 @@ def _extract_text_from_pdf(path: Path) -> str:
                 ["pdftotext", str(path), "-"],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=45,
             )
             if result.returncode == 0 and result.stdout.strip():
-                return result.stdout
+                return result.stdout[: max(1000, PDF_EXTRACT_MAX_CHARS)]
         except Exception:
             pass
         raise RuntimeError(
@@ -1026,6 +1884,91 @@ def _extract_manual_digest_signals(text: str) -> Dict[str, Any]:
             "emails": emails[:20],
             "phones": phones[:20],
         },
+    }
+
+
+def _extract_proposal_scope_signals(text: str) -> Dict[str, Any]:
+    """
+    Proposal-focused scope extraction for finished proposal uploads.
+    Produces PM-ready buckets: scope, inclusions, exclusions, assumptions, risks.
+    """
+    if not text:
+        return {
+            "scope_of_work": [],
+            "included_items": [],
+            "excluded_items": [],
+            "allowances": [],
+            "assumptions": [],
+            "schedule_notes": [],
+            "risk_tags": [],
+            "open_questions": [],
+            "detected_skus": [],
+            "detected_brands": [],
+        }
+
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    scope_of_work: List[str] = []
+    included_items: List[str] = []
+    excluded_items: List[str] = []
+    allowances: List[str] = []
+    assumptions: List[str] = []
+    schedule_notes: List[str] = []
+    risk_tags: set[str] = set()
+    open_questions: List[str] = []
+
+    for line in lines:
+        low = line.lower()
+        if len(line) > 260:
+            continue
+
+        if any(tok in low for tok in ["scope of work", "statement of work", "project scope", "work includes"]):
+            scope_of_work.append(line)
+        if any(tok in low for tok in ["included", "includes", "provide", "install", "furnish"]):
+            included_items.append(line)
+        if any(tok in low for tok in ["exclude", "not included", "excluded", "owner provided", "by others"]):
+            excluded_items.append(line)
+        if any(tok in low for tok in ["allowance", "allowances", "allow.", "t&m", "time and material"]):
+            allowances.append(line)
+            risk_tags.add("ALLOWANCE")
+        if any(tok in low for tok in ["assumption", "assumes", "assuming", "subject to"]):
+            assumptions.append(line)
+            risk_tags.add("ASSUMPTION")
+        if any(tok in low for tok in ["schedule", "timeline", "lead time", "duration", "completion", "milestone"]):
+            schedule_notes.append(line)
+        if any(tok in low for tok in ["change order", "contingency", "unforeseen", "permit", "inspection"]):
+            risk_tags.add("SCOPE_RISK")
+        if "?" in line or any(tok in low for tok in ["to be confirmed", "tbd", "verify", "confirm"]):
+            open_questions.append(line)
+
+    base = _extract_manual_digest_signals(text)
+    proj_signals = _extract_project_signals_from_text(text)
+    for tag in proj_signals.get("scope_risk_tags", []):
+        risk_tags.add(tag)
+
+    def _uniq(items: List[str], limit: int) -> List[str]:
+        seen: set[str] = set()
+        out: List[str] = []
+        for item in items:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
+            if len(out) >= limit:
+                break
+        return out
+
+    return {
+        "scope_of_work": _uniq(scope_of_work or base.get("scope_notes", []), 40),
+        "included_items": _uniq(included_items or base.get("recommended_notes", []), 60),
+        "excluded_items": _uniq(excluded_items, 40),
+        "allowances": _uniq(allowances, 30),
+        "assumptions": _uniq(assumptions, 30),
+        "schedule_notes": _uniq(schedule_notes, 30),
+        "risk_tags": sorted(risk_tags)[:60],
+        "open_questions": _uniq(open_questions or base.get("open_questions", []), 40),
+        "detected_skus": base.get("detected_skus", [])[:100],
+        "detected_brands": base.get("detected_brands", [])[:60],
     }
 
 
@@ -2481,7 +3424,7 @@ if HAS_FASTAPI:
         if not files:
             return {"success": False, "error": "No files uploaded."}
 
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         project_slug = _slugify(project_name or "new-project")
         batch_dir = MANUAL_DIGEST_DIR / project_slug / ts
         batch_dir.mkdir(parents=True, exist_ok=True)
@@ -2527,6 +3470,74 @@ if HAS_FASTAPI:
 
         (batch_dir / "digest.json").write_text(json.dumps(digest, indent=2))
         return digest
+
+    @app.post("/projects/proposal_scope")
+    async def projects_proposal_scope(
+        project_name: str = Form(""),
+        client_name: str = Form(""),
+        run_ai_summary: bool = Form(True),
+        proposal_file: UploadFile = File(...),
+    ):
+        """
+        Upload a finished proposal and return a structured scope-of-work summary.
+        """
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            project_slug = _slugify(project_name or client_name or "proposal-scope")
+            batch_dir = MANUAL_DIGEST_DIR / "proposal_scope" / project_slug / ts
+            batch_dir.mkdir(parents=True, exist_ok=True)
+
+            safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in (proposal_file.filename or "proposal.pdf"))
+            save_path = batch_dir / safe_name
+            content = await proposal_file.read()
+            if not content:
+                return {"success": False, "error": "Uploaded proposal file was empty."}
+            save_path.write_bytes(content)
+
+            extracted_text = _extract_text_from_path(save_path)
+            text_chars = len(extracted_text or "")
+            if text_chars == 0:
+                return {
+                    "success": False,
+                    "error": "Could not extract proposal text. Upload a text-based PDF or supported document.",
+                    "file_path": str(save_path),
+                }
+
+            scope = _extract_proposal_scope_signals(extracted_text)
+            qv = _extract_dtools_qv(extracted_text, fallback_text=safe_name)
+
+            ai_summary: Dict[str, Any] = {}
+            if run_ai_summary:
+                digest_payload = {
+                    "recommended_notes": scope.get("included_items", []),
+                    "scope_notes": scope.get("scope_of_work", []),
+                    "risk_notes": scope.get("allowances", []) + scope.get("assumptions", []),
+                    "open_questions": scope.get("open_questions", []),
+                    "detected_skus": scope.get("detected_skus", []),
+                    "detected_brands": scope.get("detected_brands", []),
+                }
+                ai_summary = _ai_project_digest_summary(project_name or project_slug, digest_payload)
+
+            result = {
+                "success": True,
+                "project_name": project_name or project_slug,
+                "client_name": client_name,
+                "project_slug": project_slug,
+                "batch_timestamp": ts,
+                "file_name": safe_name,
+                "file_path": str(save_path),
+                "text_chars": text_chars,
+                "dtools_quote_id": qv.get("quote_id", ""),
+                "dtools_version": qv.get("version", ""),
+                "dtools_quote_version": qv.get("quote_version", ""),
+                "scope": scope,
+                "ai_summary": ai_summary,
+                "timestamp": datetime.now().isoformat(),
+            }
+            (batch_dir / "proposal_scope.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     @app.post("/dtools/products/import")
     async def dtools_products_import(
@@ -2588,7 +3599,7 @@ if HAS_FASTAPI:
                         "products": limited,
                     }
                 try:
-                    if not await agent.login():
+                    if not await asyncio.wait_for(agent.login(), timeout=45):
                         return {
                             "success": False,
                             "error": "Failed to login to D-Tools Cloud. Check DTOOLS credentials.",
@@ -2766,7 +3777,7 @@ if HAS_FASTAPI:
             failed_count = 0
             results: List[Dict[str, Any]] = []
             try:
-                if not await agent.login():
+                if not await asyncio.wait_for(agent.login(), timeout=45):
                     return {"success": False, "error": "Failed to login to D-Tools Cloud. Check credentials."}
 
                 for item in request.products:
@@ -2801,6 +3812,36 @@ if HAS_FASTAPI:
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/dtools/products/auth_check")
+    async def dtools_products_auth_check():
+        """
+        Quick browser-auth smoke test for D-Tools product agent.
+        Helps diagnose selector drift / CAPTCHA / credential issues before import.
+        """
+        try:
+            from agents.dtools_browser_agent import DToolsBrowserAgent
+
+            agent = DToolsBrowserAgent(headless=True)
+            if not await agent.start():
+                return {"success": False, "error": "Failed to start browser agent (Playwright not ready)."}
+            try:
+                ok = await asyncio.wait_for(agent.login(), timeout=45)
+                return {
+                    "success": bool(ok),
+                    "message": "Browser login succeeded" if ok else "Browser login failed (credentials/selectors/challenge).",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            except asyncio.TimeoutError:
+                return {
+                    "success": False,
+                    "error": "Browser auth check timed out after 45s.",
+                    "timestamp": datetime.now().isoformat(),
+                }
+            finally:
+                await agent.stop()
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     @app.get("/dtools/products/export")
     async def dtools_products_export(
@@ -3286,6 +4327,13 @@ if HAS_FASTAPI:
         description: Optional[str] = ""
         task_type: Optional[str] = "research"
         priority: Optional[str] = "medium"
+
+    class ProjectWatchRequest(BaseModel):
+        project_name: str = ""
+        client_name: str = ""
+        address_line: str = ""
+        location_name: str = ""
+        folder_path: str
     
     @app.post("/tasks")
     async def add_task(request: AddTaskRequest):
@@ -3308,6 +4356,8 @@ if HAS_FASTAPI:
         category: str = Form("document"),
         project_name: str = Form(""),
         client_name: str = Form(""),
+        address_line: str = Form(""),
+        location_name: str = Form(""),
         discipline: str = Form(""),
         sheet_number: str = Form(""),
         revision: str = Form(""),
@@ -3334,6 +4384,8 @@ if HAS_FASTAPI:
                 project_name=project_name,
                 client_name=client_name,
                 original_filename=source_filename,
+                address_line=address_line,
+                location_name=location_name,
                 discipline=discipline,
                 sheet_number=sheet_number,
                 revision=revision,
@@ -3380,6 +4432,8 @@ if HAS_FASTAPI:
                 f"Category: {category_norm}",
                 f"Project: {project_name or 'n/a'}",
                 f"Client: {client_name or 'n/a'}",
+                f"Address: {address_line or 'n/a'}",
+                f"Location: {location_name or 'n/a'}",
                 f"Discipline: {discipline or 'n/a'}",
                 f"Sheet: {sheet_number or 'n/a'}",
                 f"Revision: {revision or 'n/a'}",
@@ -3389,7 +4443,7 @@ if HAS_FASTAPI:
                 f"Original filename: {source_filename}",
                 f"Stored path: {stored_path}",
                 "Naming scheme: YYYYMMDD-HHMMSS--category--project--client--original.ext",
-                "v1 naming metadata: discipline, sheet, revision, issue_date",
+                "Naming scheme v2: <ClientLast>-<AddressNumberStreet>-<Location> + metadata suffix",
             ]
             task_description = "\n".join([x for x in desc_parts if x])
 
@@ -3414,6 +4468,8 @@ if HAS_FASTAPI:
                     "file_name": stored_filename,
                     "project_name": project_name,
                     "client_name": client_name,
+                    "address_line": address_line,
+                    "location_name": location_name,
                     "discipline": discipline,
                     "sheet_number": sheet_number,
                     "revision": revision,
@@ -3462,6 +4518,8 @@ if HAS_FASTAPI:
                 "category": category_norm,
                 "project_name": project_name,
                 "client_name": client_name,
+                "address_line": address_line,
+                "location_name": location_name,
                 "discipline": discipline,
                 "sheet_number": sheet_number,
                 "revision": revision,
@@ -3486,7 +4544,7 @@ if HAS_FASTAPI:
                 "stored_filename": stored_filename,
                 "stored_path": str(stored_path),
                 "naming_scheme": "YYYYMMDD-HHMMSS--category--project--client--original.ext",
-                "naming_scheme_v1": "YYYYMMDD-HHMMSS--category--project--client--discipline--sheet--r-revision--issue-date--original.ext",
+                "naming_scheme_v2": "<ClientLast>-<AddressNumberStreet>-<Location>--<Category>--<Discipline>--<Sheet>--r-<Revision>--<IssueDate>--<Original>.ext",
                 "extraction_queued": extraction_queued,
                 "findings_path": str(findings_path) if findings_path else "",
                 "findings_preview": findings_preview,
@@ -3494,6 +4552,177 @@ if HAS_FASTAPI:
                 "dtools_version": dtools_qv.get("version", ""),
                 "dtools_quote_version": dtools_qv.get("quote_version", ""),
             }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.post("/tasks/upload_project_bundle")
+    async def upload_project_bundle(
+        project_name: str = Form(""),
+        client_name: str = Form(""),
+        address_line: str = Form(""),
+        location_name: str = Form(""),
+        source_folder_path: str = Form(""),
+        enable_watch: str = Form("true"),
+        priority: str = Form("high"),
+        bundle: UploadFile = File(...),
+    ):
+        """
+        Upload a full project ZIP, explode it into intake files, and create one
+        synthesis task so the team can connect RFIs + client wants/needs across files.
+        """
+        try:
+            source_filename = (bundle.filename or "project_bundle.zip").strip()
+            if Path(source_filename).suffix.lower() != ".zip":
+                return {"success": False, "error": "Project bundle must be a .zip file"}
+
+            bundle_id = uuid4().hex[:12]
+            day_dir = datetime.now().strftime("%Y-%m-%d")
+            project_hint = _safe_filename_segment(project_name or client_name, fallback="Project", max_len=48)
+            bundle_root = TASK_UPLOAD_DIR / "project_bundles" / day_dir / f"{project_hint}--{bundle_id}"
+            bundle_root.mkdir(parents=True, exist_ok=True)
+            zip_path = bundle_root / source_filename
+
+            payload = await bundle.read()
+            if not payload:
+                return {"success": False, "error": "Uploaded ZIP was empty"}
+            zip_path.write_bytes(payload)
+
+            extracted_files = _safe_extract_zip(zip_path, bundle_root / "expanded", max_files=250)
+            if not extracted_files:
+                return {"success": False, "error": "ZIP had no supported files to process"}
+
+            counts: Dict[str, int] = {"drawing": 0, "proposal": 0, "image": 0, "document": 0}
+            for path in extracted_files:
+                counts[_categorize_bundle_file(path.name)] += 1
+
+            sys.path.insert(0, str(BASE_DIR))
+            from orchestrator.task_board import add_task as tb_add_task
+
+            task_title = f"Synthesize project intake: {project_name or client_name or project_hint}"
+            task_description = "\n".join(
+                [
+                    "Project bundle intake for cross-file synthesis.",
+                    f"Bundle ID: {bundle_id}",
+                    f"Project: {project_name or 'n/a'}",
+                    f"Client: {client_name or 'n/a'}",
+                    f"Address: {address_line or 'n/a'}",
+                    f"Location: {location_name or 'n/a'}",
+                    f"Source ZIP: {zip_path}",
+                    f"File count: {len(extracted_files)}",
+                    f"Category counts: {json.dumps(counts)}",
+                    "Goal: connect RFIs + client wants/needs across all uploaded files.",
+                ]
+            )
+            task_id = tb_add_task(
+                title=task_title,
+                description=task_description,
+                task_type="documentation",
+                priority=(priority or "high"),
+            )
+
+            drawing_findings_count = 0
+            for source_path in extracted_files:
+                category_norm = _categorize_bundle_file(source_path.name)
+                stored_filename = _build_intake_filename(
+                    category=category_norm,
+                    project_name=project_name,
+                    client_name=client_name,
+                    original_filename=source_path.name,
+                    address_line=address_line,
+                    location_name=location_name,
+                )
+                target_dir = TASK_UPLOAD_DIR / category_norm / day_dir
+                target_dir.mkdir(parents=True, exist_ok=True)
+                stored_path = target_dir / stored_filename
+                shutil.copy2(source_path, stored_path)
+
+                queue_record = {
+                    "upload_id": uuid4().hex[:12],
+                    "bundle_id": bundle_id,
+                    "created_at": datetime.now().isoformat(),
+                    "category": category_norm,
+                    "project_name": project_name,
+                    "client_name": client_name,
+                    "address_line": address_line,
+                    "location_name": location_name,
+                    "source_filename": source_path.name,
+                    "stored_filename": stored_filename,
+                    "stored_path": str(stored_path),
+                    "task_id": task_id,
+                }
+
+                if category_norm == "drawing":
+                    qv = _extract_dtools_qv(text=stored_filename, fallback_text=source_path.name)
+                    queue_payload = {
+                        "upload_id": queue_record["upload_id"],
+                        "bundle_id": bundle_id,
+                        "task_id": task_id,
+                        "file_path": str(stored_path),
+                        "file_name": stored_filename,
+                        "project_name": project_name,
+                        "client_name": client_name,
+                        "address_line": address_line,
+                        "location_name": location_name,
+                        "dtools_quote_id": qv.get("quote_id", ""),
+                        "dtools_version": qv.get("version", ""),
+                        "dtools_quote_version": qv.get("quote_version", ""),
+                        "status": "queued",
+                        "queued_at": datetime.now().isoformat(),
+                    }
+                    queue_file = TASK_UPLOAD_EXTRACTION_QUEUE_DIR / f"{queue_record['upload_id']}.json"
+                    queue_file.write_text(json.dumps(queue_payload, indent=2), encoding="utf-8")
+                    try:
+                        findings = _first_pass_drawing_findings(
+                            stored_path=stored_path,
+                            project_name=project_name,
+                            client_name=client_name,
+                        )
+                        findings["upload_id"] = queue_record["upload_id"]
+                        findings["bundle_id"] = bundle_id
+                        findings["task_id"] = task_id
+                        findings_path = TASK_UPLOAD_FINDINGS_DIR / f"{queue_record['upload_id']}__findings.json"
+                        findings_path.write_text(json.dumps(findings, indent=2), encoding="utf-8")
+                        queue_record["findings_path"] = str(findings_path)
+                        queue_payload["status"] = "first_pass_complete"
+                        queue_payload["findings_path"] = str(findings_path)
+                        queue_file.write_text(json.dumps(queue_payload, indent=2), encoding="utf-8")
+                        drawing_findings_count += 1
+                    except Exception as extract_error:
+                        queue_payload["status"] = "first_pass_failed"
+                        queue_payload["error"] = str(extract_error)
+                        queue_file.write_text(json.dumps(queue_payload, indent=2), encoding="utf-8")
+
+                _append_upload_queue_record(queue_record)
+
+            watch_registered = False
+            watch_info: Dict[str, Any] = {}
+            if source_folder_path.strip() and enable_watch.strip().lower() not in {"0", "false", "no"}:
+                try:
+                    watch_info = _register_project_watch(
+                        project_name=project_name,
+                        client_name=client_name,
+                        address_line=address_line,
+                        location_name=location_name,
+                        folder_path=source_folder_path.strip(),
+                    )
+                    watch_registered = True
+                except Exception:
+                    watch_registered = False
+
+            return {
+                "success": True,
+                "bundle_id": bundle_id,
+                "task_id": task_id,
+                "zip_path": str(zip_path),
+                "extracted_count": len(extracted_files),
+                "category_counts": counts,
+                "drawing_findings_count": drawing_findings_count,
+                "watch_registered": watch_registered,
+                "watch": watch_info,
+                "message": "Project bundle uploaded and queued for cross-file synthesis.",
+            }
+        except zipfile.BadZipFile:
+            return {"success": False, "error": "Invalid ZIP file"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -3535,6 +4764,8 @@ if HAS_FASTAPI:
                         "category": row.get("category", "document"),
                         "project_name": row.get("project_name", ""),
                         "client_name": row.get("client_name", ""),
+                        "address_line": row.get("address_line", ""),
+                        "location_name": row.get("location_name", ""),
                         "stored_filename": row.get("stored_filename", ""),
                         "task_id": task_id,
                         "task_status": task_status,
@@ -3545,6 +4776,134 @@ if HAS_FASTAPI:
             return {"success": True, "uploads": uploads}
         except Exception as e:
             return {"success": False, "uploads": [], "error": str(e)}
+
+    @app.get("/tasks/project_watches")
+    async def get_project_watches():
+        try:
+            watches = _load_project_watches()
+            state = _load_project_watch_state()
+            enriched = []
+            for w in watches:
+                st = state.get(w.get("watch_id", ""), {})
+                summary_path = ""
+                project_slug = w.get("project_slug", "")
+                if project_slug:
+                    p = KNOWLEDGE_PROJECTS_DIR / project_slug / "project_intelligence_summary.json"
+                    if p.exists():
+                        summary_path = str(p)
+                enriched.append(
+                    {
+                        **w,
+                        "last_scan_at": st.get("last_scan_at"),
+                        "last_processed_count": st.get("last_processed_count", 0),
+                        "last_candidate_count": st.get("last_candidate_count", 0),
+                        "last_skipped_too_large": st.get("last_skipped_too_large", 0),
+                        "last_skipped_ignored": st.get("last_skipped_ignored", 0),
+                        "scan_duration_sec": st.get("scan_duration_sec", 0.0),
+                        "scan_in_progress": bool(st.get("scan_in_progress", False)),
+                        "last_error": st.get("last_error", ""),
+                        "summary_path": summary_path,
+                    }
+                )
+            return {
+                "success": True,
+                "watches": enriched,
+                "auto_discover_enabled": PROJECT_WATCH_AUTO_DISCOVER,
+                "projects_root": PROJECT_WATCH_PROJECTS_ROOT,
+            }
+        except Exception as e:
+            return {"success": False, "watches": [], "error": str(e)}
+
+    @app.post("/tasks/project_watches/register")
+    async def register_project_watch(request: ProjectWatchRequest):
+        try:
+            watch = _register_project_watch(
+                project_name=request.project_name,
+                client_name=request.client_name,
+                address_line=request.address_line,
+                location_name=request.location_name,
+                folder_path=request.folder_path,
+            )
+            scan_summary = _scan_project_watch(watch, max_new_files=60)
+            return {"success": True, "watch": watch, "initial_scan": scan_summary}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.post("/tasks/project_watches/run")
+    async def run_project_watches(watch_id: str = Form("")):
+        """
+        Run one scan pass:
+        - all enabled watches when watch_id is empty
+        - one specific watch when watch_id is provided
+        """
+        try:
+            watches = _load_project_watches()
+            selected = [w for w in watches if w.get("enabled", True)]
+            if watch_id.strip():
+                selected = [w for w in selected if w.get("watch_id") == watch_id.strip()]
+            results = [_scan_project_watch(w, max_new_files=60) for w in selected]
+            total = sum(int(r.get("processed", 0) or 0) for r in results)
+            return {"success": True, "ran": len(results), "processed_total": total, "results": results}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.post("/tasks/project_watches/discover")
+    async def discover_project_watches():
+        """
+        Auto-register any new project folders found under the configured Projects root.
+        """
+        try:
+            summary = _auto_discover_project_watches(max_new=50)
+            return {"success": True, **summary}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.post("/tasks/project_watches/backfill_recent")
+    async def backfill_recent_project_watch_files(hours: int = Form(24), max_files: int = Form(250)):
+        """
+        One-time catch-up ingestion for recently added files that may predate watch state.
+        Intended for manual bursts where many manuals were added at once.
+        """
+        try:
+            summary = _backfill_recent_watch_files(hours=hours, max_files=max_files)
+            return {"success": True, **summary}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.get("/tasks/project_summary")
+    async def get_project_summary(project_slug: str = ""):
+        try:
+            slug = _slugify(project_slug, fallback="project", max_len=80)
+            path = KNOWLEDGE_PROJECTS_DIR / slug / "project_intelligence_summary.json"
+            if not path.exists():
+                _update_project_intelligence_summary(slug)
+            if not path.exists():
+                return {"success": False, "error": "Project summary not found", "project_slug": slug}
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return {"success": True, "project_slug": slug, "summary": data}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.post("/manuals/auto_digest/run")
+    async def manuals_auto_digest_run(max_new_files: int = Form(25)):
+        try:
+            return _manuals_auto_digest_once(max_new_files=max_new_files)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @app.get("/manuals/auto_digest/status")
+    async def manuals_auto_digest_status():
+        try:
+            state = _load_manuals_auto_digest_state()
+            return {
+                "success": True,
+                "enabled": MANUALS_AUTO_DIGEST_ENABLED,
+                "root": str(MANUALS_LIBRARY_ROOT),
+                "knowledge_file": str(MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE),
+                "state": state,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
     @app.get("/tasks/claude_pending")
     async def get_claude_pending():
