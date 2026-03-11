@@ -6,9 +6,9 @@ import os
 
 struct ContentView: View {
     @EnvironmentObject var api: APIClient
+    @EnvironmentObject var secretsVault: SecretsVaultStore
     @State private var selectedSection: AppSection = .today
     @State private var didRunStartup = false
-    @StateObject private var secretsVault = SecretsVaultStore()
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     var body: some View {
@@ -5113,6 +5113,7 @@ struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         ContentView()
             .environmentObject(APIClient())
+            .environmentObject(SecretsVaultStore())
     }
 }
 
