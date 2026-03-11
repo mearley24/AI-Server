@@ -6,63 +6,18 @@ import os
 
 struct ContentView: View {
     @EnvironmentObject var api: APIClient
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var selectedTab = 0
     @State private var selectedSection: AppSection = .today
     @State private var didRunStartup = false
-    @State private var sidebarQuery = ""
     @StateObject private var secretsVault = SecretsVaultStore()
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            NavigationStack {
-                TodayFocusView()
+        NavigationStack {
+            VStack(spacing: 0) {
+                topActionHeader
+                Divider()
+                sectionView(for: selectedSection)
             }
-            .tabItem {
-                Label("Today", systemImage: "sun.max")
-            }
-            .tag(0)
-
-            NavigationStack {
-                ProjectsWorkspaceView()
-            }
-            .tabItem {
-                Label("Projects", systemImage: "folder")
-            }
-            .tag(1)
-
-            NavigationStack {
-                SalesToolkitView()
-            }
-            .tabItem {
-                Label("Sales", systemImage: "person.3")
-            }
-            .tag(2)
-
-            NavigationStack {
-                InstallWorkspaceView()
-            }
-            .tabItem {
-                Label("Install", systemImage: "wrench.and.screwdriver")
-            }
-            .tag(3)
-
-            NavigationStack {
-                OpsAutomationView()
-            }
-            .tabItem {
-                Label("Ops", systemImage: "server.rack")
-            }
-            .tag(4)
-
-            NavigationStack {
-                SettingsView()
-            }
-            .tabItem {
-                Label("Settings", systemImage: "gear")
-            }
-            .tag(5)
         }
         .accentColor(Color.orange)
         .task {
@@ -70,12 +25,29 @@ struct ContentView: View {
         }
     }
 
-    private var filteredSections: [AppSection] {
-        let q = sidebarQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return AppSection.allCases }
-        return AppSection.allCases.filter { section in
-            section.title.lowercased().contains(q)
+    private var topActionHeader: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(AppSection.allCases) { section in
+                    Button {
+                        selectedSection = section
+                    } label: {
+                        Label(section.title, systemImage: section.systemImage)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(selectedSection == section ? Color.orange : Color(.systemGray5))
+                            .foregroundColor(selectedSection == section ? .white : .primary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
+        .background(Color(.systemGroupedBackground))
     }
 
     @ViewBuilder
@@ -1882,7 +1854,7 @@ struct AIChatView: View {
     @State private var isLoading = false
     
     var body: some View {
-        NavigationView {
+        Group {
             VStack(spacing: 0) {
                 // AI Source indicator + Model Picker
                 HStack {
@@ -2111,7 +2083,7 @@ struct LeadsView: View {
     @State private var outreachQueue: String?
     
     var body: some View {
-        NavigationView {
+        Group {
             List {
                 Section(header: Text("Find New Leads")) {
                     LeadActionRow(title: "Scan Builders", icon: "hammer.fill", color: .blue) {
@@ -2230,7 +2202,7 @@ struct UsageView: View {
     @State private var isLoading = false
     
     var body: some View {
-        NavigationView {
+        Group {
             ScrollView {
                 VStack(spacing: 20) {
                     if let usage = usageData {
@@ -2364,7 +2336,7 @@ struct ServicesView: View {
     @EnvironmentObject var api: APIClient
     
     var body: some View {
-        NavigationView {
+        Group {
             List {
                 Section(header: Text("Running Services")) {
                     ForEach(api.services.filter { $0.isRunning }) { service in
@@ -2435,7 +2407,7 @@ struct FactsView: View {
     private let categories = ["control4", "lutron", "audio", "video", "networking", "general"]
     
     var body: some View {
-        NavigationView {
+        Group {
             List {
                 Section(header: Text("Paste facts to learn")) {
                     TextEditor(text: $pastedText)
@@ -3277,7 +3249,7 @@ struct LegacyActionsView: View {
     }
     
     var body: some View {
-        NavigationView {
+        Group {
             ScrollViewReader { proxy in
                 List {
                 if showWorkspacePicker {
@@ -4286,7 +4258,7 @@ struct ClaudeApprovalView: View {
     @State private var copiedWorkflowId: String?
     
     var body: some View {
-        NavigationView {
+        Group {
             List {
                 Section(header: Text("Workflow Prompts")) {
                     Text("Copy a prompt and paste into Claude Code.")
@@ -4488,7 +4460,7 @@ struct SettingsView: View {
     @State private var isRunningOneTapFix = false
     
     var body: some View {
-        NavigationView {
+        Group {
             Form {
                 Section(header: Text("Server Connection")) {
                     TextField("API URL", text: $serverURL)
@@ -5101,7 +5073,7 @@ struct MissionControlWebView: View {
     @EnvironmentObject var api: APIClient
     
     var body: some View {
-        NavigationView {
+        Group {
             Group {
                 if let url = URL(string: api.missionControlURL) {
                     WebViewWrapper(url: url)
@@ -5120,7 +5092,7 @@ struct NeuralMapWebView: View {
     @EnvironmentObject var api: APIClient
     
     var body: some View {
-        NavigationView {
+        Group {
             Group {
                 if let url = URL(string: "\(api.missionControlURL)/neural") {
                     WebViewWrapper(url: url)
