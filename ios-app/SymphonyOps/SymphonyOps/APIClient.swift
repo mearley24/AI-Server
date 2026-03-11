@@ -273,7 +273,8 @@ class APIClient: ObservableObject {
             guard let healthURL = URL(string: "\(candidate)/health") else { continue }
             do {
                 var request = URLRequest(url: healthURL)
-                request.timeoutInterval = 2.5
+                // LAN/Tailscale health checks can be slower than localhost.
+                request.timeoutInterval = 20
                 let (_, response) = try await Foundation.URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     reachableBase = candidate
@@ -321,7 +322,9 @@ class APIClient: ObservableObject {
 
         do {
             let dashboardURL = URL(string: "\(chosenBase)/dashboard")!
-            let (_, response) = try await URLSession.shared.data(from: dashboardURL)
+            var dashboardRequest = URLRequest(url: dashboardURL)
+            dashboardRequest.timeoutInterval = 20
+            let (_, response) = try await URLSession.shared.data(for: dashboardRequest)
             let code = (response as? HTTPURLResponse)?.statusCode ?? -1
             await MainActor.run {
                 if code == 401 {

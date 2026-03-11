@@ -18,7 +18,7 @@
         <key>MOBILE_API_PORT</key>
         <string>8420</string>
         <key>MOBILE_API_BIND_HOST</key>
-        <string>127.0.0.1</string>
+        <string>0.0.0.0</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

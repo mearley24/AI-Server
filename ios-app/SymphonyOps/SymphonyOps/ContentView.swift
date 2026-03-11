@@ -8,6 +8,10 @@ struct ContentView: View {
     @EnvironmentObject var api: APIClient
     @EnvironmentObject var secretsVault: SecretsVaultStore
     @State private var selectedSection: AppSection = .today
+    @State private var projectsMode: ProjectsWorkspaceMode = .markup
+    @State private var salesMode: SalesWorkspaceMode = .pipeline
+    @State private var installMode: InstallWorkspaceMode = .queue
+    @State private var opsMode: OpsWorkspaceMode = .health
     @State private var didRunStartup = false
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
@@ -15,6 +19,7 @@ struct ContentView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 topActionHeader
+                secondaryActionHeader
                 Divider()
                 sectionView(for: selectedSection)
             }
@@ -28,6 +33,7 @@ struct ContentView: View {
     private var topActionHeader: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
+                Spacer(minLength: 0)
                 ForEach(AppSection.allCases) { section in
                     Button {
                         selectedSection = section
@@ -43,11 +49,61 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private var secondaryActionHeader: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                switch selectedSection {
+                case .today:
+                    headerChip("Overview", isSelected: true) {}
+                case .projects:
+                    headerChip("Markup", isSelected: projectsMode == .markup) { projectsMode = .markup }
+                    headerChip("SOW", isSelected: projectsMode == .sow) { projectsMode = .sow }
+                    headerChip("Manual Digest", isSelected: projectsMode == .manualDigest) { projectsMode = .manualDigest }
+                case .sales:
+                    headerChip("Pipeline", isSelected: salesMode == .pipeline) { salesMode = .pipeline }
+                    headerChip("D-Tools Agent", isSelected: salesMode == .dtoolsAgent) { salesMode = .dtoolsAgent }
+                case .install:
+                    headerChip("Service Queue", isSelected: installMode == .queue) { installMode = .queue }
+                case .ops:
+                    headerChip("Health", isSelected: opsMode == .health) { opsMode = .health }
+                    headerChip("Dropout", isSelected: opsMode == .dropout) { opsMode = .dropout }
+                    headerChip("Notes", isSelected: opsMode == .notes) { opsMode = .notes }
+                case .settings:
+                    headerChip("Connection", isSelected: true) {}
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+            .frame(maxWidth: .infinity)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func headerChip(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? Color.orange.opacity(0.2) : Color(.systemGray5))
+                .foregroundColor(.primary)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -56,13 +112,13 @@ struct ContentView: View {
         case .today:
             TodayFocusView()
         case .projects:
-            ProjectsWorkspaceView()
+            ProjectsWorkspaceView(mode: projectsMode)
         case .sales:
-            SalesToolkitView()
+            SalesToolkitView(mode: salesMode)
         case .install:
-            InstallWorkspaceView()
+            InstallWorkspaceView(mode: installMode)
         case .ops:
-            OpsAutomationView()
+            OpsAutomationView(mode: opsMode)
         case .settings:
             SettingsView()
         }
@@ -177,8 +233,30 @@ private enum AppSection: Int, CaseIterable, Identifiable {
     }
 }
 
+enum ProjectsWorkspaceMode {
+    case markup
+    case sow
+    case manualDigest
+}
+
+enum SalesWorkspaceMode {
+    case pipeline
+    case dtoolsAgent
+}
+
+enum InstallWorkspaceMode {
+    case queue
+}
+
+enum OpsWorkspaceMode {
+    case health
+    case dropout
+    case notes
+}
+
 struct ProjectsWorkspaceView: View {
     @EnvironmentObject var api: APIClient
+    var mode: ProjectsWorkspaceMode = .sow
     @State private var proposalScopeProjectName = ""
     @State private var proposalScopeClientName = ""
     @State private var proposalScopeRunAI = true
@@ -187,6 +265,11 @@ struct ProjectsWorkspaceView: View {
     @State private var proposalScopeResponse: ProposalScopeResponse?
     @State private var sowShareURL: URL?
     @State private var showSOWShareSheet = false
+    @State private var manualDigestProjectName = ""
+    @State private var manualDigestRunAI = true
+    @State private var showManualDigestImporter = false
+    @State private var selectedManualDigestFiles: [URL] = []
+    @State private var manualDigestResponse: ProjectManualDigestResponse?
     @State private var isLoading = false
     @State private var resultMessage: String?
 
@@ -196,18 +279,16 @@ struct ProjectsWorkspaceView: View {
 
     var body: some View {
         List {
-            Section("Project Tools") {
-                Link(destination: markupURL) {
-                    Label("Open Markup Tool", systemImage: "pencil.and.outline")
-                }
-                NavigationLink {
-                    AdvancedProjectsAgentsView()
-                } label: {
-                    Label("Advanced Project Agents", systemImage: "slider.horizontal.3")
+            if mode == .markup {
+                Section("Markup") {
+                    Link(destination: markupURL) {
+                        Label("Open Markup Tool", systemImage: "pencil.and.outline")
+                    }
                 }
             }
 
-            Section("SOW Generator") {
+            if mode == .sow {
+                Section("SOW Generator") {
                 Text("Upload a finished proposal to generate scope, inclusions, exclusions, assumptions, and risk tags.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -254,39 +335,92 @@ struct ProjectsWorkspaceView: View {
                 .disabled(isLoading || selectedProposalScopeFile == nil)
             }
 
-            if let proposalScope = proposalScopeResponse {
-                Section("Latest SOW Output") {
-                    if let quote = proposalScope.dtools_quote_version, !quote.isEmpty {
-                        Text("D-Tools: \(quote)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    if let scope = proposalScope.scope {
-                        if let lines = scope.scope_of_work, !lines.isEmpty {
-                            resultBlock("Scope of Work", items: Array(lines.prefix(10)))
-                        }
-                        if let included = scope.included_items, !included.isEmpty {
-                            resultBlock("Included", items: Array(included.prefix(10)))
-                        }
-                        if let excluded = scope.excluded_items, !excluded.isEmpty {
-                            resultBlock("Excluded", items: Array(excluded.prefix(8)))
-                        }
-                        if let assumptions = scope.assumptions, !assumptions.isEmpty {
-                            resultBlock("Assumptions", items: Array(assumptions.prefix(8)))
-                        }
-                        if let risks = scope.risk_tags, !risks.isEmpty {
-                            Text("Risk Tags: \(risks.joined(separator: ", "))")
+                if let proposalScope = proposalScopeResponse {
+                    Section("Latest SOW Output") {
+                        if let quote = proposalScope.dtools_quote_version, !quote.isEmpty {
+                            Text("D-Tools: \(quote)")
                                 .font(.caption2)
-                                .foregroundColor(.orange)
+                                .foregroundColor(.secondary)
+                        }
+                        if let scope = proposalScope.scope {
+                            if let lines = scope.scope_of_work, !lines.isEmpty {
+                                resultBlock("Scope of Work", items: Array(lines.prefix(10)))
+                            }
+                            if let included = scope.included_items, !included.isEmpty {
+                                resultBlock("Included", items: Array(included.prefix(10)))
+                            }
+                            if let excluded = scope.excluded_items, !excluded.isEmpty {
+                                resultBlock("Excluded", items: Array(excluded.prefix(8)))
+                            }
+                            if let assumptions = scope.assumptions, !assumptions.isEmpty {
+                                resultBlock("Assumptions", items: Array(assumptions.prefix(8)))
+                            }
+                            if let risks = scope.risk_tags, !risks.isEmpty {
+                                Text("Risk Tags: \(risks.joined(separator: ", "))")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+
+                        Button {
+                            exportProposalScopeMarkdown()
+                        } label: {
+                            Label("Export SOW Markdown", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
+            if mode == .manualDigest {
+                Section("New Project Manual Digest") {
+                    TextField("Project name", text: $manualDigestProjectName)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button {
+                        showManualDigestImporter = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.on.doc.fill")
+                            Text(selectedManualDigestFiles.isEmpty ? "Choose Project Files" : "\(selectedManualDigestFiles.count) file(s) selected")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .fileImporter(
+                        isPresented: $showManualDigestImporter,
+                        allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
+                        allowsMultipleSelection: true
+                    ) { result in
+                        switch result {
+                        case .success(let urls):
+                            selectedManualDigestFiles = urls
+                        case .failure(let err):
+                            resultMessage = "Manual digest picker failed: \(err.localizedDescription)"
                         }
                     }
 
+                    Toggle("Run AI summary", isOn: $manualDigestRunAI)
+
                     Button {
-                        exportProposalScopeMarkdown()
+                        Task { await runManualDigest() }
                     } label: {
-                        Label("Export SOW Markdown", systemImage: "square.and.arrow.up")
+                        Label("Run Manual Digest", systemImage: "brain.head.profile")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading || selectedManualDigestFiles.isEmpty)
+                }
+
+                if let digest = manualDigestResponse {
+                    Section("Latest Manual Digest") {
+                        Text("Project: \(digest.project_name ?? manualDigestProjectName)")
+                            .font(.caption)
+                        if let brands = digest.digest?.detected_brands, !brands.isEmpty {
+                            resultBlock("Detected Brands", items: Array(brands.prefix(10)))
+                        }
+                        if let skus = digest.digest?.detected_skus, !skus.isEmpty {
+                            resultBlock("Detected SKUs", items: Array(skus.prefix(10)))
+                        }
+                    }
                 }
             }
         }
@@ -346,6 +480,25 @@ struct ProjectsWorkspaceView: View {
             resultMessage = "Scope generated."
         } else {
             resultMessage = response?.error ?? api.error ?? "Proposal scope agent failed"
+        }
+    }
+
+    @MainActor
+    private func runManualDigest() async {
+        guard !selectedManualDigestFiles.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        let response = await api.runProjectManualDigest(
+            projectName: manualDigestProjectName.trimmingCharacters(in: .whitespacesAndNewlines),
+            fileURLs: selectedManualDigestFiles,
+            runAISummary: manualDigestRunAI
+        )
+        manualDigestResponse = response
+        if response?.success == true {
+            resultMessage = "Manual digest completed."
+        } else {
+            resultMessage = response?.error ?? api.error ?? "Manual digest failed"
         }
     }
 
@@ -415,64 +568,140 @@ struct ProjectsWorkspaceView: View {
 }
 
 struct SalesToolkitView: View {
+    @EnvironmentObject var api: APIClient
+    var mode: SalesWorkspaceMode = .pipeline
+    @State private var showProductImporter = false
+    @State private var selectedSheetURL: URL?
+    @State private var dealerTier = "standard"
+    @State private var maxProducts = 25
+    @State private var parseProfile = "msrp_three_tiers"
+    @State private var dryRun = true
+    @State private var isLoading = false
+    @State private var importResult: DToolsProductImportResponse?
+    @State private var resultMessage: String?
+
     var body: some View {
         List {
-            Section("Sales Pipeline") {
-                NavigationLink {
-                    LeadsView()
-                } label: {
-                    Label("Lead Pipeline", systemImage: "person.3")
-                }
-                NavigationLink {
-                    AIChatView()
-                } label: {
-                    Label("Ask Bob for Sales Copy", systemImage: "bubble.left.and.bubble.right")
+            if mode == .pipeline {
+                Section("Sales Pipeline") {
+                    NavigationLink {
+                        LeadsView()
+                    } label: {
+                        Label("Lead Pipeline", systemImage: "person.3")
+                    }
+                    NavigationLink {
+                        AIChatView()
+                    } label: {
+                        Label("Ask Bob for Sales Copy", systemImage: "bubble.left.and.bubble.right")
+                    }
                 }
             }
 
-            Section("Proposal Workflow") {
-                NavigationLink {
-                    ProjectsWorkspaceView()
-                } label: {
-                    Label("Generate Scope of Work", systemImage: "doc.badge.gearshape")
+            if mode == .dtoolsAgent {
+                Section("D-Tools Product Agent") {
+                    Button {
+                        showProductImporter = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.badge.plus")
+                            Text(selectedSheetURL == nil ? "Choose PDF/CSV Sheet" : selectedSheetURL!.lastPathComponent)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .fileImporter(
+                        isPresented: $showProductImporter,
+                        allowedContentTypes: [.pdf, .commaSeparatedText, .plainText, .data],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        switch result {
+                        case .success(let urls):
+                            selectedSheetURL = urls.first
+                        case .failure(let err):
+                            resultMessage = "File picker failed: \(err.localizedDescription)"
+                        }
+                    }
+
+                    Picker("Dealer Tier", selection: $dealerTier) {
+                        Text("Standard").tag("standard")
+                        Text("Silver").tag("silver")
+                        Text("Gold").tag("gold")
+                        Text("Fabricator").tag("fabricator")
+                    }
+                    .pickerStyle(.menu)
+
+                    Stepper("Max Products: \(maxProducts)", value: $maxProducts, in: 1...250)
+                    Toggle("Dry Run", isOn: $dryRun)
+
+                    Button {
+                        Task { await runProductImport() }
+                    } label: {
+                        Label("Run Product Agent", systemImage: "wand.and.stars")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading || selectedSheetURL == nil)
                 }
-                NavigationLink {
-                    AdvancedProjectsAgentsView()
-                } label: {
-                    Label("Advanced Sales/Proposal Agents", systemImage: "slider.horizontal.3")
+
+                if let importResult {
+                    Section("Latest Import Result") {
+                        Text("Parsed: \(importResult.parsed_count ?? 0) • Created: \(importResult.created_count ?? 0)")
+                            .font(.caption)
+                        if let err = importResult.error, !err.isEmpty {
+                            Text(err)
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Sales")
+        .alert("Status", isPresented: Binding<Bool>(
+            get: { resultMessage != nil },
+            set: { if !$0 { resultMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(resultMessage ?? "")
+        }
+    }
+
+    @MainActor
+    private func runProductImport() async {
+        guard let selectedSheetURL else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        let response = await api.importDToolsProducts(
+            fileURL: selectedSheetURL,
+            createInDTools: !dryRun,
+            maxProducts: maxProducts,
+            dealerTier: dealerTier,
+            parseProfile: parseProfile,
+            expectedColumns: [],
+            dryRun: dryRun
+        )
+        importResult = response
+        if response?.success == true {
+            resultMessage = "D-Tools product agent completed."
+        } else {
+            resultMessage = response?.error ?? api.error ?? "D-Tools product agent failed"
+        }
     }
 }
 
 struct InstallWorkspaceView: View {
+    var mode: InstallWorkspaceMode = .queue
+
     var body: some View {
         List {
-            Section("Field Execution") {
-                NavigationLink {
-                    ServicesView()
-                } label: {
-                    Label("Service + Install Queue", systemImage: "wrench.and.screwdriver")
-                }
-                NavigationLink {
-                    MissionControlWebView()
-                } label: {
-                    Label("Mission Control", systemImage: "antenna.radiowaves.left.and.right")
-                }
-            }
-
-            Section("Commissioning Support") {
-                NavigationLink {
-                    ProjectsWorkspaceView()
-                } label: {
-                    Label("Markup + SOW Tools", systemImage: "pencil.and.outline")
-                }
-                NavigationLink {
-                    NeuralMapWebView()
-                } label: {
-                    Label("Neural Map", systemImage: "brain")
+            if mode == .queue {
+                Section("Field Execution") {
+                    NavigationLink {
+                        ServicesView()
+                    } label: {
+                        Label("Service + Install Queue", systemImage: "wrench.and.screwdriver")
+                    }
                 }
             }
         }
@@ -483,6 +712,7 @@ struct InstallWorkspaceView: View {
 struct OpsAutomationView: View {
     @EnvironmentObject var api: APIClient
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var mode: OpsWorkspaceMode = .health
     @State private var isLoading = false
     @State private var resultMessage: String?
     @State private var notesProcessTarget = ""
@@ -497,7 +727,8 @@ struct OpsAutomationView: View {
 
     var body: some View {
         List {
-            Section("Automation Health") {
+            if mode == .health {
+                Section("Automation Health") {
                 actionButtons(
                     primaryTitle: "Run Recovery",
                     primaryIcon: "cross.case.fill",
@@ -522,8 +753,10 @@ struct OpsAutomationView: View {
                         .foregroundColor(.secondary)
                 }
             }
+            }
 
-            Section("Dropout Watch") {
+            if mode == .dropout {
+                Section("Dropout Watch") {
                 actionButtons(
                     primaryTitle: "Start Watcher",
                     primaryIcon: "play.circle.fill",
@@ -566,8 +799,10 @@ struct OpsAutomationView: View {
                     }
                 }
             }
+            }
 
-            Section("Notes + Messaging") {
+            if mode == .notes {
+                Section("Notes + Messaging") {
                 TextField("Note ID or project hint", text: $notesProcessTarget)
                     .textFieldStyle(.roundedBorder)
 
@@ -597,14 +832,6 @@ struct OpsAutomationView: View {
                         .lineLimit(2)
                 }
             }
-
-            Section("Admin") {
-                NavigationLink {
-                    OpsHubView()
-                        .environmentObject(SecretsVaultStore())
-                } label: {
-                    Label("Advanced Ops Hub", systemImage: "server.rack")
-                }
             }
         }
         .navigationTitle("Ops")
@@ -856,6 +1083,7 @@ struct DashboardView: View {
     @State private var showProjectWatchesPanel = true
     @State private var didInitialDashboardLoad = false
     @State private var openProjectsWorkspace = false
+    @State private var openInstallWorkspace = false
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     private var dashboardHorizontalPadding: CGFloat {
@@ -922,27 +1150,12 @@ struct DashboardView: View {
                             .buttonStyle(.plain)
 
                             NavigationLink {
-                                AdvancedProjectsAgentsView()
+                                InstallWorkspaceView()
                             } label: {
                                 quickNavTile(
-                                    title: "Proposal Agents",
-                                    subtitle: "Product + digest tools",
-                                    icon: "slider.horizontal.3",
-                                    color: Color(red: 0.33, green: 0.6, blue: 0.95)
-                                )
-                            }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                selectedPrimaryAction = "Markup"
-                                setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
-                                let url = api.markupURL ?? api.fallbackMarkupURL
-                                Task { _ = await UIApplication.shared.open(url) }
-                            } label: {
-                                quickNavTile(
-                                    title: "Open Markup",
-                                    subtitle: "Plans + symbols",
-                                    icon: "pencil.and.outline",
+                                    title: "Install Workspace",
+                                    subtitle: "Markup + commissioning",
+                                    icon: "wrench.and.screwdriver",
                                     color: Color(red: 0.3, green: 0.72, blue: 0.5)
                                 )
                             }
@@ -978,21 +1191,18 @@ struct DashboardView: View {
                     // Focus actions first
                     LazyVGrid(columns: primaryActionColumns, spacing: 12) {
                         PrimaryActionCard(
-                            title: "Markup",
-                            subtitle: "Open drawing workspace",
-                            icon: "pencil.and.outline",
+                            title: "Install",
+                            subtitle: "Open install workspace",
+                            icon: "wrench.and.screwdriver",
                             color: Color(red: 0.95, green: 0.6, blue: 0.3),
-                            isSelected: selectedPrimaryAction == "Markup",
+                            isSelected: selectedPrimaryAction == "Install",
                             isLoading: false,
-                            statusLabel: actionFreshness("Markup")?.label,
-                            statusColor: actionFreshness("Markup")?.color
+                            statusLabel: actionFreshness("Install")?.label,
+                            statusColor: actionFreshness("Install")?.color
                         ) {
-                            selectedPrimaryAction = "Markup"
-                            setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
-                            let url = api.markupURL ?? api.fallbackMarkupURL
-                            Task {
-                                _ = await UIApplication.shared.open(url)
-                            }
+                            selectedPrimaryAction = "Install"
+                            setPrimaryActionResult("Install", message: "Opened Install workspace.")
+                            openInstallWorkspace = true
                         }
 
                         PrimaryActionCard(
@@ -1047,7 +1257,7 @@ struct DashboardView: View {
 
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    ForEach(["Markup", "Bids", "Morning", "Website"], id: \.self) { action in
+                                    ForEach(["Install", "Bids", "Morning", "Website"], id: \.self) { action in
                                         if primaryActionResults[action] != nil {
                                             Button(action) {
                                                 selectedPrimaryAction = action
@@ -1482,6 +1692,9 @@ struct DashboardView: View {
             .navigationDestination(isPresented: $openProjectsWorkspace) {
                 ProjectsWorkspaceView()
             }
+            .navigationDestination(isPresented: $openInstallWorkspace) {
+                InstallWorkspaceView()
+            }
             .refreshable {
                 await api.fetchDashboard()
                 await api.fetchAIStatus(force: true)
@@ -1654,11 +1867,9 @@ struct DashboardView: View {
         case "Check Website":
             await runWebsiteAction()
         default:
-            selectedPrimaryAction = "Markup"
-            persistedSelectedPrimaryAction = "Markup"
-            setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
-            let url = api.markupURL ?? api.fallbackMarkupURL
-            _ = await UIApplication.shared.open(url)
+            selectedPrimaryAction = "Install"
+            persistedSelectedPrimaryAction = "Install"
+            setPrimaryActionResult("Install", message: "Opened Install workspace.")
         }
     }
 
@@ -2855,10 +3066,6 @@ struct LegacyActionsView: View {
         _actionWorkspace = State(initialValue: ActionWorkspace(rawValue: initialWorkspaceRaw) ?? .dailyOps)
     }
     
-    var markupURL: URL {
-        api.markupURL ?? api.fallbackMarkupURL
-    }
-
     private func opsStatusLabel(_ status: String) -> String {
         switch status.lowercased() {
         case "healthy":
@@ -2876,32 +3083,6 @@ struct LegacyActionsView: View {
 
     @ViewBuilder
     private var projectsWorkspaceSections: some View {
-        Section(header: Text("Symphony Markup")) {
-            Link(destination: markupURL) {
-                HStack {
-                    Image(systemName: "pencil.and.outline")
-                        .font(.title2)
-                        .foregroundColor(.orange)
-                        .frame(width: 40)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Open Markup Tool")
-                            .font(.headline)
-                        Text("Floor plans, symbols, D-Tools export")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("Saves to iCloud + Bob • Add to Home Screen")
-                            .font(.caption2)
-                            .foregroundColor(.green)
-                    }
-                    Spacer()
-                    Image(systemName: "safari")
-                        .foregroundColor(.blue)
-                }
-                .padding(.vertical, 8)
-            }
-            .foregroundColor(.primary)
-        }
-
         Section(header: Text("D-Tools Product Agent")) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Upload a price/data sheet, parse products, and optionally create products in d-tools.cloud.")
