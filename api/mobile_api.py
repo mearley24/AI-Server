@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -125,6 +126,13 @@ MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE = BASE_DIR / "knowledge" / "cortex" / "compan
 MANUALS_AUTO_DIGEST_KNOWLEDGE_FILE.parent.mkdir(parents=True, exist_ok=True)
 MANUALS_AUTO_DIGEST_MAX_FILE_BYTES = int(os.environ.get("MANUALS_AUTO_DIGEST_MAX_FILE_BYTES", str(200 * 1024 * 1024)))
 PROJECT_WATCH_TASK: Optional[asyncio.Task] = None
+NETWORK_WATCH_DIR = BASE_DIR / "data" / "network_watch"
+NETWORK_WATCH_DIR.mkdir(parents=True, exist_ok=True)
+NETWORK_WATCH_PID_FILE = NETWORK_WATCH_DIR / "dropout_watch.pid"
+NETWORK_WATCH_STATUS_FILE = NETWORK_WATCH_DIR / "dropout_watch_status.json"
+NETWORK_WATCH_EVENTS_FILE = NETWORK_WATCH_DIR / "dropout_watch_events.jsonl"
+NETWORK_WATCH_STDOUT = BASE_DIR / "logs" / "dropout_watch.log"
+NETWORK_WATCH_STDERR = BASE_DIR / "logs" / "dropout_watch_error.log"
 
 PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
     "auto": {
@@ -1405,6 +1413,26 @@ def run_command(cmd: List[str], timeout: int = 30) -> Dict:
 def run_tool_endpoint(script: str, args: List[str], timeout: int = 60) -> Dict:
     """Run a tools/ script and return {success, output, error}."""
     return run_tool_script(BASE_DIR, script, args=args, timeout=timeout)
+
+
+def _network_watch_pid() -> Optional[int]:
+    try:
+        if not NETWORK_WATCH_PID_FILE.exists():
+            return None
+        pid = int(NETWORK_WATCH_PID_FILE.read_text(encoding="utf-8").strip())
+        return pid if pid > 0 else None
+    except Exception:
+        return None
+
+
+def _pid_is_alive(pid: Optional[int]) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def _read_json_file(path: Path) -> Dict[str, Any]:
@@ -2797,6 +2825,13 @@ if HAS_FASTAPI:
         threshold: float = float(os.environ.get("AUTOPILOT_CONFIDENCE_THRESHOLD", "0.80"))
         playbook: Optional[str] = None
 
+    class NetworkDropoutWatchStartRequest(BaseModel):
+        gateway_ip: str = "192.168.1.1"
+        wan_ip: str = "1.1.1.1"
+        control4_ip: Optional[str] = None
+        sonos_ip: Optional[str] = None
+        interval_sec: float = 2.0
+
     class NotesProjectLinkUpsertRequest(BaseModel):
         match_text: str
         project_name: str
@@ -3265,6 +3300,120 @@ if HAS_FASTAPI:
             payload = _extract_json_from_output(result, fallback_key="output")
             payload.setdefault("command_success", result.get("success", False))
             return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/network/dropout/status")
+    async def network_dropout_status():
+        """Get live state of the network dropout watcher."""
+        try:
+            pid = _network_watch_pid()
+            running = _pid_is_alive(pid)
+            status = _read_json_file(NETWORK_WATCH_STATUS_FILE)
+            recent_events = _read_recent_jsonl(NETWORK_WATCH_EVENTS_FILE, limit=30)
+            return {
+                "success": True,
+                "running": running,
+                "pid": pid,
+                "status_file": str(NETWORK_WATCH_STATUS_FILE),
+                "events_file": str(NETWORK_WATCH_EVENTS_FILE),
+                "status": status,
+                "recent_events": recent_events,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/network/dropout/start")
+    async def network_dropout_start(request: NetworkDropoutWatchStartRequest):
+        """Start network dropout watcher process."""
+        try:
+            existing_pid = _network_watch_pid()
+            if _pid_is_alive(existing_pid):
+                return {
+                    "success": True,
+                    "running": True,
+                    "pid": existing_pid,
+                    "message": "Watcher already running",
+                }
+
+            python_bin = BASE_DIR / ".venv" / "bin" / "python3"
+            args = [
+                str(python_bin if python_bin.exists() else Path(sys.executable)),
+                str(BASE_DIR / "tools" / "network_dropout_watch.py"),
+                "--watch",
+                "--gateway-ip",
+                request.gateway_ip.strip(),
+                "--wan-ip",
+                request.wan_ip.strip(),
+                "--interval-sec",
+                str(max(0.5, min(float(request.interval_sec), 10.0))),
+                "--state-dir",
+                str(NETWORK_WATCH_DIR),
+            ]
+            if request.control4_ip and request.control4_ip.strip():
+                args.extend(["--control4-ip", request.control4_ip.strip()])
+            if request.sonos_ip and request.sonos_ip.strip():
+                args.extend(["--sonos-ip", request.sonos_ip.strip()])
+
+            with NETWORK_WATCH_STDOUT.open("a", encoding="utf-8") as out, NETWORK_WATCH_STDERR.open("a", encoding="utf-8") as err:
+                proc = subprocess.Popen(
+                    args,
+                    cwd=BASE_DIR,
+                    stdout=out,
+                    stderr=err,
+                    start_new_session=True,
+                )
+            NETWORK_WATCH_PID_FILE.write_text(str(proc.pid), encoding="utf-8")
+
+            return {
+                "success": True,
+                "running": True,
+                "pid": proc.pid,
+                "message": "Watcher started",
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/network/dropout/stop")
+    async def network_dropout_stop():
+        """Stop network dropout watcher process if running."""
+        try:
+            pid = _network_watch_pid()
+            if not _pid_is_alive(pid):
+                try:
+                    NETWORK_WATCH_PID_FILE.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return {"success": True, "running": False, "message": "Watcher already stopped"}
+
+            os.kill(pid, signal.SIGTERM)
+            # Give it a brief moment to exit cleanly.
+            for _ in range(10):
+                if not _pid_is_alive(pid):
+                    break
+                time.sleep(0.1)
+            if _pid_is_alive(pid):
+                os.kill(pid, signal.SIGKILL)
+            try:
+                NETWORK_WATCH_PID_FILE.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return {"success": True, "running": False, "message": "Watcher stopped"}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/network/dropout/events")
+    async def network_dropout_events(limit: int = 100):
+        """Tail watcher events for recent dropout transitions."""
+        try:
+            events = _read_recent_jsonl(NETWORK_WATCH_EVENTS_FILE, limit=max(1, min(limit, 500)))
+            return {
+                "success": True,
+                "count": len(events),
+                "events": events,
+                "timestamp": datetime.now().isoformat(),
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -4213,7 +4362,7 @@ if HAS_FASTAPI:
             import sys
             sys.path.insert(0, str(BASE_DIR / "tools"))
             from ai_router import ask, classify_question
-
+            
             # Build retained memory context from recent Ask Bob exchanges.
             recent_memory = _load_recent_ask_bob_memory(session_id=session_id, limit=8)
             memory_lines: List[str] = []

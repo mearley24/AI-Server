@@ -307,8 +307,8 @@ class APIClient: ObservableObject {
                 } else {
                     let details = failureNotesSnapshot.prefix(3).joined(separator: " | ")
                     self.error = details.isEmpty
-                        ? "Could not connect to server. Checked: \(candidatesSnapshot.joined(separator: ", "))"
-                        : "Could not connect to server. Checked: \(candidatesSnapshot.joined(separator: ", ")). Failures: \(details)"
+                        ? "Could not reach Symphony server (internet may still be up). Checked: \(candidatesSnapshot.joined(separator: ", "))"
+                        : "Could not reach Symphony server (internet may still be up). Checked: \(candidatesSnapshot.joined(separator: ", ")). Failures: \(details)"
                 }
                 self.lastConnectionMessage = self.error
             }
@@ -966,6 +966,64 @@ class APIClient: ObservableObject {
             let url = URL(string: "\(baseURL)/tasks/incidents?limit=\(max(1, min(limit, 100)))")!
             let (data, _) = try await URLSession.shared.data(from: url)
             return try JSONDecoder().decode(IncidentQueueResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func fetchNetworkDropoutStatus() async -> NetworkDropoutStatusResponse? {
+        do {
+            let url = URL(string: "\(baseURL)/network/dropout/status")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(NetworkDropoutStatusResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func startNetworkDropoutWatch(
+        gatewayIP: String = "192.168.1.1",
+        wanIP: String = "1.1.1.1",
+        control4IP: String = "",
+        sonosIP: String = "",
+        intervalSec: Double = 2.0
+    ) async -> NetworkDropoutControlResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/network/dropout/start")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = NetworkDropoutStartRequest(
+                gateway_ip: gatewayIP,
+                wan_ip: wanIP,
+                control4_ip: control4IP.isEmpty ? nil : control4IP,
+                sonos_ip: sonosIP.isEmpty ? nil : sonosIP,
+                interval_sec: intervalSec
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            request.timeoutInterval = 30
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(NetworkDropoutControlResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func stopNetworkDropoutWatch() async -> NetworkDropoutControlResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/network/dropout/stop")!)
+            request.httpMethod = "POST"
+            request.timeoutInterval = 20
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(NetworkDropoutControlResponse.self, from: data)
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
@@ -1743,7 +1801,7 @@ class APIClient: ObservableObject {
         if nsError.domain == NSURLErrorDomain {
             switch nsError.code {
             case NSURLErrorCannotConnectToHost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut:
-                return "Could not connect to server. Check URL/network, then try Test URL + Token."
+                return "Could not reach Symphony server. Internet may be available; check API URL/Tailscale, then try Test URL + Token."
             default:
                 break
             }
@@ -2468,6 +2526,59 @@ struct OpsRecoveryRunResponse: Codable {
     let threshold: Double?
     let detected_count: Int?
     let applied_count: Int?
+}
+
+struct NetworkDropoutStartRequest: Codable {
+    let gateway_ip: String
+    let wan_ip: String
+    let control4_ip: String?
+    let sonos_ip: String?
+    let interval_sec: Double
+}
+
+struct NetworkDropoutControlResponse: Codable {
+    let success: Bool
+    let running: Bool?
+    let pid: Int?
+    let message: String?
+    let error: String?
+}
+
+struct NetworkDropoutStatusResponse: Codable {
+    let success: Bool
+    let running: Bool
+    let pid: Int?
+    let status: NetworkDropoutStatusPayload?
+    let recent_events: [NetworkDropoutEvent]?
+    let timestamp: String?
+}
+
+struct NetworkDropoutStatusPayload: Codable {
+    let success: Bool?
+    let running: Bool?
+    let pid: Int?
+    let updated_at: String?
+    let health: String?
+    let sample: [String: NetworkDropoutTargetSample]?
+}
+
+struct NetworkDropoutTargetSample: Codable {
+    let host: String?
+    let ok: Bool?
+    let latency_ms: Double?
+    let return_code: Int?
+    let duration_ms: Double?
+}
+
+struct NetworkDropoutEvent: Codable, Identifiable {
+    let timestamp: String?
+    let event: String?
+    let from: String?
+    let to: String?
+    let health: String?
+    let sample: [String: NetworkDropoutTargetSample]?
+
+    var id: String { "\(timestamp ?? "na")-\(event ?? "event")-\(to ?? health ?? "state")" }
 }
 
 struct IncidentQueueResponse: Codable {

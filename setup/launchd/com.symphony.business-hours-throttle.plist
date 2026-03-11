@@ -3,30 +3,33 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.symphony.mobile-api</string>
+    <string>com.symphony.business-hours-throttle</string>
+
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/bob/AI-Server/.venv/bin/python3</string>
-        <string>/Users/bob/AI-Server/api/mobile_api.py</string>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>/Users/bob/AI-Server/tools/business_hours_throttle.py</string>
     </array>
+
     <key>WorkingDirectory</key>
     <string>/Users/bob/AI-Server</string>
+
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
-        <key>MOBILE_API_PORT</key>
-        <string>8420</string>
-        <key>MOBILE_API_BIND_HOST</key>
-        <string>127.0.0.1</string>
     </dict>
+
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
-    <true/>
+
+    <key>StartInterval</key>
+    <integer>900</integer>
+
     <key>StandardOutPath</key>
-    <string>/Users/bob/AI-Server/logs/mobile_api.log</string>
+    <string>/Users/bob/AI-Server/logs/business_hours_throttle.log</string>
+
     <key>StandardErrorPath</key>
-    <string>/Users/bob/AI-Server/logs/mobile_api_error.log</string>
+    <string>/Users/bob/AI-Server/logs/business_hours_throttle.error.log</string>
 </dict>
 </plist>

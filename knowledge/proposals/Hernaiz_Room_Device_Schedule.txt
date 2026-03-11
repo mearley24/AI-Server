@@ -1,0 +1,79 @@
+PROJECT: Hernaiz - 22 W Meadow Dr, #320 - Vail
+SOURCE: Hernaiz_Plans_pages_2_-_6_pdf_2026-03-11T17-45-48.symphony
+SYSTEM PROFILE: Control4 + Lutron + Araknis
+
+ROOM: Bathroom 1
+  AUDIO:
+    - Dual-voice-coil speaker x1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Bathroom 2
+  AUDIO:
+    - Dual-voice-coil speaker x1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Bedroom 1
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x2
+
+ROOM: Bedroom 2
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x3
+
+ROOM: Bedroom Loft
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+  LIGHTING CONTROL:
+    - Keypad x4
+
+ROOM: Deck
+  AUDIO:
+    - CH1 speaker x2
+
+ROOM: Kitchen/Entry
+  AUDIO:
+    - Dual-voice-coil speaker x2
+  LIGHTING CONTROL:
+    - Keypad x2
+
+ROOM: Living Room
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+    - CH5 speaker x2
+    - Center channel x1
+  NETWORK:
+    - Access point drop x1
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x2
+
+ROOM: Loft Bathroom
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Loft Closet
+  NETWORK:
+    - Access point drop x1
+  LIGHTING CONTROL:
+    - Keypad x1
+  LIGHTING INFRASTRUCTURE:
+    - Lighting panel x1

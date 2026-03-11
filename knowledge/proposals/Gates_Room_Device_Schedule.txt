@@ -1,0 +1,125 @@
+PROJECT: Gates - 1750 S FRONTAGE RD W UNIT E1 - Vail
+SOURCE: 12_15_25__NFC__Plans_pdf_2026-03-11T17-41-27.symphony
+SYSTEM PROFILE: Control4 + Lutron + Araknis + Luma
+
+ROOM: Bath 1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Bedroom 1
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Bedroom 2
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Dining
+  AUDIO:
+    - CH1 speaker x2
+  LIGHTING CONTROL:
+    - Keypad x2
+
+ROOM: Entry/Stairs
+  SURVEILLANCE:
+    - Dome camera x1
+    - Doorbell camera x1
+  LIGHTING CONTROL:
+    - Keypad x3
+
+ROOM: Garage
+  AUDIO:
+    - CH1 speaker x2
+  NETWORK:
+    - Access point drop x1
+  SURVEILLANCE:
+    - Dome camera x1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Kitchen
+  AUDIO:
+    - CH1 speaker x2
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x2
+
+ROOM: Kitchen Patio
+  AUDIO:
+    - CH1 speaker x2
+  SURVEILLANCE:
+    - Dome camera x1
+
+ROOM: Laundry Hall
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Living Patio
+  AUDIO:
+    - CH1 speaker x2
+  SURVEILLANCE:
+    - Dome camera x1
+
+ROOM: Living Room
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+    - CH5 speaker x2
+    - Center channel x1
+    - Subwoofer x1
+  NETWORK:
+    - Access point drop x1
+  SHADES:
+    - Shade x5
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Master Bath
+  AUDIO:
+    - CH1 speaker x2
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x2
+
+ROOM: Master Bedroom
+  VIDEO:
+    - TV x1
+  AUDIO:
+    - CH1 speaker x2
+  NETWORK:
+    - Access point drop x1
+  SHADES:
+    - Shade x6
+  LIGHTING CONTROL:
+    - Keypad x4
+
+ROOM: Master Closet
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Top of Stairs
+  SHADES:
+    - Shade x1
+  LIGHTING CONTROL:
+    - Keypad x1
+
+ROOM: Under Stairs
+  LIGHTING INFRASTRUCTURE:
+    - Lighting panel x1
+  SHADE INFRASTRUCTURE:
+    - Shade power x1

@@ -8,7 +8,7 @@ struct ContentView: View {
     @EnvironmentObject var api: APIClient
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedTab = 0
-    @State private var selectedSection: AppSection = .home
+    @State private var selectedSection: AppSection = .today
     @State private var didRunStartup = false
     @State private var sidebarQuery = ""
     @StateObject private var secretsVault = SecretsVaultStore()
@@ -52,32 +52,39 @@ struct ContentView: View {
                 TabView(selection: $selectedTab) {
                     DashboardView()
                         .tabItem {
-                            Label("Home", systemImage: "house")
+                            Label("Today", systemImage: "sun.max")
                         }
                         .tag(0)
-                    
-                    AIChatView()
+
+                    NavigationStack {
+                        ProjectsWorkspaceView()
+                    }
                         .tabItem {
-                            Label("Ask Bob", systemImage: "bubble.left.and.bubble.right")
+                            Label("Projects", systemImage: "folder")
                         }
                         .tag(1)
 
-                    ActionsView()
+                    NavigationStack {
+                        SalesToolkitView()
+                    }
                         .tabItem {
-                            Label("Work", systemImage: "checklist")
+                            Label("Sales", systemImage: "person.3")
                         }
                         .tag(2)
-                    
-                    LeadsView()
+
+                    NavigationStack {
+                        InstallWorkspaceView()
+                    }
                         .tabItem {
-                            Label("Leads", systemImage: "person.3")
+                            Label("Install", systemImage: "wrench.and.screwdriver")
                         }
                         .tag(3)
-                    
-                    OpsHubView()
-                        .environmentObject(secretsVault)
+
+                    NavigationStack {
+                        OpsAutomationView()
+                    }
                         .tabItem {
-                            Label("Ops", systemImage: "square.grid.2x2")
+                            Label("Ops", systemImage: "server.rack")
                         }
                         .tag(4)
                 }
@@ -100,17 +107,18 @@ struct ContentView: View {
     @ViewBuilder
     private func sectionView(for section: AppSection) -> some View {
         switch section {
-        case .home:
+        case .today:
             DashboardView()
-        case .askBob:
-            AIChatView()
-        case .work:
-            ActionsView()
-        case .leads:
-            LeadsView()
+        case .projects:
+            ProjectsWorkspaceView()
+        case .sales:
+            SalesToolkitView()
+        case .install:
+            InstallWorkspaceView()
         case .ops:
-            OpsHubView()
-                .environmentObject(secretsVault)
+            OpsAutomationView()
+        case .settings:
+            SettingsView()
         }
     }
 
@@ -142,32 +150,528 @@ struct ContentView: View {
 }
 
 private enum AppSection: Int, CaseIterable, Identifiable {
-    case home
-    case askBob
-    case work
-    case leads
+    case today
+    case projects
+    case sales
+    case install
     case ops
+    case settings
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
-        case .home: return "Home"
-        case .askBob: return "Ask Bob"
-        case .work: return "Work"
-        case .leads: return "Leads"
+        case .today: return "Today"
+        case .projects: return "Projects"
+        case .sales: return "Sales"
+        case .install: return "Install"
         case .ops: return "Ops"
+        case .settings: return "Settings"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .home: return "house"
-        case .askBob: return "bubble.left.and.bubble.right"
-        case .work: return "checklist"
-        case .leads: return "person.3"
-        case .ops: return "square.grid.2x2"
+        case .today: return "sun.max"
+        case .projects: return "folder"
+        case .sales: return "person.3"
+        case .install: return "wrench.and.screwdriver"
+        case .ops: return "server.rack"
+        case .settings: return "gear"
         }
+    }
+}
+
+struct ProjectsWorkspaceView: View {
+    @EnvironmentObject var api: APIClient
+    @State private var proposalScopeProjectName = ""
+    @State private var proposalScopeClientName = ""
+    @State private var proposalScopeRunAI = true
+    @State private var showProposalScopeImporter = false
+    @State private var selectedProposalScopeFile: URL?
+    @State private var proposalScopeResponse: ProposalScopeResponse?
+    @State private var isLoading = false
+    @State private var resultMessage: String?
+
+    var markupURL: URL {
+        api.markupURL ?? api.fallbackMarkupURL
+    }
+
+    var body: some View {
+        List {
+            Section("Project Tools") {
+                Link(destination: markupURL) {
+                    Label("Open Markup Tool", systemImage: "pencil.and.outline")
+                }
+                NavigationLink {
+                    AdvancedProjectsAgentsView()
+                } label: {
+                    Label("Advanced Project Agents", systemImage: "slider.horizontal.3")
+                }
+            }
+
+            Section("SOW Generator") {
+                Text("Upload a finished proposal to generate scope, inclusions, exclusions, assumptions, and risk tags.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                TextField("Project name", text: $proposalScopeProjectName)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Client name", text: $proposalScopeClientName)
+                    .textFieldStyle(.roundedBorder)
+
+                Button {
+                    if !showProposalScopeImporter {
+                        showProposalScopeImporter = true
+                    }
+                } label: {
+                    HStack {
+                        Image(systemName: "doc.text.magnifyingglass")
+                        Text(selectedProposalScopeFile == nil ? "Choose Finished Proposal" : selectedProposalScopeFile!.lastPathComponent)
+                            .lineLimit(1)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .fileImporter(
+                    isPresented: $showProposalScopeImporter,
+                    allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
+                    allowsMultipleSelection: false
+                ) { pickerResult in
+                    showProposalScopeImporter = false
+                    switch pickerResult {
+                    case .success(let urls):
+                        selectedProposalScopeFile = urls.first
+                    case .failure(let err):
+                        self.resultMessage = "Proposal Scope picker failed: \(err.localizedDescription)"
+                    }
+                }
+
+                Toggle("Run AI summary", isOn: $proposalScopeRunAI)
+
+                Button {
+                    Task { await runProposalScopeAgent() }
+                } label: {
+                    Label("Generate Scope of Work", systemImage: "doc.badge.gearshape")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading || selectedProposalScopeFile == nil)
+            }
+
+            if let proposalScope = proposalScopeResponse {
+                Section("Latest SOW Output") {
+                    if let quote = proposalScope.dtools_quote_version, !quote.isEmpty {
+                        Text("D-Tools: \(quote)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    if let scope = proposalScope.scope {
+                        if let lines = scope.scope_of_work, !lines.isEmpty {
+                            resultBlock("Scope of Work", items: Array(lines.prefix(10)))
+                        }
+                        if let included = scope.included_items, !included.isEmpty {
+                            resultBlock("Included", items: Array(included.prefix(10)))
+                        }
+                        if let excluded = scope.excluded_items, !excluded.isEmpty {
+                            resultBlock("Excluded", items: Array(excluded.prefix(8)))
+                        }
+                        if let assumptions = scope.assumptions, !assumptions.isEmpty {
+                            resultBlock("Assumptions", items: Array(assumptions.prefix(8)))
+                        }
+                        if let risks = scope.risk_tags, !risks.isEmpty {
+                            Text("Risk Tags: \(risks.joined(separator: ", "))")
+                                .font(.caption2)
+                                .foregroundColor(.orange)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Projects")
+        .overlay(alignment: .bottom) {
+            if isLoading {
+                ProgressView("Generating SOW...")
+                    .padding(12)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding()
+            }
+        }
+        .alert("Status", isPresented: Binding<Bool>(
+            get: { resultMessage != nil },
+            set: { if !$0 { resultMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(resultMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func resultBlock(_ title: String, items: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+            ForEach(Array(items.enumerated()), id: \.offset) { _, line in
+                Text("• \(line)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    @MainActor
+    private func runProposalScopeAgent() async {
+        guard let proposalFile = selectedProposalScopeFile else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        let response = await api.runProposalScopeAgent(
+            projectName: proposalScopeProjectName.trimmingCharacters(in: .whitespacesAndNewlines),
+            clientName: proposalScopeClientName.trimmingCharacters(in: .whitespacesAndNewlines),
+            fileURL: proposalFile,
+            runAISummary: proposalScopeRunAI
+        )
+        proposalScopeResponse = response
+        if response?.success == true {
+            resultMessage = "Scope generated."
+        } else {
+            resultMessage = response?.error ?? api.error ?? "Proposal scope agent failed"
+        }
+    }
+}
+
+struct SalesToolkitView: View {
+    var body: some View {
+        List {
+            Section("Sales Pipeline") {
+                NavigationLink {
+                    LeadsView()
+                } label: {
+                    Label("Lead Pipeline", systemImage: "person.3")
+                }
+                NavigationLink {
+                    AIChatView()
+                } label: {
+                    Label("Ask Bob for Sales Copy", systemImage: "bubble.left.and.bubble.right")
+                }
+            }
+
+            Section("Proposal Workflow") {
+                NavigationLink {
+                    ProjectsWorkspaceView()
+                } label: {
+                    Label("Generate Scope of Work", systemImage: "doc.badge.gearshape")
+                }
+                NavigationLink {
+                    AdvancedProjectsAgentsView()
+                } label: {
+                    Label("Advanced Sales/Proposal Agents", systemImage: "slider.horizontal.3")
+                }
+            }
+        }
+        .navigationTitle("Sales")
+    }
+}
+
+struct InstallWorkspaceView: View {
+    var body: some View {
+        List {
+            Section("Field Execution") {
+                NavigationLink {
+                    ServicesView()
+                } label: {
+                    Label("Service + Install Queue", systemImage: "wrench.and.screwdriver")
+                }
+                NavigationLink {
+                    MissionControlWebView()
+                } label: {
+                    Label("Mission Control", systemImage: "antenna.radiowaves.left.and.right")
+                }
+            }
+
+            Section("Commissioning Support") {
+                NavigationLink {
+                    ProjectsWorkspaceView()
+                } label: {
+                    Label("Markup + SOW Tools", systemImage: "pencil.and.outline")
+                }
+                NavigationLink {
+                    NeuralMapWebView()
+                } label: {
+                    Label("Neural Map", systemImage: "brain")
+                }
+            }
+        }
+        .navigationTitle("Install")
+    }
+}
+
+struct OpsAutomationView: View {
+    @EnvironmentObject var api: APIClient
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @State private var isLoading = false
+    @State private var resultMessage: String?
+    @State private var notesProcessTarget = ""
+    @State private var opsHealth: OpsHealthResponse?
+    @State private var incidentQueue: IncidentQueueResponse?
+    @State private var notesPipelineStatus: NotesPipelineStatusResponse?
+    @State private var contactsStatus: ContactsStatusResponse?
+    @State private var recentTexts: [IMessageRecentItem] = []
+    @State private var networkDropoutStatus: NetworkDropoutStatusResponse?
+    @State private var control4IP = ""
+    @State private var sonosIP = ""
+
+    var body: some View {
+        List {
+            Section("Automation Health") {
+                actionButtons(
+                    primaryTitle: "Run Recovery",
+                    primaryIcon: "cross.case.fill",
+                    primaryAction: { Task { await runOpsRecoveryNow() } },
+                    secondaryTitle: "Refresh",
+                    secondaryIcon: "arrow.clockwise",
+                    secondaryAction: { Task { await refreshAll() } }
+                )
+
+                if let health = opsHealth {
+                    LabeledContent("Ops status", value: health.status.capitalized)
+                        .font(.caption)
+                    if let problems = health.problems, !problems.isEmpty {
+                        Text("Problems: \(problems.prefix(3).joined(separator: " • "))")
+                            .font(.caption2)
+                            .foregroundColor(.orange)
+                    }
+                }
+                if let queue = incidentQueue {
+                    Text("Incident queue: \(queue.count)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section("Dropout Watch") {
+                actionButtons(
+                    primaryTitle: "Start Watcher",
+                    primaryIcon: "play.circle.fill",
+                    primaryAction: { Task { await startDropoutWatch() } },
+                    secondaryTitle: "Stop Watcher",
+                    secondaryIcon: "stop.circle",
+                    secondaryAction: { Task { await stopDropoutWatch() } }
+                )
+
+                TextField("Control4 IP (optional)", text: $control4IP)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numbersAndPunctuation)
+                TextField("Sonos IP (optional)", text: $sonosIP)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numbersAndPunctuation)
+
+                if let watch = networkDropoutStatus {
+                    LabeledContent("Watcher", value: watch.running ? "Running" : "Stopped")
+                        .font(.caption)
+                    if let health = watch.status?.health {
+                        LabeledContent("Health", value: health.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.caption2)
+                            .foregroundColor(health == "healthy" ? .green : .orange)
+                    }
+                    if let sample = watch.status?.sample {
+                        ForEach(["gateway", "wan", "control4", "sonos"], id: \.self) { key in
+                            if let target = sample[key], let ok = target.ok {
+                                let host = target.host ?? "n/a"
+                                let latency = target.latency_ms.map { String(format: "%.1fms", $0) } ?? "timeout"
+                                Text("• \(key.uppercased()): \(host) \(ok ? "OK" : "DOWN") \(latency)")
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundColor(ok ? .secondary : .red)
+                            }
+                        }
+                    }
+                    if let events = watch.recent_events, !events.isEmpty {
+                        Text("Recent: \(events.prefix(2).compactMap { $0.event }.joined(separator: " • "))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Section("Notes + Messaging") {
+                TextField("Note ID or project hint", text: $notesProcessTarget)
+                    .textFieldStyle(.roundedBorder)
+
+                actionButtons(
+                    primaryTitle: "Process Notes",
+                    primaryIcon: "bolt.horizontal.circle",
+                    primaryAction: { Task { await processNotesNow() } },
+                    secondaryTitle: "Process Texts",
+                    secondaryIcon: "bolt.badge.clock",
+                    secondaryAction: { Task { await processTextsNow() } }
+                )
+
+                if let pipeline = notesPipelineStatus {
+                    Text("Notes watcher running: \((pipeline.jobs?.notes_watcher?.running ?? false) ? "Yes" : "No")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                if let contacts = contactsStatus?.contacts?.contacts_count {
+                    Text("Contacts indexed: \(contacts)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                ForEach(recentTexts.prefix(4)) { item in
+                    Text("• \(item.contact_name ?? item.handle ?? "Unknown"): \(item.text ?? "")")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            Section("Admin") {
+                NavigationLink {
+                    OpsHubView()
+                        .environmentObject(SecretsVaultStore())
+                } label: {
+                    Label("Advanced Ops Hub", systemImage: "server.rack")
+                }
+            }
+        }
+        .navigationTitle("Ops")
+        .task { await refreshAll() }
+        .overlay(alignment: .bottom) {
+            if isLoading {
+                ProgressView("Running...")
+                    .padding(12)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding()
+            }
+        }
+        .alert("Status", isPresented: Binding<Bool>(
+            get: { resultMessage != nil },
+            set: { if !$0 { resultMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(resultMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func actionButtons(
+        primaryTitle: String,
+        primaryIcon: String,
+        primaryAction: @escaping () -> Void,
+        secondaryTitle: String,
+        secondaryIcon: String,
+        secondaryAction: @escaping () -> Void
+    ) -> some View {
+        if horizontalSizeClass == .regular {
+            HStack {
+                Button(action: primaryAction) {
+                    Label(primaryTitle, systemImage: primaryIcon)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading)
+
+                Button(action: secondaryAction) {
+                    Label(secondaryTitle, systemImage: secondaryIcon)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isLoading)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: primaryAction) {
+                    Label(primaryTitle, systemImage: primaryIcon)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading)
+
+                Button(action: secondaryAction) {
+                    Label(secondaryTitle, systemImage: secondaryIcon)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isLoading)
+            }
+        }
+    }
+
+    @MainActor
+    private func refreshAll() async {
+        opsHealth = await api.fetchOpsHealth()
+        incidentQueue = await api.fetchIncidentQueue(limit: 20)
+        notesPipelineStatus = await api.fetchNotesPipelineStatus()
+        contactsStatus = await api.fetchContactsStatus()
+        recentTexts = (await api.fetchRecentIMessageWork(limit: 10))?.items ?? []
+        networkDropoutStatus = await api.fetchNetworkDropoutStatus()
+    }
+
+    @MainActor
+    private func runOpsRecoveryNow() async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.runOpsRecovery(apply: true, threshold: 0.8)
+        if let response {
+            resultMessage = "Recovery complete. Detected: \(response.detected_count ?? 0), applied: \(response.applied_count ?? 0)."
+        } else {
+            resultMessage = api.error ?? "Recovery run failed."
+        }
+        await refreshAll()
+    }
+
+    @MainActor
+    private func processNotesNow() async {
+        isLoading = true
+        defer { isLoading = false }
+        let trimmed = notesProcessTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        let noteId = Int(trimmed)
+        let response = await api.processNoteNow(
+            noteID: noteId,
+            projectName: noteId == nil && !trimmed.isEmpty ? trimmed : nil
+        )
+        if response?.success == true {
+            resultMessage = "Notes processed."
+        } else {
+            resultMessage = api.error ?? "Notes processing failed."
+        }
+        await refreshAll()
+    }
+
+    @MainActor
+    private func processTextsNow() async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.processIMessagesNow()
+        if response?.success == true {
+            resultMessage = "Texts processed. Tasks created: \(response?.tasks_created ?? 0)."
+        } else {
+            resultMessage = api.error ?? "Text processing failed."
+        }
+        await refreshAll()
+    }
+
+    @MainActor
+    private func startDropoutWatch() async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.startNetworkDropoutWatch(
+            gatewayIP: "192.168.1.1",
+            wanIP: "1.1.1.1",
+            control4IP: control4IP.trimmingCharacters(in: .whitespacesAndNewlines),
+            sonosIP: sonosIP.trimmingCharacters(in: .whitespacesAndNewlines),
+            intervalSec: 2.0
+        )
+        resultMessage = response?.message ?? api.error ?? "Could not start dropout watch."
+        await refreshAll()
+    }
+
+    @MainActor
+    private func stopDropoutWatch() async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.stopNetworkDropoutWatch()
+        resultMessage = response?.message ?? api.error ?? "Could not stop dropout watch."
+        await refreshAll()
     }
 }
 
@@ -278,6 +782,7 @@ struct DashboardView: View {
     @State private var showUploadsQueuePanel = true
     @State private var showProjectWatchesPanel = true
     @State private var didInitialDashboardLoad = false
+    @State private var openProjectsWorkspace = false
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     private var dashboardHorizontalPadding: CGFloat {
@@ -290,11 +795,26 @@ struct DashboardView: View {
         }
         return Array(repeating: GridItem(.flexible(), spacing: 12), count: 2)
     }
+
+    private var fastLaneColumns: [GridItem] {
+        if horizontalSizeClass == .regular {
+            return Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+        }
+        return Array(repeating: GridItem(.flexible(), spacing: 10), count: 2)
+    }
     
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
+                    NavigationLink(
+                        destination: ProjectsWorkspaceView(),
+                        isActive: $openProjectsWorkspace
+                    ) {
+                        EmptyView()
+                    }
+                    .hidden()
+
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Today")
                             .font(.title2)
@@ -316,6 +836,54 @@ struct DashboardView: View {
                 await api.fetchAIStatus()
             } }
                     )
+                    .padding(.horizontal, 20)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Proposal Fast Lane")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+
+                        LazyVGrid(columns: fastLaneColumns, spacing: 10) {
+                            NavigationLink {
+                                ProjectsWorkspaceView()
+                            } label: {
+                                quickNavTile(
+                                    title: "Generate SOW",
+                                    subtitle: "Finished proposal -> scope",
+                                    icon: "doc.badge.gearshape",
+                                    color: Color(red: 0.95, green: 0.55, blue: 0.25)
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            NavigationLink {
+                                AdvancedProjectsAgentsView()
+                            } label: {
+                                quickNavTile(
+                                    title: "Proposal Agents",
+                                    subtitle: "Product + digest tools",
+                                    icon: "slider.horizontal.3",
+                                    color: Color(red: 0.33, green: 0.6, blue: 0.95)
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                selectedPrimaryAction = "Markup"
+                                setPrimaryActionResult("Markup", message: "Opened Markup workspace.")
+                                let url = api.markupURL ?? api.fallbackMarkupURL
+                                Task { _ = await UIApplication.shared.open(url) }
+                            } label: {
+                                quickNavTile(
+                                    title: "Open Markup",
+                                    subtitle: "Plans + symbols",
+                                    icon: "pencil.and.outline",
+                                    color: Color(red: 0.3, green: 0.72, blue: 0.5)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     .padding(.horizontal, 20)
 
                     if let guidance = nextBestAction {
@@ -345,48 +913,6 @@ struct DashboardView: View {
                     // Focus actions first
                     LazyVGrid(columns: primaryActionColumns, spacing: 12) {
                         PrimaryActionCard(
-                            title: "Morning",
-                            subtitle: "Run startup checklist",
-                            icon: "sunrise.fill",
-                            color: Color(red: 1, green: 0.85, blue: 0.4),
-                            isSelected: selectedPrimaryAction == "Morning",
-                            isLoading: quickActionLoading && selectedPrimaryAction == "Morning",
-                            statusLabel: actionFreshness("Morning")?.label,
-                            statusColor: actionFreshness("Morning")?.color
-                        ) {
-                            Task { await runQuickAction(name: "Morning") { await api.runMorningChecklist() } }
-                        }
-                        .disabled(quickActionLoading)
-                        
-                        PrimaryActionCard(
-                            title: "Check Bids",
-                            subtitle: "Scan incoming opportunities",
-                            icon: "hammer.fill",
-                            color: Color(red: 0.35, green: 0.55, blue: 0.95),
-                            isSelected: selectedPrimaryAction == "Bids",
-                            isLoading: quickActionLoading && selectedPrimaryAction == "Bids",
-                            statusLabel: actionFreshness("Bids")?.label,
-                            statusColor: actionFreshness("Bids")?.color
-                        ) {
-                            Task { await runQuickAction(name: "Bids") { await api.checkBids() } }
-                        }
-                        .disabled(quickActionLoading)
-                        
-                        PrimaryActionCard(
-                            title: "Website",
-                            subtitle: "Check site uptime",
-                            icon: "globe.americas.fill",
-                            color: Color(red: 0.3, green: 0.7, blue: 0.5),
-                            isSelected: selectedPrimaryAction == "Website",
-                            isLoading: quickActionLoading && selectedPrimaryAction == "Website",
-                            statusLabel: actionFreshness("Website")?.label,
-                            statusColor: actionFreshness("Website")?.color
-                        ) {
-                            Task { await runWebsiteAction() }
-                        }
-                        .disabled(quickActionLoading)
-                        
-                        PrimaryActionCard(
                             title: "Markup",
                             subtitle: "Open drawing workspace",
                             icon: "pencil.and.outline",
@@ -403,6 +929,48 @@ struct DashboardView: View {
                                 _ = await UIApplication.shared.open(url)
                             }
                         }
+
+                        PrimaryActionCard(
+                            title: "Check Bids",
+                            subtitle: "Scan incoming opportunities",
+                            icon: "hammer.fill",
+                            color: Color(red: 0.35, green: 0.55, blue: 0.95),
+                            isSelected: selectedPrimaryAction == "Bids",
+                            isLoading: quickActionLoading && selectedPrimaryAction == "Bids",
+                            statusLabel: actionFreshness("Bids")?.label,
+                            statusColor: actionFreshness("Bids")?.color
+                        ) {
+                            Task { await runQuickAction(name: "Bids") { await api.checkBids() } }
+                        }
+                        .disabled(quickActionLoading)
+
+                        PrimaryActionCard(
+                            title: "Morning",
+                            subtitle: "Run startup checklist",
+                            icon: "sunrise.fill",
+                            color: Color(red: 1, green: 0.85, blue: 0.4),
+                            isSelected: selectedPrimaryAction == "Morning",
+                            isLoading: quickActionLoading && selectedPrimaryAction == "Morning",
+                            statusLabel: actionFreshness("Morning")?.label,
+                            statusColor: actionFreshness("Morning")?.color
+                        ) {
+                            Task { await runQuickAction(name: "Morning") { await api.runMorningChecklist() } }
+                        }
+                        .disabled(quickActionLoading)
+                        
+                        PrimaryActionCard(
+                            title: "Website",
+                            subtitle: "Check site uptime",
+                            icon: "globe.americas.fill",
+                            color: Color(red: 0.3, green: 0.7, blue: 0.5),
+                            isSelected: selectedPrimaryAction == "Website",
+                            isLoading: quickActionLoading && selectedPrimaryAction == "Website",
+                            statusLabel: actionFreshness("Website")?.label,
+                            statusColor: actionFreshness("Website")?.color
+                        ) {
+                            Task { await runWebsiteAction() }
+                        }
+                        .disabled(quickActionLoading)
                     }
                     .padding(.horizontal, dashboardHorizontalPadding)
 
@@ -414,7 +982,7 @@ struct DashboardView: View {
 
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    ForEach(["Morning", "Bids", "Website", "Markup"], id: \.self) { action in
+                                    ForEach(["Markup", "Bids", "Morning", "Website"], id: \.self) { action in
                                         if primaryActionResults[action] != nil {
                                             Button(action) {
                                                 selectedPrimaryAction = action
@@ -948,6 +1516,27 @@ struct DashboardView: View {
         return ("Stale", .red)
     }
 
+    @ViewBuilder
+    private func quickNavTile(title: String, subtitle: String, icon: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.title3)
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+            Text(subtitle)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, minHeight: horizontalSizeClass == .regular ? 96 : 88, alignment: .leading)
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     var nextBestAction: (title: String, detail: String, cta: String)? {
         if !homeClaudePending.isEmpty || !homeNotesApprovals.isEmpty {
             return (
@@ -972,25 +1561,11 @@ struct DashboardView: View {
                 "Run Watch Scan"
             )
         }
-        if primaryActionResults["Morning"] == nil {
-            return ("Run morning checklist", "Kick off the day with your standard startup flow.", "Run Morning")
-        }
-        if actionFreshness("Morning")?.label == "Stale" || actionFreshness("Morning")?.label == "Needs refresh" {
-            return ("Refresh morning checklist", "Your morning status is out of date.", "Run Morning")
-        }
-        if primaryActionResults["Bids"] == nil {
-            return ("Check new bids", "Make sure no opportunities are waiting.", "Check Bids")
-        }
-        if actionFreshness("Bids")?.label == "Stale" || actionFreshness("Bids")?.label == "Needs refresh" {
-            return ("Refresh bid scan", "Your bid scan is getting stale.", "Check Bids")
-        }
-        if primaryActionResults["Website"] == nil {
-            return ("Check website health", "Run uptime checks for your sites.", "Check Website")
-        }
-        if actionFreshness("Website")?.label == "Stale" || actionFreshness("Website")?.label == "Needs refresh" {
-            return ("Refresh website health", "Website status is stale.", "Check Website")
-        }
-        return ("Open Markup", "Continue room and symbol work on active drawings.", "Open Markup")
+        return (
+            "Generate scope of work",
+            "Open the proposal scope workflow and produce client-ready scope output.",
+            "Generate SOW"
+        )
     }
 
     func runNextBestAction() async {
@@ -1002,6 +1577,8 @@ struct DashboardView: View {
             showUploadsQueuePanel = true
         case "Run Watch Scan":
             await runWatchScanNow()
+        case "Generate SOW":
+            openProjectsWorkspace = true
         case "Run Morning":
             await runQuickAction(name: "Morning") { await api.runMorningChecklist() }
         case "Check Bids":
@@ -2045,6 +2622,97 @@ struct CuratorFactRow: View {
 // MARK: - Actions View
 
 struct ActionsView: View {
+    var body: some View {
+        List {
+            Section("Focused Workspaces") {
+                NavigationLink {
+                    ProjectsWorkspaceView()
+                } label: {
+                    Label("Projects Agents", systemImage: "folder.badge.gearshape")
+                }
+
+                NavigationLink {
+                    OpsAutomationView()
+                } label: {
+                    Label("Ops Automation", systemImage: "server.rack")
+                }
+
+                NavigationLink {
+                    SalesToolkitView()
+                } label: {
+                    Label("Sales Toolkit", systemImage: "person.3.sequence")
+                }
+
+                NavigationLink {
+                    InstallWorkspaceView()
+                } label: {
+                    Label("Install Workspace", systemImage: "wrench.and.screwdriver")
+                }
+            }
+
+            Section("Power Tools") {
+                NavigationLink {
+                    AdvancedProjectsAgentsView()
+                } label: {
+                    Label("Projects Agents (Advanced)", systemImage: "folder.badge.gearshape")
+                }
+                NavigationLink {
+                    AdvancedOpsAgentsView()
+                } label: {
+                    Label("Ops Automation (Advanced)", systemImage: "server.rack")
+                }
+                NavigationLink {
+                    AdvancedGrowthToolsView()
+                } label: {
+                    Label("Growth + SEO Tools", systemImage: "chart.line.uptrend.xyaxis")
+                }
+                NavigationLink {
+                    AdvancedAIToolsView()
+                } label: {
+                    Label("AI Utility Tools", systemImage: "brain")
+                }
+            }
+
+            Section("Legacy") {
+                NavigationLink {
+                    LegacyActionsView()
+                } label: {
+                    Label("Legacy Work Center", systemImage: "archivebox")
+                }
+                Text("Use this while we finish migrating remaining edge workflows.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .navigationTitle("Actions")
+    }
+}
+
+struct AdvancedProjectsAgentsView: View {
+    var body: some View {
+        LegacyActionsView(initialWorkspaceRaw: "Projects", showWorkspacePicker: false, title: "Projects Agents")
+    }
+}
+
+struct AdvancedOpsAgentsView: View {
+    var body: some View {
+        LegacyActionsView(initialWorkspaceRaw: "Daily Ops", showWorkspacePicker: false, title: "Ops Automation")
+    }
+}
+
+struct AdvancedGrowthToolsView: View {
+    var body: some View {
+        LegacyActionsView(initialWorkspaceRaw: "Growth", showWorkspacePicker: false, title: "Growth + SEO")
+    }
+}
+
+struct AdvancedAIToolsView: View {
+    var body: some View {
+        LegacyActionsView(initialWorkspaceRaw: "AI Tools", showWorkspacePicker: false, title: "AI Tools")
+    }
+}
+
+struct LegacyActionsView: View {
     @EnvironmentObject var api: APIClient
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -2109,7 +2777,15 @@ struct ActionsView: View {
 
         var id: String { rawValue }
     }
-    @State private var actionWorkspace: ActionWorkspace = .dailyOps
+    @State private var actionWorkspace: ActionWorkspace
+    private let showWorkspacePicker: Bool
+    private let forcedTitle: String?
+
+    init(initialWorkspaceRaw: String = "Daily Ops", showWorkspacePicker: Bool = true, title: String? = nil) {
+        self.showWorkspacePicker = showWorkspacePicker
+        self.forcedTitle = title
+        _actionWorkspace = State(initialValue: ActionWorkspace(rawValue: initialWorkspaceRaw) ?? .dailyOps)
+    }
     
     var markupURL: URL {
         api.markupURL ?? api.fallbackMarkupURL
@@ -2508,16 +3184,18 @@ struct ActionsView: View {
         NavigationView {
             ScrollViewReader { proxy in
                 List {
-                Section(header: Text("Focus Area")) {
-                    Picker("Workspace", selection: $actionWorkspace) {
-                        ForEach(ActionWorkspace.allCases) { workspace in
-                            Text(workspace.rawValue).tag(workspace)
+                if showWorkspacePicker {
+                    Section(header: Text("Focus Area")) {
+                        Picker("Workspace", selection: $actionWorkspace) {
+                            ForEach(ActionWorkspace.allCases) { workspace in
+                                Text(workspace.rawValue).tag(workspace)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        Text("Pick one focus area to reduce noise and keep priority tasks visible.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
-                    .pickerStyle(.segmented)
-                    Text("Pick one focus area to reduce noise and keep priority tasks visible.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
                 }
 
                 if actionWorkspace == .projects {
@@ -2930,7 +3608,7 @@ struct ActionsView: View {
                 }
                 }
             }
-            .navigationTitle("Work Center")
+            .navigationTitle(forcedTitle ?? "Work Center")
             .onChange(of: shouldScrollToProductResult) { shouldScroll in
                 guard shouldScroll else { return }
                 withAnimation {
@@ -3466,7 +4144,7 @@ struct ActionRow: View {
     let title: String
     let icon: String
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack {
