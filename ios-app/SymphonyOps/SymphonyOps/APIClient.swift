@@ -767,13 +767,6 @@ class APIClient: ObservableObject {
         runAISummary: Bool
     ) async -> ProposalScopeResponse? {
         do {
-            var request = URLRequest(url: URL(string: "\(baseURL)/projects/proposal_scope")!)
-            request.httpMethod = "POST"
-
-            let boundary = "Boundary-\(UUID().uuidString)"
-            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-            request.timeoutInterval = 240
-
             let started = fileURL.startAccessingSecurityScopedResource()
             defer {
                 if started { fileURL.stopAccessingSecurityScopedResource() }
@@ -782,30 +775,78 @@ class APIClient: ObservableObject {
             let filename = fileURL.lastPathComponent
             let mimeType = mimeTypeForFile(url: fileURL)
 
-            var body = Data()
-            body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
-            body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
-            body.append(multipartField(name: "run_ai_summary", value: runAISummary ? "true" : "false", boundary: boundary))
-            body.append(
-                multipartFileField(
-                    name: "proposal_file",
+            // Primary path: run AI summary (can be slower for large proposals).
+            do {
+                let data = try await sendProposalScopeRequest(
+                    projectName: projectName,
+                    clientName: clientName,
+                    runAISummary: runAISummary,
                     filename: filename,
                     mimeType: mimeType,
-                    data: fileData,
-                    boundary: boundary
+                    fileData: fileData
                 )
-            )
-            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-            request.httpBody = body
-
-            let (data, _) = try await URLSession.shared.data(for: request)
-            return try JSONDecoder().decode(ProposalScopeResponse.self, from: data)
+                return try JSONDecoder().decode(ProposalScopeResponse.self, from: data)
+            } catch {
+                // Fast fallback: if AI summary timed out, retry without AI summary so user still gets SOW output.
+                let isTimeout = (error as? URLError)?.code == .timedOut
+                if runAISummary && isTimeout {
+                    let data = try await sendProposalScopeRequest(
+                        projectName: projectName,
+                        clientName: clientName,
+                        runAISummary: false,
+                        filename: filename,
+                        mimeType: mimeType,
+                        fileData: fileData
+                    )
+                    await MainActor.run {
+                        self.error = "AI summary timed out. Returned core SOW output without AI summary."
+                    }
+                    return try JSONDecoder().decode(ProposalScopeResponse.self, from: data)
+                }
+                throw error
+            }
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
             }
             return nil
         }
+    }
+
+    private func sendProposalScopeRequest(
+        projectName: String,
+        clientName: String,
+        runAISummary: Bool,
+        filename: String,
+        mimeType: String,
+        fileData: Data
+    ) async throws -> Data {
+        var request = URLRequest(url: URL(string: "\(baseURL)/projects/proposal_scope")!)
+        request.httpMethod = "POST"
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        // Large proposal parsing + AI summarization can exceed default request duration.
+        request.timeoutInterval = 600
+
+        var body = Data()
+        body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
+        body.append(multipartField(name: "client_name", value: clientName, boundary: boundary))
+        body.append(multipartField(name: "run_ai_summary", value: runAISummary ? "true" : "false", boundary: boundary))
+        body.append(
+            multipartFileField(
+                name: "proposal_file",
+                filename: filename,
+                mimeType: mimeType,
+                data: fileData,
+                boundary: boundary
+            )
+        )
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return data
     }
 
     // MARK: - Notes Automation

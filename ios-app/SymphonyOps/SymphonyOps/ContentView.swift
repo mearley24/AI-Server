@@ -15,80 +15,54 @@ struct ContentView: View {
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     var body: some View {
-        Group {
-            if horizontalSizeClass == .regular {
-                NavigationSplitView {
-                    List(filteredSections) { section in
-                        Button {
-                            selectedSection = section
-                        } label: {
-                            HStack {
-                                Label(section.title, systemImage: section.systemImage)
-                                Spacer()
-                                if selectedSection == section {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .listStyle(.sidebar)
-                    .searchable(text: $sidebarQuery, placement: .sidebar, prompt: "Search")
-                    .navigationTitle("Symphony Ops")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Edit") {}
-                                .disabled(true)
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Image(systemName: "circle.grid.2x2")
-                        }
-                    }
-                } detail: {
-                    sectionView(for: selectedSection)
-                }
-            } else {
-                TabView(selection: $selectedTab) {
-                    DashboardView()
-                        .tabItem {
-                            Label("Today", systemImage: "sun.max")
-                        }
-                        .tag(0)
-
-                    NavigationStack {
-                        ProjectsWorkspaceView()
-                    }
-                        .tabItem {
-                            Label("Projects", systemImage: "folder")
-                        }
-                        .tag(1)
-
-                    NavigationStack {
-                        SalesToolkitView()
-                    }
-                        .tabItem {
-                            Label("Sales", systemImage: "person.3")
-                        }
-                        .tag(2)
-
-                    NavigationStack {
-                        InstallWorkspaceView()
-                    }
-                        .tabItem {
-                            Label("Install", systemImage: "wrench.and.screwdriver")
-                        }
-                        .tag(3)
-
-                    NavigationStack {
-                        OpsAutomationView()
-                    }
-                        .tabItem {
-                            Label("Ops", systemImage: "server.rack")
-                        }
-                        .tag(4)
-                }
+        TabView(selection: $selectedTab) {
+            NavigationStack {
+                TodayFocusView()
             }
+            .tabItem {
+                Label("Today", systemImage: "sun.max")
+            }
+            .tag(0)
+
+            NavigationStack {
+                ProjectsWorkspaceView()
+            }
+            .tabItem {
+                Label("Projects", systemImage: "folder")
+            }
+            .tag(1)
+
+            NavigationStack {
+                SalesToolkitView()
+            }
+            .tabItem {
+                Label("Sales", systemImage: "person.3")
+            }
+            .tag(2)
+
+            NavigationStack {
+                InstallWorkspaceView()
+            }
+            .tabItem {
+                Label("Install", systemImage: "wrench.and.screwdriver")
+            }
+            .tag(3)
+
+            NavigationStack {
+                OpsAutomationView()
+            }
+            .tabItem {
+                Label("Ops", systemImage: "server.rack")
+            }
+            .tag(4)
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gear")
+            }
+            .tag(5)
         }
         .accentColor(Color.orange)
         .task {
@@ -108,7 +82,7 @@ struct ContentView: View {
     private func sectionView(for section: AppSection) -> some View {
         switch section {
         case .today:
-            DashboardView()
+            TodayFocusView()
         case .projects:
             ProjectsWorkspaceView()
         case .sales:
@@ -146,6 +120,55 @@ struct ContentView: View {
         _ = await (dashboardTask, ollamaTask, lmTask, aiStatusTask)
         perfLogger.info("startup.heavyTasks.ms=\(Int(Date().timeIntervalSince(heavyStart) * 1000))")
         perfLogger.info("startup.total.ms=\(Int(Date().timeIntervalSince(startupStart) * 1000))")
+    }
+}
+
+struct TodayFocusView: View {
+    @State private var quoteIndex = 0
+
+    private static let dailyQuotes = [
+        "Make it easy for Future You.",
+        "Slow is smooth. Smooth is fast.",
+        "One clean handoff beats ten rushed fixes.",
+        "Done today is better than perfect someday."
+    ]
+
+    var body: some View {
+        List {
+            Section("Weather") {
+                HStack(spacing: 10) {
+                    Image(systemName: "cloud.sun.fill")
+                        .foregroundColor(.orange)
+                    Text("Weather summary")
+                        .fontWeight(.semibold)
+                }
+                Text("Connect weather source in Ops when ready.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Schedule") {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar")
+                        .foregroundColor(.blue)
+                    Text("Today")
+                        .fontWeight(.semibold)
+                }
+                Text("No schedule items loaded yet.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section("Daily Quote") {
+                Text(Self.dailyQuotes[quoteIndex])
+                    .font(.body)
+                Button("New Quote") {
+                    quoteIndex = Int.random(in: 0..<Self.dailyQuotes.count)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .navigationTitle("Today")
     }
 }
 
@@ -190,6 +213,8 @@ struct ProjectsWorkspaceView: View {
     @State private var showProposalScopeImporter = false
     @State private var selectedProposalScopeFile: URL?
     @State private var proposalScopeResponse: ProposalScopeResponse?
+    @State private var sowShareURL: URL?
+    @State private var showSOWShareSheet = false
     @State private var isLoading = false
     @State private var resultMessage: String?
 
@@ -283,6 +308,13 @@ struct ProjectsWorkspaceView: View {
                                 .foregroundColor(.orange)
                         }
                     }
+
+                    Button {
+                        exportProposalScopeMarkdown()
+                    } label: {
+                        Label("Export SOW Markdown", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
         }
@@ -302,6 +334,11 @@ struct ProjectsWorkspaceView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(resultMessage ?? "")
+        }
+        .sheet(isPresented: $showSOWShareSheet) {
+            if let fileURL = sowShareURL {
+                ActivityView(activityItems: [fileURL])
+            }
         }
     }
 
@@ -338,6 +375,70 @@ struct ProjectsWorkspaceView: View {
         } else {
             resultMessage = response?.error ?? api.error ?? "Proposal scope agent failed"
         }
+    }
+
+    private func exportProposalScopeMarkdown() {
+        guard let proposalScope = proposalScopeResponse else {
+            resultMessage = "Generate a scope first, then export."
+            return
+        }
+        let content = buildProposalScopeMarkdown(from: proposalScope)
+        let slug = (proposalScope.project_slug?.isEmpty == false ? proposalScope.project_slug! : "proposal-scope")
+        let timestamp = proposalScope.batch_timestamp ?? String(Int(Date().timeIntervalSince1970))
+        let filename = "\(slug)_SOW_\(timestamp).md"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+
+        do {
+            try content.write(to: url, atomically: true, encoding: .utf8)
+            sowShareURL = url
+            showSOWShareSheet = true
+        } catch {
+            resultMessage = "Export failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func buildProposalScopeMarkdown(from response: ProposalScopeResponse) -> String {
+        var lines: [String] = []
+        lines.append("# Scope of Work")
+        lines.append("")
+        lines.append("- Project: \(response.project_name ?? "N/A")")
+        lines.append("- Client: \(response.client_name ?? "N/A")")
+        if let quote = response.dtools_quote_version, !quote.isEmpty {
+            lines.append("- D-Tools Quote: \(quote)")
+        }
+        lines.append("")
+
+        func appendSection(_ title: String, _ items: [String]?) {
+            guard let items, !items.isEmpty else { return }
+            lines.append("## \(title)")
+            for item in items {
+                lines.append("- \(item)")
+            }
+            lines.append("")
+        }
+
+        let scope = response.scope
+        appendSection("Scope of Work", scope?.scope_of_work)
+        appendSection("Included", scope?.included_items)
+        appendSection("Excluded", scope?.excluded_items)
+        appendSection("Assumptions", scope?.assumptions)
+        appendSection("Allowances", scope?.allowances)
+        appendSection("Schedule Notes", scope?.schedule_notes)
+        appendSection("Open Questions", scope?.open_questions)
+
+        if let riskTags = scope?.risk_tags, !riskTags.isEmpty {
+            lines.append("## Risk Tags")
+            lines.append(riskTags.map { "`\($0)`" }.joined(separator: ", "))
+            lines.append("")
+        }
+        if let ai = response.ai_summary {
+            appendSection("AI Key Findings", ai.key_findings)
+            appendSection("AI Recommended Devices", ai.recommended_devices)
+            appendSection("AI Risks", ai.risks)
+            appendSection("AI Clarifying Questions", ai.clarifying_questions)
+            appendSection("AI Next Steps", ai.next_steps)
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -804,17 +905,9 @@ struct DashboardView: View {
     }
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    NavigationLink(
-                        destination: ProjectsWorkspaceView(),
-                        isActive: $openProjectsWorkspace
-                    ) {
-                        EmptyView()
-                    }
-                    .hidden()
-
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Today")
                             .font(.title2)
@@ -1414,6 +1507,9 @@ struct DashboardView: View {
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Symphony Ops")
+            .navigationDestination(isPresented: $openProjectsWorkspace) {
+                ProjectsWorkspaceView()
+            }
             .refreshable {
                 await api.fetchDashboard()
                 await api.fetchAIStatus(force: true)
