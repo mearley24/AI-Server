@@ -60,7 +60,14 @@ sys.path.insert(0, str(BASE_DIR))
 
 API_PORT = int(os.environ.get("MOBILE_API_PORT", "8420"))
 API_BIND_HOST = os.environ.get("MOBILE_API_BIND_HOST", "127.0.0.1")
-API_AUTH_TOKEN = os.environ.get("SYMPHONY_API_TOKEN", "").strip()
+def _normalize_auth_token(value: str) -> str:
+    token = (value or "").strip()
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in {"'", '"'}:
+        token = token[1:-1].strip()
+    return token
+
+
+API_AUTH_TOKEN = _normalize_auth_token(os.environ.get("SYMPHONY_API_TOKEN", ""))
 DTOOLS_PRODUCT_AGENT_DIR = BASE_DIR / "data" / "dtools_product_agent"
 DTOOLS_PRODUCT_AGENT_DIR.mkdir(parents=True, exist_ok=True)
 DTOOLS_PRODUCT_DB = DTOOLS_PRODUCT_AGENT_DIR / "products.sqlite3"
@@ -1371,9 +1378,9 @@ if HAS_FASTAPI:
         if not API_AUTH_TOKEN or _auth_exempt_path(request.url.path):
             return await call_next(request)
 
-        header_token = request.headers.get("x-symphony-token", "").strip()
+        header_token = _normalize_auth_token(request.headers.get("x-symphony-token", ""))
         auth = request.headers.get("authorization", "").strip()
-        bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        bearer = _normalize_auth_token(auth[7:].strip()) if auth.lower().startswith("bearer ") else ""
         token = header_token or bearer
 
         if token != API_AUTH_TOKEN:

@@ -79,7 +79,7 @@ class APIClient: ObservableObject {
     }
 
     func setAPIToken(_ token: String) {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = normalizedTokenInput(token)
         if trimmed.isEmpty {
             clearAPIToken()
             return
@@ -160,6 +160,32 @@ class APIClient: ObservableObject {
             kSecAttrAccount as String: apiTokenKeychainAccount
         ]
         SecItemDelete(query as CFDictionary)
+    }
+
+    /// Accept either raw token values or env-style assignments.
+    /// Example accepted input: "SYMPHONY_API_TOKEN=abc123"
+    private func normalizedTokenInput(_ input: String) -> String {
+        var token = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.isEmpty { return "" }
+
+        if let eq = token.firstIndex(of: "=") {
+            let lhs = token[..<eq]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+                .replacingOccurrences(of: "-", with: "_")
+            let rhs = token[token.index(after: eq)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if lhs == "SYMPHONY_API_TOKEN" || lhs == "X_SYMPHONY_TOKEN" {
+                token = String(rhs)
+            }
+        }
+
+        token = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'").union(.whitespacesAndNewlines))
+
+        let normalizedLabel = token.uppercased().replacingOccurrences(of: "-", with: "_")
+        if normalizedLabel == "SYMPHONY_API_TOKEN" || normalizedLabel == "X_SYMPHONY_TOKEN" {
+            return ""
+        }
+        return token
     }
     
     var ollamaURL: String {
