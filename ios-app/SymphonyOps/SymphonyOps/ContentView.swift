@@ -110,6 +110,7 @@ struct ContentView: View {
                     headerChip("Health", isSelected: opsMode == .health) { opsMode = .health }
                     headerChip("Dropout", isSelected: opsMode == .dropout) { opsMode = .dropout }
                     headerChip("Notes", isSelected: opsMode == .notes) { opsMode = .notes }
+                    headerChip("Weather", isSelected: opsMode == .weather) { opsMode = .weather }
                 case .settings:
                     headerChip("Connection", isSelected: true) {}
                 }
@@ -196,6 +197,9 @@ struct ContentView: View {
 struct TodayFocusView: View {
     var mode: TodayWorkspaceMode = .weather
     @State private var quoteIndex = 0
+    @AppStorage("weather.setup.enabled.v1") private var weatherSetupEnabled = false
+    @AppStorage("weather.location.v1") private var weatherLocation = ""
+    @AppStorage("weather.provider.v1") private var weatherProvider = "openweather"
 
     private static let dailyQuotes = [
         "Make it easy for Future You.",
@@ -215,9 +219,15 @@ struct TodayFocusView: View {
                         Text("Weather summary")
                             .fontWeight(.semibold)
                     }
-                    Text("Connect weather source in Ops when ready.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    if weatherSetupEnabled {
+                        Text("Configured: \(weatherProviderLabel(weatherProvider)) • \(weatherLocation.isEmpty ? "Location not set" : weatherLocation)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Connect weather source in Ops -> Weather.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             case .schedule:
                 Section("Schedule") {
@@ -243,6 +253,14 @@ struct TodayFocusView: View {
             }
         }
         .navigationTitle("Today")
+    }
+
+    private func weatherProviderLabel(_ value: String) -> String {
+        switch value {
+        case "openweather": return "OpenWeather"
+        case "weatherapi": return "WeatherAPI"
+        default: return "Custom"
+        }
     }
 }
 
@@ -304,6 +322,7 @@ enum OpsWorkspaceMode: Int {
     case health
     case dropout
     case notes
+    case weather
 }
 
 struct ProjectsWorkspaceView: View {
@@ -776,6 +795,10 @@ struct OpsAutomationView: View {
     @State private var networkDropoutStatus: NetworkDropoutStatusResponse?
     @State private var control4IP = ""
     @State private var sonosIP = ""
+    @AppStorage("weather.setup.enabled.v1") private var weatherSetupEnabled = false
+    @AppStorage("weather.location.v1") private var weatherLocation = ""
+    @AppStorage("weather.provider.v1") private var weatherProvider = "openweather"
+    @AppStorage("weather.api_key_name.v1") private var weatherAPIKeyName = "OPENWEATHER_API_KEY"
 
     var body: some View {
         List {
@@ -884,6 +907,48 @@ struct OpsAutomationView: View {
                         .lineLimit(2)
                 }
             }
+            }
+
+            if mode == .weather {
+                Section("Weather Setup") {
+                    Toggle("Enable weather in Today", isOn: $weatherSetupEnabled)
+
+                    Picker("Provider", selection: $weatherProvider) {
+                        Text("OpenWeather").tag("openweather")
+                        Text("WeatherAPI").tag("weatherapi")
+                        Text("Custom").tag("custom")
+                    }
+                    .pickerStyle(.menu)
+
+                    TextField("Location (e.g., Vail, CO)", text: $weatherLocation)
+                        .textFieldStyle(.roundedBorder)
+
+                    TextField("Vault key name for weather API key", text: $weatherAPIKeyName)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .textFieldStyle(.roundedBorder)
+
+                    actionButtons(
+                        primaryTitle: "Save Weather Setup",
+                        primaryIcon: "square.and.arrow.down.fill",
+                        primaryAction: {
+                            resultMessage = "Weather setup saved. Today tab now uses this configuration."
+                        },
+                        secondaryTitle: "Clear Setup",
+                        secondaryIcon: "trash",
+                        secondaryAction: {
+                            weatherSetupEnabled = false
+                            weatherLocation = ""
+                            weatherProvider = "openweather"
+                            weatherAPIKeyName = "OPENWEATHER_API_KEY"
+                            resultMessage = "Weather setup cleared."
+                        }
+                    )
+
+                    Text("Tip: store provider API key in Vault, then enter that key name here for team reference.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
         }
         .navigationTitle("Ops")
