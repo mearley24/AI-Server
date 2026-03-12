@@ -1,0 +1,99 @@
+{
+  "source": "/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH/Projects/Topletz - 84 Aspen Meadow - Arrowhead/2025 0205 84 Aspen Meadow floor plans.pdf",
+  "total_pages": 2,
+  "scanned_at": "2026-03-12T05:40:37.111144",
+  "pages": [
+    {
+      "page_number": 1,
+      "sheet_id": "A0.1",
+      "page_type": "Floor Plan",
+      "level": "Basement",
+      "rooms": [
+        "Mech",
+        "Laundry",
+        "Family",
+        "Storage",
+        "Bed 3",
+        "Bath 3",
+        "Entry",
+        "Closet"
+      ],
+      "lighting_info": {
+        "fixtures_by_type": {},
+        "fixture_schedule": [],
+        "circuits": [],
+        "dimming_zones": []
+      },
+      "ceiling_info": {
+        "heights": {},
+        "materials": [],
+        "special_features": []
+      },
+      "legends": {
+        "symbols": {},
+        "abbreviations": {}
+      },
+      "schedules": {
+        "type": "",
+        "data": []
+      },
+      "notes": [
+        "Patch existing construction scheduled to remain.",
+        "Patch existing fire-rated walls, floor ceilings, etc.",
+        "Patch walls at removed receptacle openings.",
+        "Patch and level floor substrates to receive new work.",
+        "Coordinate all floor core drilling with existing.",
+        "Do not scale drawings.",
+        "In rooms with floor drains, slope concrete surface.",
+        "All spot elevations shown on the floor plans outside the building relate to USGS elevations.",
+        "All angles shown on the floor plans are 90 degrees unless otherwise noted.",
+        "All dimensions are to grid line, face of concrete or masonry, or face of gypsum board.",
+        "All floor plan dimensions to masonry are nominal dimensions."
+      ],
+      "dimensions": {},
+      "av_relevant": [],
+      "summary": "This page is a basement floor plan showing various rooms including mechanical, laundry, family, storage, and bedrooms. It includes general notes on construction and patching requirements."
+    },
+    {
+      "page_number": 2,
+      "error": "JSON parse error: Expecting ',' delimiter: line 55 column 13 (char 1323)",
+      "raw_response": "{\n    \"page_number\": 2,\n    \"sheet_id\": \"A3.2\",\n    \"page_type\": \"floor plan\",\n    \"level\": \"Main Level\",\n    \"rooms\": [\n        \"Powder\",\n        \"Pantry\",\n        \"Bath\",\n        \"Water Closet\",\n        \"Walk In Closet\",\n        \"Living\",\n        \"Office\",\n        \"Kitchen\",\n        \"Dining\",\n        \"Primary Bed\",\n        \"Mud\",\n        \"Office #2\",\n        \"Garage\"\n    ],\n    \"lighting_info\": {\n        \"fixtures_by_type\": {},\n        \"fixture_schedule\": [],\n        \"circuits\": [],\n        \"dimming_zones\": []\n    },\n    \"ceiling_info\": {\n        \"heights\": {},\n        \"materials\": [],\n        \"special_features\": []\n    },\n    \"legends\": {\n        \"symbols\": {},\n        \"abbreviations\": {}\n    },\n    \"schedules\": {\n        \"type\": \"door schedule\",\n        \"data\": [\n            {\n                \"mark\": \"001\",\n                \"width\": \"3' - 0\\\"\",\n                \"height\": \"7' - 0\\\"\",\n                \"door_type\": \"SC\",\n                \"door_material\": \"WHITE OAK\",\n                \"rema"
+    }
+  ],
+  "summary": {
+    "all_rooms": [
+      "Bath 3",
+      "Bed 3",
+      "Closet",
+      "Entry",
+      "Family",
+      "Laundry",
+      "Mech",
+      "Storage"
+    ],
+    "lighting_fixtures": {},
+    "fixture_schedules": [],
+    "all_notes": [
+      "Patch existing construction scheduled to remain.",
+      "Patch existing fire-rated walls, floor ceilings, etc.",
+      "Patch walls at removed receptacle openings.",
+      "Patch and level floor substrates to receive new work.",
+      "Coordinate all floor core drilling with existing.",
+      "Do not scale drawings.",
+      "In rooms with floor drains, slope concrete surface.",
+      "All spot elevations shown on the floor plans outside the building relate to USGS elevations.",
+      "All angles shown on the floor plans are 90 degrees unless otherwise noted.",
+      "All dimensions are to grid line, face of concrete or masonry, or face of gypsum board.",
+      "All floor plan dimensions to masonry are nominal dimensions."
+    ],
+    "av_relevant_info": [],
+    "page_index": {
+      "1": {
+        "type": "Floor Plan",
+        "level": "Basement",
+        "sheet": "A0.1",
+        "summary": "This page is a basement floor plan showing various rooms including mechanical, laundry, family, stor"
+      }
+    }
+  }
+}
