@@ -4687,15 +4687,60 @@ struct SettingsView: View {
     @EnvironmentObject var secretsVault: SecretsVaultStore
     @State private var serverURL: String = ""
     @State private var apiTokenInput: String = ""
+    @State private var selectedVaultKeyID: UUID?
     @State private var authStatusMessage: String = ""
     @State private var connectionTestMessage: String = ""
     @State private var isTestingConnection = false
     @State private var isRunningOneTapFix = false
+    @State private var isApplyingVaultKey = false
+
+    private var sortedVaultKeys: [VaultSecretRecord] {
+        secretsVault.records.sorted { lhs, rhs in
+            let l = lhs.keyName.lowercased()
+            let r = rhs.keyName.lowercased()
+            if l == r { return lhs.updatedAt > rhs.updatedAt }
+            return l < r
+        }
+    }
     
     var body: some View {
         Group {
             Form {
                 Section(header: Text("API Auth (Keychain)")) {
+                    Picker("Vault key", selection: $selectedVaultKeyID) {
+                        Text("Select vault key").tag(nil as UUID?)
+                        ForEach(sortedVaultKeys) { record in
+                            Text(record.keyName).tag(Optional(record.id))
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Button(isApplyingVaultKey ? "Applying..." : "Use Selected Vault Key") {
+                        guard let id = selectedVaultKeyID, !isApplyingVaultKey else { return }
+                        isApplyingVaultKey = true
+                        Task {
+                            let secret = await secretsVault.revealSecret(id: id)
+                            guard let value = secret?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+                                await MainActor.run {
+                                    authStatusMessage = "Could not read selected vault key."
+                                    isApplyingVaultKey = false
+                                }
+                                return
+                            }
+                            api.setAPIToken(value)
+                            let msg = await api.testURLAndToken()
+                            await MainActor.run {
+                                authStatusMessage = "Token loaded from Vault and saved to Keychain."
+                                connectionTestMessage = msg
+                                serverURL = api.baseURL
+                                apiTokenInput = ""
+                                isApplyingVaultKey = false
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(selectedVaultKeyID == nil || isApplyingVaultKey)
+
                     SecureField("X-Symphony-Token", text: $apiTokenInput)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled(true)
@@ -4741,6 +4786,10 @@ struct SettingsView: View {
                     }
 
                     Text("Token is stored in iOS Keychain only (WhenUnlockedThisDeviceOnly).")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    Text("Choose a secret directly from Vault to avoid typing mistakes.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -4943,6 +4992,16 @@ struct SettingsView: View {
             .onAppear {
                 serverURL = api.baseURL
                 connectionTestMessage = api.lastConnectionMessage ?? ""
+                if selectedVaultKeyID == nil {
+                    if let preferred = secretsVault.records.first(where: {
+                        let key = $0.keyName.uppercased().replacingOccurrences(of: "-", with: "_")
+                        return key == "SYMPHONY_API_TOKEN" || key == "X_SYMPHONY_TOKEN"
+                    }) {
+                        selectedVaultKeyID = preferred.id
+                    } else {
+                        selectedVaultKeyID = sortedVaultKeys.first?.id
+                    }
+                }
             }
         }
     }
