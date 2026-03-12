@@ -8,11 +8,19 @@ struct ContentView: View {
     @EnvironmentObject var api: APIClient
     @EnvironmentObject var secretsVault: SecretsVaultStore
     @State private var selectedSection: AppSection = .today
+    @State private var todayMode: TodayWorkspaceMode = .weather
     @State private var projectsMode: ProjectsWorkspaceMode = .markup
     @State private var salesMode: SalesWorkspaceMode = .pipeline
     @State private var installMode: InstallWorkspaceMode = .queue
     @State private var opsMode: OpsWorkspaceMode = .health
     @State private var didRunStartup = false
+    @State private var didRestoreWorkspaceState = false
+    @AppStorage("workspace.selectedSection.v1") private var persistedSelectedSection = AppSection.today.rawValue
+    @AppStorage("workspace.todayMode.v1") private var persistedTodayMode = TodayWorkspaceMode.weather.rawValue
+    @AppStorage("workspace.projectsMode.v1") private var persistedProjectsMode = ProjectsWorkspaceMode.markup.rawValue
+    @AppStorage("workspace.salesMode.v1") private var persistedSalesMode = SalesWorkspaceMode.pipeline.rawValue
+    @AppStorage("workspace.installMode.v1") private var persistedInstallMode = InstallWorkspaceMode.queue.rawValue
+    @AppStorage("workspace.opsMode.v1") private var persistedOpsMode = OpsWorkspaceMode.health.rawValue
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
     
     var body: some View {
@@ -27,6 +35,27 @@ struct ContentView: View {
         .accentColor(Color.orange)
         .task {
             await runStartupIfNeeded()
+        }
+        .onAppear {
+            restoreWorkspaceStateIfNeeded()
+        }
+        .onChange(of: selectedSection) { newValue in
+            persistedSelectedSection = newValue.rawValue
+        }
+        .onChange(of: todayMode) { newValue in
+            persistedTodayMode = newValue.rawValue
+        }
+        .onChange(of: projectsMode) { newValue in
+            persistedProjectsMode = newValue.rawValue
+        }
+        .onChange(of: salesMode) { newValue in
+            persistedSalesMode = newValue.rawValue
+        }
+        .onChange(of: installMode) { newValue in
+            persistedInstallMode = newValue.rawValue
+        }
+        .onChange(of: opsMode) { newValue in
+            persistedOpsMode = newValue.rawValue
         }
     }
 
@@ -65,7 +94,9 @@ struct ContentView: View {
                 Spacer(minLength: 0)
                 switch selectedSection {
                 case .today:
-                    headerChip("Overview", isSelected: true) {}
+                    headerChip("Weather", isSelected: todayMode == .weather) { todayMode = .weather }
+                    headerChip("Schedule", isSelected: todayMode == .schedule) { todayMode = .schedule }
+                    headerChip("Quote", isSelected: todayMode == .quote) { todayMode = .quote }
                 case .projects:
                     headerChip("Markup", isSelected: projectsMode == .markup) { projectsMode = .markup }
                     headerChip("SOW", isSelected: projectsMode == .sow) { projectsMode = .sow }
@@ -110,7 +141,7 @@ struct ContentView: View {
     private func sectionView(for section: AppSection) -> some View {
         switch section {
         case .today:
-            TodayFocusView()
+            TodayFocusView(mode: todayMode)
         case .projects:
             ProjectsWorkspaceView(mode: projectsMode)
         case .sales:
@@ -149,9 +180,21 @@ struct ContentView: View {
         perfLogger.info("startup.heavyTasks.ms=\(Int(Date().timeIntervalSince(heavyStart) * 1000))")
         perfLogger.info("startup.total.ms=\(Int(Date().timeIntervalSince(startupStart) * 1000))")
     }
+
+    private func restoreWorkspaceStateIfNeeded() {
+        if didRestoreWorkspaceState { return }
+        didRestoreWorkspaceState = true
+        selectedSection = AppSection(rawValue: persistedSelectedSection) ?? .today
+        todayMode = TodayWorkspaceMode(rawValue: persistedTodayMode) ?? .weather
+        projectsMode = ProjectsWorkspaceMode(rawValue: persistedProjectsMode) ?? .markup
+        salesMode = SalesWorkspaceMode(rawValue: persistedSalesMode) ?? .pipeline
+        installMode = InstallWorkspaceMode(rawValue: persistedInstallMode) ?? .queue
+        opsMode = OpsWorkspaceMode(rawValue: persistedOpsMode) ?? .health
+    }
 }
 
 struct TodayFocusView: View {
+    var mode: TodayWorkspaceMode = .weather
     @State private var quoteIndex = 0
 
     private static let dailyQuotes = [
@@ -163,37 +206,40 @@ struct TodayFocusView: View {
 
     var body: some View {
         List {
-            Section("Weather") {
-                HStack(spacing: 10) {
-                    Image(systemName: "cloud.sun.fill")
-                        .foregroundColor(.orange)
-                    Text("Weather summary")
-                        .fontWeight(.semibold)
+            switch mode {
+            case .weather:
+                Section("Weather") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "cloud.sun.fill")
+                            .foregroundColor(.orange)
+                        Text("Weather summary")
+                            .fontWeight(.semibold)
+                    }
+                    Text("Connect weather source in Ops when ready.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                Text("Connect weather source in Ops when ready.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Schedule") {
-                HStack(spacing: 10) {
-                    Image(systemName: "calendar")
-                        .foregroundColor(.blue)
-                    Text("Today")
-                        .fontWeight(.semibold)
+            case .schedule:
+                Section("Schedule") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "calendar")
+                            .foregroundColor(.blue)
+                        Text("Today")
+                            .fontWeight(.semibold)
+                    }
+                    Text("No schedule items loaded yet.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                Text("No schedule items loaded yet.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Daily Quote") {
-                Text(Self.dailyQuotes[quoteIndex])
-                    .font(.body)
-                Button("New Quote") {
-                    quoteIndex = Int.random(in: 0..<Self.dailyQuotes.count)
+            case .quote:
+                Section("Daily Quote") {
+                    Text(Self.dailyQuotes[quoteIndex])
+                        .font(.body)
+                    Button("New Quote") {
+                        quoteIndex = Int.random(in: 0..<Self.dailyQuotes.count)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
             }
         }
         .navigationTitle("Today")
@@ -233,22 +279,28 @@ private enum AppSection: Int, CaseIterable, Identifiable {
     }
 }
 
-enum ProjectsWorkspaceMode {
+enum ProjectsWorkspaceMode: Int {
     case markup
     case sow
     case manualDigest
 }
 
-enum SalesWorkspaceMode {
+enum TodayWorkspaceMode: Int {
+    case weather
+    case schedule
+    case quote
+}
+
+enum SalesWorkspaceMode: Int {
     case pipeline
     case dtoolsAgent
 }
 
-enum InstallWorkspaceMode {
+enum InstallWorkspaceMode: Int {
     case queue
 }
 
-enum OpsWorkspaceMode {
+enum OpsWorkspaceMode: Int {
     case health
     case dropout
     case notes
@@ -4643,6 +4695,56 @@ struct SettingsView: View {
     var body: some View {
         Group {
             Form {
+                Section(header: Text("API Auth (Keychain)")) {
+                    SecureField("X-Symphony-Token", text: $apiTokenInput)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+
+                    HStack {
+                        Button("Save Token") {
+                            api.setAPIToken(apiTokenInput)
+                            Task {
+                                let msg = await api.testURLAndToken()
+                                await MainActor.run {
+                                    apiTokenInput = ""
+                                    authStatusMessage = "Token saved to Keychain."
+                                    connectionTestMessage = msg
+                                    serverURL = api.baseURL
+                                }
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(apiTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        Button("Clear Token", role: .destructive) {
+                            api.clearAPIToken()
+                            apiTokenInput = ""
+                            authStatusMessage = "Keychain token cleared."
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    HStack {
+                        Text("Stored")
+                        Spacer()
+                        Circle()
+                            .fill(api.apiTokenConfigured ? Color.green : Color.gray)
+                            .frame(width: 10, height: 10)
+                        Text(api.apiTokenConfigured ? "Yes" : "No")
+                            .foregroundColor(.secondary)
+                    }
+
+                    if !authStatusMessage.isEmpty {
+                        Text(authStatusMessage)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text("Token is stored in iOS Keychain only (WhenUnlockedThisDeviceOnly).")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
                 Section(header: Text("Server Connection")) {
                     TextField("API URL", text: $serverURL)
                         .autocapitalization(.none)
@@ -4716,56 +4818,6 @@ struct SettingsView: View {
                     .buttonStyle(.borderedProminent)
 
                     Text("Runs full recovery in one step: saves token if entered, tests URL, falls back to Tailscale host, and re-tests.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-
-                Section(header: Text("API Auth (Keychain)")) {
-                    SecureField("X-Symphony-Token", text: $apiTokenInput)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-
-                    HStack {
-                        Button("Save Token") {
-                            api.setAPIToken(apiTokenInput)
-                            Task {
-                                let msg = await api.testURLAndToken()
-                                await MainActor.run {
-                                    apiTokenInput = ""
-                                    authStatusMessage = "Token saved to Keychain."
-                                    connectionTestMessage = msg
-                                    serverURL = api.baseURL
-                                }
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(apiTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                        Button("Clear Token", role: .destructive) {
-                            api.clearAPIToken()
-                            apiTokenInput = ""
-                            authStatusMessage = "Keychain token cleared."
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    HStack {
-                        Text("Stored")
-                        Spacer()
-                        Circle()
-                            .fill(api.apiTokenConfigured ? Color.green : Color.gray)
-                            .frame(width: 10, height: 10)
-                        Text(api.apiTokenConfigured ? "Yes" : "No")
-                            .foregroundColor(.secondary)
-                    }
-
-                    if !authStatusMessage.isEmpty {
-                        Text(authStatusMessage)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("Token is stored in iOS Keychain only (WhenUnlockedThisDeviceOnly).")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
