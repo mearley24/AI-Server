@@ -1079,6 +1079,31 @@ const CATEGORY_PRESETS = {
 };
 
 const CATEGORY_ORDER = ['speaker', 'shade', 'lighting', 'tv', 'camera', 'ap', 'network', 'sensor', 'custom'];
+const CUSTOM_CATEGORIES_STORAGE_KEY = 'sym_custom_categories';
+const customCategories = new Set(
+    JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_STORAGE_KEY) || '[]')
+        .map((id) => normalizeCategoryId(id))
+        .filter((id) => id && !CATEGORY_ORDER.includes(id))
+);
+
+function saveCustomCategories() {
+    localStorage.setItem(
+        CUSTOM_CATEGORIES_STORAGE_KEY,
+        JSON.stringify(Array.from(customCategories).sort((a, b) => a.localeCompare(b)))
+    );
+}
+
+function registerCustomCategory(rawCategoryId) {
+    const categoryId = normalizeCategoryId(rawCategoryId);
+    if (!categoryId || CATEGORY_ORDER.includes(categoryId)) return false;
+    const beforeSize = customCategories.size;
+    customCategories.add(categoryId);
+    if (customCategories.size !== beforeSize) {
+        saveCustomCategories();
+        return true;
+    }
+    return false;
+}
 
 function normalizeCategoryId(raw) {
     const cleaned = String(raw || '')
@@ -1110,10 +1135,70 @@ function getCategoryMeta(categoryId) {
 }
 
 function getOrderedCategoryIds(symbolsByCategory) {
-    const dynamic = Object.keys(symbolsByCategory || {})
-        .filter((id) => !CATEGORY_ORDER.includes(id))
+    const dynamicFromSymbols = Object.keys(symbolsByCategory || {})
+        .map((id) => normalizeCategoryId(id))
+        .filter((id) => id && !CATEGORY_ORDER.includes(id));
+    const dynamic = Array.from(new Set([...dynamicFromSymbols, ...customCategories]))
         .sort((a, b) => a.localeCompare(b));
     return [...CATEGORY_ORDER, ...dynamic];
+}
+
+function populateCategorySelectOptions(selectedValue = null) {
+    const select = document.getElementById('sym-cat');
+    if (!select) return;
+    const selected = selectedValue || select.value || 'custom';
+    const options = [
+        { value: 'speaker', label: 'Speaker' },
+        { value: 'shade', label: 'Shade' },
+        { value: 'lighting', label: 'Lighting' },
+        { value: 'tv', label: 'TV' },
+        { value: 'ap', label: 'Access Point' },
+        { value: 'camera', label: 'Camera' },
+        { value: 'sensor', label: 'Sensor' },
+        { value: 'network', label: 'Network' }
+    ];
+    const dynamic = Array.from(customCategories).sort((a, b) => a.localeCompare(b));
+    for (const cat of dynamic) {
+        options.push({ value: cat, label: formatCategoryLabel(cat) });
+    }
+    options.push({ value: 'custom', label: 'Custom' });
+
+    select.innerHTML = '';
+    for (const optionData of options) {
+        const option = document.createElement('option');
+        option.value = optionData.value;
+        option.textContent = optionData.label;
+        select.appendChild(option);
+    }
+    select.value = options.some((opt) => opt.value === selected) ? selected : 'custom';
+}
+
+function persistCustomCategoryFromInput(showToast = false) {
+    const base = document.getElementById('sym-cat')?.value;
+    if (base !== 'custom') return;
+    const typed = document.getElementById('sym-custom-cat')?.value || '';
+    const categoryId = normalizeCategoryId(typed);
+    if (!categoryId || categoryId === 'custom') return;
+    if (registerCustomCategory(categoryId)) {
+        populateCategorySelectOptions('custom');
+        if (showToast) showToastMessage(`Category saved: ${formatCategoryLabel(categoryId)}`);
+    }
+}
+
+function showToastMessage(message) {
+    if (typeof showToast === 'function') showToast(message);
+}
+
+function setupCategoryInputPersistence() {
+    const customInput = document.getElementById('sym-custom-cat');
+    if (!customInput) return;
+    customInput.addEventListener('blur', () => persistCustomCategoryFromInput(true));
+    customInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            persistCustomCategoryFromInput(true);
+        }
+    });
 }
 
 function onSymbolCategoryChange() {
@@ -1428,7 +1513,7 @@ function addSymbolToCategory(category) {
     document.getElementById('sym-id').value = '';
     document.getElementById('sym-id').disabled = false;
     document.getElementById('sym-label').value = '';
-    document.getElementById('sym-cat').value = category;
+    populateCategorySelectOptions(category);
     document.getElementById('sym-custom-cat').value = '';
     onSymbolCategoryChange();
     
@@ -1475,9 +1560,12 @@ function editSymbol(id) {
     document.getElementById('sym-id').disabled = true;
     document.getElementById('sym-label').value = s.label || '';
     const currentCategory = s.category || 'custom';
+    const categoryId = normalizeCategoryId(currentCategory);
+    if (categoryId && !CATEGORY_ORDER.includes(categoryId)) registerCustomCategory(categoryId);
+    populateCategorySelectOptions(categoryId);
     const categorySelect = document.getElementById('sym-cat');
-    const hasOption = Array.from(categorySelect.options).some((opt) => opt.value === currentCategory);
-    categorySelect.value = hasOption ? currentCategory : 'custom';
+    const hasOption = Array.from(categorySelect.options).some((opt) => opt.value === categoryId);
+    categorySelect.value = hasOption ? categoryId : 'custom';
     document.getElementById('sym-custom-cat').value = hasOption ? '' : currentCategory;
     onSymbolCategoryChange();
     document.getElementById('sym-shape').value = s.shape || 'roundrect';
@@ -1527,9 +1615,12 @@ function saveSymbol() {
     if (!id) { alert('ID required'); return; }
     if (!editId && symbols[id]) { alert('ID already exists'); return; }
     
+    const selectedCategory = getSelectedSymbolCategory();
+    registerCustomCategory(selectedCategory);
+    populateCategorySelectOptions(selectedCategory);
     symbols[id] = {
         label: document.getElementById('sym-label').value.trim(),
-        category: getSelectedSymbolCategory(),
+        category: selectedCategory,
         shape: document.getElementById('sym-shape').value,
         color: document.getElementById('sym-color').value,
         sku: document.getElementById('sym-sku').value.trim()
@@ -4849,8 +4940,11 @@ function clearAll() {
 function resetSymbolsToDefault() {
     if (confirm('Reset all symbols to default? This will remove any custom symbols you added.')) {
         symbols = { ...DEFAULT_SYMBOLS };
+        customCategories.clear();
+        saveCustomCategories();
         localStorage.setItem('sym_defs', JSON.stringify(symbols));
         localStorage.setItem('sym_version', SYMBOLS_VERSION.toString());
+        populateCategorySelectOptions('custom');
         buildToolbar();
         closeOptionsModal();
         showToast('Symbols reset to default');
@@ -4860,6 +4954,8 @@ function resetSymbolsToDefault() {
 // Init
 window.onresize = resize;
 resize();
+populateCategorySelectOptions('custom');
+setupCategoryInputPersistence();
 buildToolbar();
 
 // Show HTTPS banner when on HTTP and MARKUP_HTTPS_URL is configured
