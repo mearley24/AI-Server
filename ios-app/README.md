@@ -4,7 +4,11 @@ Native iOS apps for work operations and trading operations.
 
 ## Apps
 
-- **SymphonyOps** (work-only): proposals, services, automation, Cortex work facts
+- **SymphonyOps** (suite shell): launcher with full workflow tabs
+- **SymphonyProjects**: projects-focused app (`Projects` + `Settings`)
+- **SymphonySales**: sales-focused app (`Sales` + `Settings`)
+- **SymphonyInstall**: install-focused app (`Install` + `Settings`)
+- **SymphonyOpsField**: ops-focused app (`Ops` + `Settings`)
 - **SymphonyTrading** (trading-only): portfolio, scan/research, trading memory scope
 
 ## Requirements
@@ -49,6 +53,15 @@ Optional overrides:
 
 ```bash
 SCHEME=SymphonyOps CONFIGURATION=Debug SDK=iphonesimulator bash ios-app/build_simulator.sh
+```
+
+Example standalone app builds:
+
+```bash
+SCHEME=SymphonyProjects CONFIGURATION=Debug SDK=iphonesimulator bash ios-app/build_simulator.sh
+SCHEME=SymphonySales CONFIGURATION=Debug SDK=iphonesimulator bash ios-app/build_simulator.sh
+SCHEME=SymphonyInstall CONFIGURATION=Debug SDK=iphonesimulator bash ios-app/build_simulator.sh
+SCHEME=SymphonyOpsField CONFIGURATION=Debug SDK=iphonesimulator bash ios-app/build_simulator.sh
 ```
 
 Trading app helper:
@@ -107,9 +120,10 @@ ios-app/
 ├── README.md
 ├── build_simulator.sh              # CLI simulator build with Xcode DEVELOPER_DIR
 ├── SymphonyOps/
-│   ├── SymphonyOps.xcodeproj/
+│   ├── SymphonyOps.xcodeproj/       # Suite + standalone work app targets
 │   └── SymphonyOps/
 │       ├── SymphonyOpsApp.swift
+│       ├── AppVariant.swift         # compile-flag target scoping
 │       ├── ContentView.swift
 │       ├── APIClient.swift
 │       └── Assets.xcassets/

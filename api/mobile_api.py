@@ -56,6 +56,12 @@ except ImportError:
     HAS_FASTAPI = False
     print("FastAPI not installed. Run: pip install fastapi uvicorn")
 
+try:
+    import openpyxl  # type: ignore
+    HAS_OPENPYXL = True
+except Exception:
+    HAS_OPENPYXL = False
+
 sys.path.insert(0, str(BASE_DIR))
 
 API_PORT = int(os.environ.get("MOBILE_API_PORT", "8420"))
@@ -177,6 +183,20 @@ PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
             "PART NUMBER",
             "DESCRIPTION",
             "PRICE",
+        ],
+    },
+    "invoice_rexel": {
+        "label": "Invoice (Rexel / electrical order)",
+        "expected_columns": [
+            "ITEM NUMBER",
+            "MANUFACTURER",
+            "SKU",
+            "DESCRIPTION",
+            "QUANTITY",
+            "SHIP QTY",
+            "UNIT PRICE",
+            "EXTENDED PRICE",
+            "UPC",
         ],
     },
 }
@@ -321,6 +341,156 @@ def _load_markup_symbol_catalog() -> List[Dict[str, str]]:
                 catalog.append({"id": match, "label": match.replace("-", " ").upper(), "sku": ""})
 
     return catalog
+
+
+def _normalize_room_name(value: str) -> str:
+    name = re.sub(r"\s+", " ", (value or "").strip())
+    if not name:
+        return ""
+    if len(name) < 2 or len(name) > 80:
+        return ""
+    lowered = name.lower()
+    blocked = {
+        "name",
+        "room",
+        "rooms",
+        "page",
+        "pages",
+        "project",
+        "markup",
+        "symbol",
+        "symbols",
+        "placed",
+        "currentpage",
+    }
+    if lowered in blocked:
+        return ""
+    return name
+
+
+def _room_model_profile(system_profile: str) -> Dict[str, List[str]]:
+    profile = (system_profile or "control4").strip().lower()
+    if profile == "lutron":
+        return {
+            "scope": [
+                "Lighting load map and keypad engravings",
+                "Shade groups and scene assignments",
+                "Processor/network/IP planning",
+            ],
+            "checks": [
+                "Confirm fixture counts and dimming compatibility",
+                "Confirm keypad locations and gang depth",
+            ],
+        }
+    if profile == "sonos":
+        return {
+            "scope": [
+                "Audio zone map and amp/speaker assignment",
+                "Network drops and PoE budget review",
+                "Rack power and thermal planning",
+            ],
+            "checks": [
+                "Validate speaker wire home-runs per zone",
+                "Confirm LAN wiring for Sonos core devices",
+            ],
+        }
+    if profile == "hybrid":
+        return {
+            "scope": [
+                "Control4 automation + Lutron lighting integration plan",
+                "Per-room AV/control points and keypad strategy",
+                "Rack/core network and power design",
+            ],
+            "checks": [
+                "Confirm protocol boundaries (LEAP, mDNS, IGMP)",
+                "Validate room-by-room control surface consistency",
+            ],
+        }
+    return {
+        "scope": [
+            "Control4 room endpoint and control-surface plan",
+            "AV/network prewire checklist by room",
+            "Rack/core dependency and driver notes",
+        ],
+        "checks": [
+            "Confirm hardwired TV/audio endpoints",
+            "Confirm control keypad/touchpanel locations",
+        ],
+    }
+
+
+def _extract_rooms_from_symphony_markup(payload: Dict[str, Any]) -> Dict[str, Any]:
+    rooms_map: Dict[str, Dict[str, Any]] = {}
+
+    pages = payload.get("pages")
+    if isinstance(pages, dict):
+        for page_key, page_data in pages.items():
+            if not isinstance(page_data, dict):
+                continue
+            room_entries = page_data.get("rooms")
+            if isinstance(room_entries, list):
+                for entry in room_entries:
+                    if isinstance(entry, dict):
+                        raw_name = str(entry.get("name") or entry.get("room") or entry.get("label") or "").strip()
+                    else:
+                        raw_name = str(entry or "").strip()
+                    room_name = _normalize_room_name(raw_name)
+                    if not room_name:
+                        continue
+                    info = rooms_map.setdefault(
+                        room_name,
+                        {"room": room_name, "pages": set(), "symbol_count": 0},
+                    )
+                    info["pages"].add(str(page_key))
+
+            placed = page_data.get("placed")
+            if isinstance(placed, list):
+                for symbol in placed:
+                    if not isinstance(symbol, dict):
+                        continue
+                    raw_name = str(
+                        symbol.get("room")
+                        or symbol.get("roomName")
+                        or symbol.get("area")
+                        or symbol.get("areaName")
+                        or symbol.get("label")
+                        or ""
+                    ).strip()
+                    room_name = _normalize_room_name(raw_name)
+                    if not room_name:
+                        continue
+                    info = rooms_map.setdefault(
+                        room_name,
+                        {"room": room_name, "pages": set(), "symbol_count": 0},
+                    )
+                    info["pages"].add(str(page_key))
+                    info["symbol_count"] += 1
+
+    if not rooms_map:
+        text = json.dumps(payload, ensure_ascii=False)
+        candidates = re.findall(
+            r'"(?:room|roomName|area|areaName|name)"\s*:\s*"([^"]{2,80})"',
+            text,
+            flags=re.IGNORECASE,
+        )
+        for cand in candidates:
+            room_name = _normalize_room_name(cand)
+            if not room_name:
+                continue
+            rooms_map.setdefault(room_name, {"room": room_name, "pages": set(), "symbol_count": 0})
+
+    rooms: List[Dict[str, Any]] = []
+    for name in sorted(rooms_map.keys()):
+        info = rooms_map[name]
+        pages_list = sorted(list(info.get("pages", set())))
+        rooms.append(
+            {
+                "room": name,
+                "pages": pages_list,
+                "symbol_count": int(info.get("symbol_count", 0)),
+            }
+        )
+    return {"rooms": rooms, "room_count": len(rooms)}
 
 
 def _extract_text_from_dwg(path: Path) -> str:
@@ -1753,6 +1923,37 @@ def _parse_sheet_file_with_profile(
     expected_columns = custom_columns or profile.get("expected_columns", [])
     expected_normalized = [_normalize_header_name(col) for col in expected_columns if col]
 
+    def as_text(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    def load_excel_rows(excel_path: Path) -> List[Dict[str, Any]]:
+        if not HAS_OPENPYXL:
+            raise RuntimeError("Excel parsing not available (openpyxl not installed).")
+        wb = openpyxl.load_workbook(excel_path, data_only=True, read_only=True)  # type: ignore[name-defined]
+        ws = wb["Products"] if "Products" in wb.sheetnames else wb.active
+        rows_iter = ws.iter_rows(values_only=True)
+        header_row = next(rows_iter, None)
+        if not header_row:
+            return []
+        headers = [as_text(h) or f"col_{idx}" for idx, h in enumerate(header_row)]
+        parsed_rows: List[Dict[str, Any]] = []
+        for row in rows_iter:
+            if row is None:
+                continue
+            row_dict: Dict[str, Any] = {}
+            has_value = False
+            for idx, value in enumerate(row):
+                if idx >= len(headers):
+                    continue
+                row_dict[headers[idx]] = value
+                if value not in (None, ""):
+                    has_value = True
+            if has_value:
+                parsed_rows.append(row_dict)
+        return parsed_rows
+
     def pick_value_by_patterns(row: Dict[str, Any], patterns: List[str]) -> str:
         if not row:
             return ""
@@ -1764,98 +1965,169 @@ def _parse_sheet_file_with_profile(
                     return str(value or "").strip()
         return ""
 
+    rows: List[Dict[str, Any]] = []
     if suffix == ".csv":
-        parsed: List[Dict[str, Any]] = []
         with path.open("r", encoding="utf-8", errors="ignore", newline="") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                model = (
-                    pick_value_by_patterns(row, ["MODEL NAME", "MODEL", "NAME"])
-                    or (row.get("Model") or row.get("MODEL") or row.get("Name") or "").strip()
-                )
+            rows = list(reader)
+    elif suffix in {".xlsx", ".xlsm", ".xltx"}:
+        rows = load_excel_rows(path)
+    elif suffix == ".xls":
+        raise RuntimeError("Legacy .xls not supported. Please re-save as .xlsx and upload again.")
+
+    if rows:
+        first_keys = {_normalize_header_name(k) for k in rows[0].keys() if k is not None}
+        # Auto-detect Rexel-style invoice headers.
+        if parse_profile == "auto":
+            if {"ITEMNUMBER", "MANUFACTURER", "SKU", "DESCRIPTION", "UNITPRICE"} <= first_keys:
+                parse_profile = "invoice_rexel"
+
+        parsed: List[Dict[str, Any]] = []
+        for row in rows:
+            if parse_profile == "invoice_rexel":
                 part = (
-                    pick_value_by_patterns(row, ["PART NUMBER", "SKU", "PART"])
-                    or (row.get("Part Number") or row.get("SKU") or row.get("Part") or "").strip()
+                    pick_value_by_patterns(row, ["SKU", "PART NUMBER", "PART"])
+                    or as_text(row.get("SKU"))
+                    or as_text(row.get("Part Number"))
+                )
+                model = (
+                    pick_value_by_patterns(row, ["MODEL NAME", "MODEL"])
+                    or part
                 )
                 if not model and not part:
                     continue
-                msrp = _to_money(
-                    pick_value_by_patterns(row, ["MSRP", "LIST PRICE", "PRICE"])
-                    or row.get("MSRP")
+                brand = (
+                    pick_value_by_patterns(row, ["MANUFACTURER", "BRAND"])
+                    or as_text(row.get("Manufacturer"))
+                    or "Unknown"
                 )
+                description = (
+                    pick_value_by_patterns(row, ["DESCRIPTION", "ITEM DESCRIPTION"])
+                    or as_text(row.get("Description"))
+                    or model
+                )
+                unit_price = _to_money(
+                    pick_value_by_patterns(row, ["UNIT PRICE", "PRICE", "COST"])
+                    or row.get("Unit Price")
+                )
+                item_number = as_text(
+                    pick_value_by_patterns(row, ["ITEM NUMBER"]) or row.get("Item Number")
+                )
+                upc = as_text(pick_value_by_patterns(row, ["UPC"]) or row.get("UPC"))
+                qty = as_text(
+                    pick_value_by_patterns(row, ["SHIP QTY", "QUANTITY"]) or row.get("Ship Qty") or row.get("Quantity")
+                )
+                keywords = ", ".join([x for x in [brand, model, part, f"qty:{qty}" if qty else "", f"item:{item_number}" if item_number else ""] if x])
+                if upc:
+                    keywords = f"{keywords}, upc:{upc}" if keywords else f"upc:{upc}"
 
-                if expected_normalized:
-                    # If profile declares dealer columns, respect that order.
-                    normalized_row = {
-                        _normalize_header_name(k): v for k, v in row.items() if k is not None
+                parsed.append(
+                    {
+                        "brand": brand,
+                        "model": model,
+                        "part_number": part,
+                        "category": "Electrical",
+                        "short_description": description[:300],
+                        "keywords": keywords[:280],
+                        "unit_price": unit_price,
+                        "unit_cost": unit_price,
+                        "msrp": unit_price,
+                        "supplier": "Rexel",
                     }
-                    profile_prices: List[float] = []
-                    for col_n in expected_normalized:
-                        raw = normalized_row.get(col_n, "")
-                        val = _to_money(raw)
-                        if val is not None and any(token in col_n for token in ["MSRP", "DEALER", "PRICE", "COST"]):
-                            profile_prices.append(val)
-                    if profile_prices:
-                        unit_cost = _pick_unit_cost(profile_prices, dealer_tier)
-                        if msrp is None:
-                            msrp = profile_prices[0]
-                    else:
-                        unit_cost = _to_money(
-                            pick_value_by_patterns(row, ["STANDARD DEALER", "DEALER", "COST"])
-                            or row.get("Dealer")
-                            or row.get("Cost")
-                        )
+                )
+                continue
+
+            model = (
+                pick_value_by_patterns(row, ["MODEL NAME", "MODEL", "NAME"])
+                or as_text(row.get("Model"))
+                or as_text(row.get("MODEL"))
+                or as_text(row.get("Name"))
+            )
+            part = (
+                pick_value_by_patterns(row, ["PART NUMBER", "SKU", "PART"])
+                or as_text(row.get("Part Number"))
+                or as_text(row.get("SKU"))
+                or as_text(row.get("Part"))
+            )
+            if not model and not part:
+                continue
+            msrp = _to_money(
+                pick_value_by_patterns(row, ["MSRP", "LIST PRICE", "PRICE"])
+                or row.get("MSRP")
+            )
+
+            if expected_normalized:
+                # If profile declares dealer columns, respect that order.
+                normalized_row = {
+                    _normalize_header_name(k): v for k, v in row.items() if k is not None
+                }
+                profile_prices: List[float] = []
+                for col_n in expected_normalized:
+                    raw = normalized_row.get(col_n, "")
+                    val = _to_money(raw)
+                    if val is not None and any(token in col_n for token in ["MSRP", "DEALER", "PRICE", "COST"]):
+                        profile_prices.append(val)
+                if profile_prices:
+                    unit_cost = _pick_unit_cost(profile_prices, dealer_tier)
+                    if msrp is None:
+                        msrp = profile_prices[0]
                 else:
                     unit_cost = _to_money(
                         pick_value_by_patterns(row, ["STANDARD DEALER", "DEALER", "COST"])
                         or row.get("Dealer")
                         or row.get("Cost")
                     )
-
-                parsed.append(
-                    {
-                        "brand": (
-                            pick_value_by_patterns(row, ["BRAND", "MANUFACTURER"])
-                            or row.get("Brand")
-                            or row.get("Manufacturer")
-                            or "Unknown"
-                        ).strip(),
-                        "model": model or part,
-                        "part_number": part,
-                        "category": (
-                            pick_value_by_patterns(row, ["CATEGORY"])
-                            or row.get("Category")
-                            or "General"
-                        ).strip(),
-                        "short_description": (
-                            pick_value_by_patterns(row, ["DESCRIPTION", "SHORT DESCRIPTION"])
-                            or row.get("Description")
-                            or ""
-                        ).strip()[:300],
-                        "keywords": ", ".join(
-                            [
-                                k
-                                for k in [
-                                    pick_value_by_patterns(row, ["BRAND", "MANUFACTURER"]) or row.get("Brand", ""),
-                                    model,
-                                    part,
-                                ]
-                                if k
-                            ]
-                        )[:280],
-                        "unit_price": msrp,
-                        "unit_cost": unit_cost,
-                        "msrp": msrp,
-                        "supplier": (row.get("Supplier") or row.get("Brand") or "").strip(),
-                    }
+            else:
+                unit_cost = _to_money(
+                    pick_value_by_patterns(row, ["STANDARD DEALER", "DEALER", "COST"])
+                    or row.get("Dealer")
+                    or row.get("Cost")
                 )
+
+            parsed.append(
+                {
+                    "brand": (
+                        pick_value_by_patterns(row, ["BRAND", "MANUFACTURER"])
+                        or as_text(row.get("Brand"))
+                        or as_text(row.get("Manufacturer"))
+                        or "Unknown"
+                    ).strip(),
+                    "model": model or part,
+                    "part_number": part,
+                    "category": (
+                        pick_value_by_patterns(row, ["CATEGORY"])
+                        or as_text(row.get("Category"))
+                        or "General"
+                    ).strip(),
+                    "short_description": (
+                        pick_value_by_patterns(row, ["DESCRIPTION", "SHORT DESCRIPTION"])
+                        or as_text(row.get("Description"))
+                        or ""
+                    ).strip()[:300],
+                    "keywords": ", ".join(
+                        [
+                            k
+                            for k in [
+                                pick_value_by_patterns(row, ["BRAND", "MANUFACTURER"]) or as_text(row.get("Brand")),
+                                model,
+                                part,
+                            ]
+                            if k
+                        ]
+                    )[:280],
+                    "unit_price": msrp,
+                    "unit_cost": unit_cost,
+                    "msrp": msrp,
+                    "supplier": (as_text(row.get("Supplier")) or as_text(row.get("Brand"))).strip(),
+                }
+            )
         return parsed
 
     if suffix == ".pdf":
         text = _extract_text_from_pdf(path)
         return _parse_price_sheet_text(text, dealer_tier)
 
-    raise RuntimeError(f"Unsupported file type: {suffix}. Use PDF or CSV.")
+    raise RuntimeError(f"Unsupported file type: {suffix}. Use PDF, CSV, or XLSX.")
 
 
 def _product_unique_key(brand: str, part_number: str, model: str) -> str:
@@ -2839,6 +3111,12 @@ if HAS_FASTAPI:
         sonos_ip: Optional[str] = None
         interval_sec: float = 2.0
 
+    class DropoutIncidentCreateRequest(BaseModel):
+        event_timestamp: Optional[str] = None
+        event_name: Optional[str] = None
+        notes: Optional[str] = None
+        priority: Optional[str] = "high"
+
     class NotesProjectLinkUpsertRequest(BaseModel):
         match_text: str
         project_name: str
@@ -3424,6 +3702,76 @@ if HAS_FASTAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/tasks/incidents/from_dropout")
+    async def create_incident_from_dropout(request: DropoutIncidentCreateRequest):
+        """Create a troubleshooting task from the most recent dropout event."""
+        try:
+            sys.path.insert(0, str(BASE_DIR))
+            from orchestrator.task_board import add_task
+
+            events = _read_recent_jsonl(NETWORK_WATCH_EVENTS_FILE, limit=200)
+            selected_event: Optional[Dict[str, Any]] = None
+            requested_ts = (request.event_timestamp or "").strip()
+            requested_name = (request.event_name or "").strip()
+
+            if requested_ts:
+                for event in events:
+                    if str(event.get("timestamp", "")).strip() != requested_ts:
+                        continue
+                    if requested_name and str(event.get("event", "")).strip() != requested_name:
+                        continue
+                    selected_event = event
+                    break
+            elif events:
+                selected_event = events[0]
+
+            if not selected_event:
+                return {
+                    "success": False,
+                    "error": "No dropout event available to create incident.",
+                    "task_id": None,
+                }
+
+            event_name = str(selected_event.get("event") or "dropout").strip() or "dropout"
+            from_state = str(selected_event.get("from") or "unknown").strip() or "unknown"
+            to_state = str(selected_event.get("to") or selected_event.get("health") or "unknown").strip() or "unknown"
+            timestamp = str(selected_event.get("timestamp") or datetime.now().isoformat()).strip()
+            notes = (request.notes or "").strip()
+            priority = (request.priority or "high").strip().lower()
+            if priority not in {"critical", "high", "medium", "low"}:
+                priority = "high"
+
+            title = f"Network incident: {event_name} ({from_state} -> {to_state})"
+            description_lines = [
+                "Generated from network dropout watcher.",
+                f"Event: {event_name}",
+                f"Transition: {from_state} -> {to_state}",
+                f"Timestamp: {timestamp}",
+            ]
+            if notes:
+                description_lines.append(f"Operator notes: {notes}")
+
+            task_id = add_task(
+                title=title[:220],
+                description="\n".join(description_lines),
+                task_type="troubleshooting",
+                priority=priority,
+                source="network_dropout_watch",
+                source_id=f"dropout:{timestamp}:{event_name}",
+                metadata={"dropout_event": selected_event},
+            )
+
+            return {
+                "success": True,
+                "task_id": task_id,
+                "title": title,
+                "priority": priority,
+                "event_timestamp": timestamp,
+                "message": "Incident task created from dropout event.",
+            }
+        except Exception as e:
+            return {"success": False, "task_id": None, "error": str(e)}
+
     @app.post("/trading/fix_api")
     async def trading_fix_api():
         """Run watchdog to clear stale :8421 listener and restart trading API."""
@@ -3626,6 +3974,85 @@ if HAS_FASTAPI:
 
         (batch_dir / "digest.json").write_text(json.dumps(digest, indent=2))
         return digest
+
+    @app.post("/projects/room_modeler")
+    async def projects_room_modeler(
+        project_name: str = Form(""),
+        system_profile: str = Form("control4"),
+        markup_file: UploadFile = File(...),
+    ):
+        """
+        Parse a .symphony markup file and generate per-room system modeling guidance.
+        """
+        try:
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            project_slug = _slugify(project_name or "room-modeler")
+            batch_dir = MANUAL_DIGEST_DIR / "room_modeler" / project_slug / ts
+            batch_dir.mkdir(parents=True, exist_ok=True)
+
+            upload_name = markup_file.filename or "markup.symphony"
+            safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in upload_name)
+            save_path = batch_dir / safe_name
+
+            content = await markup_file.read()
+            if not content:
+                return {"success": False, "error": "Uploaded markup file was empty."}
+            save_path.write_bytes(content)
+
+            try:
+                payload = json.loads(content.decode("utf-8", errors="ignore"))
+            except Exception:
+                return {
+                    "success": False,
+                    "error": "Could not parse .symphony JSON payload.",
+                    "file_path": str(save_path),
+                }
+
+            extracted = _extract_rooms_from_symphony_markup(payload if isinstance(payload, dict) else {})
+            rooms = extracted.get("rooms", [])
+            if not rooms:
+                return {
+                    "success": False,
+                    "error": "No rooms detected in markup file.",
+                    "file_path": str(save_path),
+                }
+
+            profile = _room_model_profile(system_profile)
+            room_models: List[Dict[str, Any]] = []
+            for row in rooms:
+                room_name = str(row.get("room", "")).strip()
+                symbol_count = int(row.get("symbol_count", 0) or 0)
+                room_models.append(
+                    {
+                        "room": room_name,
+                        "pages": row.get("pages", []),
+                        "detected_symbols": symbol_count,
+                        "recommended_scope": profile.get("scope", []),
+                        "checks": profile.get("checks", []),
+                        "priority": "high" if symbol_count >= 6 else "medium",
+                    }
+                )
+
+            result = {
+                "success": True,
+                "project_name": project_name or payload.get("projectName", project_slug),
+                "system_profile": (system_profile or "control4").strip().lower(),
+                "project_slug": project_slug,
+                "batch_timestamp": ts,
+                "file_name": safe_name,
+                "file_path": str(save_path),
+                "rooms_count": len(room_models),
+                "rooms": room_models,
+                "summary": {
+                    "high_priority_rooms": sum(1 for r in room_models if r.get("priority") == "high"),
+                    "total_detected_symbols": sum(int(r.get("detected_symbols", 0) or 0) for r in room_models),
+                },
+                "timestamp": datetime.now().isoformat(),
+            }
+            (batch_dir / "room_modeler.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     @app.post("/projects/proposal_scope")
     async def projects_proposal_scope(

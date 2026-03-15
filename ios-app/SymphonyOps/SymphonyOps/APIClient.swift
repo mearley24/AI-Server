@@ -842,6 +842,52 @@ class APIClient: ObservableObject {
         }
     }
 
+    func runRoomModeler(
+        projectName: String,
+        systemProfile: String,
+        markupFileURL: URL
+    ) async -> RoomModelerResponse? {
+        do {
+            let started = markupFileURL.startAccessingSecurityScopedResource()
+            defer {
+                if started { markupFileURL.stopAccessingSecurityScopedResource() }
+            }
+            let fileData = try Data(contentsOf: markupFileURL)
+            let filename = markupFileURL.lastPathComponent
+            let mimeType = mimeTypeForFile(url: markupFileURL)
+
+            var request = URLRequest(url: URL(string: "\(baseURL)/projects/room_modeler")!)
+            request.httpMethod = "POST"
+
+            let boundary = "Boundary-\(UUID().uuidString)"
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 180
+
+            var body = Data()
+            body.append(multipartField(name: "project_name", value: projectName, boundary: boundary))
+            body.append(multipartField(name: "system_profile", value: systemProfile, boundary: boundary))
+            body.append(
+                multipartFileField(
+                    name: "markup_file",
+                    filename: filename,
+                    mimeType: mimeType,
+                    data: fileData,
+                    boundary: boundary
+                )
+            )
+            body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+            request.httpBody = body
+
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(RoomModelerResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
     private func sendProposalScopeRequest(
         projectName: String,
         clientName: String,
@@ -1036,6 +1082,34 @@ class APIClient: ObservableObject {
             let url = URL(string: "\(baseURL)/tasks/incidents?limit=\(max(1, min(limit, 100)))")!
             let (data, _) = try await URLSession.shared.data(from: url)
             return try JSONDecoder().decode(IncidentQueueResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func createIncidentFromDropout(
+        event: NetworkDropoutEvent?,
+        notes: String? = nil,
+        priority: String = "high"
+    ) async -> IncidentFromDropoutCreateResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/tasks/incidents/from_dropout")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 25
+
+            let payload = IncidentFromDropoutCreateRequest(
+                event_timestamp: event?.timestamp,
+                event_name: event?.event,
+                notes: notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true ? nil : notes,
+                priority: priority
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IncidentFromDropoutCreateResponse.self, from: data)
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
@@ -2442,6 +2516,37 @@ struct ProposalScopeResponse: Codable {
     let error: String?
 }
 
+struct RoomModelerResponse: Codable {
+    let success: Bool
+    let project_name: String?
+    let system_profile: String?
+    let project_slug: String?
+    let batch_timestamp: String?
+    let file_name: String?
+    let file_path: String?
+    let rooms_count: Int?
+    let rooms: [RoomModelerRoom]?
+    let summary: RoomModelerSummary?
+    let timestamp: String?
+    let error: String?
+}
+
+struct RoomModelerRoom: Codable, Identifiable {
+    let room: String
+    let pages: [String]?
+    let detected_symbols: Int?
+    let recommended_scope: [String]?
+    let checks: [String]?
+    let priority: String?
+
+    var id: String { room }
+}
+
+struct RoomModelerSummary: Codable {
+    let high_priority_rooms: Int?
+    let total_detected_symbols: Int?
+}
+
 struct ProposalScopeData: Codable {
     let scope_of_work: [String]?
     let included_items: [String]?
@@ -2656,6 +2761,23 @@ struct IncidentQueueResponse: Codable {
     let count: Int
     let incidents: [IncidentTask]
     let timestamp: String?
+    let error: String?
+}
+
+struct IncidentFromDropoutCreateRequest: Codable {
+    let event_timestamp: String?
+    let event_name: String?
+    let notes: String?
+    let priority: String?
+}
+
+struct IncidentFromDropoutCreateResponse: Codable {
+    let success: Bool
+    let task_id: Int?
+    let title: String?
+    let priority: String?
+    let event_timestamp: String?
+    let message: String?
     let error: String?
 }
 

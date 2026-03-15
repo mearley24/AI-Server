@@ -12,6 +12,13 @@
 		003 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 103 /* APIClient.swift */; };
 		004 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 104 /* Assets.xcassets */; };
 		005 /* SecretsVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105 /* SecretsVault.swift */; };
+		006 /* SuiteShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 106 /* SuiteShell.swift */; };
+		007 /* TodayWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107 /* TodayWorkspaceView.swift */; };
+		008 /* ProjectsWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 108 /* ProjectsWorkspaceView.swift */; };
+		009 /* SalesToolkitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109 /* SalesToolkitView.swift */; };
+		00A /* InstallWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10A /* InstallWorkspaceView.swift */; };
+		00B /* OpsAutomationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B /* OpsAutomationView.swift */; };
+		00C /* AppVariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10C /* AppVariant.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +28,17 @@
 		103 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		104 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		105 /* SecretsVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretsVault.swift; sourceTree = "<group>"; };
+		106 /* SuiteShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuiteShell.swift; sourceTree = "<group>"; };
+		107 /* TodayWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayWorkspaceView.swift; sourceTree = "<group>"; };
+		108 /* ProjectsWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsWorkspaceView.swift; sourceTree = "<group>"; };
+		109 /* SalesToolkitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SalesToolkitView.swift; sourceTree = "<group>"; };
+		10A /* InstallWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallWorkspaceView.swift; sourceTree = "<group>"; };
+		10B /* OpsAutomationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpsAutomationView.swift; sourceTree = "<group>"; };
+		10C /* AppVariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppVariant.swift; sourceTree = "<group>"; };
+		110 /* SymphonyProjects.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SymphonyProjects.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		111 /* SymphonySales.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SymphonySales.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		112 /* SymphonyInstall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SymphonyInstall.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		113 /* SymphonyOpsField.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SymphonyOpsField.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -39,6 +57,13 @@
 				102 /* ContentView.swift */,
 				103 /* APIClient.swift */,
 				105 /* SecretsVault.swift */,
+				106 /* SuiteShell.swift */,
+				107 /* TodayWorkspaceView.swift */,
+				108 /* ProjectsWorkspaceView.swift */,
+				109 /* SalesToolkitView.swift */,
+				10A /* InstallWorkspaceView.swift */,
+				10B /* OpsAutomationView.swift */,
+				10C /* AppVariant.swift */,
 				104 /* Assets.xcassets */,
 			);
 			path = SymphonyOps;
@@ -48,6 +73,10 @@
 			isa = PBXGroup;
 			children = (
 				100 /* SymphonyOps.app */,
+				110 /* SymphonyProjects.app */,
+				111 /* SymphonySales.app */,
+				112 /* SymphonyInstall.app */,
+				113 /* SymphonyOpsField.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -69,6 +98,70 @@
 			name = SymphonyOps;
 			productName = SymphonyOps;
 			productReference = 100 /* SymphonyOps.app */;
+			productType = "com.apple.product-type.application";
+		};
+		310 /* SymphonyProjects */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 410 /* Build configuration list for PBXNativeTarget "SymphonyProjects" */;
+			buildPhases = (
+				311 /* Sources */,
+				312 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SymphonyProjects;
+			productName = SymphonyProjects;
+			productReference = 110 /* SymphonyProjects.app */;
+			productType = "com.apple.product-type.application";
+		};
+		320 /* SymphonySales */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 420 /* Build configuration list for PBXNativeTarget "SymphonySales" */;
+			buildPhases = (
+				321 /* Sources */,
+				322 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SymphonySales;
+			productName = SymphonySales;
+			productReference = 111 /* SymphonySales.app */;
+			productType = "com.apple.product-type.application";
+		};
+		330 /* SymphonyInstall */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 430 /* Build configuration list for PBXNativeTarget "SymphonyInstall" */;
+			buildPhases = (
+				331 /* Sources */,
+				332 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SymphonyInstall;
+			productName = SymphonyInstall;
+			productReference = 112 /* SymphonyInstall.app */;
+			productType = "com.apple.product-type.application";
+		};
+		340 /* SymphonyOpsField */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 440 /* Build configuration list for PBXNativeTarget "SymphonyOpsField" */;
+			buildPhases = (
+				341 /* Sources */,
+				342 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SymphonyOpsField;
+			productName = SymphonyOpsField;
+			productReference = 113 /* SymphonyOpsField.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -95,12 +188,48 @@
 			projectRoot = "";
 			targets = (
 				300 /* SymphonyOps */,
+				310 /* SymphonyProjects */,
+				320 /* SymphonySales */,
+				330 /* SymphonyInstall */,
+				340 /* SymphonyOpsField */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		302 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		312 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		322 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		332 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				004 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		342 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -119,6 +248,85 @@
 				002 /* ContentView.swift in Sources */,
 				003 /* APIClient.swift in Sources */,
 				005 /* SecretsVault.swift in Sources */,
+				006 /* SuiteShell.swift in Sources */,
+				007 /* TodayWorkspaceView.swift in Sources */,
+				008 /* ProjectsWorkspaceView.swift in Sources */,
+				009 /* SalesToolkitView.swift in Sources */,
+				00A /* InstallWorkspaceView.swift in Sources */,
+				00B /* OpsAutomationView.swift in Sources */,
+				00C /* AppVariant.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		311 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				001 /* SymphonyOpsApp.swift in Sources */,
+				002 /* ContentView.swift in Sources */,
+				003 /* APIClient.swift in Sources */,
+				005 /* SecretsVault.swift in Sources */,
+				006 /* SuiteShell.swift in Sources */,
+				007 /* TodayWorkspaceView.swift in Sources */,
+				008 /* ProjectsWorkspaceView.swift in Sources */,
+				009 /* SalesToolkitView.swift in Sources */,
+				00A /* InstallWorkspaceView.swift in Sources */,
+				00B /* OpsAutomationView.swift in Sources */,
+				00C /* AppVariant.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		321 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				001 /* SymphonyOpsApp.swift in Sources */,
+				002 /* ContentView.swift in Sources */,
+				003 /* APIClient.swift in Sources */,
+				005 /* SecretsVault.swift in Sources */,
+				006 /* SuiteShell.swift in Sources */,
+				007 /* TodayWorkspaceView.swift in Sources */,
+				008 /* ProjectsWorkspaceView.swift in Sources */,
+				009 /* SalesToolkitView.swift in Sources */,
+				00A /* InstallWorkspaceView.swift in Sources */,
+				00B /* OpsAutomationView.swift in Sources */,
+				00C /* AppVariant.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		331 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				001 /* SymphonyOpsApp.swift in Sources */,
+				002 /* ContentView.swift in Sources */,
+				003 /* APIClient.swift in Sources */,
+				005 /* SecretsVault.swift in Sources */,
+				006 /* SuiteShell.swift in Sources */,
+				007 /* TodayWorkspaceView.swift in Sources */,
+				008 /* ProjectsWorkspaceView.swift in Sources */,
+				009 /* SalesToolkitView.swift in Sources */,
+				00A /* InstallWorkspaceView.swift in Sources */,
+				00B /* OpsAutomationView.swift in Sources */,
+				00C /* AppVariant.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		341 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				001 /* SymphonyOpsApp.swift in Sources */,
+				002 /* ContentView.swift in Sources */,
+				003 /* APIClient.swift in Sources */,
+				005 /* SecretsVault.swift in Sources */,
+				006 /* SuiteShell.swift in Sources */,
+				007 /* TodayWorkspaceView.swift in Sources */,
+				008 /* ProjectsWorkspaceView.swift in Sources */,
+				009 /* SalesToolkitView.swift in Sources */,
+				00A /* InstallWorkspaceView.swift in Sources */,
+				00B /* OpsAutomationView.swift in Sources */,
+				00C /* AppVariant.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,6 +343,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Ops";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				MARKETING_VERSION = 1.0;
@@ -157,12 +366,205 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Ops";
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyOps;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		610 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Projects";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyProjects;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG APP_PROJECTS";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		611 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Projects";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyProjects;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APP_PROJECTS;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		620 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Sales";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonySales;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG APP_SALES";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		621 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Sales";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonySales;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APP_SALES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		630 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Install";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyInstall;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG APP_INSTALL";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		631 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Install";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyInstall;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APP_INSTALL;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		640 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Ops Field";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyOpsField;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG APP_OPS";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		641 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SymphonyOps/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Symphony Ops Field";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.symphonysh.SymphonyOpsField;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = APP_OPS;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -296,6 +698,42 @@
 			buildConfigurations = (
 				600 /* Debug */,
 				601 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		410 /* Build configuration list for PBXNativeTarget "SymphonyProjects" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				610 /* Debug */,
+				611 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		420 /* Build configuration list for PBXNativeTarget "SymphonySales" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				620 /* Debug */,
+				621 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		430 /* Build configuration list for PBXNativeTarget "SymphonyInstall" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				630 /* Debug */,
+				631 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		440 /* Build configuration list for PBXNativeTarget "SymphonyOpsField" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				640 /* Debug */,
+				641 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

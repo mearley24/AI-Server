@@ -7,7 +7,10 @@ import os
 struct ContentView: View {
     @EnvironmentObject var api: APIClient
     @EnvironmentObject var secretsVault: SecretsVaultStore
-    @State private var selectedSection: AppSection = .today
+    private let availableSections: [AppSection]
+    private let defaultSection: AppSection
+    @State private var selectedSection: AppSection
+    @State private var appsMode: AppsHubMode = .daily
     @State private var todayMode: TodayWorkspaceMode = .weather
     @State private var projectsMode: ProjectsWorkspaceMode = .markup
     @State private var salesMode: SalesWorkspaceMode = .pipeline
@@ -15,13 +18,23 @@ struct ContentView: View {
     @State private var opsMode: OpsWorkspaceMode = .health
     @State private var didRunStartup = false
     @State private var didRestoreWorkspaceState = false
-    @AppStorage("workspace.selectedSection.v1") private var persistedSelectedSection = AppSection.today.rawValue
+    @AppStorage("workspace.selectedSection.v1") private var persistedSelectedSection = AppSection.apps.rawValue
+    @AppStorage("workspace.appsMode.v1") private var persistedAppsMode = AppsHubMode.daily.rawValue
     @AppStorage("workspace.todayMode.v1") private var persistedTodayMode = TodayWorkspaceMode.weather.rawValue
     @AppStorage("workspace.projectsMode.v1") private var persistedProjectsMode = ProjectsWorkspaceMode.markup.rawValue
     @AppStorage("workspace.salesMode.v1") private var persistedSalesMode = SalesWorkspaceMode.pipeline.rawValue
     @AppStorage("workspace.installMode.v1") private var persistedInstallMode = InstallWorkspaceMode.queue.rawValue
     @AppStorage("workspace.opsMode.v1") private var persistedOpsMode = OpsWorkspaceMode.health.rawValue
     private let perfLogger = Logger(subsystem: "com.symphonysh.SymphonyOps", category: "perf")
+
+    init(
+        availableSections: [AppSection] = AppSection.allCases,
+        defaultSection: AppSection = .apps
+    ) {
+        self.availableSections = availableSections
+        self.defaultSection = defaultSection
+        _selectedSection = State(initialValue: defaultSection)
+    }
     
     var body: some View {
         NavigationStack {
@@ -41,6 +54,9 @@ struct ContentView: View {
         }
         .onChange(of: selectedSection) { newValue in
             persistedSelectedSection = newValue.rawValue
+        }
+        .onChange(of: appsMode) { newValue in
+            persistedAppsMode = newValue.rawValue
         }
         .onChange(of: todayMode) { newValue in
             persistedTodayMode = newValue.rawValue
@@ -63,7 +79,7 @@ struct ContentView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 Spacer(minLength: 0)
-                ForEach(AppSection.allCases) { section in
+                ForEach(availableSections) { section in
                     Button {
                         selectedSection = section
                     } label: {
@@ -93,6 +109,9 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 switch selectedSection {
+                case .apps:
+                    headerChip("Daily", isSelected: appsMode == .daily) { appsMode = .daily }
+                    headerChip("All", isSelected: appsMode == .all) { appsMode = .all }
                 case .today:
                     headerChip("Weather", isSelected: todayMode == .weather) { todayMode = .weather }
                     headerChip("Schedule", isSelected: todayMode == .schedule) { todayMode = .schedule }
@@ -101,6 +120,7 @@ struct ContentView: View {
                     headerChip("Markup", isSelected: projectsMode == .markup) { projectsMode = .markup }
                     headerChip("SOW", isSelected: projectsMode == .sow) { projectsMode = .sow }
                     headerChip("Manual Digest", isSelected: projectsMode == .manualDigest) { projectsMode = .manualDigest }
+                    headerChip("Room Modeler", isSelected: projectsMode == .roomModeler) { projectsMode = .roomModeler }
                 case .sales:
                     headerChip("Pipeline", isSelected: salesMode == .pipeline) { salesMode = .pipeline }
                     headerChip("D-Tools Agent", isSelected: salesMode == .dtoolsAgent) { salesMode = .dtoolsAgent }
@@ -141,6 +161,10 @@ struct ContentView: View {
     @ViewBuilder
     private func sectionView(for section: AppSection) -> some View {
         switch section {
+        case .apps:
+            SuiteAppsHubView(mode: appsMode) { destination in
+                selectedSection = destination
+            }
         case .today:
             TodayFocusView(mode: todayMode)
         case .projects:
@@ -185,910 +209,14 @@ struct ContentView: View {
     private func restoreWorkspaceStateIfNeeded() {
         if didRestoreWorkspaceState { return }
         didRestoreWorkspaceState = true
-        selectedSection = AppSection(rawValue: persistedSelectedSection) ?? .today
+        let restored = AppSection(rawValue: persistedSelectedSection) ?? defaultSection
+        selectedSection = availableSections.contains(restored) ? restored : defaultSection
+        appsMode = AppsHubMode(rawValue: persistedAppsMode) ?? .daily
         todayMode = TodayWorkspaceMode(rawValue: persistedTodayMode) ?? .weather
         projectsMode = ProjectsWorkspaceMode(rawValue: persistedProjectsMode) ?? .markup
         salesMode = SalesWorkspaceMode(rawValue: persistedSalesMode) ?? .pipeline
         installMode = InstallWorkspaceMode(rawValue: persistedInstallMode) ?? .queue
         opsMode = OpsWorkspaceMode(rawValue: persistedOpsMode) ?? .health
-    }
-}
-
-struct TodayFocusView: View {
-    var mode: TodayWorkspaceMode = .weather
-    @State private var quoteIndex = 0
-    @AppStorage("weather.setup.enabled.v1") private var weatherSetupEnabled = false
-    @AppStorage("weather.location.v1") private var weatherLocation = ""
-    @AppStorage("weather.provider.v1") private var weatherProvider = "openweather"
-
-    private static let dailyQuotes = [
-        "Make it easy for Future You.",
-        "Slow is smooth. Smooth is fast.",
-        "One clean handoff beats ten rushed fixes.",
-        "Done today is better than perfect someday."
-    ]
-
-    var body: some View {
-        List {
-            switch mode {
-            case .weather:
-                Section("Weather") {
-                    HStack(spacing: 10) {
-                        Image(systemName: "cloud.sun.fill")
-                            .foregroundColor(.orange)
-                        Text("Weather summary")
-                            .fontWeight(.semibold)
-                    }
-                    if weatherSetupEnabled {
-                        Text("Configured: \(weatherProviderLabel(weatherProvider)) • \(weatherLocation.isEmpty ? "Location not set" : weatherLocation)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("Connect weather source in Ops -> Weather.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            case .schedule:
-                Section("Schedule") {
-                    HStack(spacing: 10) {
-                        Image(systemName: "calendar")
-                            .foregroundColor(.blue)
-                        Text("Today")
-                            .fontWeight(.semibold)
-                    }
-                    Text("No schedule items loaded yet.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            case .quote:
-                Section("Daily Quote") {
-                    Text(Self.dailyQuotes[quoteIndex])
-                        .font(.body)
-                    Button("New Quote") {
-                        quoteIndex = Int.random(in: 0..<Self.dailyQuotes.count)
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
-        .navigationTitle("Today")
-    }
-
-    private func weatherProviderLabel(_ value: String) -> String {
-        switch value {
-        case "openweather": return "OpenWeather"
-        case "weatherapi": return "WeatherAPI"
-        default: return "Custom"
-        }
-    }
-}
-
-private enum AppSection: Int, CaseIterable, Identifiable {
-    case today
-    case projects
-    case sales
-    case install
-    case ops
-    case settings
-
-    var id: Int { rawValue }
-
-    var title: String {
-        switch self {
-        case .today: return "Today"
-        case .projects: return "Projects"
-        case .sales: return "Sales"
-        case .install: return "Install"
-        case .ops: return "Ops"
-        case .settings: return "Settings"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .today: return "sun.max"
-        case .projects: return "folder"
-        case .sales: return "person.3"
-        case .install: return "wrench.and.screwdriver"
-        case .ops: return "server.rack"
-        case .settings: return "gear"
-        }
-    }
-}
-
-enum ProjectsWorkspaceMode: Int {
-    case markup
-    case sow
-    case manualDigest
-}
-
-enum TodayWorkspaceMode: Int {
-    case weather
-    case schedule
-    case quote
-}
-
-enum SalesWorkspaceMode: Int {
-    case pipeline
-    case dtoolsAgent
-}
-
-enum InstallWorkspaceMode: Int {
-    case queue
-}
-
-enum OpsWorkspaceMode: Int {
-    case health
-    case dropout
-    case notes
-    case weather
-}
-
-struct ProjectsWorkspaceView: View {
-    @EnvironmentObject var api: APIClient
-    var mode: ProjectsWorkspaceMode = .sow
-    @State private var proposalScopeProjectName = ""
-    @State private var proposalScopeClientName = ""
-    @State private var proposalScopeRunAI = true
-    @State private var showProposalScopeImporter = false
-    @State private var selectedProposalScopeFile: URL?
-    @State private var proposalScopeResponse: ProposalScopeResponse?
-    @State private var sowShareURL: URL?
-    @State private var showSOWShareSheet = false
-    @State private var manualDigestProjectName = ""
-    @State private var manualDigestRunAI = true
-    @State private var showManualDigestImporter = false
-    @State private var selectedManualDigestFiles: [URL] = []
-    @State private var manualDigestResponse: ProjectManualDigestResponse?
-    @State private var isLoading = false
-    @State private var resultMessage: String?
-
-    var markupURL: URL {
-        api.markupURL ?? api.fallbackMarkupURL
-    }
-
-    var body: some View {
-        List {
-            if mode == .markup {
-                Section("Markup") {
-                    Link(destination: markupURL) {
-                        Label("Open Markup Tool", systemImage: "pencil.and.outline")
-                    }
-                }
-            }
-
-            if mode == .sow {
-                Section("SOW Generator") {
-                Text("Upload a finished proposal to generate scope, inclusions, exclusions, assumptions, and risk tags.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                TextField("Project name", text: $proposalScopeProjectName)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Client name", text: $proposalScopeClientName)
-                    .textFieldStyle(.roundedBorder)
-
-                Button {
-                    if !showProposalScopeImporter {
-                        showProposalScopeImporter = true
-                    }
-                } label: {
-                    HStack {
-                        Image(systemName: "doc.text.magnifyingglass")
-                        Text(selectedProposalScopeFile == nil ? "Choose Finished Proposal" : selectedProposalScopeFile!.lastPathComponent)
-                            .lineLimit(1)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .fileImporter(
-                    isPresented: $showProposalScopeImporter,
-                    allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
-                    allowsMultipleSelection: false
-                ) { pickerResult in
-                    showProposalScopeImporter = false
-                    switch pickerResult {
-                    case .success(let urls):
-                        selectedProposalScopeFile = urls.first
-                    case .failure(let err):
-                        self.resultMessage = "Proposal Scope picker failed: \(err.localizedDescription)"
-                    }
-                }
-
-                Toggle("Run AI summary", isOn: $proposalScopeRunAI)
-
-                Button {
-                    Task { await runProposalScopeAgent() }
-                } label: {
-                    Label("Generate Scope of Work", systemImage: "doc.badge.gearshape")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isLoading || selectedProposalScopeFile == nil)
-            }
-
-                if let proposalScope = proposalScopeResponse {
-                    Section("Latest SOW Output") {
-                        if let quote = proposalScope.dtools_quote_version, !quote.isEmpty {
-                            Text("D-Tools: \(quote)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        if let scope = proposalScope.scope {
-                            if let lines = scope.scope_of_work, !lines.isEmpty {
-                                resultBlock("Scope of Work", items: Array(lines.prefix(10)))
-                            }
-                            if let included = scope.included_items, !included.isEmpty {
-                                resultBlock("Included", items: Array(included.prefix(10)))
-                            }
-                            if let excluded = scope.excluded_items, !excluded.isEmpty {
-                                resultBlock("Excluded", items: Array(excluded.prefix(8)))
-                            }
-                            if let assumptions = scope.assumptions, !assumptions.isEmpty {
-                                resultBlock("Assumptions", items: Array(assumptions.prefix(8)))
-                            }
-                            if let risks = scope.risk_tags, !risks.isEmpty {
-                                Text("Risk Tags: \(risks.joined(separator: ", "))")
-                                    .font(.caption2)
-                                    .foregroundColor(.orange)
-                            }
-                        }
-
-                        Button {
-                            exportProposalScopeMarkdown()
-                        } label: {
-                            Label("Export SOW Markdown", systemImage: "square.and.arrow.up")
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-            }
-
-            if mode == .manualDigest {
-                Section("New Project Manual Digest") {
-                    TextField("Project name", text: $manualDigestProjectName)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button {
-                        showManualDigestImporter = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "doc.on.doc.fill")
-                            Text(selectedManualDigestFiles.isEmpty ? "Choose Project Files" : "\(selectedManualDigestFiles.count) file(s) selected")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .fileImporter(
-                        isPresented: $showManualDigestImporter,
-                        allowedContentTypes: [.pdf, .plainText, .commaSeparatedText, .data],
-                        allowsMultipleSelection: true
-                    ) { result in
-                        switch result {
-                        case .success(let urls):
-                            selectedManualDigestFiles = urls
-                        case .failure(let err):
-                            resultMessage = "Manual digest picker failed: \(err.localizedDescription)"
-                        }
-                    }
-
-                    Toggle("Run AI summary", isOn: $manualDigestRunAI)
-
-                    Button {
-                        Task { await runManualDigest() }
-                    } label: {
-                        Label("Run Manual Digest", systemImage: "brain.head.profile")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isLoading || selectedManualDigestFiles.isEmpty)
-                }
-
-                if let digest = manualDigestResponse {
-                    Section("Latest Manual Digest") {
-                        Text("Project: \(digest.project_name ?? manualDigestProjectName)")
-                            .font(.caption)
-                        if let brands = digest.digest?.detected_brands, !brands.isEmpty {
-                            resultBlock("Detected Brands", items: Array(brands.prefix(10)))
-                        }
-                        if let skus = digest.digest?.detected_skus, !skus.isEmpty {
-                            resultBlock("Detected SKUs", items: Array(skus.prefix(10)))
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Projects")
-        .overlay(alignment: .bottom) {
-            if isLoading {
-                ProgressView("Generating SOW...")
-                    .padding(12)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding()
-            }
-        }
-        .alert("Status", isPresented: Binding<Bool>(
-            get: { resultMessage != nil },
-            set: { if !$0 { resultMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(resultMessage ?? "")
-        }
-        .sheet(isPresented: $showSOWShareSheet) {
-            if let fileURL = sowShareURL {
-                ActivityView(activityItems: [fileURL])
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func resultBlock(_ title: String, items: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption)
-                .fontWeight(.semibold)
-            ForEach(Array(items.enumerated()), id: \.offset) { _, line in
-                Text("• \(line)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    @MainActor
-    private func runProposalScopeAgent() async {
-        guard let proposalFile = selectedProposalScopeFile else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        let response = await api.runProposalScopeAgent(
-            projectName: proposalScopeProjectName.trimmingCharacters(in: .whitespacesAndNewlines),
-            clientName: proposalScopeClientName.trimmingCharacters(in: .whitespacesAndNewlines),
-            fileURL: proposalFile,
-            runAISummary: proposalScopeRunAI
-        )
-        proposalScopeResponse = response
-        if response?.success == true {
-            resultMessage = "Scope generated."
-        } else {
-            resultMessage = response?.error ?? api.error ?? "Proposal scope agent failed"
-        }
-    }
-
-    @MainActor
-    private func runManualDigest() async {
-        guard !selectedManualDigestFiles.isEmpty else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        let response = await api.runProjectManualDigest(
-            projectName: manualDigestProjectName.trimmingCharacters(in: .whitespacesAndNewlines),
-            fileURLs: selectedManualDigestFiles,
-            runAISummary: manualDigestRunAI
-        )
-        manualDigestResponse = response
-        if response?.success == true {
-            resultMessage = "Manual digest completed."
-        } else {
-            resultMessage = response?.error ?? api.error ?? "Manual digest failed"
-        }
-    }
-
-    private func exportProposalScopeMarkdown() {
-        guard let proposalScope = proposalScopeResponse else {
-            resultMessage = "Generate a scope first, then export."
-            return
-        }
-        let content = buildProposalScopeMarkdown(from: proposalScope)
-        let slug = (proposalScope.project_slug?.isEmpty == false ? proposalScope.project_slug! : "proposal-scope")
-        let timestamp = proposalScope.batch_timestamp ?? String(Int(Date().timeIntervalSince1970))
-        let filename = "\(slug)_SOW_\(timestamp).md"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-
-        do {
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            sowShareURL = url
-            showSOWShareSheet = true
-        } catch {
-            resultMessage = "Export failed: \(error.localizedDescription)"
-        }
-    }
-
-    private func buildProposalScopeMarkdown(from response: ProposalScopeResponse) -> String {
-        var lines: [String] = []
-        lines.append("# Scope of Work")
-        lines.append("")
-        lines.append("- Project: \(response.project_name ?? "N/A")")
-        lines.append("- Client: \(response.client_name ?? "N/A")")
-        if let quote = response.dtools_quote_version, !quote.isEmpty {
-            lines.append("- D-Tools Quote: \(quote)")
-        }
-        lines.append("")
-
-        func appendSection(_ title: String, _ items: [String]?) {
-            guard let items, !items.isEmpty else { return }
-            lines.append("## \(title)")
-            for item in items {
-                lines.append("- \(item)")
-            }
-            lines.append("")
-        }
-
-        let scope = response.scope
-        appendSection("Scope of Work", scope?.scope_of_work)
-        appendSection("Included", scope?.included_items)
-        appendSection("Excluded", scope?.excluded_items)
-        appendSection("Assumptions", scope?.assumptions)
-        appendSection("Allowances", scope?.allowances)
-        appendSection("Schedule Notes", scope?.schedule_notes)
-        appendSection("Open Questions", scope?.open_questions)
-
-        if let riskTags = scope?.risk_tags, !riskTags.isEmpty {
-            lines.append("## Risk Tags")
-            lines.append(riskTags.map { "`\($0)`" }.joined(separator: ", "))
-            lines.append("")
-        }
-        if let ai = response.ai_summary {
-            appendSection("AI Key Findings", ai.key_findings)
-            appendSection("AI Recommended Devices", ai.recommended_devices)
-            appendSection("AI Risks", ai.risks)
-            appendSection("AI Clarifying Questions", ai.clarifying_questions)
-            appendSection("AI Next Steps", ai.next_steps)
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
-struct SalesToolkitView: View {
-    @EnvironmentObject var api: APIClient
-    var mode: SalesWorkspaceMode = .pipeline
-    @State private var showProductImporter = false
-    @State private var selectedSheetURL: URL?
-    @State private var dealerTier = "standard"
-    @State private var maxProducts = 25
-    @State private var parseProfile = "msrp_three_tiers"
-    @State private var dryRun = true
-    @State private var isLoading = false
-    @State private var importResult: DToolsProductImportResponse?
-    @State private var resultMessage: String?
-
-    var body: some View {
-        List {
-            if mode == .pipeline {
-                Section("Sales Pipeline") {
-                    NavigationLink {
-                        LeadsView()
-                    } label: {
-                        Label("Lead Pipeline", systemImage: "person.3")
-                    }
-                    NavigationLink {
-                        AIChatView()
-                    } label: {
-                        Label("Ask Bob for Sales Copy", systemImage: "bubble.left.and.bubble.right")
-                    }
-                }
-            }
-
-            if mode == .dtoolsAgent {
-                Section("D-Tools Product Agent") {
-                    Button {
-                        showProductImporter = true
-                    } label: {
-                        HStack {
-                            Image(systemName: "doc.badge.plus")
-                            Text(selectedSheetURL == nil ? "Choose PDF/CSV Sheet" : selectedSheetURL!.lastPathComponent)
-                                .lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .fileImporter(
-                        isPresented: $showProductImporter,
-                        allowedContentTypes: [.pdf, .commaSeparatedText, .plainText, .data],
-                        allowsMultipleSelection: false
-                    ) { result in
-                        switch result {
-                        case .success(let urls):
-                            selectedSheetURL = urls.first
-                        case .failure(let err):
-                            resultMessage = "File picker failed: \(err.localizedDescription)"
-                        }
-                    }
-
-                    Picker("Dealer Tier", selection: $dealerTier) {
-                        Text("Standard").tag("standard")
-                        Text("Silver").tag("silver")
-                        Text("Gold").tag("gold")
-                        Text("Fabricator").tag("fabricator")
-                    }
-                    .pickerStyle(.menu)
-
-                    Stepper("Max Products: \(maxProducts)", value: $maxProducts, in: 1...250)
-                    Toggle("Dry Run", isOn: $dryRun)
-
-                    Button {
-                        Task { await runProductImport() }
-                    } label: {
-                        Label("Run Product Agent", systemImage: "wand.and.stars")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isLoading || selectedSheetURL == nil)
-                }
-
-                if let importResult {
-                    Section("Latest Import Result") {
-                        Text("Parsed: \(importResult.parsed_count ?? 0) • Created: \(importResult.created_count ?? 0)")
-                            .font(.caption)
-                        if let err = importResult.error, !err.isEmpty {
-                            Text(err)
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                        }
-                    }
-                }
-            }
-        }
-        .navigationTitle("Sales")
-        .alert("Status", isPresented: Binding<Bool>(
-            get: { resultMessage != nil },
-            set: { if !$0 { resultMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(resultMessage ?? "")
-        }
-    }
-
-    @MainActor
-    private func runProductImport() async {
-        guard let selectedSheetURL else { return }
-        isLoading = true
-        defer { isLoading = false }
-
-        let response = await api.importDToolsProducts(
-            fileURL: selectedSheetURL,
-            createInDTools: !dryRun,
-            maxProducts: maxProducts,
-            dealerTier: dealerTier,
-            parseProfile: parseProfile,
-            expectedColumns: [],
-            dryRun: dryRun
-        )
-        importResult = response
-        if response?.success == true {
-            resultMessage = "D-Tools product agent completed."
-        } else {
-            resultMessage = response?.error ?? api.error ?? "D-Tools product agent failed"
-        }
-    }
-}
-
-struct InstallWorkspaceView: View {
-    var mode: InstallWorkspaceMode = .queue
-
-    var body: some View {
-        List {
-            if mode == .queue {
-                Section("Field Execution") {
-                    NavigationLink {
-                        ServicesView()
-                    } label: {
-                        Label("Service + Install Queue", systemImage: "wrench.and.screwdriver")
-                    }
-                }
-            }
-        }
-        .navigationTitle("Install")
-    }
-}
-
-struct OpsAutomationView: View {
-    @EnvironmentObject var api: APIClient
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    var mode: OpsWorkspaceMode = .health
-    @State private var isLoading = false
-    @State private var resultMessage: String?
-    @State private var notesProcessTarget = ""
-    @State private var opsHealth: OpsHealthResponse?
-    @State private var incidentQueue: IncidentQueueResponse?
-    @State private var notesPipelineStatus: NotesPipelineStatusResponse?
-    @State private var contactsStatus: ContactsStatusResponse?
-    @State private var recentTexts: [IMessageRecentItem] = []
-    @State private var networkDropoutStatus: NetworkDropoutStatusResponse?
-    @State private var control4IP = ""
-    @State private var sonosIP = ""
-    @AppStorage("weather.setup.enabled.v1") private var weatherSetupEnabled = false
-    @AppStorage("weather.location.v1") private var weatherLocation = ""
-    @AppStorage("weather.provider.v1") private var weatherProvider = "openweather"
-    @AppStorage("weather.api_key_name.v1") private var weatherAPIKeyName = "OPENWEATHER_API_KEY"
-
-    var body: some View {
-        List {
-            if mode == .health {
-                Section("Automation Health") {
-                actionButtons(
-                    primaryTitle: "Run Recovery",
-                    primaryIcon: "cross.case.fill",
-                    primaryAction: { Task { await runOpsRecoveryNow() } },
-                    secondaryTitle: "Refresh",
-                    secondaryIcon: "arrow.clockwise",
-                    secondaryAction: { Task { await refreshAll() } }
-                )
-
-                if let health = opsHealth {
-                    LabeledContent("Ops status", value: health.status.capitalized)
-                        .font(.caption)
-                    if let problems = health.problems, !problems.isEmpty {
-                        Text("Problems: \(problems.prefix(3).joined(separator: " • "))")
-                            .font(.caption2)
-                            .foregroundColor(.orange)
-                    }
-                }
-                if let queue = incidentQueue {
-                    Text("Incident queue: \(queue.count)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-            }
-
-            if mode == .dropout {
-                Section("Dropout Watch") {
-                actionButtons(
-                    primaryTitle: "Start Watcher",
-                    primaryIcon: "play.circle.fill",
-                    primaryAction: { Task { await startDropoutWatch() } },
-                    secondaryTitle: "Stop Watcher",
-                    secondaryIcon: "stop.circle",
-                    secondaryAction: { Task { await stopDropoutWatch() } }
-                )
-
-                TextField("Control4 IP (optional)", text: $control4IP)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numbersAndPunctuation)
-                TextField("Sonos IP (optional)", text: $sonosIP)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numbersAndPunctuation)
-
-                if let watch = networkDropoutStatus {
-                    LabeledContent("Watcher", value: watch.running ? "Running" : "Stopped")
-                        .font(.caption)
-                    if let health = watch.status?.health {
-                        LabeledContent("Health", value: health.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .font(.caption2)
-                            .foregroundColor(health == "healthy" ? .green : .orange)
-                    }
-                    if let sample = watch.status?.sample {
-                        ForEach(["gateway", "wan", "control4", "sonos"], id: \.self) { key in
-                            if let target = sample[key], let ok = target.ok {
-                                let host = target.host ?? "n/a"
-                                let latency = target.latency_ms.map { String(format: "%.1fms", $0) } ?? "timeout"
-                                Text("• \(key.uppercased()): \(host) \(ok ? "OK" : "DOWN") \(latency)")
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(ok ? .secondary : .red)
-                            }
-                        }
-                    }
-                    if let events = watch.recent_events, !events.isEmpty {
-                        Text("Recent: \(events.prefix(2).compactMap { $0.event }.joined(separator: " • "))")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            }
-            }
-
-            if mode == .notes {
-                Section("Notes + Messaging") {
-                TextField("Note ID or project hint", text: $notesProcessTarget)
-                    .textFieldStyle(.roundedBorder)
-
-                actionButtons(
-                    primaryTitle: "Process Notes",
-                    primaryIcon: "bolt.horizontal.circle",
-                    primaryAction: { Task { await processNotesNow() } },
-                    secondaryTitle: "Process Texts",
-                    secondaryIcon: "bolt.badge.clock",
-                    secondaryAction: { Task { await processTextsNow() } }
-                )
-
-                if let pipeline = notesPipelineStatus {
-                    Text("Notes watcher running: \((pipeline.jobs?.notes_watcher?.running ?? false) ? "Yes" : "No")")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                if let contacts = contactsStatus?.contacts?.contacts_count {
-                    Text("Contacts indexed: \(contacts)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                ForEach(recentTexts.prefix(4)) { item in
-                    Text("• \(item.contact_name ?? item.handle ?? "Unknown"): \(item.text ?? "")")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(2)
-                }
-            }
-            }
-
-            if mode == .weather {
-                Section("Weather Setup") {
-                    Toggle("Enable weather in Today", isOn: $weatherSetupEnabled)
-
-                    Picker("Provider", selection: $weatherProvider) {
-                        Text("OpenWeather").tag("openweather")
-                        Text("WeatherAPI").tag("weatherapi")
-                        Text("Custom").tag("custom")
-                    }
-                    .pickerStyle(.menu)
-
-                    TextField("Location (e.g., Vail, CO)", text: $weatherLocation)
-                        .textFieldStyle(.roundedBorder)
-
-                    TextField("Vault key name for weather API key", text: $weatherAPIKeyName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled(true)
-                        .textFieldStyle(.roundedBorder)
-
-                    actionButtons(
-                        primaryTitle: "Save Weather Setup",
-                        primaryIcon: "square.and.arrow.down.fill",
-                        primaryAction: {
-                            resultMessage = "Weather setup saved. Today tab now uses this configuration."
-                        },
-                        secondaryTitle: "Clear Setup",
-                        secondaryIcon: "trash",
-                        secondaryAction: {
-                            weatherSetupEnabled = false
-                            weatherLocation = ""
-                            weatherProvider = "openweather"
-                            weatherAPIKeyName = "OPENWEATHER_API_KEY"
-                            resultMessage = "Weather setup cleared."
-                        }
-                    )
-
-                    Text("Tip: store provider API key in Vault, then enter that key name here for team reference.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .navigationTitle("Ops")
-        .task { await refreshAll() }
-        .overlay(alignment: .bottom) {
-            if isLoading {
-                ProgressView("Running...")
-                    .padding(12)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding()
-            }
-        }
-        .alert("Status", isPresented: Binding<Bool>(
-            get: { resultMessage != nil },
-            set: { if !$0 { resultMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(resultMessage ?? "")
-        }
-    }
-
-    @ViewBuilder
-    private func actionButtons(
-        primaryTitle: String,
-        primaryIcon: String,
-        primaryAction: @escaping () -> Void,
-        secondaryTitle: String,
-        secondaryIcon: String,
-        secondaryAction: @escaping () -> Void
-    ) -> some View {
-        if horizontalSizeClass == .regular {
-            HStack {
-                Button(action: primaryAction) {
-                    Label(primaryTitle, systemImage: primaryIcon)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isLoading)
-
-                Button(action: secondaryAction) {
-                    Label(secondaryTitle, systemImage: secondaryIcon)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isLoading)
-            }
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Button(action: primaryAction) {
-                    Label(primaryTitle, systemImage: primaryIcon)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isLoading)
-
-                Button(action: secondaryAction) {
-                    Label(secondaryTitle, systemImage: secondaryIcon)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.bordered)
-                .disabled(isLoading)
-            }
-        }
-    }
-
-    @MainActor
-    private func refreshAll() async {
-        opsHealth = await api.fetchOpsHealth()
-        incidentQueue = await api.fetchIncidentQueue(limit: 20)
-        notesPipelineStatus = await api.fetchNotesPipelineStatus()
-        contactsStatus = await api.fetchContactsStatus()
-        recentTexts = (await api.fetchRecentIMessageWork(limit: 10))?.items ?? []
-        networkDropoutStatus = await api.fetchNetworkDropoutStatus()
-    }
-
-    @MainActor
-    private func runOpsRecoveryNow() async {
-        isLoading = true
-        defer { isLoading = false }
-        let response = await api.runOpsRecovery(apply: true, threshold: 0.8)
-        if let response {
-            resultMessage = "Recovery complete. Detected: \(response.detected_count ?? 0), applied: \(response.applied_count ?? 0)."
-        } else {
-            resultMessage = api.error ?? "Recovery run failed."
-        }
-        await refreshAll()
-    }
-
-    @MainActor
-    private func processNotesNow() async {
-        isLoading = true
-        defer { isLoading = false }
-        let trimmed = notesProcessTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-        let noteId = Int(trimmed)
-        let response = await api.processNoteNow(
-            noteID: noteId,
-            projectName: noteId == nil && !trimmed.isEmpty ? trimmed : nil
-        )
-        if response?.success == true {
-            resultMessage = "Notes processed."
-        } else {
-            resultMessage = api.error ?? "Notes processing failed."
-        }
-        await refreshAll()
-    }
-
-    @MainActor
-    private func processTextsNow() async {
-        isLoading = true
-        defer { isLoading = false }
-        let response = await api.processIMessagesNow()
-        if response?.success == true {
-            resultMessage = "Texts processed. Tasks created: \(response?.tasks_created ?? 0)."
-        } else {
-            resultMessage = api.error ?? "Text processing failed."
-        }
-        await refreshAll()
-    }
-
-    @MainActor
-    private func startDropoutWatch() async {
-        isLoading = true
-        defer { isLoading = false }
-        let response = await api.startNetworkDropoutWatch(
-            gatewayIP: "192.168.1.1",
-            wanIP: "1.1.1.1",
-            control4IP: control4IP.trimmingCharacters(in: .whitespacesAndNewlines),
-            sonosIP: sonosIP.trimmingCharacters(in: .whitespacesAndNewlines),
-            intervalSec: 2.0
-        )
-        resultMessage = response?.message ?? api.error ?? "Could not start dropout watch."
-        await refreshAll()
-    }
-
-    @MainActor
-    private func stopDropoutWatch() async {
-        isLoading = true
-        defer { isLoading = false }
-        let response = await api.stopNetworkDropoutWatch()
-        resultMessage = response?.message ?? api.error ?? "Could not stop dropout watch."
-        await refreshAll()
     }
 }
 
@@ -3122,7 +2250,7 @@ struct LegacyActionsView: View {
     @State private var createInDTools = false
     @State private var dryRun = true
     @State private var productImportResponse: DToolsProductImportResponse?
-    @State private var parseProfile = "msrp_three_tiers"
+    @State private var parseProfile = "auto"
     @State private var customExpectedColumns = "MODEL NAME, PART NUMBER, SKU, DESCRIPTION, MSRP, STANDARD DEALER, SILVER DEALER, GOLD DEALER"
     @State private var shouldScrollToProductResult = false
     @State private var approveStoreResult: DToolsProductStoreResponse?
@@ -3213,14 +2341,14 @@ struct LegacyActionsView: View {
                 } label: {
                     HStack {
                         Image(systemName: "doc.badge.plus")
-                        Text(selectedSheetURL == nil ? "Choose PDF/CSV Sheet" : selectedSheetURL!.lastPathComponent)
+                        Text(selectedSheetURL == nil ? "Choose Invoice/PDF/CSV/XLSX" : selectedSheetURL!.lastPathComponent)
                             .lineLimit(1)
                     }
                 }
                 .buttonStyle(.bordered)
                 .fileImporter(
                     isPresented: $showProductImporter,
-                    allowedContentTypes: [.pdf, .commaSeparatedText, .plainText, .data],
+                    allowedContentTypes: [.pdf, .commaSeparatedText, .spreadsheet, .plainText, .data],
                     allowsMultipleSelection: false
                 ) { result in
                     showProductImporter = false
@@ -3242,6 +2370,7 @@ struct LegacyActionsView: View {
 
                 Picker("Document Profile", selection: $parseProfile) {
                     Text("Auto Detect").tag("auto")
+                    Text("Invoice (Rexel)").tag("invoice_rexel")
                     Text("MSRP + Standard/Silver/Gold").tag("msrp_three_tiers")
                     Text("MSRP + Standard only").tag("msrp_standard_only")
                     Text("Minimal").tag("minimal")
@@ -4812,12 +3941,18 @@ struct SettingsView: View {
 
                     HStack {
                         Button("Save Token") {
+                            let normalizedToken = normalizedTokenCandidate(apiTokenInput)
                             api.setAPIToken(apiTokenInput)
+                            if !normalizedToken.isEmpty {
+                                syncTokenToSelectedVaultIfApplicable(normalizedToken)
+                            }
                             Task {
                                 let msg = await api.testURLAndToken()
                                 await MainActor.run {
                                     apiTokenInput = ""
-                                    authStatusMessage = "Token saved to Keychain."
+                                    authStatusMessage = normalizedToken.isEmpty
+                                        ? "Token saved to Keychain."
+                                        : "Token saved to Keychain and synced to selected Vault API token key."
                                     connectionTestMessage = msg
                                     serverURL = api.baseURL
                                 }
@@ -4912,6 +4047,10 @@ struct SettingsView: View {
                     Button(isRunningOneTapFix ? "Running One-Tap Fix..." : "One-Tap Fix (Save + Fallback + Test)") {
                         guard !isRunningOneTapFix else { return }
                         isRunningOneTapFix = true
+                        let normalizedToken = normalizedTokenCandidate(apiTokenInput)
+                        if !normalizedToken.isEmpty {
+                            syncTokenToSelectedVaultIfApplicable(normalizedToken)
+                        }
                         Task {
                             let result = await api.runOneTapConnectionFix(
                                 preferredURL: serverURL,
@@ -5069,6 +4208,36 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func normalizedTokenCandidate(_ input: String) -> String {
+        var token = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.isEmpty { return "" }
+        if let eq = token.firstIndex(of: "=") {
+            let lhs = token[..<eq]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+                .replacingOccurrences(of: "-", with: "_")
+            let rhs = token[token.index(after: eq)...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if lhs == "SYMPHONY_API_TOKEN" || lhs == "X_SYMPHONY_TOKEN" {
+                token = String(rhs)
+            }
+        }
+        token = token.trimmingCharacters(in: CharacterSet(charactersIn: "\"'").union(.whitespacesAndNewlines))
+        let normalizedLabel = token.uppercased().replacingOccurrences(of: "-", with: "_")
+        if normalizedLabel == "SYMPHONY_API_TOKEN" || normalizedLabel == "X_SYMPHONY_TOKEN" {
+            return ""
+        }
+        return token
+    }
+
+    private func syncTokenToSelectedVaultIfApplicable(_ token: String) {
+        guard let id = selectedVaultKeyID else { return }
+        guard let record = secretsVault.records.first(where: { $0.id == id }) else { return }
+        let key = record.keyName.uppercased().replacingOccurrences(of: "-", with: "_")
+        guard key == "SYMPHONY_API_TOKEN" || key == "X_SYMPHONY_TOKEN" else { return }
+        secretsVault.rotateSecret(id: id, newValue: token)
     }
 }
 

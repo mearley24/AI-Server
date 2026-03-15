@@ -7,7 +7,10 @@ struct SymphonyOpsApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(
+                availableSections: AppVariant.availableSections,
+                defaultSection: AppVariant.defaultSection
+            )
                 .environmentObject(apiClient)
                 .environmentObject(secretsVault)
         }
