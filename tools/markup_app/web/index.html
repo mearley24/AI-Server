@@ -9,6 +9,7 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/icon-192.png">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <title>Symphony Markup</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -372,7 +373,7 @@
             <label>Label</label>
             <input type="text" id="sym-label" placeholder="S 1, S, KP">
             <label>Category</label>
-            <select id="sym-cat">
+            <select id="sym-cat" onchange="onSymbolCategoryChange()">
                 <option value="speaker">Speaker</option>
                 <option value="shade">Shade</option>
                 <option value="lighting">Lighting</option>
@@ -383,6 +384,10 @@
                 <option value="network">Network</option>
                 <option value="custom">Custom</option>
             </select>
+            <div id="sym-custom-cat-wrap" style="display:none;">
+                <label>New Category Name</label>
+                <input type="text" id="sym-custom-cat" placeholder="ex: Security, Rack, AV">
+            </div>
             <label>Shape</label>
             <select id="sym-shape">
                 <option value="roundrect">Rounded Rect</option>
@@ -606,6 +611,10 @@
                     📦 Export PDF + Markup Data
                 </button>
                 <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Outputs exactly two files to Files app</div>
+                <button style="width:100%;padding:14px;font-size:15px;background:#8b5cf6;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="exportMarkedUpPdfToFiles()">
+                    🧾 Export Marked-Up PDF (Client)
+                </button>
+                <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Flattened PDF with rooms, symbols, labels, and notes for proposals</div>
             </div>
             <div class="btns" style="margin-top:16px;">
                 <button onclick="closeSaveModal()">Cancel</button>
@@ -651,7 +660,7 @@
         </div>
     </div>
     
-    <input type="file" id="project-input" accept=".symphony,.syphony,.json,application/json,text/plain" style="display:none;">
+    <input type="file" id="project-input" accept="*/*,.symphony,.syphony,.json,.txt,application/json,text/plain" style="display:none;">
 
 <script>
 // State
@@ -706,6 +715,8 @@ let placed = [];
 let rooms = [];
 let textLabels = [];
 let freehandLines = []; // Freehand drawing strokes
+let legendPanel = null; // Auto-generated legend block for current page
+let legendResizeMode = false;
 let tool = null;
 let scale = 1, panX = 0, panY = 0;
 let dragging = false, dragStart = {x:0,y:0};
@@ -781,7 +792,8 @@ function saveState() {
         placed: JSON.parse(JSON.stringify(placed)),
         rooms: JSON.parse(JSON.stringify(rooms)),
         textLabels: JSON.parse(JSON.stringify(textLabels)),
-        freehandLines: JSON.parse(JSON.stringify(freehandLines))
+        freehandLines: JSON.parse(JSON.stringify(freehandLines)),
+        legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
     undoStack.push(state);
     if (undoStack.length > MAX_HISTORY) undoStack.shift();
@@ -798,7 +810,8 @@ function undo() {
         placed: JSON.parse(JSON.stringify(placed)),
         rooms: JSON.parse(JSON.stringify(rooms)),
         textLabels: JSON.parse(JSON.stringify(textLabels)),
-        freehandLines: JSON.parse(JSON.stringify(freehandLines))
+        freehandLines: JSON.parse(JSON.stringify(freehandLines)),
+        legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
     redoStack.push(current);
     const prev = undoStack.pop();
@@ -806,6 +819,7 @@ function undo() {
     rooms = prev.rooms;
     textLabels = prev.textLabels;
     freehandLines = prev.freehandLines || [];
+    legendPanel = prev.legendPanel || null;
     updateUndoButtons();
     render();
     updateCounts();
@@ -817,7 +831,8 @@ function redo() {
         placed: JSON.parse(JSON.stringify(placed)),
         rooms: JSON.parse(JSON.stringify(rooms)),
         textLabels: JSON.parse(JSON.stringify(textLabels)),
-        freehandLines: JSON.parse(JSON.stringify(freehandLines))
+        freehandLines: JSON.parse(JSON.stringify(freehandLines)),
+        legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
     undoStack.push(current);
     const next = redoStack.pop();
@@ -825,6 +840,7 @@ function redo() {
     rooms = next.rooms;
     textLabels = next.textLabels;
     freehandLines = next.freehandLines || [];
+    legendPanel = next.legendPanel || null;
     updateUndoButtons();
     render();
     updateCounts();
@@ -1050,6 +1066,71 @@ function getToolCategory(toolId) {
     return s ? (s.category || 'custom') : null;
 }
 
+const CATEGORY_PRESETS = {
+    speaker: { icon: '🔊', label: 'Audio', color: '#7a219e' },
+    shade: { icon: '▦', label: 'Shades', color: '#f5ec00' },
+    lighting: { icon: '💡', label: 'Light', color: '#00a1d8' },
+    tv: { icon: '📺', label: 'TV', color: '#263e0f' },
+    camera: { icon: '📷', label: 'Cam', color: '#52d6fc' },
+    ap: { icon: '📶', label: 'AP', color: '#0ea5e9' },
+    network: { icon: '📡', label: 'Net', color: '#831100' },
+    sensor: { icon: '🛰', label: 'Sensors', color: '#6b7280' },
+    custom: { icon: '★', label: 'Custom', color: '#666' }
+};
+
+const CATEGORY_ORDER = ['speaker', 'shade', 'lighting', 'tv', 'camera', 'ap', 'network', 'sensor', 'custom'];
+
+function normalizeCategoryId(raw) {
+    const cleaned = String(raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9\s_-]/g, '')
+        .replace(/[\s_]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return cleaned || 'custom';
+}
+
+function formatCategoryLabel(categoryId) {
+    const preset = CATEGORY_PRESETS[categoryId];
+    if (preset) return preset.label;
+    return String(categoryId || 'custom')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function getCategoryMeta(categoryId) {
+    const preset = CATEGORY_PRESETS[categoryId];
+    if (preset) return preset;
+    return {
+        icon: '★',
+        label: formatCategoryLabel(categoryId),
+        color: '#9ca3af'
+    };
+}
+
+function getOrderedCategoryIds(symbolsByCategory) {
+    const dynamic = Object.keys(symbolsByCategory || {})
+        .filter((id) => !CATEGORY_ORDER.includes(id))
+        .sort((a, b) => a.localeCompare(b));
+    return [...CATEGORY_ORDER, ...dynamic];
+}
+
+function onSymbolCategoryChange() {
+    const category = document.getElementById('sym-cat').value;
+    const wrap = document.getElementById('sym-custom-cat-wrap');
+    if (!wrap) return;
+    wrap.style.display = category === 'custom' ? 'block' : 'none';
+}
+
+function getSelectedSymbolCategory() {
+    const base = document.getElementById('sym-cat').value;
+    if (base !== 'custom') return base;
+    const customInput = document.getElementById('sym-custom-cat');
+    const customValue = normalizeCategoryId(customInput ? customInput.value : '');
+    return customValue || 'custom';
+}
+
 function buildToolbar() {
     const bar = document.getElementById('symbol-bar');
     bar.innerHTML = '';
@@ -1166,16 +1247,6 @@ function buildToolbar() {
     bar.appendChild(createDivider());
     
     // Category buttons with slide-out symbols
-    const categories = {
-        'speaker': { icon: '🔊', label: 'Audio', color: '#7a219e' },
-        'shade': { icon: '▦', label: 'Shades', color: '#f5ec00' },
-        'lighting': { icon: '💡', label: 'Light', color: '#00a1d8' },
-        'tv': { icon: '📺', label: 'TV', color: '#263e0f' },
-        'camera': { icon: '📷', label: 'Cam', color: '#52d6fc' },
-        'network': { icon: '📡', label: 'Net', color: '#831100' },
-        'custom': { icon: '★', label: 'Other', color: '#666' }
-    };
-    
     // Group symbols by category
     const symbolsByCategory = {};
     for (const [id, s] of Object.entries(symbols)) {
@@ -1185,9 +1256,10 @@ function buildToolbar() {
     }
     
     // Create category buttons
-    for (const [catId, catInfo] of Object.entries(categories)) {
+    for (const catId of getOrderedCategoryIds(symbolsByCategory)) {
         const catSymbols = symbolsByCategory[catId];
         if (!catSymbols || catSymbols.length === 0) continue;
+        const catInfo = getCategoryMeta(catId);
         
         // Check if active tool is in this category
         const hasActiveTool = currentToolCategory === catId;
@@ -1357,6 +1429,8 @@ function addSymbolToCategory(category) {
     document.getElementById('sym-id').disabled = false;
     document.getElementById('sym-label').value = '';
     document.getElementById('sym-cat').value = category;
+    document.getElementById('sym-custom-cat').value = '';
+    onSymbolCategoryChange();
     
     // Set default shape based on category
     const defaultShapes = {
@@ -1400,7 +1474,12 @@ function editSymbol(id) {
     document.getElementById('sym-id').value = id;
     document.getElementById('sym-id').disabled = true;
     document.getElementById('sym-label').value = s.label || '';
-    document.getElementById('sym-cat').value = s.category || 'custom';
+    const currentCategory = s.category || 'custom';
+    const categorySelect = document.getElementById('sym-cat');
+    const hasOption = Array.from(categorySelect.options).some((opt) => opt.value === currentCategory);
+    categorySelect.value = hasOption ? currentCategory : 'custom';
+    document.getElementById('sym-custom-cat').value = hasOption ? '' : currentCategory;
+    onSymbolCategoryChange();
     document.getElementById('sym-shape').value = s.shape || 'roundrect';
     document.getElementById('sym-color').value = s.color || '#3B82F6';
     document.getElementById('sym-sku').value = s.sku || '';
@@ -1450,7 +1529,7 @@ function saveSymbol() {
     
     symbols[id] = {
         label: document.getElementById('sym-label').value.trim(),
-        category: document.getElementById('sym-cat').value,
+        category: getSelectedSymbolCategory(),
         shape: document.getElementById('sym-shape').value,
         color: document.getElementById('sym-color').value,
         sku: document.getElementById('sym-sku').value.trim()
@@ -1508,27 +1587,26 @@ function openOptionsModal() {
     // Build layer toggles
     const layerDiv = document.getElementById('layer-toggles');
     layerDiv.innerHTML = '';
-    const categories = ['speaker', 'shade', 'lighting', 'tv', 'camera', 'ap', 'network', 'sensor', 'custom'];
-    const catColors = {
-        speaker: '#22c55e', shade: '#facc15', lighting: '#f97316', tv: '#3b82f6',
-        camera: '#ec4899', ap: '#06b6d4', network: '#8b5cf6', sensor: '#6b7280', custom: '#9ca3af'
-    };
-    const catLabels = {
-        speaker: 'Audio', shade: 'Shades', lighting: 'Lighting', tv: 'Video',
-        camera: 'Cameras', ap: 'Network', network: 'Network', sensor: 'Sensors', custom: 'Custom'
-    };
+    const symbolsByCategory = {};
+    for (const s of Object.values(symbols)) {
+        const cat = s.category || 'custom';
+        if (!symbolsByCategory[cat]) symbolsByCategory[cat] = [];
+        symbolsByCategory[cat].push(s);
+    }
+    const categories = getOrderedCategoryIds(symbolsByCategory);
     
     for (const cat of categories) {
         // Check if any symbols exist in this category
-        const hasSymbols = Object.values(symbols).some(s => (s.category || 'custom') === cat);
+        const hasSymbols = (symbolsByCategory[cat] || []).length > 0;
         if (!hasSymbols) continue;
+        const meta = getCategoryMeta(cat);
         
         const row = document.createElement('label');
         row.className = 'layer-row';
         row.innerHTML = `
             <input type="checkbox" ${isLayerVisible(cat) ? 'checked' : ''} onchange="toggleLayer('${cat}')">
-            <span class="layer-dot" style="background:${catColors[cat] || '#666'}"></span>
-            <span>${catLabels[cat] || cat}</span>
+            <span class="layer-dot" style="background:${meta.color || '#666'}"></span>
+            <span>${formatCategoryLabel(cat)}</span>
         `;
         layerDiv.appendChild(row);
     }
@@ -2289,6 +2367,7 @@ function render() {
         }
         ctx.restore();
     }
+    drawLegendPanel(ctx, legendPanel);
     ctx.restore();
 }
 
@@ -2549,6 +2628,7 @@ canvas.onpointerup = canvas.onpointercancel = canvas.onpointerout = canvas.onpoi
         selectedItem = null;
         selectedType = null;
         draggingCorner = null;
+        legendResizeMode = false;
     }
 };
 
@@ -2659,6 +2739,28 @@ function handleSinglePointerDown(e) {
             }
             
             if (found) return;
+        }
+
+        // Check generated legend panel first so it can be moved/resized.
+        if (!found && legendPanel) {
+            const lx = Number(legendPanel.x || 24);
+            const ly = Number(legendPanel.y || 24);
+            const lw = Number(legendPanel.width || 320);
+            const lh = Number(legendPanel.height || 220);
+            const handleX = lx + lw;
+            const handleY = ly + lh;
+            const onResizeHandle = Math.hypot(x - handleX, y - handleY) <= 16;
+            const insideLegend = x >= lx && x <= (lx + lw) && y >= ly && y <= (ly + lh);
+            if (onResizeHandle || insideLegend) {
+                saveState();
+                selectedItem = legendPanel;
+                selectedType = 'legend';
+                legendResizeMode = onResizeHandle;
+                dragOffset = { x: x - lx, y: y - ly };
+                dragging = true;
+                found = true;
+                render();
+            }
         }
         
         // Check symbols
@@ -2823,11 +2925,23 @@ function handleSinglePointerDown(e) {
         if (!found) {
             selectedItem = null;
             selectedType = null;
+            legendResizeMode = false;
             dragging = true;
             dragStart = {x: e.clientX - panX, y: e.clientY - panY};
         }
     } else if (tool === 'delete') {
         saveState();
+        if (legendPanel) {
+            const lx = Number(legendPanel.x || 24);
+            const ly = Number(legendPanel.y || 24);
+            const lw = Number(legendPanel.width || 320);
+            const lh = Number(legendPanel.height || 220);
+            if (x >= lx && x <= (lx + lw) && y >= ly && y <= (ly + lh)) {
+                legendPanel = null;
+                render();
+                return;
+            }
+        }
         let i = placed.findIndex(p => Math.hypot(p.x-x,p.y-y) < 18);
         if (i >= 0) { placed.splice(i,1); updateCounts(); render(); return; }
         i = textLabels.findIndex(t => x >= t.x && x <= t.x + 100 && y >= t.y && y <= t.y + t.size);
@@ -2876,6 +2990,37 @@ function handleSinglePointerMove(e) {
     } else if (tool === 'measure' && measuringLine) {
         measuringLine.x2 = x;
         measuringLine.y2 = y;
+        render();
+    } else if (selectedItem && selectedType === 'legend' && legendPanel) {
+        if (legendResizeMode) {
+            const sections = Array.isArray(legendPanel.sections) && legendPanel.sections.length
+                ? legendPanel.sections
+                : buildLegendSections(legendPanel.entries || []);
+            const layout = computeLegendColumnLayout(sections);
+            const maxRows = Math.max(1, ...layout.rowsByCol);
+            const minWidth = 780;
+            const minHeight = 300;
+            const newWidth = Math.max(minWidth, x - legendPanel.x);
+            const targetHeight = Math.max(minHeight, y - legendPanel.y);
+            const baseWidth = Number(legendPanel.baseWidth || 980);
+            const baseHeight = Number(legendPanel.baseHeight || 420);
+            const baseLineHeight = Number(legendPanel.baseLineHeight || 28);
+            const scaleFactor = Math.max(0.7, Math.min(3.2, Math.max(newWidth / baseWidth, targetHeight / baseHeight)));
+            const padding = Math.round(12 * scaleFactor);
+            const titleHeight = Math.round(28 * scaleFactor);
+            const minLine = Math.round(15 * scaleFactor);
+            const maxLine = Math.round(72 * scaleFactor);
+            const maxLineFromHeight = Math.max(14, Math.floor((targetHeight - (padding * 2 + titleHeight)) / maxRows));
+            const computedLine = Math.max(minLine, Math.min(maxLine, Math.min(Math.round(baseLineHeight * scaleFactor), maxLineFromHeight)));
+            legendPanel.lineHeight = Math.round(computedLine);
+            legendPanel.swatchSize = Math.max(10, Math.round(legendPanel.lineHeight * 0.65));
+            legendPanel.width = Math.round(newWidth);
+            legendPanel.height = Math.round(targetHeight);
+            legendPanel.sections = sections;
+        } else {
+            legendPanel.x = x - dragOffset.x;
+            legendPanel.y = y - dragOffset.y;
+        }
         render();
     } else if (selectedItem && selectedType === 'symbol') {
         selectedItem.x = x - dragOffset.x;
@@ -2954,7 +3099,8 @@ function savePageMarkups() {
         rooms: rooms,
         textLabels: textLabels,
         freehandLines: freehandLines,
-        measureScale: measureScale
+        measureScale: measureScale,
+        legendPanel: legendPanel
     };
     localStorage.setItem(key, JSON.stringify(data));
     
@@ -3033,7 +3179,8 @@ function gatherAllPageMarkups() {
         rooms: rooms,
         textLabels: textLabels,
         freehandLines: freehandLines,
-        measureScale: measureScale
+        measureScale: measureScale,
+        legendPanel: legendPanel
     };
     
     return allPages;
@@ -3253,7 +3400,10 @@ function uint8ArrayToBase64(bytes) {
 }
 
 function base64ToUint8Array(b64) {
-    const binary = atob(b64 || '');
+    const cleaned = String(b64 || '')
+        .replace(/^data:application\/pdf;base64,/i, '')
+        .replace(/\s+/g, '');
+    const binary = atob(cleaned);
     const out = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
         out[i] = binary.charCodeAt(i);
@@ -3261,24 +3411,84 @@ function base64ToUint8Array(b64) {
     return out;
 }
 
+function sanitizeSymbolDefinitions(rawSymbols) {
+    if (!rawSymbols || typeof rawSymbols !== 'object' || Array.isArray(rawSymbols)) {
+        return null;
+    }
+
+    const cleaned = {};
+    for (const [key, value] of Object.entries(rawSymbols)) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+
+        // Keep only symbol definition-like entries, not placed item snapshots.
+        const hasDefinitionShape =
+            typeof value.label === 'string' ||
+            typeof value.category === 'string' ||
+            typeof value.shape === 'string';
+        if (!hasDefinitionShape) continue;
+
+        cleaned[key] = {
+            label: value.label || key,
+            category: value.category || 'custom',
+            shape: value.shape || 'roundrect',
+            color: value.color || '#666666',
+            sku: value.sku || '',
+        };
+    }
+
+    return Object.keys(cleaned).length ? cleaned : null;
+}
+
+async function ensureCurrentPdfBytes() {
+    if (currentPdfBytes && currentPdfBytes.length) return true;
+    if (!pdfDoc || typeof pdfDoc.getData !== 'function') return false;
+    try {
+        const bytes = await pdfDoc.getData();
+        if (bytes && bytes.length) {
+            currentPdfBytes = new Uint8Array(bytes);
+            if (!currentPdfMime) currentPdfMime = 'application/pdf';
+            if (!currentPdfOriginalName) {
+                currentPdfOriginalName = (projectName || currentPdfName || 'source').replace(/\s+/g, '_') + '.pdf';
+            }
+            return true;
+        }
+    } catch (e) {
+        console.error('Failed to recover PDF bytes from loaded document:', e);
+    }
+    return false;
+}
+
 function extractEmbeddedSourcePdf(project) {
     const p = project || {};
     const candidates = [
         p.sourcePdf,
         p.source_pdf,
-        p.sourcePDF
+        p.sourcePDF,
+        p.source,
+        p.pdfSource,
+        p.pdf
     ].filter(Boolean);
 
     // Also support flat legacy keys.
-    if (p.source_pdf_b64 || p.sourcePdfB64 || p.sourcePdfBytesB64) {
+    if (p.source_pdf_b64 || p.sourcePdfB64 || p.sourcePdfBytesB64 || p.pdf_b64 || p.pdfBase64) {
         candidates.push({
-            bytes_b64: p.source_pdf_b64 || p.sourcePdfB64 || p.sourcePdfBytesB64,
+            bytes_b64: p.source_pdf_b64 || p.sourcePdfB64 || p.sourcePdfBytesB64 || p.pdf_b64 || p.pdfBase64,
             mimeType: p.sourcePdfMime || p.source_pdf_mime || 'application/pdf',
             filename: p.sourcePdfFilename || p.source_pdf_filename || ''
         });
     }
 
     for (const src of candidates) {
+        // Some legacy saves stored raw byte arrays instead of base64.
+        const bytesArray = src.bytes || src.pdfBytes || src.dataBytes;
+        if (Array.isArray(bytesArray) && bytesArray.length) {
+            return {
+                bytes_arr: bytesArray,
+                mimeType: src.mimeType || src.mimetype || src.mime || 'application/pdf',
+                filename: src.filename || src.name || ''
+            };
+        }
+
         const b64 =
             src.bytes_b64 ||
             src.bytesB64 ||
@@ -3316,6 +3526,11 @@ async function shareFilesOrDownload(files) {
 }
 
 async function saveProjectToFiles() {
+    const hasPdfBytes = await ensureCurrentPdfBytes();
+    if (!hasPdfBytes) {
+        showToast('Load source PDF first, then save .symphony (so reopening is not blank).');
+        return;
+    }
     const project = buildSaveProjectData();
     const baseName = (project.projectName || currentPdfName.replace(/\.[^/.]+$/, '') || 'markup').replace(/\s/g, '-');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -3334,8 +3549,9 @@ async function saveProjectToFiles() {
 }
 
 async function exportProjectBundleToFiles() {
-    if (!currentPdfBytes || !currentPdfBytes.length) {
-        showToast('This project has no embedded source PDF. Open the original PDF once, then export.');
+    const hasPdfBytes = await ensureCurrentPdfBytes();
+    if (!hasPdfBytes) {
+        showToast('Could not access source PDF bytes. Reload the PDF with Load PDF/Image, then export.');
         return;
     }
     const baseName = ((projectName || currentPdfName || 'markup').replace(/\.[^/.]+$/, '')).replace(/\s/g, '-');
@@ -3359,6 +3575,297 @@ async function exportProjectBundleToFiles() {
         if (e && e.name !== 'AbortError') {
             showToast('Export failed: ' + (e.message || 'Unknown error'));
         }
+    }
+}
+
+function getPageMarkupForExport(pageNum) {
+    if (pageNum === currentPageNum) {
+        return {
+            placed: Array.isArray(placed) ? placed : [],
+            rooms: Array.isArray(rooms) ? rooms : [],
+            textLabels: Array.isArray(textLabels) ? textLabels : [],
+            freehandLines: Array.isArray(freehandLines) ? freehandLines : [],
+            measureScale: Number(measureScale || 0) || 0,
+            legendPanel: legendPanel || null,
+        };
+    }
+    const key = getPageStorageKey(pageNum);
+    if (!key) {
+        return { placed: [], rooms: [], textLabels: [], freehandLines: [], measureScale: 0, legendPanel: null };
+    }
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return { placed: [], rooms: [], textLabels: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        const data = JSON.parse(raw);
+        return {
+            placed: Array.isArray(data.placed) ? data.placed : [],
+            rooms: Array.isArray(data.rooms) ? data.rooms : [],
+            textLabels: Array.isArray(data.textLabels) ? data.textLabels : [],
+            freehandLines: Array.isArray(data.freehandLines) ? data.freehandLines : [],
+            measureScale: Number(data.measureScale || 0) || 0,
+            legendPanel: data.legendPanel || null,
+        };
+    } catch (_) {
+        return { placed: [], rooms: [], textLabels: [], freehandLines: [], measureScale: 0, legendPanel: null };
+    }
+}
+
+function drawMarkupOverlayForExport(ctxOut, pageData, defs) {
+    const safeDefs = sanitizeSymbolDefinitions(defs) || defs || {};
+    const pagePlaced = Array.isArray(pageData.placed) ? pageData.placed : [];
+    const pageRooms = Array.isArray(pageData.rooms) ? pageData.rooms : [];
+    const pageLabels = Array.isArray(pageData.textLabels) ? pageData.textLabels : [];
+    const pageFreehand = Array.isArray(pageData.freehandLines) ? pageData.freehandLines : [];
+
+    // Rooms
+    for (let ri = 0; ri < pageRooms.length; ri++) {
+        const room = pageRooms[ri];
+        if (!room || !Array.isArray(room.points) || room.points.length < 3) continue;
+        const roomColor = ROOM_COLORS[ri % ROOM_COLORS.length];
+        ctxOut.beginPath();
+        ctxOut.moveTo(room.points[0].x, room.points[0].y);
+        for (let i = 1; i < room.points.length; i++) {
+            ctxOut.lineTo(room.points[i].x, room.points[i].y);
+        }
+        ctxOut.closePath();
+        ctxOut.fillStyle = roomColor + '26';
+        ctxOut.fill();
+        ctxOut.strokeStyle = roomColor;
+        ctxOut.lineWidth = 2;
+        ctxOut.setLineDash([6, 4]);
+        ctxOut.stroke();
+        ctxOut.setLineDash([]);
+
+        const cx = room.points.reduce((s, p) => s + p.x, 0) / room.points.length;
+        const cy = room.points.reduce((s, p) => s + p.y, 0) / room.points.length;
+        ctxOut.fillStyle = roomColor;
+        ctxOut.font = 'bold 22px Arial';
+        ctxOut.textAlign = 'center';
+        ctxOut.textBaseline = 'middle';
+        ctxOut.fillText(room.name || 'Room', cx, cy);
+    }
+
+    // Freehand
+    for (const line of pageFreehand) {
+        if (!line || !Array.isArray(line.points) || line.points.length < 2) continue;
+        ctxOut.beginPath();
+        ctxOut.moveTo(line.points[0].x, line.points[0].y);
+        for (let i = 1; i < line.points.length; i++) {
+            ctxOut.lineTo(line.points[i].x, line.points[i].y);
+        }
+        ctxOut.strokeStyle = line.color || '#f59e0b';
+        ctxOut.lineWidth = line.width || 2;
+        ctxOut.lineCap = 'round';
+        ctxOut.lineJoin = 'round';
+        ctxOut.stroke();
+    }
+
+    // Text labels
+    for (const t of pageLabels) {
+        if (!t || !t.text) continue;
+        ctxOut.fillStyle = t.color || '#ffffff';
+        ctxOut.font = `bold ${t.size || 16}px Arial`;
+        ctxOut.textAlign = 'left';
+        ctxOut.textBaseline = 'top';
+        ctxOut.fillText(t.text, t.x || 0, t.y || 0);
+    }
+
+    // Symbols
+    for (const p of pagePlaced) {
+        if (!p || !p.type) continue;
+        const s = safeDefs[p.type];
+        if (!s) continue;
+        ctxOut.save();
+        ctxOut.translate(p.x || 0, p.y || 0);
+        drawShape(ctxOut, s.shape || 'roundrect', s.color || '#666666');
+        if (s.label && s.shape !== 'triangle') {
+            ctxOut.fillStyle = isLight(s.color || '#666666') ? '#000' : '#fff';
+            ctxOut.font = `bold ${Math.round(10 * symbolScale)}px Arial`;
+            ctxOut.textAlign = 'center';
+            ctxOut.textBaseline = 'middle';
+            ctxOut.fillText(s.label, 0, 0);
+        }
+        ctxOut.restore();
+    }
+
+    // Legend panel (when generated for this page)
+    drawLegendPanel(ctxOut, pageData.legendPanel || null);
+}
+
+function drawLegendPanel(ctxOut, panel) {
+    if (!panel || !Array.isArray(panel.entries) || panel.entries.length === 0) return;
+    const x = Number(panel.x || 24);
+    const y = Number(panel.y || 24);
+    const title = panel.title || 'LEGEND';
+    const entries = panel.entries;
+    const sections = Array.isArray(panel.sections) && panel.sections.length
+        ? panel.sections
+        : buildLegendSections(entries);
+    const width = Number(panel.width || 980);
+    const height = Number(panel.height || 420);
+    const baseWidth = Number(panel.baseWidth || 980);
+    const baseHeight = Number(panel.baseHeight || 420);
+    const baseLineHeight = Number(panel.baseLineHeight || 28);
+    const widthScale = width / baseWidth;
+    const heightScale = height / baseHeight;
+    const scaleFactor = Math.max(0.7, Math.min(3.2, Math.max(widthScale, heightScale)));
+
+    const padding = Math.round(12 * scaleFactor);
+    const titleHeight = Math.round(28 * scaleFactor);
+    const colGap = Math.round(18 * scaleFactor);
+    const minLine = Math.round(15 * scaleFactor);
+    const maxLine = Math.round(38 * scaleFactor);
+    const layout = computeLegendColumnLayout(sections);
+    const maxRows = Math.max(1, ...layout.rowsByCol);
+    const maxLineFromHeight = Math.max(14, Math.floor((height - (padding * 2 + titleHeight)) / maxRows));
+    const lineHeight = Math.max(minLine, Math.min(maxLine, Math.min(Math.round(baseLineHeight * scaleFactor), maxLineFromHeight)));
+    const swatchSize = Math.max(12, Math.round(lineHeight * 0.9));
+    const titleFont = Math.max(16, Math.round(lineHeight * 0.95));
+    const categoryFont = Math.max(13, Math.round(lineHeight * 0.75));
+    const itemFont = Math.max(12, Math.round(lineHeight * 0.72));
+    const colWidth = Math.max(120, Math.floor((width - (padding * 2) - (colGap * 2)) / 3));
+
+    ctxOut.save();
+    ctxOut.fillStyle = 'rgba(10, 10, 20, 0.78)';
+    ctxOut.strokeStyle = '#ffffff';
+    ctxOut.lineWidth = 1.2;
+    roundRect(ctxOut, x, y, width, height, 8);
+    ctxOut.fill();
+    ctxOut.stroke();
+
+    ctxOut.fillStyle = '#ffffff';
+    ctxOut.font = `bold ${titleFont}px Arial`;
+    ctxOut.textAlign = 'left';
+    ctxOut.textBaseline = 'top';
+    ctxOut.fillText(title, x + padding, y + padding - 1);
+
+    const startY = y + padding + titleHeight;
+    for (let ci = 0; ci < layout.columns.length; ci++) {
+        const colSections = layout.columns[ci];
+        const colX = x + padding + (ci * (colWidth + colGap));
+        let rowY = startY;
+
+        for (const section of colSections) {
+            const categoryTitle = section.title || 'Category';
+            ctxOut.fillStyle = '#93c5fd';
+            ctxOut.font = `bold ${categoryFont}px Arial`;
+            ctxOut.fillText(categoryTitle.toUpperCase(), colX, rowY);
+            rowY += lineHeight;
+
+            for (const entry of (section.items || [])) {
+                const iconCx = colX + swatchSize * 0.6;
+                const iconCy = rowY + swatchSize * 0.6;
+                ctxOut.save();
+                ctxOut.translate(iconCx, iconCy);
+                const swatchRadius = Math.max(8, swatchSize * 0.62);
+                drawShapeExport(ctxOut, entry.shape || 'roundrect', entry.color || '#666666', swatchRadius);
+                if (entry.label && entry.shape !== 'triangle') {
+                    ctxOut.fillStyle = isLight(entry.color || '#666666') ? '#000' : '#fff';
+                    ctxOut.font = `bold ${Math.max(8, Math.round(swatchRadius * 0.9))}px Arial`;
+                    ctxOut.textAlign = 'center';
+                    ctxOut.textBaseline = 'middle';
+                    ctxOut.fillText(String(entry.label), 0, 0);
+                }
+                ctxOut.restore();
+
+                const skuSuffix = entry.sku ? ` - ${entry.sku}` : '';
+                const text = `${entry.symbolId} - ${entry.label} x${entry.count}${skuSuffix}`;
+                ctxOut.fillStyle = '#ffffff';
+                ctxOut.font = `bold ${itemFont}px Arial`;
+                ctxOut.fillText(text, colX + swatchSize + 10, rowY);
+                rowY += lineHeight;
+            }
+        }
+    }
+
+    // Resize handle when legend is selected in Select mode.
+    if (tool === 'select' && selectedType === 'legend' && selectedItem === panel) {
+        const hx = x + width;
+        const hy = y + height;
+        ctxOut.fillStyle = '#e94560';
+        ctxOut.beginPath();
+        ctxOut.arc(hx, hy, 8, 0, Math.PI * 2);
+        ctxOut.fill();
+        ctxOut.strokeStyle = '#ffffff';
+        ctxOut.lineWidth = 2;
+        ctxOut.stroke();
+    }
+    ctxOut.restore();
+}
+
+function computeLegendColumnLayout(sections) {
+    const col1 = []; // Network + TV
+    const col2 = []; // Audio
+    const col3 = []; // Everything else
+    for (const sec of (sections || [])) {
+        const cat = String(sec.category || '').toLowerCase();
+        if (cat === 'network' || cat === 'tv') col1.push(sec);
+        else if (cat === 'speaker') col2.push(sec);
+        else col3.push(sec);
+    }
+    const columns = [col1, col2, col3];
+    const rowsByCol = columns.map((col) =>
+        col.reduce((sum, sec) => sum + 1 + ((sec && sec.items) ? sec.items.length : 0), 0)
+    );
+    return { columns, rowsByCol };
+}
+
+async function exportMarkedUpPdfToFiles() {
+    const hasPdfBytes = await ensureCurrentPdfBytes();
+    if (!hasPdfBytes) {
+        showToast('Load source PDF first, then export marked-up PDF.');
+        return;
+    }
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+        showToast('Marked-up PDF exporter not loaded. Refresh app and try again.');
+        return;
+    }
+
+    // Persist current page before batch export.
+    savePageMarkups();
+    const baseName = ((projectName || currentPdfName || 'markup').replace(/\.[^/.]+$/, '')).replace(/\s/g, '-');
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+    try {
+        showToast('Preparing marked-up PDF...');
+        const jsPDFCtor = window.jspdf.jsPDF;
+        const doc = pdfDoc || await pdfjsLib.getDocument({ data: currentPdfBytes }).promise;
+        const defs = sanitizeSymbolDefinitions(symbols) || symbols;
+        const exportScale = Math.max(1, Number(pdfScale || 2) || 2);
+        let outPdf = null;
+
+        for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+            const page = await doc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: exportScale });
+            const pageCanvas = document.createElement('canvas');
+            pageCanvas.width = Math.floor(viewport.width);
+            pageCanvas.height = Math.floor(viewport.height);
+            const pageCtx = pageCanvas.getContext('2d');
+            await page.render({ canvasContext: pageCtx, viewport }).promise;
+
+            const pageData = getPageMarkupForExport(pageNum);
+            drawMarkupOverlayForExport(pageCtx, pageData, defs);
+
+            const w = viewport.width;
+            const h = viewport.height;
+            const orientation = w >= h ? 'landscape' : 'portrait';
+            if (!outPdf) {
+                outPdf = new jsPDFCtor({ orientation, unit: 'pt', format: [w, h], compress: true });
+            } else {
+                outPdf.addPage([w, h], orientation);
+            }
+            outPdf.addImage(pageCanvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, w, h, undefined, 'FAST');
+        }
+
+        const blob = outPdf.output('blob');
+        const markedFile = new File([blob], `${baseName}_${timestamp}_markedup.pdf`, { type: 'application/pdf' });
+        await shareFilesOrDownload([markedFile]);
+        closeSaveModal();
+        updateSaveStatus(true);
+        showToast('Marked-up PDF exported');
+    } catch (e) {
+        console.error('Marked-up PDF export failed:', e);
+        showToast('Marked-up PDF export failed: ' + (e.message || 'Unknown error'));
     }
 }
 
@@ -3443,12 +3950,18 @@ function openProject() {
 // Load project data into app state
 async function loadProjectData(project) {
     projectData = project;
-    projectName = project.projectName || project.pdfName;
-    currentPdfName = project.pdfName;
+    projectName = project.projectName || project.pdfName || project.project || 'markup';
+    currentPdfName = (project.pdfName || project.projectName || project.project || 'markup')
+        .toString()
+        .replace(/[^a-zA-Z0-9_.-]/g, '_');
+    currentPageNum = Number(project.currentPage || project.page || 1) || 1;
     
     // Store all page markups in localStorage
     if (project.pages) {
-        for (const [pageNum, data] of Object.entries(project.pages)) {
+        for (const [rawPageNum, data] of Object.entries(project.pages)) {
+            const m = String(rawPageNum).match(/\d+/);
+            const pageNum = m ? Number(m[0]) : Number(rawPageNum);
+            if (!Number.isFinite(pageNum) || pageNum < 1) continue;
             const key = `markup_${currentPdfName}_page${pageNum}`;
             localStorage.setItem(key, JSON.stringify(data));
         }
@@ -3456,7 +3969,10 @@ async function loadProjectData(project) {
     
     // Restore symbols if included
     if (project.symbols) {
-        symbols = project.symbols;
+        const safeSymbols = sanitizeSymbolDefinitions(project.symbols);
+        if (safeSymbols) {
+            symbols = safeSymbols;
+        }
         localStorage.setItem('sym_defs', JSON.stringify(symbols));
         buildToolbar();
     }
@@ -3473,9 +3989,11 @@ async function loadProjectData(project) {
     
     // Restore embedded source PDF when present for true one-file reopen.
     const embeddedSource = extractEmbeddedSourcePdf(project);
-    if (embeddedSource && embeddedSource.bytes_b64) {
+    if (embeddedSource && (embeddedSource.bytes_b64 || embeddedSource.bytes_arr)) {
         try {
-            currentPdfBytes = base64ToUint8Array(embeddedSource.bytes_b64);
+            currentPdfBytes = embeddedSource.bytes_arr
+                ? new Uint8Array(embeddedSource.bytes_arr)
+                : base64ToUint8Array(embeddedSource.bytes_b64);
             currentPdfMime = embeddedSource.mimeType || 'application/pdf';
             currentPdfOriginalName = embeddedSource.filename || `${projectName || 'project'}.pdf`;
             await loadPDF(currentPdfBytes.buffer.slice(0));
@@ -3488,14 +4006,31 @@ async function loadProjectData(project) {
 
     // Save current pdf name for auto-recovery
     localStorage.setItem('lastPdfName', currentPdfName);
-    localStorage.setItem('lastPageNum', project.currentPage || 1);
-    currentPageNum = project.currentPage || 1;
+    localStorage.setItem('lastPageNum', String(currentPageNum));
     
     // Load the current page's markups
     loadPageMarkups(currentPageNum);
     render();
-    
-    showToast(`Project loaded: ${projectName}. Now load the PDF: ${project.pdfName}`);
+
+    // Make it obvious why canvas appears blank when project has no embedded PDF.
+    const hint = document.getElementById('drop-hint');
+    if (hint) {
+        hint.textContent = `Project loaded. Tap Load PDF/Image and choose: ${project.pdfName || currentPdfOriginalName || 'source PDF'}`;
+        hint.style.display = 'block';
+    }
+    showToast(`Project loaded. Select source PDF: ${project.pdfName || currentPdfOriginalName || 'source PDF'}`);
+
+    // Auto-open source picker for projects saved without embedded PDF.
+    const sourceInput = document.getElementById('file-input');
+    if (sourceInput) {
+        setTimeout(() => {
+            try {
+                sourceInput.click();
+            } catch (_) {
+                // If browser blocks programmatic picker, user can still tap Load PDF/Image.
+            }
+        }, 0);
+    }
 }
 
 function parseProjectJsonText(rawText) {
@@ -3504,41 +4039,117 @@ function parseProjectJsonText(rawText) {
 }
 
 function normalizeProjectFile(project) {
-    if (project && project.type === 'symphony-markup-project') {
-        return project;
+    const p = project && typeof project === 'object'
+        ? (project.projectData || project.project || project.payload || project.data || project)
+        : project;
+
+    const normalizePagePayload = (raw) => {
+        let data = raw;
+        if (typeof data === 'string') {
+            try { data = JSON.parse(data); } catch (_) { data = {}; }
+        }
+        data = data || {};
+        const markups = data.markups || data.annotations || data.items || data;
+        return {
+            placed: markups.placed || markups.symbols || data.placed || data.symbols || [],
+            rooms: markups.rooms || data.rooms || [],
+            textLabels: markups.textLabels || markups.labels || data.textLabels || data.labels || [],
+            freehandLines: markups.freehandLines || markups.freehand || data.freehandLines || data.freehand || [],
+            measureScale: Number(markups.measureScale ?? data.measureScale ?? 0) || 0,
+            legendPanel: markups.legendPanel || data.legendPanel || null,
+        };
+    };
+
+    const normalizePagesMap = (obj) => {
+        const out = {};
+        const src =
+            obj.pages ||
+            obj.pageMarkups ||
+            obj.markupsByPage ||
+            obj.annotationsByPage ||
+            null;
+
+        if (Array.isArray(src)) {
+            src.forEach((entry, idx) => {
+                const n = Number(entry?.page || entry?.pageNum || entry?.number || (idx + 1));
+                if (!Number.isFinite(n) || n < 1) return;
+                out[n] = normalizePagePayload(entry?.data || entry?.markups || entry?.annotations || entry);
+            });
+        } else if (src && typeof src === 'object') {
+            for (const [rawKey, value] of Object.entries(src)) {
+                const m = String(rawKey).match(/\d+/);
+                const n = m ? Number(m[0]) : Number(rawKey);
+                if (!Number.isFinite(n) || n < 1) continue;
+                out[n] = normalizePagePayload(value);
+            }
+        }
+
+        if (Object.keys(out).length === 0) {
+            const legacyHasTopLevel =
+                Array.isArray(obj.placed) ||
+                Array.isArray(obj.symbols) ||
+                Array.isArray(obj.rooms) ||
+                Array.isArray(obj.textLabels) ||
+                Array.isArray(obj.freehandLines);
+            if (legacyHasTopLevel) {
+                out[1] = normalizePagePayload(obj);
+            }
+        }
+        return out;
+    };
+
+    const inferredPages = p && typeof p === 'object' ? normalizePagesMap(p) : {};
+    const hasInferredPages = Object.keys(inferredPages).length > 0;
+
+    if (p && (p.type === 'symphony-markup-project' || p.type === 'symphony-project' || p.type === 'symphony_markup_project' || hasInferredPages)) {
+        const inferredPdf = p.pdfName || p.sourcePdfFilename || p.source_pdf_filename || p.projectName || p.project || 'markup';
+        const pages = hasInferredPages ? inferredPages : normalizePagesMap(p);
+        return {
+            ...p,
+            version: p.version || '1.0',
+            type: 'symphony-markup-project',
+            projectName: p.projectName || p.project || inferredPdf,
+            pdfName: inferredPdf,
+            currentPage: Number(p.currentPage || p.page || 1) || 1,
+            pageCount: Number(p.pageCount || Object.keys(pages).length || 1) || 1,
+            symbolScale: Number(p.symbolScale || 1) || 1,
+            pages,
+            symbols: sanitizeSymbolDefinitions(p.symbols) || sanitizeSymbolDefinitions(p.definitions) || symbols,
+        };
     }
 
     const hasLegacyMarkup =
-        project &&
+        p &&
         (
-            Array.isArray(project.symbols) ||
-            Array.isArray(project.placed) ||
-            Array.isArray(project.rooms) ||
-            Array.isArray(project.textLabels)
+            Array.isArray(p.symbols) ||
+            Array.isArray(p.placed) ||
+            Array.isArray(p.rooms) ||
+            Array.isArray(p.textLabels)
         );
 
     if (!hasLegacyMarkup) return null;
 
-    const inferredPdf = project.pdfName || project.project || project.projectName || 'markup';
+    const inferredPdf = p.pdfName || p.project || p.projectName || 'markup';
     return {
         version: '1.0',
         type: 'symphony-markup-project',
-        projectName: project.projectName || project.project || inferredPdf,
+        projectName: p.projectName || p.project || inferredPdf,
         pdfName: inferredPdf,
-        currentPage: project.page || 1,
+        currentPage: p.page || 1,
         pageCount: 1,
-        symbolScale: project.symbolScale || symbolScale || 1,
-        createdAt: project.exported || project.createdAt || new Date().toISOString(),
+        symbolScale: p.symbolScale || symbolScale || 1,
+        createdAt: p.exported || p.createdAt || new Date().toISOString(),
         pages: {
             1: {
-                placed: project.placed || project.symbols || [],
-                rooms: project.rooms || [],
-                textLabels: project.textLabels || [],
-                freehandLines: project.freehandLines || [],
-                measureScale: project.measureScale || 0,
+                placed: p.placed || p.symbols || [],
+                rooms: p.rooms || [],
+                textLabels: p.textLabels || [],
+                freehandLines: p.freehandLines || [],
+                measureScale: p.measureScale || 0,
+                legendPanel: p.legendPanel || null,
             }
         },
-        symbols: project.definitions || symbols,
+        symbols: sanitizeSymbolDefinitions(p.definitions) || symbols,
     };
 }
 
@@ -3631,6 +4242,7 @@ function loadPageMarkups(pageNum) {
             textLabels = data.textLabels || [];
             freehandLines = data.freehandLines || [];
             measureScale = data.measureScale || 0;
+            legendPanel = data.legendPanel || null;
             multiSelected = [];
             selectedItem = null;
             selectedType = null;
@@ -3649,6 +4261,7 @@ function clearMarkupsForNewPage() {
     rooms = [];
     textLabels = [];
     freehandLines = [];
+    legendPanel = null;
     multiSelected = [];
     selectedItem = null;
     selectedType = null;
@@ -3909,8 +4522,18 @@ function buildLegendEntriesForPlaced(placedItems) {
         countsByType[p.type] = (countsByType[p.type] || 0) + 1;
     }
 
+    const defOrder = Object.keys(sanitizeSymbolDefinitions(symbols) || symbols || {});
+    const orderMap = {};
+    defOrder.forEach((id, idx) => { orderMap[id] = idx; });
+
+    const orderedTypeIds = [
+        ...defOrder.filter((id) => countsByType[id] > 0),
+        ...Object.keys(countsByType).filter((id) => !defOrder.includes(id))
+    ];
+
     const entries = [];
-    for (const [typeId, count] of Object.entries(countsByType)) {
+    for (const typeId of orderedTypeIds) {
+        const count = countsByType[typeId];
         const def = symbols[typeId] || {};
         entries.push({
             symbolId: typeId,
@@ -3919,16 +4542,49 @@ function buildLegendEntriesForPlaced(placedItems) {
             sku: def.sku || '',
             color: def.color || '',
             shape: def.shape || '',
-            count
+            count,
+            order: Number.isFinite(orderMap[typeId]) ? orderMap[typeId] : 999999
         });
     }
 
-    entries.sort((a, b) => {
-        const cat = String(a.category).localeCompare(String(b.category));
-        if (cat !== 0) return cat;
-        return String(a.label).localeCompare(String(b.label));
-    });
     return entries;
+}
+
+function prettyLegendCategory(category) {
+    const c = String(category || 'custom').trim();
+    if (!c) return 'Custom';
+    const normalized = c.toLowerCase();
+    if (normalized === 'network') return 'Network';
+    if (normalized === 'tv') return 'TV';
+    if (normalized === 'speaker') return 'Audio';
+    if (normalized === 'lighting') return 'Lighting';
+    if (normalized === 'shade') return 'Shades';
+    if (normalized === 'camera') return 'Cameras';
+    return c
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function buildLegendSections(entries) {
+    const byCategory = {};
+    for (const entry of (entries || [])) {
+        const cat = String(entry.category || 'custom');
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(entry);
+    }
+
+    const preferredOrder = ['network', 'tv', 'speaker', 'lighting', 'shade', 'camera'];
+    const allCategories = Object.keys(byCategory);
+    const preferred = preferredOrder.filter((cat) => byCategory[cat]);
+    const remaining = allCategories
+        .filter((cat) => !preferredOrder.includes(cat))
+        .sort((a, b) => a.localeCompare(b));
+
+    return [...preferred, ...remaining].map((cat) => ({
+            category: cat,
+            title: prettyLegendCategory(cat),
+            items: byCategory[cat].sort((a, b) => (a.order ?? 999999) - (b.order ?? 999999))
+        }));
 }
 
 function clearAutoLegendLabels() {
@@ -3946,39 +4602,41 @@ function generateLegendForCurrentPage() {
         showToast('No legend entries found');
         return;
     }
+    const sections = buildLegendSections(entries);
 
-    clearAutoLegendLabels();
+    clearAutoLegendLabels(); // keep backward cleanup for older generated legends
 
-    const startX = 24;
-    let y = 24;
-    const lineHeight = 18;
+    const lineHeight = 24;
+    const padding = 12;
+    const swatchSize = 16;
+    const titleHeight = 30;
+    const colGap = 22;
+    const colWidth = 320;
+    const layout = computeLegendColumnLayout(sections);
+    const totalRows = Math.max(1, ...layout.rowsByCol);
+    const panelHeight = padding * 2 + titleHeight + (totalRows * lineHeight);
+    const panelWidth = (colWidth * 3) + (colGap * 2) + (padding * 2);
 
-    textLabels.push({
-        text: 'LEGEND',
-        x: startX,
-        y,
-        color: '#ffffff',
-        size: 18,
-        __autoLegend: true
-    });
-    y += 24;
-
-    for (const entry of entries) {
-        const skuSuffix = entry.sku ? ` • ${entry.sku}` : '';
-        textLabels.push({
-            text: `${entry.label} x${entry.count}${skuSuffix}`,
-            x: startX,
-            y,
-            color: '#ffffff',
-            size: 13,
-            __autoLegend: true
-        });
-        y += lineHeight;
-    }
+    legendPanel = {
+        title: 'LEGEND',
+        entries,
+        sections,
+        x: 24,
+        y: 24,
+        width: panelWidth,
+        height: panelHeight,
+        lineHeight,
+        padding,
+        swatchSize,
+        baseWidth: panelWidth,
+        baseHeight: panelHeight,
+        baseLineHeight: lineHeight,
+        page: currentPageNum
+    };
 
     saveState();
     render();
-    showToast(`Legend generated (${entries.length} items)`);
+    showToast(`Legend placed on page ${currentPageNum} (${entries.length} items)`);
 }
 
 function downloadExport(data, name) {
@@ -4080,6 +4738,9 @@ function exportImage() {
         }
         exportCtx.restore();
     }
+
+    // Draw generated legend block if present.
+    drawLegendPanel(exportCtx, legendPanel);
     
     // Convert to image and download
     exportCanvas.toBlob(blob => {
@@ -4173,10 +4834,11 @@ function pointInPolygon(point, polygon) {
 }
 
 function clearAll() {
-    if ((placed.length || rooms.length || textLabels.length) && confirm('Clear all?')) {
+    if ((placed.length || rooms.length || textLabels.length || legendPanel) && confirm('Clear all?')) {
         placed = [];
         rooms = [];
         textLabels = [];
+        legendPanel = null;
         roomPoints = [];
         drawingRoom = false;
         updateCounts();
