@@ -283,6 +283,30 @@ class MarkupHandler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    def _read_audit(self, project: str, limit: int = 100) -> list[dict]:
+        limit = max(1, min(int(limit or 100), 1000))
+        for root in (LOCAL_EXPORTS, ICLOUD_EXPORTS):
+            path = root / project / ".audit.jsonl"
+            if not path.exists():
+                continue
+            try:
+                lines = path.read_text().splitlines()
+                events = []
+                for line in lines[-limit:]:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                        if isinstance(event, dict):
+                            events.append(event)
+                    except Exception:
+                        continue
+                return list(reversed(events))
+            except Exception:
+                continue
+        return []
+
     @staticmethod
     def _slugify_name(value: str) -> str:
         """Normalize project/file names for safe filesystem paths."""
@@ -421,6 +445,32 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 "owner": acl.get("owner"),
                 "members": acl.get("members") or {},
                 "invites": invites[:100],
+            })
+            return
+
+        if path == '/api/projects/audit':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            project = self._slugify_name((query.get("project", [""])[0] or "").strip())
+            if not project:
+                self._send_json(400, {"success": False, "error": "Project required"})
+                return
+            user = self._current_user()
+            access = self._load_access_control()
+            if not self._can_access_project(access, project, user, write=False):
+                self._send_json(403, {"success": False, "error": "No access to project"})
+                return
+            try:
+                limit = int((query.get("limit", ["100"])[0] or "100").strip())
+            except Exception:
+                limit = 100
+            events = self._read_audit(project, limit=limit)
+            self._send_json(200, {
+                "success": True,
+                "project": project,
+                "count": len(events),
+                "events": events,
             })
             return
 

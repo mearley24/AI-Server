@@ -719,12 +719,15 @@
                 <button style="padding:8px 10px;font-size:12px;" onclick="createAccessProject()">New</button>
                 <button style="padding:8px 10px;font-size:12px;" onclick="renameAccessProject()">Rename</button>
             </div>
+            <input id="access-search" type="text" placeholder="Filter members/invites..." style="width:100%;padding:8px;border-radius:6px;border:1px solid #2a2a4a;background:#0f0f23;color:#eee;margin-bottom:8px;" oninput="openAccessManager(accessManagerProject)">
             <div id="access-project-title" style="font-size:12px;color:#9ca3af;margin-bottom:8px;"></div>
             <div id="access-owner" style="font-size:12px;color:#ddd;margin-bottom:10px;"></div>
             <div style="font-size:11px;color:#888;margin-bottom:6px;">MEMBERS</div>
             <div id="access-members" style="max-height:180px;overflow:auto;border:1px solid #2a2a4a;border-radius:8px;padding:8px;margin-bottom:12px;"></div>
             <div style="font-size:11px;color:#888;margin-bottom:6px;">ACTIVE INVITES</div>
             <div id="access-invites" style="max-height:150px;overflow:auto;border:1px solid #2a2a4a;border-radius:8px;padding:8px;margin-bottom:12px;"></div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;">AUDIT LOG</div>
+            <div id="access-audit" style="max-height:180px;overflow:auto;border:1px solid #2a2a4a;border-radius:8px;padding:8px;margin-bottom:12px;"></div>
             <div class="btns">
                 <button onclick="closeAccessManager()">Close</button>
             </div>
@@ -4788,6 +4791,20 @@ function formatShortDate(iso) {
     }
 }
 
+function formatAuditAction(action) {
+    const map = {
+        save: 'Saved project',
+        invite_created: 'Created invite',
+        invite_accepted: 'Accepted invite',
+        invite_revoked: 'Revoked invite',
+        member_role_updated: 'Updated member role',
+        member_removed: 'Removed member',
+        project_created: 'Created project',
+        project_renamed: 'Renamed project'
+    };
+    return map[action] || action || 'Event';
+}
+
 async function setMemberRole(project, member, role) {
     try {
         const res = await markupApiFetch('/api/projects/member', {
@@ -4961,10 +4978,18 @@ async function openAccessManager(projectOverride = '') {
         document.getElementById('access-project-title').textContent = `Project: ${data.project}`;
         document.getElementById('access-owner').textContent = `Owner: ${data.owner || 'unassigned'}`;
 
+        const searchTerm = (document.getElementById('access-search')?.value || '').trim().toLowerCase();
+
         const membersWrap = document.getElementById('access-members');
         membersWrap.innerHTML = '';
         const members = data.members || {};
-        const memberEntries = Object.entries(members).sort((a, b) => a[0].localeCompare(b[0]));
+        const memberEntries = Object.entries(members)
+            .filter(([email, info]) => {
+                if (!searchTerm) return true;
+                const role = String(info?.role || '').toLowerCase();
+                return String(email).toLowerCase().includes(searchTerm) || role.includes(searchTerm);
+            })
+            .sort((a, b) => a[0].localeCompare(b[0]));
         if (memberEntries.length === 0) {
             membersWrap.innerHTML = '<div style="font-size:12px;color:#888;">No project members yet.</div>';
         } else {
@@ -5002,7 +5027,13 @@ async function openAccessManager(projectOverride = '') {
 
         const invitesWrap = document.getElementById('access-invites');
         invitesWrap.innerHTML = '';
-        const invites = Array.isArray(data.invites) ? data.invites : [];
+        const invites = (Array.isArray(data.invites) ? data.invites : [])
+            .filter((inv) => {
+                if (!searchTerm) return true;
+                return String(inv.role || '').toLowerCase().includes(searchTerm)
+                    || String(inv.createdBy || '').toLowerCase().includes(searchTerm)
+                    || String(inv.token || '').toLowerCase().includes(searchTerm);
+            });
         if (invites.length === 0) {
             invitesWrap.innerHTML = '<div style="font-size:12px;color:#888;">No invites found.</div>';
         } else {
@@ -5026,6 +5057,39 @@ async function openAccessManager(projectOverride = '') {
                 row.appendChild(revokeBtn);
                 invitesWrap.appendChild(row);
             }
+        }
+
+        const auditWrap = document.getElementById('access-audit');
+        auditWrap.innerHTML = '<div style="font-size:12px;color:#888;">Loading audit...</div>';
+        try {
+            const auditRes = await markupApiFetch(`/api/projects/audit?project=${encodeURIComponent(data.project)}&limit=100`);
+            const auditData = await auditRes.json();
+            const events = (auditRes.ok && auditData.success && Array.isArray(auditData.events))
+                ? auditData.events
+                : [];
+            const filteredEvents = events.filter((ev) => {
+                if (!searchTerm) return true;
+                return String(ev.action || '').toLowerCase().includes(searchTerm)
+                    || String(ev.user || '').toLowerCase().includes(searchTerm)
+                    || String(ev.member || '').toLowerCase().includes(searchTerm);
+            });
+            auditWrap.innerHTML = '';
+            if (filteredEvents.length === 0) {
+                auditWrap.innerHTML = '<div style="font-size:12px;color:#888;">No audit events found.</div>';
+            } else {
+                for (const ev of filteredEvents) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'padding:6px 0;border-bottom:1px solid #1f2a44;';
+                    const summary = ev.summary ? ` · ${ev.summary.symbols || 0}s/${ev.summary.rooms || 0}r/${ev.summary.notes || 0}n` : '';
+                    row.innerHTML = `
+                        <div style="font-size:12px;color:#e5e7eb;">${formatAuditAction(ev.action)}${summary}</div>
+                        <div style="font-size:11px;color:#94a3b8;">${ev.user || 'unknown'} · ${formatShortDate(ev.timestamp)}</div>
+                    `;
+                    auditWrap.appendChild(row);
+                }
+            }
+        } catch (_) {
+            auditWrap.innerHTML = '<div style="font-size:12px;color:#888;">Audit unavailable.</div>';
         }
 
         document.getElementById('access-modal').classList.add('open');

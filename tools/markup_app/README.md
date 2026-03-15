@@ -33,6 +33,7 @@ Project-level permissions and invite links:
 - File modal includes **Create Invite Link** to generate time-limited invites.
 - File modal includes **Project Access Manager** to review members/invites, change roles, and revoke links.
 - Access Manager includes a project switcher with **New** and **Rename** controls for project-level administration.
+- Access Manager includes filter/search and a project audit feed showing who changed what and when.
 - Invite links are accepted with `?invite=<token>` and membership is assigned to the authenticated user.
 - Every save writes an audit event in `Project/.audit.jsonl` with user attribution + summary counts.
 
