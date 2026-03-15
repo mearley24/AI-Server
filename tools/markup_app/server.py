@@ -14,7 +14,8 @@ For HTTPS (Share → Save to Files on iPad): tailscale serve 8091, set MARKUP_HT
 import argparse
 import json
 import os
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 import socket
@@ -38,10 +39,18 @@ ICLOUD_EXPORTS = Path.home() / "Library" / "Mobile Documents" / "com~apple~Cloud
 LOCAL_EXPORTS = Path.home() / "AI-Server" / "knowledge" / "markup_exports"
 ICLOUD_EXPORTS.mkdir(parents=True, exist_ok=True)
 LOCAL_EXPORTS.mkdir(parents=True, exist_ok=True)
+LOCAL_ACCESS_CONTROL_FILE = LOCAL_EXPORTS / ".access_control.json"
+ICLOUD_ACCESS_CONTROL_FILE = ICLOUD_EXPORTS / ".access_control.json"
 
 
 class MarkupHandler(BaseHTTPRequestHandler):
     """Custom handler for markup app."""
+
+    ROLE_ORDER = {
+        "viewer": 1,
+        "editor": 2,
+        "owner": 3,
+    }
 
     @staticmethod
     def _truthy(value=None, default: bool = False) -> bool:
@@ -68,6 +77,14 @@ class MarkupHandler(BaseHTTPRequestHandler):
             "token": (os.environ.get("MARKUP_API_TOKEN") or "").strip(),
         }
 
+    def _trusted_identity(self) -> str:
+        return (
+            self.headers.get("CF-Access-Authenticated-User-Email")
+            or self.headers.get("X-Auth-Request-Email")
+            or self.headers.get("X-Forwarded-Email")
+            or ""
+        ).strip()
+
     def _extract_bearer_token(self) -> str:
         auth = (self.headers.get("Authorization") or "").strip()
         if auth.lower().startswith("bearer "):
@@ -80,6 +97,8 @@ class MarkupHandler(BaseHTTPRequestHandler):
             return True
         if cfg["allow_local"] and self._is_local_client():
             return True
+        if self._trusted_identity():
+            return True
         expected = cfg["token"]
         if not expected:
             return False
@@ -87,17 +106,13 @@ class MarkupHandler(BaseHTTPRequestHandler):
         return supplied == expected
 
     def _current_user(self) -> str:
-        trusted = (
-            self.headers.get("CF-Access-Authenticated-User-Email")
-            or self.headers.get("X-Auth-Request-Email")
-            or self.headers.get("X-Forwarded-Email")
-            or ""
-        ).strip()
+        trusted = self._trusted_identity()
         if trusted:
             return trusted
         if self._is_local_client():
             return "local-user"
-        return "trade-user"
+        host = (self.client_address[0] if self.client_address else "") or "remote"
+        return f"trade-{host.replace(':', '_')}"
 
     def _send_json(self, status: int, payload: dict):
         self.send_response(status)
@@ -108,6 +123,143 @@ class MarkupHandler(BaseHTTPRequestHandler):
 
     def _deny_unauthorized(self):
         self._send_json(401, {"success": False, "error": "Unauthorized"})
+
+    def _load_access_control(self) -> dict:
+        for path in (LOCAL_ACCESS_CONTROL_FILE, ICLOUD_ACCESS_CONTROL_FILE):
+            try:
+                if path.exists():
+                    data = json.loads(path.read_text())
+                    if isinstance(data, dict):
+                        data.setdefault("projects", {})
+                        data.setdefault("invites", {})
+                        return data
+            except Exception:
+                continue
+        return {"projects": {}, "invites": {}}
+
+    def _save_access_control(self, data: dict):
+        payload = json.dumps(data, indent=2)
+        LOCAL_ACCESS_CONTROL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LOCAL_ACCESS_CONTROL_FILE.write_text(payload)
+        try:
+            ICLOUD_ACCESS_CONTROL_FILE.parent.mkdir(parents=True, exist_ok=True)
+            ICLOUD_ACCESS_CONTROL_FILE.write_text(payload)
+        except Exception:
+            pass
+
+    def _get_project_acl(self, access: dict, project: str) -> dict:
+        projects = access.setdefault("projects", {})
+        acl = projects.setdefault(project, {"owner": "", "members": {}})
+        acl.setdefault("owner", "")
+        acl.setdefault("members", {})
+        return acl
+
+    def _role_for_user(self, access: dict, project: str, user: str) -> str:
+        acl = access.get("projects", {}).get(project) or {}
+        if not user:
+            return ""
+        if acl.get("owner") == user:
+            return "owner"
+        member = (acl.get("members") or {}).get(user) or {}
+        role = str(member.get("role") or "").strip().lower()
+        return role if role in self.ROLE_ORDER else ""
+
+    def _can_access_project(self, access: dict, project: str, user: str, write: bool = False) -> bool:
+        if not project:
+            return False
+        cfg = self._auth_config()
+        if cfg["allow_local"] and self._is_local_client():
+            return True
+        role = self._role_for_user(access, project, user)
+        if role == "owner":
+            return True
+        if role == "editor":
+            return True
+        if role == "viewer":
+            return not write
+        return False
+
+    def _ensure_project_owner(self, access: dict, project: str, user: str):
+        acl = self._get_project_acl(access, project)
+        if not acl.get("owner") and user:
+            acl["owner"] = user
+
+    def _project_user_list(self, access: dict, user: str) -> list[dict]:
+        rows = []
+        for project, acl in (access.get("projects") or {}).items():
+            role = self._role_for_user(access, project, user)
+            if role:
+                rows.append({"project": project, "role": role})
+        rows.sort(key=lambda r: r["project"].lower())
+        return rows
+
+    def _resolve_base_url(self) -> str:
+        configured = (os.environ.get("MARKUP_HTTPS_URL") or "").strip()
+        if configured:
+            return configured.rstrip("/")
+        host = self.headers.get("Host") or "localhost:8091"
+        scheme = "https" if (self.headers.get("X-Forwarded-Proto") == "https") else "http"
+        return f"{scheme}://{host}".rstrip("/")
+
+    def _create_invite(self, access: dict, project: str, role: str, created_by: str, expires_hours: int) -> dict:
+        token = secrets.token_urlsafe(24)
+        now = datetime.utcnow()
+        expires_at = now + timedelta(hours=max(1, min(expires_hours, 24 * 30)))
+        invite = {
+            "token": token,
+            "project": project,
+            "role": role,
+            "createdBy": created_by,
+            "createdAt": now.isoformat() + "Z",
+            "expiresAt": expires_at.isoformat() + "Z",
+            "revoked": False,
+        }
+        access.setdefault("invites", {})[token] = invite
+        return invite
+
+    @staticmethod
+    def _invite_is_active(invite: dict) -> bool:
+        if not invite or invite.get("revoked"):
+            return False
+        try:
+            expires = str(invite.get("expiresAt", "")).replace("Z", "")
+            return datetime.utcnow() <= datetime.fromisoformat(expires)
+        except Exception:
+            return False
+
+    def _summarize_payload(self, data: dict) -> dict:
+        pages = data.get("pages") or {}
+        if not isinstance(pages, dict):
+            return {}
+        symbol_count = 0
+        note_count = 0
+        room_count = 0
+        for page in pages.values():
+            if not isinstance(page, dict):
+                continue
+            symbol_count += len(page.get("placed") or [])
+            note_count += len(page.get("markupNotes") or [])
+            room_count += len(page.get("rooms") or [])
+        return {
+            "pages": len(pages),
+            "symbols": symbol_count,
+            "rooms": room_count,
+            "notes": note_count,
+        }
+
+    def _append_audit(self, project: str, event: dict):
+        line = json.dumps(event, separators=(",", ":")) + "\n"
+        local_path = LOCAL_EXPORTS / project / ".audit.jsonl"
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(local_path, "a") as f:
+            f.write(line)
+        try:
+            icloud_path = ICLOUD_EXPORTS / project / ".audit.jsonl"
+            icloud_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(icloud_path, "a") as f:
+                f.write(line)
+        except Exception:
+            pass
 
     @staticmethod
     def _slugify_name(value: str) -> str:
@@ -148,11 +300,13 @@ class MarkupHandler(BaseHTTPRequestHandler):
     def _list_project_folders(self, query: str = "", limit: int = 200) -> list[str]:
         """List known project folders from iCloud/local export roots."""
         folders = set()
+        user = self._current_user()
+        access = self._load_access_control()
         for root in (ICLOUD_EXPORTS, LOCAL_EXPORTS):
             if not root.exists():
                 continue
             for entry in root.iterdir():
-                if entry.is_dir():
+                if entry.is_dir() and not entry.name.startswith("."):
                     folders.add(entry.name)
 
         names = sorted(folders, key=lambda s: s.lower())
@@ -165,7 +319,11 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 if q in lower or all(t in lower for t in tokens):
                     filtered.append(name)
             names = filtered
-        return names[: max(1, min(limit, 1000))]
+        visible = []
+        for name in names:
+            if self._can_access_project(access, name, user, write=False):
+                visible.append(name)
+        return visible[: max(1, min(limit, 1000))]
     
     def do_GET(self):
         """Serve static files and /api/config."""
@@ -191,6 +349,39 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 "success": True,
                 "user": self._current_user(),
                 "local": self._is_local_client(),
+            })
+            return
+
+        if path == '/api/projects':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            user = self._current_user()
+            access = self._load_access_control()
+            self._send_json(200, {
+                "success": True,
+                "user": user,
+                "projects": self._project_user_list(access, user),
+            })
+            return
+
+        if path.startswith('/api/invites/'):
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            token = path.split('/api/invites/', 1)[1].strip()
+            access = self._load_access_control()
+            invite = (access.get("invites") or {}).get(token)
+            if not self._invite_is_active(invite):
+                self._send_json(404, {"success": False, "error": "Invite not found or expired"})
+                return
+            self._send_json(200, {
+                "success": True,
+                "invite": {
+                    "project": invite.get("project"),
+                    "role": invite.get("role"),
+                    "expiresAt": invite.get("expiresAt"),
+                }
             })
             return
 
@@ -254,6 +445,14 @@ class MarkupHandler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(post_data)
                 project, filename = self._resolve_save_target(data)
+                user = self._current_user()
+                access = self._load_access_control()
+                # Bootstrap owner only for local user or first authenticated user writing.
+                self._ensure_project_owner(access, project, user)
+                if not self._can_access_project(access, project, user, write=True):
+                    self._send_json(403, {"success": False, "error": "No write access to project"})
+                    return
+                self._save_access_control(access)
                 
                 # Save to project subfolder (so files are organized by project)
                 icloud_dir = ICLOUD_EXPORTS / project
@@ -275,11 +474,109 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     'savePath': rel_path,
                     'icloud': str(icloud_path),
                     'local': str(local_path),
-                    'user': self._current_user(),
+                    'user': user,
+                })
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "save",
+                    "project": project,
+                    "path": rel_path,
+                    "user": user,
+                    "summary": self._summarize_payload(data),
                 })
                 
             except Exception as e:
                 self._send_json(500, {'error': str(e)})
+        elif path == '/api/projects/invite':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                raw_project = str(payload.get("project") or "").strip()
+                if not raw_project:
+                    self._send_json(400, {"success": False, "error": "Project required"})
+                    return
+                project = self._slugify_name(raw_project)
+                role = str(payload.get("role") or "editor").strip().lower()
+                if role not in {"viewer", "editor"}:
+                    role = "editor"
+                expires_hours = int(payload.get("expiresHours") or 24 * 7)
+                user = self._current_user()
+                access = self._load_access_control()
+                self._ensure_project_owner(access, project, user)
+                requester_role = self._role_for_user(access, project, user)
+                if requester_role != "owner" and not (self._auth_config()["allow_local"] and self._is_local_client()):
+                    self._send_json(403, {"success": False, "error": "Only project owner can create invites"})
+                    return
+                invite = self._create_invite(access, project, role, user, expires_hours)
+                self._save_access_control(access)
+                base_url = self._resolve_base_url()
+                invite_url = f"{base_url}/?invite={invite['token']}"
+                self._send_json(200, {
+                    "success": True,
+                    "invite": invite,
+                    "inviteUrl": invite_url,
+                })
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "invite_created",
+                    "project": project,
+                    "user": user,
+                    "role": role,
+                    "inviteToken": invite["token"],
+                    "expiresAt": invite["expiresAt"],
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/invites/accept':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                token = str(payload.get("token") or "").strip()
+                if not token:
+                    self._send_json(400, {"success": False, "error": "Invite token required"})
+                    return
+                access = self._load_access_control()
+                invite = (access.get("invites") or {}).get(token)
+                if not self._invite_is_active(invite):
+                    self._send_json(404, {"success": False, "error": "Invite not found or expired"})
+                    return
+                project = self._slugify_name(invite.get("project") or "")
+                role = str(invite.get("role") or "viewer").strip().lower()
+                if role not in {"viewer", "editor"}:
+                    role = "viewer"
+                user = self._current_user()
+                acl = self._get_project_acl(access, project)
+                if acl.get("owner") != user:
+                    acl["members"][user] = {
+                        "role": role,
+                        "addedAt": datetime.utcnow().isoformat() + "Z",
+                        "addedByInvite": token,
+                    }
+                self._save_access_control(access)
+                self._send_json(200, {
+                    "success": True,
+                    "project": project,
+                    "role": role,
+                    "user": user,
+                })
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "invite_accepted",
+                    "project": project,
+                    "user": user,
+                    "role": role,
+                    "inviteToken": token,
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
         else:
             self.send_response(404)
             self.end_headers()

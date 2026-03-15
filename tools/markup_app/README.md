@@ -27,6 +27,13 @@ You can lock down API write access without breaking local workflow.
 
 If you pass `?token=...` once in the URL, the web app stores it locally and removes it from the URL.
 
+Project-level permissions and invite links:
+- Each project now has ACL roles (`owner`, `editor`, `viewer`).
+- Trades only see projects they are assigned to (when auth is enabled).
+- File modal includes **Create Invite Link** to generate time-limited invites.
+- Invite links are accepted with `?invite=<token>` and membership is assigned to the authenticated user.
+- Every save writes an audit event in `Project/.audit.jsonl` with user attribution + summary counts.
+
 **Features:**
 - Load floor plan images (PNG, JPG)
 - Tap to place symbols

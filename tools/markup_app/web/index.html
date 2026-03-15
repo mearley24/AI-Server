@@ -691,6 +691,12 @@
                     🧾 Generate Legend (Used Symbols)
                 </button>
             </div>
+
+            <div style="margin-bottom:12px;">
+                <button style="width:100%;padding:12px;font-size:14px;background:#0f766e;" onclick="createProjectInviteLink()">
+                    🔗 Create Invite Link
+                </button>
+            </div>
             
             <div class="btns" style="margin-top:16px;">
                 <button class="primary" onclick="closeFileModal()">Close</button>
@@ -4702,6 +4708,45 @@ async function sendToBob() {
     closeFileModal();
 }
 
+async function createProjectInviteLink() {
+    const defaultProject = (projectName || deriveDefaultProjectName() || '').trim();
+    if (!defaultProject) {
+        showToast('Set or save a project first');
+        return;
+    }
+    const roleInput = prompt('Invite role? (viewer or editor)', 'editor');
+    if (!roleInput) return;
+    const role = String(roleInput).trim().toLowerCase() === 'viewer' ? 'viewer' : 'editor';
+    const hoursInput = prompt('Invite expires in hours (default 168)', '168');
+    const expiresHours = Math.max(1, parseInt(hoursInput || '168', 10) || 168);
+
+    try {
+        const res = await markupApiFetch('/api/projects/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project: defaultProject,
+                role,
+                expiresHours
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            showToast('Invite failed: ' + (data.error || `HTTP ${res.status}`));
+            return;
+        }
+        const url = data.inviteUrl || '';
+        if (url && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+            showToast('Invite link copied to clipboard');
+        } else if (url) {
+            prompt('Copy invite link:', url);
+        }
+    } catch (err) {
+        showToast('Invite failed: ' + (err?.message || 'Unknown error'));
+    }
+}
+
 // ===== END PROJECT FILE SYSTEM =====
 
 // Load markups for a specific page
@@ -5184,8 +5229,9 @@ function exportImage() {
 
     // Draw notes
     for (const n of markupNotes) {
+        const anchor = resolveNoteAnchor(n);
         exportCtx.beginPath();
-        exportCtx.arc(n.x, n.y, 9, 0, Math.PI * 2);
+        exportCtx.arc(anchor.x, anchor.y, 9, 0, Math.PI * 2);
         exportCtx.fillStyle = '#f59e0b';
         exportCtx.fill();
         exportCtx.strokeStyle = '#ffffff';
@@ -5195,7 +5241,7 @@ function exportImage() {
         exportCtx.font = 'bold 10px Arial';
         exportCtx.textAlign = 'center';
         exportCtx.textBaseline = 'middle';
-        exportCtx.fillText('N', n.x, n.y);
+        exportCtx.fillText('N', anchor.x, anchor.y);
     }
 
     // Draw freehand lines (pencil marks)
@@ -5365,13 +5411,18 @@ setupCategoryInputPersistence();
 buildToolbar();
 
 // Allow one-time auth token bootstrap from URL param.
+let pendingInviteToken = '';
 try {
     const params = new URLSearchParams(window.location.search || '');
     const urlToken = (params.get('token') || '').trim();
+    pendingInviteToken = (params.get('invite') || '').trim();
     if (urlToken) {
         markupApiToken = urlToken;
         localStorage.setItem('markupApiToken', markupApiToken);
         params.delete('token');
+    }
+    if (pendingInviteToken) params.delete('invite');
+    if (urlToken || pendingInviteToken) {
         const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash || ''}`;
         history.replaceState({}, '', next);
     }
@@ -5392,6 +5443,23 @@ markupApiFetch('/api/config').then(r => r.json()).then(c => {
         .then((res) => res.ok ? res.json() : null)
         .then((who) => {
             if (who && who.user) currentMarkupUser = who.user;
+            if (!pendingInviteToken) return null;
+            return markupApiFetch('/api/invites/accept', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: pendingInviteToken })
+            })
+                .then((res) => res.json().then((body) => ({ ok: res.ok, body })))
+                .then((result) => {
+                    if (result.ok && result.body?.success) {
+                        showToast(`Joined project: ${result.body.project} (${result.body.role})`);
+                    } else {
+                        showToast('Invite failed: ' + (result.body?.error || 'Unknown error'));
+                    }
+                })
+                .catch(() => {
+                    showToast('Invite accept failed');
+                });
         })
         .catch(() => {});
 }).catch(() => {});
