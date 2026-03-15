@@ -448,7 +448,9 @@ class APIClient: ObservableObject {
         }
         do {
             let url = URL(string: "\(baseURL)/markup/url")!
-            let (data, _) = try await URLSession.shared.data(from: url)
+            var request = URLRequest(url: url)
+            applyAuthHeaders(&request)
+            let (data, _) = try await URLSession.shared.data(for: request)
             let resp = try JSONDecoder().decode(MarkupURLResponse.self, from: data)
             let preferred = resp.httpsUrl ?? resp.url
             await MainActor.run {
