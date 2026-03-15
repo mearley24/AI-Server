@@ -32,6 +32,7 @@ Project-level permissions and invite links:
 - Trades only see projects they are assigned to (when auth is enabled).
 - File modal includes **Create Invite Link** to generate time-limited invites.
 - File modal includes **Project Access Manager** to review members/invites, change roles, and revoke links.
+- Access Manager includes a project switcher with **New** and **Rename** controls for project-level administration.
 - Invite links are accepted with `?invite=<token>` and membership is assigned to the authenticated user.
 - Every save writes an audit event in `Project/.audit.jsonl` with user attribution + summary counts.
 

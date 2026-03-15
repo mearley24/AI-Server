@@ -714,6 +714,11 @@
     <div id="access-modal" class="modal-bg">
         <div class="modal" style="max-width:420px;">
             <h2>Project Access</h2>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
+                <select id="access-project-select" style="flex:1;padding:8px;border-radius:6px;border:1px solid #2a2a4a;background:#0f0f23;color:#eee;" onchange="switchAccessProject()"></select>
+                <button style="padding:8px 10px;font-size:12px;" onclick="createAccessProject()">New</button>
+                <button style="padding:8px 10px;font-size:12px;" onclick="renameAccessProject()">Rename</button>
+            </div>
             <div id="access-project-title" style="font-size:12px;color:#9ca3af;margin-bottom:8px;"></div>
             <div id="access-owner" style="font-size:12px;color:#ddd;margin-bottom:10px;"></div>
             <div style="font-size:11px;color:#888;margin-bottom:6px;">MEMBERS</div>
@@ -3547,6 +3552,7 @@ function manualSave() {
 
 let projectName = '';
 let projectData = null; // Full project state
+let accessManagerProject = '';
 let serverSavePath = '';
 let serverAutosaveEnabled = false;
 let serverAutosaveTimer = null;
@@ -4731,7 +4737,7 @@ async function sendToBob() {
 }
 
 async function createProjectInviteLink() {
-    const defaultProject = (projectName || deriveDefaultProjectName() || '').trim();
+    const defaultProject = (accessManagerProject || projectName || deriveDefaultProjectName() || '').trim();
     if (!defaultProject) {
         showToast('Set or save a project first');
         return;
@@ -4841,14 +4847,111 @@ async function revokeInvite(token) {
     }
 }
 
-async function openAccessManager() {
-    const project = (projectName || deriveDefaultProjectName() || '').trim();
+async function fetchAccessProjects() {
+    try {
+        const res = await markupApiFetch('/api/folders?limit=500');
+        const data = await res.json();
+        if (!res.ok || !data.success) return [];
+        return Array.isArray(data.folders) ? data.folders : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function syncAccessProjectSelect(projects, selectedProject) {
+    const select = document.getElementById('access-project-select');
+    if (!select) return;
+    select.innerHTML = '';
+    for (const name of projects) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+    }
+    if (projects.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = 'No projects';
+        select.appendChild(opt);
+    }
+    select.value = projects.includes(selectedProject) ? selectedProject : (projects[0] || '');
+}
+
+async function createAccessProject() {
+    const seed = (accessManagerProject || projectName || deriveDefaultProjectName() || '').trim() || 'New Project';
+    const raw = prompt('New project name:', seed);
+    if (!raw) return;
+    try {
+        const res = await markupApiFetch('/api/projects/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project: raw })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            showToast('Create failed: ' + (data.error || `HTTP ${res.status}`));
+            return;
+        }
+        accessManagerProject = data.project;
+        projectName = data.project;
+        showToast(`Created ${data.project}`);
+        await openAccessManager(data.project);
+    } catch (_) {
+        showToast('Create failed');
+    }
+}
+
+async function renameAccessProject() {
+    const current = (accessManagerProject || '').trim();
+    if (!current) {
+        showToast('Select a project first');
+        return;
+    }
+    const nextRaw = prompt('Rename project to:', current);
+    if (!nextRaw) return;
+    try {
+        const res = await markupApiFetch('/api/projects/rename', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fromProject: current, toProject: nextRaw })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            showToast('Rename failed: ' + (data.error || `HTTP ${res.status}`));
+            return;
+        }
+        accessManagerProject = data.project;
+        if (projectName === current) projectName = data.project;
+        if (serverSavePath && serverSavePath.startsWith(`${current}/`)) {
+            serverSavePath = serverSavePath.replace(`${current}/`, `${data.project}/`);
+            localStorage.setItem('markupServerSavePath', serverSavePath);
+        }
+        showToast(`Renamed to ${data.project}`);
+        await openAccessManager(data.project);
+    } catch (_) {
+        showToast('Rename failed');
+    }
+}
+
+function switchAccessProject() {
+    const selected = (document.getElementById('access-project-select')?.value || '').trim();
+    if (!selected) return;
+    accessManagerProject = selected;
+    openAccessManager(selected);
+}
+
+async function openAccessManager(projectOverride = '') {
+    const project = (projectOverride || accessManagerProject || projectName || deriveDefaultProjectName() || '').trim();
     if (!project) {
         showToast('Set or save a project first');
         return;
     }
     try {
-        const res = await markupApiFetch(`/api/projects/access?project=${encodeURIComponent(project)}`);
+        const projects = await fetchAccessProjects();
+        accessManagerProject = projects.includes(project) ? project : (projects[0] || project);
+        syncAccessProjectSelect(projects, accessManagerProject);
+
+        const res = await markupApiFetch(`/api/projects/access?project=${encodeURIComponent(accessManagerProject)}`);
         const data = await res.json();
         if (!res.ok || !data.success) {
             showToast('Access fetch failed: ' + (data.error || `HTTP ${res.status}`));
@@ -4926,6 +5029,7 @@ async function openAccessManager() {
         }
 
         document.getElementById('access-modal').classList.add('open');
+        projectName = data.project || projectName;
     } catch (err) {
         showToast('Access manager failed');
     }

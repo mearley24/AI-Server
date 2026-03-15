@@ -193,6 +193,28 @@ class MarkupHandler(BaseHTTPRequestHandler):
         rows.sort(key=lambda r: r["project"].lower())
         return rows
 
+    def _rename_project_dirs(self, src: str, dst: str):
+        for root in (LOCAL_EXPORTS, ICLOUD_EXPORTS):
+            old_dir = root / src
+            new_dir = root / dst
+            if not old_dir.exists() or not old_dir.is_dir():
+                continue
+            new_dir.parent.mkdir(parents=True, exist_ok=True)
+            if new_dir.exists():
+                # Merge files into destination when it already exists.
+                for entry in old_dir.iterdir():
+                    target = new_dir / entry.name
+                    if target.exists():
+                        # Preserve destination if conflict exists.
+                        continue
+                    entry.rename(target)
+                try:
+                    old_dir.rmdir()
+                except Exception:
+                    pass
+            else:
+                old_dir.rename(new_dir)
+
     def _resolve_base_url(self) -> str:
         configured = (os.environ.get("MARKUP_HTTPS_URL") or "").strip()
         if configured:
@@ -565,6 +587,95 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     "role": role,
                     "inviteToken": invite["token"],
                     "expiresAt": invite["expiresAt"],
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/projects/create':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                raw_project = str(payload.get("project") or "").strip()
+                if not raw_project:
+                    self._send_json(400, {"success": False, "error": "Project required"})
+                    return
+                project = self._slugify_name(raw_project)
+                access = self._load_access_control()
+                user = self._current_user()
+                acl = self._get_project_acl(access, project)
+                self._ensure_project_owner(access, project, user)
+                # If project already has an owner, require owner role (unless local override).
+                if acl.get("owner") and acl.get("owner") != user and not (self._auth_config()["allow_local"] and self._is_local_client()):
+                    self._send_json(403, {"success": False, "error": "Only owner can manage this project"})
+                    return
+                # Ensure directories exist.
+                (LOCAL_EXPORTS / project).mkdir(parents=True, exist_ok=True)
+                try:
+                    (ICLOUD_EXPORTS / project).mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+                self._save_access_control(access)
+                self._send_json(200, {
+                    "success": True,
+                    "project": project,
+                    "owner": self._get_project_acl(access, project).get("owner"),
+                })
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "project_created",
+                    "project": project,
+                    "user": user,
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/projects/rename':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                src = self._slugify_name(str(payload.get("fromProject") or "").strip())
+                dst = self._slugify_name(str(payload.get("toProject") or "").strip())
+                if not src or not dst:
+                    self._send_json(400, {"success": False, "error": "fromProject and toProject required"})
+                    return
+                if src == dst:
+                    self._send_json(200, {"success": True, "project": dst, "renamed": False})
+                    return
+                access = self._load_access_control()
+                user = self._current_user()
+                actor_role = self._role_for_user(access, src, user)
+                if actor_role != "owner" and not (self._auth_config()["allow_local"] and self._is_local_client()):
+                    self._send_json(403, {"success": False, "error": "Only owner can rename project"})
+                    return
+                src_acl = (access.get("projects") or {}).get(src)
+                if not src_acl:
+                    self._send_json(404, {"success": False, "error": "Source project not found"})
+                    return
+                projects = access.setdefault("projects", {})
+                if dst in projects and dst != src:
+                    self._send_json(409, {"success": False, "error": "Destination project already exists"})
+                    return
+                projects[dst] = src_acl
+                projects.pop(src, None)
+                # Move invites bound to source project.
+                for invite in (access.get("invites") or {}).values():
+                    if (invite or {}).get("project") == src:
+                        invite["project"] = dst
+                self._save_access_control(access)
+                self._rename_project_dirs(src, dst)
+                self._send_json(200, {"success": True, "fromProject": src, "project": dst, "renamed": True})
+                self._append_audit(dst, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "project_renamed",
+                    "project": dst,
+                    "fromProject": src,
+                    "user": user,
                 })
             except Exception as e:
                 self._send_json(500, {"success": False, "error": str(e)})
