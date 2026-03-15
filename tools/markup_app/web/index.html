@@ -802,6 +802,7 @@ function saveState() {
     
     // Auto-save to localStorage for current PDF page
     savePageMarkups();
+    scheduleServerAutosave();
 }
 
 function undo() {
@@ -3224,6 +3225,10 @@ function manualSave() {
 
 let projectName = '';
 let projectData = null; // Full project state
+let serverSavePath = '';
+let serverAutosaveEnabled = false;
+let serverAutosaveTimer = null;
+const SERVER_AUTOSAVE_DEBOUNCE_MS = 8000;
 
 // Open file menu modal
 function openProjectMenu() {
@@ -3299,27 +3304,87 @@ async function saveToServerFromModal() {
         showToast('Enter a project folder name');
         return;
     }
-    const project = buildSaveProjectData();
-    project.project = project.projectName = name;
     try {
-        const response = await fetch('/api/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(project)
+        const result = await saveProjectToServer({
+            requestedProjectName: name,
+            forceCanonicalPath: true,
+            silent: true
         });
-        const result = await response.json();
-        if (result.success) {
-            showToast('Saved to server: ' + result.filename);
+        if (result && result.success) {
+            showToast('Saved to server: ' + (result.savePath || result.filename));
             closeSaveModal();
             updateSaveStatus(true);
         } else {
             closeSaveModal();
-            showToast('Error: ' + (result.error || 'Unknown'));
+            showToast('Error: ' + ((result && result.error) || 'Unknown'));
         }
     } catch (err) {
         closeSaveModal();
         showToast('Cannot reach server. Use Download instead.');
     }
+}
+
+function canonicalServerSavePathForProject(name) {
+    const sanitized = String(name || 'untitled')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[\/\\]/g, '-')
+        .replace(/[^a-zA-Z0-9_.-]/g, '');
+    const project = sanitized || 'untitled';
+    return `${project}/${project}.symphony`;
+}
+
+async function saveProjectToServer(options = {}) {
+    const {
+        requestedProjectName = '',
+        forceCanonicalPath = false,
+        silent = false
+    } = options;
+    if (!currentPdfName) return { success: false, error: 'No project loaded' };
+
+    const defaultName = deriveDefaultProjectName();
+    const name = String(requestedProjectName || projectName || defaultName || 'untitled').trim();
+    projectName = name;
+    savePageMarkups();
+
+    const project = buildSaveProjectData();
+    project.project = project.projectName = name;
+    const targetPath = (forceCanonicalPath || !serverSavePath)
+        ? canonicalServerSavePathForProject(name)
+        : serverSavePath;
+    if (targetPath) project.savePath = targetPath;
+
+    const response = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(project)
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+        return { success: false, error: result.error || `HTTP ${response.status}` };
+    }
+
+    serverSavePath = result.savePath || result.filename || targetPath || '';
+    serverAutosaveEnabled = Boolean(serverSavePath);
+    localStorage.setItem('markupServerSavePath', serverSavePath);
+    localStorage.setItem('markupServerAutosaveEnabled', serverAutosaveEnabled ? '1' : '0');
+
+    if (!silent) showToast('Saved to server: ' + (serverSavePath || result.filename || 'project'));
+    return result;
+}
+
+function scheduleServerAutosave() {
+    if (!serverAutosaveEnabled || !serverSavePath || !currentPdfName) return;
+    if (serverAutosaveTimer) clearTimeout(serverAutosaveTimer);
+    serverAutosaveTimer = setTimeout(async () => {
+        try {
+            await saveProjectToServer({ silent: true });
+            const status = document.getElementById('save-status');
+            if (status) status.title = 'Autosaved to server';
+        } catch (_) {
+            // Ignore transient network failures while editing.
+        }
+    }, SERVER_AUTOSAVE_DEBOUNCE_MS);
 }
 
 function deriveDefaultProjectName() {
@@ -3986,7 +4051,8 @@ function buildSaveProjectData() {
         pages: gatherAllPageMarkups(),
         symbols: symbols,
         currentPageLegend: buildLegendEntriesForPlaced(placed),
-        sourcePdf
+        sourcePdf,
+        serverSavePath: serverSavePath || null
     };
 }
 
@@ -4042,6 +4108,10 @@ function openProject() {
 async function loadProjectData(project) {
     projectData = project;
     projectName = project.projectName || project.pdfName || project.project || 'markup';
+    serverSavePath = String(project.serverSavePath || '').trim();
+    serverAutosaveEnabled = Boolean(serverSavePath);
+    localStorage.setItem('markupServerSavePath', serverSavePath);
+    localStorage.setItem('markupServerAutosaveEnabled', serverAutosaveEnabled ? '1' : '0');
     currentPdfName = (project.pdfName || project.projectName || project.project || 'markup')
         .toString()
         .replace(/[^a-zA-Z0-9_.-]/g, '_');
@@ -4286,29 +4356,12 @@ async function sendToBob() {
     
     savePageMarkups();
     
-    const project = {
-        version: '1.0',
-        type: 'symphony-markup-project',
-        pdfName: currentPdfName,
-        currentPage: currentPageNum,
-        pageCount: pdfDoc ? pdfDoc.numPages : 1,
-        createdAt: new Date().toISOString(),
-        pages: gatherAllPageMarkups(),
-        symbols: symbols
-    };
-    
     try {
-        const response = await fetch('/api/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(project)
-        });
-        
-        if (response.ok) {
-            const result = await response.json();
-            showToast('Sent to Bob: ' + (result.filename || 'saved'));
+        const result = await saveProjectToServer({ silent: true });
+        if (result && result.success) {
+            showToast('Sent to Bob: ' + (result.savePath || result.filename || 'saved'));
         } else {
-            showToast('Server error: ' + response.status);
+            showToast('Server error: ' + ((result && result.error) || 'Unknown'));
         }
     } catch(err) {
         showToast('Cannot reach server - save locally instead');
@@ -5003,6 +5056,10 @@ if (currentPdfName) {
         showToast(`Restored markups for page ${currentPageNum}. Load PDF to see them.`);
     }
 }
+
+// Restore prior server autosave target for this browser session.
+serverSavePath = String(localStorage.getItem('markupServerSavePath') || '').trim();
+serverAutosaveEnabled = localStorage.getItem('markupServerAutosaveEnabled') === '1' && Boolean(serverSavePath);
 
 // Register service worker for offline use
 if ('serviceWorker' in navigator) {

@@ -43,6 +43,42 @@ LOCAL_EXPORTS.mkdir(parents=True, exist_ok=True)
 class MarkupHandler(BaseHTTPRequestHandler):
     """Custom handler for markup app."""
 
+    @staticmethod
+    def _slugify_name(value: str) -> str:
+        """Normalize project/file names for safe filesystem paths."""
+        cleaned = (value or "untitled").strip().replace(" ", "_").replace("/", "-")
+        cleaned = "".join(ch for ch in cleaned if ch.isalnum() or ch in ("-", "_", "."))
+        return cleaned or "untitled"
+
+    def _resolve_save_target(self, data: dict) -> tuple[str, str]:
+        """
+        Resolve (project_folder, filename) for save operations.
+
+        Supports:
+        - savePath: "Project/file.symphony" for overwriting canonical project file
+        - default behavior: timestamped snapshot in project folder
+        """
+        project = self._slugify_name(data.get('project') or data.get('projectName') or 'untitled')
+        save_path = str(data.get('savePath') or '').strip()
+        if save_path:
+            raw = Path(save_path.replace("\\", "/"))
+            parts = [self._slugify_name(p) for p in raw.parts if p not in ("", ".", "..")]
+            if parts:
+                if len(parts) == 1:
+                    filename = parts[0]
+                    if "." not in filename:
+                        filename = f"{filename}.symphony"
+                    return project, filename
+                folder = parts[0] or project
+                filename = parts[-1]
+                if "." not in filename:
+                    filename = f"{filename}.symphony"
+                return folder, filename
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{project}_{timestamp}.symphony"
+        return project, filename
+
     def _list_project_folders(self, query: str = "", limit: int = 200) -> list[str]:
         """List known project folders from iCloud/local export roots."""
         folders = set()
@@ -136,9 +172,7 @@ class MarkupHandler(BaseHTTPRequestHandler):
             
             try:
                 data = json.loads(post_data)
-                project = (data.get('project') or data.get('projectName') or 'untitled').replace(' ', '_').replace('/', '-')
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f"{project}_{timestamp}.symphony"
+                project, filename = self._resolve_save_target(data)
                 
                 # Save to project subfolder (so files are organized by project)
                 icloud_dir = ICLOUD_EXPORTS / project
@@ -161,6 +195,7 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({
                     'success': True,
                     'filename': rel_path,
+                    'savePath': rel_path,
                     'icloud': str(icloud_path),
                     'local': str(local_path)
                 }).encode())
