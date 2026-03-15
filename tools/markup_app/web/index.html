@@ -818,6 +818,16 @@ let currentStroke = null;
 let measureScale = parseFloat(localStorage.getItem('measureScale')) || 0; // pixels per foot
 let measuringLine = null; // {x1, y1, x2, y2}
 
+function makePlacedSymbolId() {
+    return `sym-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function ensurePlacedSymbolIds() {
+    for (const p of placed) {
+        if (!p.id) p.id = makePlacedSymbolId();
+    }
+}
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 const container = document.getElementById('canvas-container');
@@ -1046,13 +1056,21 @@ function toggleMultiSelect() {
 function deleteMultiSelected() {
     if (multiSelected.length === 0) return;
     saveState();
+    const removedSymbolIds = [];
     // Sort by index descending so we can splice without affecting indices
     multiSelected.sort((a, b) => b.index - a.index);
     for (const item of multiSelected) {
-        if (item.type === 'symbol') placed.splice(item.index, 1);
+        if (item.type === 'symbol') {
+            const removed = placed[item.index];
+            if (removed && removed.id) removedSymbolIds.push(removed.id);
+            placed.splice(item.index, 1);
+        }
         else if (item.type === 'text') textLabels.splice(item.index, 1);
         else if (item.type === 'room') rooms.splice(item.index, 1);
         else if (item.type === 'freehand') freehandLines.splice(item.index, 1);
+    }
+    if (removedSymbolIds.length) {
+        markupNotes = markupNotes.filter((n) => !removedSymbolIds.includes(n.symbolId));
     }
     multiSelected = [];
     buildToolbar();
@@ -1862,6 +1880,7 @@ document.getElementById('markup-import-input').onchange = (e) => {
                 // Direct format
                 placed = d.placed;
             }
+            ensurePlacedSymbolIds();
             
             // Load rooms
             if (d.rooms && Array.isArray(d.rooms)) {
@@ -2230,11 +2249,34 @@ function saveText() {
 
 let pendingNotePos = null;
 let editNoteIndex = -1;
+let pendingNoteSymbolId = null;
 
-function openNoteModalAt(x, y, noteIndex = -1) {
+function resolveNoteAnchor(note) {
+    if (!note) return { x: 0, y: 0 };
+    if (note.symbolId) {
+        const sym = placed.find((p) => p.id === note.symbolId);
+        if (sym) {
+            const dx = Number.isFinite(Number(note.dx)) ? Number(note.dx) : 16;
+            const dy = Number.isFinite(Number(note.dy)) ? Number(note.dy) : -16;
+            return { x: sym.x + dx, y: sym.y + dy };
+        }
+    }
+    return { x: Number(note.x || 0), y: Number(note.y || 0) };
+}
+
+function findSymbolAt(x, y) {
+    for (let i = placed.length - 1; i >= 0; i--) {
+        const p = placed[i];
+        if (Math.hypot((p.x || 0) - x, (p.y || 0) - y) < 20) return p;
+    }
+    return null;
+}
+
+function openNoteModalAt(x, y, noteIndex = -1, symbolId = null) {
     pendingNotePos = { x, y };
     editNoteIndex = noteIndex;
     const existing = noteIndex >= 0 ? markupNotes[noteIndex] : null;
+    pendingNoteSymbolId = existing?.symbolId || symbolId || null;
     document.getElementById('note-modal-title').textContent = existing ? 'Edit Note' : 'Add Note';
     document.getElementById('note-type').value = existing?.type || 'general';
     document.getElementById('note-height').value = existing?.height || '';
@@ -2247,6 +2289,7 @@ function openNoteModalAt(x, y, noteIndex = -1) {
 function closeNoteModal() {
     pendingNotePos = null;
     editNoteIndex = -1;
+    pendingNoteSymbolId = null;
     document.getElementById('note-modal').classList.remove('open');
 }
 
@@ -2259,6 +2302,9 @@ function saveNote() {
     const payload = {
         x: pendingNotePos.x,
         y: pendingNotePos.y,
+        symbolId: pendingNoteSymbolId || null,
+        dx: pendingNoteSymbolId ? (pendingNotePos.x - ((placed.find((p) => p.id === pendingNoteSymbolId)?.x) || pendingNotePos.x)) : 0,
+        dy: pendingNoteSymbolId ? (pendingNotePos.y - ((placed.find((p) => p.id === pendingNoteSymbolId)?.y) || pendingNotePos.y)) : 0,
         type: document.getElementById('note-type').value || 'general',
         height: document.getElementById('note-height').value.trim(),
         codeRef: document.getElementById('note-code-ref').value.trim(),
@@ -2292,7 +2338,8 @@ function deleteNote() {
 function findNoteIndexAt(x, y) {
     for (let i = markupNotes.length - 1; i >= 0; i--) {
         const n = markupNotes[i];
-        if (Math.hypot((n.x || 0) - x, (n.y || 0) - y) <= 16) return i;
+        const anchor = resolveNoteAnchor(n);
+        if (Math.hypot(anchor.x - x, anchor.y - y) <= 16) return i;
     }
     return -1;
 }
@@ -2550,9 +2597,10 @@ function render() {
     // Draw markup notes
     for (let ni = 0; ni < markupNotes.length; ni++) {
         const note = markupNotes[ni];
+        const anchor = resolveNoteAnchor(note);
         const isSelected = selectedItem === note;
         ctx.beginPath();
-        ctx.arc(note.x, note.y, isSelected ? 12 : 10, 0, Math.PI * 2);
+        ctx.arc(anchor.x, anchor.y, isSelected ? 12 : 10, 0, Math.PI * 2);
         ctx.fillStyle = isSelected ? '#e94560' : '#f59e0b';
         ctx.fill();
         ctx.strokeStyle = '#fff';
@@ -2562,7 +2610,7 @@ function render() {
         ctx.font = 'bold 11px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('N', note.x, note.y);
+        ctx.fillText('N', anchor.x, anchor.y);
 
         if (note.text) {
             const preview = String(note.text).slice(0, 28) + (String(note.text).length > 28 ? '…' : '');
@@ -2570,7 +2618,7 @@ function render() {
             ctx.textBaseline = 'top';
             ctx.font = '11px Arial';
             ctx.fillStyle = '#f3f4f6';
-            ctx.fillText(preview, note.x + 14, note.y - 6);
+            ctx.fillText(preview, anchor.x + 14, anchor.y - 6);
         }
     }
     
@@ -2896,6 +2944,7 @@ function handleSinglePointerDown(e) {
     const rect = canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left - panX) / scale;
     const y = (e.clientY - rect.top - panY) / scale;
+    ensurePlacedSymbolIds();
     
     if (tool === 'room') {
         // Apply snap if enabled
@@ -2925,9 +2974,20 @@ function handleSinglePointerDown(e) {
         document.getElementById('text-content').value = '';
         document.getElementById('text-modal').classList.add('open');
     } else if (tool === 'note') {
-        saveState();
         const existing = findNoteIndexAt(x, y);
-        openNoteModalAt(x, y, existing);
+        if (existing >= 0) {
+            const existingNote = markupNotes[existing];
+            const anchor = resolveNoteAnchor(existingNote);
+            openNoteModalAt(anchor.x, anchor.y, existing, existingNote.symbolId || null);
+            return;
+        }
+        const symbol = findSymbolAt(x, y);
+        if (!symbol) {
+            showToast('Tap a symbol to add a note');
+            return;
+        }
+        saveState();
+        openNoteModalAt(symbol.x + 16, symbol.y - 16, -1, symbol.id);
     } else if (tool === 'freehand') {
         saveState();
         currentStroke = { points: [{x, y}], color: '#f59e0b', width: 2 };
@@ -3041,15 +3101,16 @@ function handleSinglePointerDown(e) {
         if (!found) {
             for (let i = markupNotes.length - 1; i >= 0; i--) {
                 const n = markupNotes[i];
-                if (Math.hypot((n.x || 0) - x, (n.y || 0) - y) < 16) {
+                const anchor = resolveNoteAnchor(n);
+                if (Math.hypot(anchor.x - x, anchor.y - y) < 16) {
                     saveState();
                     selectedItem = n;
                     selectedType = 'note';
-                    dragOffset = { x: x - n.x, y: y - n.y };
+                    dragOffset = { x: x - anchor.x, y: y - anchor.y };
                     dragging = true;
                     found = true;
                     if ((e.detail || 0) >= 2) {
-                        openNoteModalAt(n.x, n.y, i);
+                        openNoteModalAt(anchor.x, anchor.y, i, n.symbolId || null);
                         dragging = false;
                     }
                     render();
@@ -3212,7 +3273,16 @@ function handleSinglePointerDown(e) {
             }
         }
         let i = placed.findIndex(p => Math.hypot(p.x-x,p.y-y) < 18);
-        if (i >= 0) { placed.splice(i,1); updateCounts(); render(); return; }
+        if (i >= 0) {
+            const removed = placed[i];
+            placed.splice(i,1);
+            if (removed && removed.id) {
+                markupNotes = markupNotes.filter((n) => n.symbolId !== removed.id);
+            }
+            updateCounts();
+            render();
+            return;
+        }
         i = textLabels.findIndex(t => x >= t.x && x <= t.x + 100 && y >= t.y && y <= t.y + t.size);
         if (i >= 0) { textLabels.splice(i,1); render(); return; }
         i = rooms.findIndex(r => {
@@ -3228,7 +3298,7 @@ function handleSinglePointerDown(e) {
         if (i >= 0) { markupNotes.splice(i, 1); render(); }
     } else if (tool && symbols[tool]) {
         saveState();
-        placed.push({type:tool, x, y});
+        placed.push({id: makePlacedSymbolId(), type:tool, x, y});
         updateCounts();
         render();
     } else {
@@ -3302,8 +3372,21 @@ function handleSinglePointerMove(e) {
         selectedItem.y = y - dragOffset.y;
         render();
     } else if (selectedItem && selectedType === 'note') {
-        selectedItem.x = x - dragOffset.x;
-        selectedItem.y = y - dragOffset.y;
+        const nx = x - dragOffset.x;
+        const ny = y - dragOffset.y;
+        if (selectedItem.symbolId) {
+            const sym = placed.find((p) => p.id === selectedItem.symbolId);
+            if (sym) {
+                selectedItem.dx = nx - sym.x;
+                selectedItem.dy = ny - sym.y;
+            } else {
+                selectedItem.x = nx;
+                selectedItem.y = ny;
+            }
+        } else {
+            selectedItem.x = nx;
+            selectedItem.y = ny;
+        }
         selectedItem.updatedAt = new Date().toISOString();
         render();
     } else if (selectedItem && selectedType === 'room') {
@@ -3386,6 +3469,7 @@ function getPageStorageKey(pageNum) {
 function savePageMarkups() {
     const key = getPageStorageKey(currentPageNum);
     if (!key) return;
+    ensurePlacedSymbolIds();
     
     const data = {
         placed: placed,
@@ -4045,8 +4129,15 @@ function drawMarkupOverlayForExport(ctxOut, pageData, defs) {
 
     // Notes
     for (const n of pageNotes) {
-        const nx = Number(n.x || 0);
-        const ny = Number(n.y || 0);
+        let nx = Number(n.x || 0);
+        let ny = Number(n.y || 0);
+        if (n.symbolId) {
+            const sym = pagePlaced.find((p) => p.id === n.symbolId);
+            if (sym) {
+                nx = Number(sym.x || 0) + (Number.isFinite(Number(n.dx)) ? Number(n.dx) : 16);
+                ny = Number(sym.y || 0) + (Number.isFinite(Number(n.dy)) ? Number(n.dy) : -16);
+            }
+        }
         ctxOut.beginPath();
         ctxOut.arc(nx, ny, 9, 0, Math.PI * 2);
         ctxOut.fillStyle = '#f59e0b';
@@ -4446,8 +4537,10 @@ function normalizeProjectFile(project) {
         }
         data = data || {};
         const markups = data.markups || data.annotations || data.items || data;
+        const normalizedPlaced = (markups.placed || markups.symbols || data.placed || data.symbols || [])
+            .map((p) => ({ ...p, id: p.id || makePlacedSymbolId() }));
         return {
-            placed: markups.placed || markups.symbols || data.placed || data.symbols || [],
+            placed: normalizedPlaced,
             rooms: markups.rooms || data.rooms || [],
             textLabels: markups.textLabels || markups.labels || data.textLabels || data.labels || [],
             markupNotes: markups.markupNotes || markups.notes || data.markupNotes || data.notes || [],
@@ -4540,7 +4633,7 @@ function normalizeProjectFile(project) {
         createdAt: p.exported || p.createdAt || new Date().toISOString(),
         pages: {
             1: {
-                placed: p.placed || p.symbols || [],
+                placed: (p.placed || p.symbols || []).map((sym) => ({ ...sym, id: sym.id || makePlacedSymbolId() })),
                 rooms: p.rooms || [],
                 textLabels: p.textLabels || [],
                 markupNotes: p.markupNotes || p.notes || [],
@@ -4621,6 +4714,7 @@ function loadPageMarkups(pageNum) {
         try {
             const data = JSON.parse(saved);
             placed = data.placed || [];
+            ensurePlacedSymbolIds();
             rooms = data.rooms || [];
             textLabels = data.textLabels || [];
             markupNotes = data.markupNotes || [];
