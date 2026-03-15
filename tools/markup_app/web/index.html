@@ -505,6 +505,32 @@
             </div>
         </div>
     </div>
+
+    <!-- Markup Note Modal -->
+    <div id="note-modal" class="modal-bg">
+        <div class="modal">
+            <h2 id="note-modal-title">Add Note</h2>
+            <label>Type</label>
+            <select id="note-type">
+                <option value="general">General</option>
+                <option value="height">Height</option>
+                <option value="code">Code</option>
+                <option value="coordination">Coordination</option>
+                <option value="warning">Warning</option>
+            </select>
+            <label>Height / AFF (optional)</label>
+            <input type="text" id="note-height" placeholder='ex: 48" AFF'>
+            <label>Code Ref (optional)</label>
+            <input type="text" id="note-code-ref" placeholder="ex: NEC 210.52">
+            <label>Note</label>
+            <input type="text" id="note-text" placeholder="Trade note...">
+            <div class="btns">
+                <button id="note-del-btn" class="danger" style="display:none" onclick="deleteNote()">Delete</button>
+                <button onclick="closeNoteModal()">Cancel</button>
+                <button class="primary" onclick="saveNote()">Save</button>
+            </div>
+        </div>
+    </div>
     
     <!-- Options Modal -->
     <div id="options-modal" class="modal-bg">
@@ -726,6 +752,7 @@ let symbols = initSymbols();
 let placed = [];
 let rooms = [];
 let textLabels = [];
+let markupNotes = [];
 let freehandLines = []; // Freehand drawing strokes
 let legendPanel = null; // Auto-generated legend block for current page
 let legendResizeMode = false;
@@ -804,6 +831,7 @@ function saveState() {
         placed: JSON.parse(JSON.stringify(placed)),
         rooms: JSON.parse(JSON.stringify(rooms)),
         textLabels: JSON.parse(JSON.stringify(textLabels)),
+        markupNotes: JSON.parse(JSON.stringify(markupNotes)),
         freehandLines: JSON.parse(JSON.stringify(freehandLines)),
         legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
@@ -823,6 +851,7 @@ function undo() {
         placed: JSON.parse(JSON.stringify(placed)),
         rooms: JSON.parse(JSON.stringify(rooms)),
         textLabels: JSON.parse(JSON.stringify(textLabels)),
+        markupNotes: JSON.parse(JSON.stringify(markupNotes)),
         freehandLines: JSON.parse(JSON.stringify(freehandLines)),
         legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
@@ -831,6 +860,7 @@ function undo() {
     placed = prev.placed;
     rooms = prev.rooms;
     textLabels = prev.textLabels;
+    markupNotes = prev.markupNotes || [];
     freehandLines = prev.freehandLines || [];
     legendPanel = prev.legendPanel || null;
     updateUndoButtons();
@@ -844,6 +874,7 @@ function redo() {
         placed: JSON.parse(JSON.stringify(placed)),
         rooms: JSON.parse(JSON.stringify(rooms)),
         textLabels: JSON.parse(JSON.stringify(textLabels)),
+        markupNotes: JSON.parse(JSON.stringify(markupNotes)),
         freehandLines: JSON.parse(JSON.stringify(freehandLines)),
         legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
@@ -852,6 +883,7 @@ function redo() {
     placed = next.placed;
     rooms = next.rooms;
     textLabels = next.textLabels;
+    markupNotes = next.markupNotes || [];
     freehandLines = next.freehandLines || [];
     legendPanel = next.legendPanel || null;
     updateUndoButtons();
@@ -1069,7 +1101,7 @@ let toolsExpanded = false;
 
 // Check if current tool is a "tool" (not a symbol)
 function isToolSelected(toolId) {
-    return ['select', 'multi', 'delete', 'room', 'text', 'freehand', 'measure'].includes(toolId);
+    return ['select', 'multi', 'delete', 'room', 'text', 'note', 'freehand', 'measure'].includes(toolId);
 }
 
 // Get category for current tool (symbol)
@@ -1298,6 +1330,11 @@ function buildToolbar() {
         textBtn.classList.add('category-symbol');
         if (tool === 'text') textBtn.classList.add('selected');
         bar.appendChild(textBtn);
+
+        const noteBtn = createToolBtn('note', '📝', 'Notes', 'transparent');
+        noteBtn.classList.add('category-symbol');
+        if (tool === 'note') noteBtn.classList.add('selected');
+        bar.appendChild(noteBtn);
         
         if (freehandEnabled) {
             const freehandBtn = createToolBtn('freehand', '✎', 'Draw', '#f59e0b');
@@ -1835,6 +1872,11 @@ document.getElementById('markup-import-input').onchange = (e) => {
             if (d.textLabels && Array.isArray(d.textLabels)) {
                 textLabels = d.textLabels;
             }
+
+            // Load markup notes
+            if (d.markupNotes && Array.isArray(d.markupNotes)) {
+                markupNotes = d.markupNotes;
+            }
             
             // Load freehand lines
             if (d.freehandLines && Array.isArray(d.freehandLines)) {
@@ -1857,6 +1899,7 @@ document.getElementById('markup-import-input').onchange = (e) => {
             if (placed.length) counts.push(placed.length + ' symbols');
             if (rooms.length) counts.push(rooms.length + ' rooms');
             if (textLabels.length) counts.push(textLabels.length + ' labels');
+            if (markupNotes.length) counts.push(markupNotes.length + ' notes');
             showToast('Imported: ' + (counts.join(', ') || 'empty markup'));
             
         } catch(err) { 
@@ -2185,6 +2228,75 @@ function saveText() {
     render();
 }
 
+let pendingNotePos = null;
+let editNoteIndex = -1;
+
+function openNoteModalAt(x, y, noteIndex = -1) {
+    pendingNotePos = { x, y };
+    editNoteIndex = noteIndex;
+    const existing = noteIndex >= 0 ? markupNotes[noteIndex] : null;
+    document.getElementById('note-modal-title').textContent = existing ? 'Edit Note' : 'Add Note';
+    document.getElementById('note-type').value = existing?.type || 'general';
+    document.getElementById('note-height').value = existing?.height || '';
+    document.getElementById('note-code-ref').value = existing?.codeRef || '';
+    document.getElementById('note-text').value = existing?.text || '';
+    document.getElementById('note-del-btn').style.display = existing ? 'inline-block' : 'none';
+    document.getElementById('note-modal').classList.add('open');
+}
+
+function closeNoteModal() {
+    pendingNotePos = null;
+    editNoteIndex = -1;
+    document.getElementById('note-modal').classList.remove('open');
+}
+
+function saveNote() {
+    const text = document.getElementById('note-text').value.trim();
+    if (!text || !pendingNotePos) {
+        closeNoteModal();
+        return;
+    }
+    const payload = {
+        x: pendingNotePos.x,
+        y: pendingNotePos.y,
+        type: document.getElementById('note-type').value || 'general',
+        height: document.getElementById('note-height').value.trim(),
+        codeRef: document.getElementById('note-code-ref').value.trim(),
+        text,
+        author: currentMarkupUser || 'local-user',
+        updatedAt: new Date().toISOString()
+    };
+    if (editNoteIndex >= 0 && markupNotes[editNoteIndex]) {
+        markupNotes[editNoteIndex] = {
+            ...markupNotes[editNoteIndex],
+            ...payload
+        };
+    } else {
+        markupNotes.push({
+            id: `note-${Date.now()}`,
+            createdAt: new Date().toISOString(),
+            ...payload
+        });
+    }
+    closeNoteModal();
+    render();
+}
+
+function deleteNote() {
+    if (editNoteIndex < 0) return;
+    markupNotes.splice(editNoteIndex, 1);
+    closeNoteModal();
+    render();
+}
+
+function findNoteIndexAt(x, y) {
+    for (let i = markupNotes.length - 1; i >= 0; i--) {
+        const n = markupNotes[i];
+        if (Math.hypot((n.x || 0) - x, (n.y || 0) - y) <= 16) return i;
+    }
+    return -1;
+}
+
 // Canvas
 function resize() {
     canvas.width = container.clientWidth;
@@ -2434,6 +2546,33 @@ function render() {
             ctx.strokeRect(t.x - 2, t.y - 2, w + 4, t.size + 4);
         }
     }
+
+    // Draw markup notes
+    for (let ni = 0; ni < markupNotes.length; ni++) {
+        const note = markupNotes[ni];
+        const isSelected = selectedItem === note;
+        ctx.beginPath();
+        ctx.arc(note.x, note.y, isSelected ? 12 : 10, 0, Math.PI * 2);
+        ctx.fillStyle = isSelected ? '#e94560' : '#f59e0b';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.fillStyle = '#111827';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('N', note.x, note.y);
+
+        if (note.text) {
+            const preview = String(note.text).slice(0, 28) + (String(note.text).length > 28 ? '…' : '');
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.font = '11px Arial';
+            ctx.fillStyle = '#f3f4f6';
+            ctx.fillText(preview, note.x + 14, note.y - 6);
+        }
+    }
     
     // Draw symbols (respecting layer visibility)
     for (let pi = 0; pi < placed.length; pi++) {
@@ -2576,6 +2715,7 @@ function updateCounts() {
     }
     let html = Object.entries(c).map(([k,v]) => `${v} ${k}`).join(' | ');
     if (rooms.length) html += (html ? ' | ' : '') + rooms.length + ' room' + (rooms.length > 1 ? 's' : '');
+    if (markupNotes.length) html += (html ? ' | ' : '') + markupNotes.length + ' note' + (markupNotes.length > 1 ? 's' : '');
     document.getElementById('counts').innerHTML = html;
 }
 
@@ -2784,6 +2924,10 @@ function handleSinglePointerDown(e) {
         pendingTextPos = {x, y};
         document.getElementById('text-content').value = '';
         document.getElementById('text-modal').classList.add('open');
+    } else if (tool === 'note') {
+        saveState();
+        const existing = findNoteIndexAt(x, y);
+        openNoteModalAt(x, y, existing);
     } else if (tool === 'freehand') {
         saveState();
         currentStroke = { points: [{x, y}], color: '#f59e0b', width: 2 };
@@ -2887,6 +3031,27 @@ function handleSinglePointerDown(e) {
                     dragOffset = { x: x - p.x, y: y - p.y };
                     dragging = true;
                     found = true;
+                    render();
+                    break;
+                }
+            }
+        }
+
+        // Check notes
+        if (!found) {
+            for (let i = markupNotes.length - 1; i >= 0; i--) {
+                const n = markupNotes[i];
+                if (Math.hypot((n.x || 0) - x, (n.y || 0) - y) < 16) {
+                    saveState();
+                    selectedItem = n;
+                    selectedType = 'note';
+                    dragOffset = { x: x - n.x, y: y - n.y };
+                    dragging = true;
+                    found = true;
+                    if ((e.detail || 0) >= 2) {
+                        openNoteModalAt(n.x, n.y, i);
+                        dragging = false;
+                    }
                     render();
                     break;
                 }
@@ -3059,6 +3224,8 @@ function handleSinglePointerDown(e) {
         // Check freehand
         i = freehandLines.findIndex(line => line.points.some(pt => Math.hypot(pt.x-x, pt.y-y) < 15));
         if (i >= 0) { freehandLines.splice(i,1); render(); }
+        i = findNoteIndexAt(x, y);
+        if (i >= 0) { markupNotes.splice(i, 1); render(); }
     } else if (tool && symbols[tool]) {
         saveState();
         placed.push({type:tool, x, y});
@@ -3134,6 +3301,11 @@ function handleSinglePointerMove(e) {
         selectedItem.x = x - dragOffset.x;
         selectedItem.y = y - dragOffset.y;
         render();
+    } else if (selectedItem && selectedType === 'note') {
+        selectedItem.x = x - dragOffset.x;
+        selectedItem.y = y - dragOffset.y;
+        selectedItem.updatedAt = new Date().toISOString();
+        render();
     } else if (selectedItem && selectedType === 'room') {
         // Move entire room boundary (all points + label)
         const newCx = x - dragOffset.x;
@@ -3186,6 +3358,23 @@ let currentPdfName = localStorage.getItem('lastPdfName') || ''; // Track current
 let currentPdfBytes = null; // Uint8Array for export/reopen
 let currentPdfMime = 'application/pdf';
 let currentPdfOriginalName = '';
+let currentMarkupUser = 'local-user';
+let markupApiToken = localStorage.getItem('markupApiToken') || '';
+
+function getMarkupAuthHeaders(extra = {}) {
+    const headers = { ...extra };
+    if (markupApiToken) {
+        headers['Authorization'] = `Bearer ${markupApiToken}`;
+        headers['X-Markup-Token'] = markupApiToken;
+    }
+    return headers;
+}
+
+async function markupApiFetch(url, options = {}) {
+    const opts = { ...options };
+    opts.headers = getMarkupAuthHeaders(options.headers || {});
+    return fetch(url, opts);
+}
 
 // Per-page markup storage key
 function getPageStorageKey(pageNum) {
@@ -3202,6 +3391,7 @@ function savePageMarkups() {
         placed: placed,
         rooms: rooms,
         textLabels: textLabels,
+        markupNotes: markupNotes,
         freehandLines: freehandLines,
         measureScale: measureScale,
         legendPanel: legendPanel
@@ -3294,6 +3484,7 @@ function gatherAllPageMarkups() {
         placed: placed,
         rooms: rooms,
         textLabels: textLabels,
+        markupNotes: markupNotes,
         freehandLines: freehandLines,
         measureScale: measureScale,
         legendPanel: legendPanel
@@ -3375,7 +3566,7 @@ async function saveProjectToServer(options = {}) {
         : serverSavePath;
     if (targetPath) project.savePath = targetPath;
 
-    const response = await fetch('/api/save', {
+    const response = await markupApiFetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(project)
@@ -3484,7 +3675,7 @@ async function prepareServerSaveUI() {
     setSaveFolderSuggestions([], defaultName);
 
     try {
-        const response = await fetch('/api/folders?limit=200');
+        const response = await markupApiFetch('/api/folders?limit=200');
         const data = await response.json();
         const folders = Array.isArray(data.folders) ? data.folders : [];
         setSaveFolderSuggestions(folders, defaultName);
@@ -3763,6 +3954,7 @@ function getPageMarkupForExport(pageNum) {
             placed: Array.isArray(placed) ? placed : [],
             rooms: Array.isArray(rooms) ? rooms : [],
             textLabels: Array.isArray(textLabels) ? textLabels : [],
+            markupNotes: Array.isArray(markupNotes) ? markupNotes : [],
             freehandLines: Array.isArray(freehandLines) ? freehandLines : [],
             measureScale: Number(measureScale || 0) || 0,
             legendPanel: legendPanel || null,
@@ -3770,22 +3962,23 @@ function getPageMarkupForExport(pageNum) {
     }
     const key = getPageStorageKey(pageNum);
     if (!key) {
-        return { placed: [], rooms: [], textLabels: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], measureScale: 0, legendPanel: null };
     }
     try {
         const raw = localStorage.getItem(key);
-        if (!raw) return { placed: [], rooms: [], textLabels: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        if (!raw) return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], measureScale: 0, legendPanel: null };
         const data = JSON.parse(raw);
         return {
             placed: Array.isArray(data.placed) ? data.placed : [],
             rooms: Array.isArray(data.rooms) ? data.rooms : [],
             textLabels: Array.isArray(data.textLabels) ? data.textLabels : [],
+            markupNotes: Array.isArray(data.markupNotes) ? data.markupNotes : [],
             freehandLines: Array.isArray(data.freehandLines) ? data.freehandLines : [],
             measureScale: Number(data.measureScale || 0) || 0,
             legendPanel: data.legendPanel || null,
         };
     } catch (_) {
-        return { placed: [], rooms: [], textLabels: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], measureScale: 0, legendPanel: null };
     }
 }
 
@@ -3794,6 +3987,7 @@ function drawMarkupOverlayForExport(ctxOut, pageData, defs) {
     const pagePlaced = Array.isArray(pageData.placed) ? pageData.placed : [];
     const pageRooms = Array.isArray(pageData.rooms) ? pageData.rooms : [];
     const pageLabels = Array.isArray(pageData.textLabels) ? pageData.textLabels : [];
+    const pageNotes = Array.isArray(pageData.markupNotes) ? pageData.markupNotes : [];
     const pageFreehand = Array.isArray(pageData.freehandLines) ? pageData.freehandLines : [];
 
     // Rooms
@@ -3847,6 +4041,24 @@ function drawMarkupOverlayForExport(ctxOut, pageData, defs) {
         ctxOut.textAlign = 'left';
         ctxOut.textBaseline = 'top';
         ctxOut.fillText(t.text, t.x || 0, t.y || 0);
+    }
+
+    // Notes
+    for (const n of pageNotes) {
+        const nx = Number(n.x || 0);
+        const ny = Number(n.y || 0);
+        ctxOut.beginPath();
+        ctxOut.arc(nx, ny, 9, 0, Math.PI * 2);
+        ctxOut.fillStyle = '#f59e0b';
+        ctxOut.fill();
+        ctxOut.strokeStyle = '#ffffff';
+        ctxOut.lineWidth = 2;
+        ctxOut.stroke();
+        ctxOut.fillStyle = '#111827';
+        ctxOut.font = 'bold 10px Arial';
+        ctxOut.textAlign = 'center';
+        ctxOut.textBaseline = 'middle';
+        ctxOut.fillText('N', nx, ny);
     }
 
     // Symbols
@@ -4238,6 +4450,7 @@ function normalizeProjectFile(project) {
             placed: markups.placed || markups.symbols || data.placed || data.symbols || [],
             rooms: markups.rooms || data.rooms || [],
             textLabels: markups.textLabels || markups.labels || data.textLabels || data.labels || [],
+            markupNotes: markups.markupNotes || markups.notes || data.markupNotes || data.notes || [],
             freehandLines: markups.freehandLines || markups.freehand || data.freehandLines || data.freehand || [],
             measureScale: Number(markups.measureScale ?? data.measureScale ?? 0) || 0,
             legendPanel: markups.legendPanel || data.legendPanel || null,
@@ -4274,6 +4487,7 @@ function normalizeProjectFile(project) {
                 Array.isArray(obj.symbols) ||
                 Array.isArray(obj.rooms) ||
                 Array.isArray(obj.textLabels) ||
+                Array.isArray(obj.markupNotes) ||
                 Array.isArray(obj.freehandLines);
             if (legacyHasTopLevel) {
                 out[1] = normalizePagePayload(obj);
@@ -4308,7 +4522,8 @@ function normalizeProjectFile(project) {
             Array.isArray(p.symbols) ||
             Array.isArray(p.placed) ||
             Array.isArray(p.rooms) ||
-            Array.isArray(p.textLabels)
+            Array.isArray(p.textLabels) ||
+            Array.isArray(p.markupNotes)
         );
 
     if (!hasLegacyMarkup) return null;
@@ -4328,6 +4543,7 @@ function normalizeProjectFile(project) {
                 placed: p.placed || p.symbols || [],
                 rooms: p.rooms || [],
                 textLabels: p.textLabels || [],
+                markupNotes: p.markupNotes || p.notes || [],
                 freehandLines: p.freehandLines || [],
                 measureScale: p.measureScale || 0,
                 legendPanel: p.legendPanel || null,
@@ -4407,6 +4623,7 @@ function loadPageMarkups(pageNum) {
             placed = data.placed || [];
             rooms = data.rooms || [];
             textLabels = data.textLabels || [];
+            markupNotes = data.markupNotes || [];
             freehandLines = data.freehandLines || [];
             measureScale = data.measureScale || 0;
             legendPanel = data.legendPanel || null;
@@ -4427,6 +4644,7 @@ function clearMarkupsForNewPage() {
     placed = [];
     rooms = [];
     textLabels = [];
+    markupNotes = [];
     freehandLines = [];
     legendPanel = null;
     multiSelected = [];
@@ -4606,7 +4824,7 @@ function exportData() {
     // Show options: Save to Server or Download
     if (confirm('Save to Bob\'s server?\n\nOK = Send to server (Bob will see it)\nCancel = Download file only')) {
         // Save to server
-        fetch('/api/save', {
+        markupApiFetch('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -4635,6 +4853,7 @@ function buildExportData(name) {
         symbols: placed,
         rooms: rooms,
         textLabels: textLabels,
+        markupNotes: markupNotes,
         definitions: symbols,
         counts: {},
         roomSummary: {},
@@ -4869,6 +5088,22 @@ function exportImage() {
         exportCtx.fillText(t.text, t.x, t.y);
     }
 
+    // Draw notes
+    for (const n of markupNotes) {
+        exportCtx.beginPath();
+        exportCtx.arc(n.x, n.y, 9, 0, Math.PI * 2);
+        exportCtx.fillStyle = '#f59e0b';
+        exportCtx.fill();
+        exportCtx.strokeStyle = '#ffffff';
+        exportCtx.lineWidth = 2;
+        exportCtx.stroke();
+        exportCtx.fillStyle = '#111827';
+        exportCtx.font = 'bold 10px Arial';
+        exportCtx.textAlign = 'center';
+        exportCtx.textBaseline = 'middle';
+        exportCtx.fillText('N', n.x, n.y);
+    }
+
     // Draw freehand lines (pencil marks)
     for (const line of freehandLines) {
         if (!line || !line.points || line.points.length < 2) continue;
@@ -5001,10 +5236,11 @@ function pointInPolygon(point, polygon) {
 }
 
 function clearAll() {
-    if ((placed.length || rooms.length || textLabels.length || legendPanel) && confirm('Clear all?')) {
+    if ((placed.length || rooms.length || textLabels.length || markupNotes.length || legendPanel) && confirm('Clear all?')) {
         placed = [];
         rooms = [];
         textLabels = [];
+        markupNotes = [];
         legendPanel = null;
         roomPoints = [];
         drawingRoom = false;
@@ -5034,8 +5270,21 @@ populateCategorySelectOptions('custom');
 setupCategoryInputPersistence();
 buildToolbar();
 
+// Allow one-time auth token bootstrap from URL param.
+try {
+    const params = new URLSearchParams(window.location.search || '');
+    const urlToken = (params.get('token') || '').trim();
+    if (urlToken) {
+        markupApiToken = urlToken;
+        localStorage.setItem('markupApiToken', markupApiToken);
+        params.delete('token');
+        const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash || ''}`;
+        history.replaceState({}, '', next);
+    }
+} catch (_) {}
+
 // Show HTTPS banner when on HTTP and MARKUP_HTTPS_URL is configured
-fetch('/api/config').then(r => r.json()).then(c => {
+markupApiFetch('/api/config').then(r => r.json()).then(c => {
     if (c.httpsUrl && !window.location.protocol.startsWith('https')) {
         const banner = document.getElementById('https-banner');
         const link = document.getElementById('https-link');
@@ -5043,6 +5292,14 @@ fetch('/api/config').then(r => r.json()).then(c => {
         link.textContent = c.httpsUrl;
         banner.style.display = 'block';
     }
+
+    // Resolve current user for note authorship when auth is enabled.
+    return markupApiFetch('/api/whoami')
+        .then((res) => res.ok ? res.json() : null)
+        .then((who) => {
+            if (who && who.user) currentMarkupUser = who.user;
+        })
+        .catch(() => {});
 }).catch(() => {});
 
 // Set up project file input handler

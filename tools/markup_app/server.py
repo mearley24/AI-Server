@@ -44,6 +44,72 @@ class MarkupHandler(BaseHTTPRequestHandler):
     """Custom handler for markup app."""
 
     @staticmethod
+    def _truthy(value=None, default: bool = False) -> bool:
+        if value is None:
+            return default
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _is_local_client(self) -> bool:
+        host = (self.client_address[0] if self.client_address else "") or ""
+        if host in {"127.0.0.1", "::1"} or host.startswith("192.168.") or host.startswith("10."):
+            return True
+        if host.startswith("172."):
+            try:
+                second = int(host.split(".")[1])
+                return 16 <= second <= 31
+            except Exception:
+                return False
+        return False
+
+    def _auth_config(self) -> dict:
+        return {
+            "required": self._truthy(os.environ.get("MARKUP_REQUIRE_AUTH"), default=False),
+            "allow_local": self._truthy(os.environ.get("MARKUP_ALLOW_LOCAL"), default=True),
+            "token": (os.environ.get("MARKUP_API_TOKEN") or "").strip(),
+        }
+
+    def _extract_bearer_token(self) -> str:
+        auth = (self.headers.get("Authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            return auth.split(" ", 1)[1].strip()
+        return ""
+
+    def _is_authorized(self) -> bool:
+        cfg = self._auth_config()
+        if not cfg["required"]:
+            return True
+        if cfg["allow_local"] and self._is_local_client():
+            return True
+        expected = cfg["token"]
+        if not expected:
+            return False
+        supplied = (self.headers.get("X-Markup-Token") or "").strip() or self._extract_bearer_token()
+        return supplied == expected
+
+    def _current_user(self) -> str:
+        trusted = (
+            self.headers.get("CF-Access-Authenticated-User-Email")
+            or self.headers.get("X-Auth-Request-Email")
+            or self.headers.get("X-Forwarded-Email")
+            or ""
+        ).strip()
+        if trusted:
+            return trusted
+        if self._is_local_client():
+            return "local-user"
+        return "trade-user"
+
+    def _send_json(self, status: int, payload: dict):
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode())
+
+    def _deny_unauthorized(self):
+        self._send_json(401, {"success": False, "error": "Unauthorized"})
+
+    @staticmethod
     def _slugify_name(value: str) -> str:
         """Normalize project/file names for safe filesystem paths."""
         cleaned = (value or "untitled").strip().replace(" ", "_").replace("/", "-")
@@ -109,30 +175,41 @@ class MarkupHandler(BaseHTTPRequestHandler):
 
         if path == '/api/config':
             https_url = os.environ.get("MARKUP_HTTPS_URL", "").strip()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({"httpsUrl": https_url or None}).encode())
+            auth = self._auth_config()
+            self._send_json(200, {
+                "httpsUrl": https_url or None,
+                "authRequired": auth["required"],
+                "allowLocal": auth["allow_local"],
+            })
+            return
+
+        if path == '/api/whoami':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            self._send_json(200, {
+                "success": True,
+                "user": self._current_user(),
+                "local": self._is_local_client(),
+            })
             return
 
         if path == '/api/folders':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
             q = (query.get("query", [""])[0] or "").strip()
             try:
                 limit = int(query.get("limit", ["200"])[0])
             except (TypeError, ValueError):
                 limit = 200
             folders = self._list_project_folders(query=q, limit=limit)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({
+            self._send_json(200, {
                 "success": True,
                 "query": q,
                 "count": len(folders),
                 "folders": folders,
-            }).encode())
+            })
             return
 
         if path == '/' or path == '':
@@ -166,7 +243,11 @@ class MarkupHandler(BaseHTTPRequestHandler):
     
     def do_POST(self):
         """Handle POST requests for saving markups."""
-        if self.path == '/api/save':
+        path = urlsplit(self.path).path
+        if path == '/api/save':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
             
@@ -188,23 +269,17 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     json.dump(data, f, indent=2)
                 
                 rel_path = f"{project}/{filename}"
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                self.wfile.write(json.dumps({
+                self._send_json(200, {
                     'success': True,
                     'filename': rel_path,
                     'savePath': rel_path,
                     'icloud': str(icloud_path),
-                    'local': str(local_path)
-                }).encode())
+                    'local': str(local_path),
+                    'user': self._current_user(),
+                })
                 
             except Exception as e:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': str(e)}).encode())
+                self._send_json(500, {'error': str(e)})
         else:
             self.send_response(404)
             self.end_headers()
@@ -214,7 +289,7 @@ class MarkupHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Markup-Token')
         self.end_headers()
     
     def log_message(self, format, *args):
