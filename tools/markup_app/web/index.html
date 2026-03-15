@@ -65,6 +65,14 @@
             min-width: 28px;
             height: 28px;
         }
+        .save-status-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            color: #9ca3af;
+            white-space: nowrap;
+        }
         .hdr-divider {
             width: 1px;
             height: 20px;
@@ -335,6 +343,10 @@
                     <button class="hdr-btn" onclick="changePDFPage(1)">▶</button>
                 </span>
                 <button class="hdr-btn" onclick="saveProject()" id="save-btn" style="background:#22c55e;">Save</button>
+                <span class="save-status-wrap" title="Save status">
+                    <span id="save-status">○</span>
+                    <span id="autosave-time">Not saved</span>
+                </span>
                 <button class="hdr-btn" onclick="openOptionsModal()">☰</button>
                 <span class="hdr-divider"></span>
                 <label id="pencil-toggle" title="Pencil Only Mode">
@@ -3214,6 +3226,14 @@ function updateSaveStatus(saved) {
     }
 }
 
+function setLastSavedLabel(prefix) {
+    const label = document.getElementById('autosave-time');
+    if (!label) return;
+    const now = new Date();
+    const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    label.textContent = `${prefix} ${time}`;
+}
+
 // Manual save button (quick save to localStorage)
 function manualSave() {
     savePageMarkups();
@@ -3338,7 +3358,8 @@ async function saveProjectToServer(options = {}) {
     const {
         requestedProjectName = '',
         forceCanonicalPath = false,
-        silent = false
+        silent = false,
+        mode = 'manual'
     } = options;
     if (!currentPdfName) return { success: false, error: 'No project loaded' };
 
@@ -3368,6 +3389,8 @@ async function saveProjectToServer(options = {}) {
     serverAutosaveEnabled = Boolean(serverSavePath);
     localStorage.setItem('markupServerSavePath', serverSavePath);
     localStorage.setItem('markupServerAutosaveEnabled', serverAutosaveEnabled ? '1' : '0');
+    updateSaveStatus(true);
+    setLastSavedLabel(mode === 'autosave' ? 'Autosaved' : 'Saved');
 
     if (!silent) showToast('Saved to server: ' + (serverSavePath || result.filename || 'project'));
     return result;
@@ -3378,7 +3401,7 @@ function scheduleServerAutosave() {
     if (serverAutosaveTimer) clearTimeout(serverAutosaveTimer);
     serverAutosaveTimer = setTimeout(async () => {
         try {
-            await saveProjectToServer({ silent: true });
+            await saveProjectToServer({ silent: true, mode: 'autosave' });
             const status = document.getElementById('save-status');
             if (status) status.title = 'Autosaved to server';
         } catch (_) {
