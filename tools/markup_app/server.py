@@ -365,6 +365,43 @@ class MarkupHandler(BaseHTTPRequestHandler):
             })
             return
 
+        if path == '/api/projects/access':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            project = self._slugify_name((query.get("project", [""])[0] or "").strip())
+            if not project:
+                self._send_json(400, {"success": False, "error": "Project required"})
+                return
+            user = self._current_user()
+            access = self._load_access_control()
+            if not self._can_access_project(access, project, user, write=False):
+                self._send_json(403, {"success": False, "error": "No access to project"})
+                return
+            acl = self._get_project_acl(access, project)
+            invites = []
+            for token, invite in (access.get("invites") or {}).items():
+                if (invite or {}).get("project") != project:
+                    continue
+                invites.append({
+                    "token": token,
+                    "role": invite.get("role"),
+                    "createdBy": invite.get("createdBy"),
+                    "createdAt": invite.get("createdAt"),
+                    "expiresAt": invite.get("expiresAt"),
+                    "active": self._invite_is_active(invite),
+                    "revoked": bool(invite.get("revoked")),
+                })
+            invites.sort(key=lambda i: i.get("createdAt", ""), reverse=True)
+            self._send_json(200, {
+                "success": True,
+                "project": project,
+                "owner": acl.get("owner"),
+                "members": acl.get("members") or {},
+                "invites": invites[:100],
+            })
+            return
+
         if path.startswith('/api/invites/'):
             if not self._is_authorized():
                 self._deny_unauthorized()
@@ -573,6 +610,121 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     "project": project,
                     "user": user,
                     "role": role,
+                    "inviteToken": token,
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/projects/member':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                project = self._slugify_name(str(payload.get("project") or "").strip())
+                member = str(payload.get("member") or "").strip().lower()
+                role = str(payload.get("role") or "").strip().lower()
+                if not project or not member:
+                    self._send_json(400, {"success": False, "error": "Project and member required"})
+                    return
+                if role not in {"viewer", "editor"}:
+                    self._send_json(400, {"success": False, "error": "Role must be viewer or editor"})
+                    return
+                access = self._load_access_control()
+                actor = self._current_user()
+                acl = self._get_project_acl(access, project)
+                actor_role = self._role_for_user(access, project, actor)
+                if actor_role != "owner" and not (self._auth_config()["allow_local"] and self._is_local_client()):
+                    self._send_json(403, {"success": False, "error": "Only owner can update members"})
+                    return
+                if acl.get("owner") == member:
+                    self._send_json(400, {"success": False, "error": "Cannot change owner role"})
+                    return
+                acl["members"][member] = {
+                    "role": role,
+                    "addedAt": datetime.utcnow().isoformat() + "Z",
+                    "addedBy": actor,
+                }
+                self._save_access_control(access)
+                self._send_json(200, {"success": True, "project": project, "member": member, "role": role})
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "member_role_updated",
+                    "project": project,
+                    "user": actor,
+                    "member": member,
+                    "role": role,
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/projects/member/remove':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                project = self._slugify_name(str(payload.get("project") or "").strip())
+                member = str(payload.get("member") or "").strip().lower()
+                if not project or not member:
+                    self._send_json(400, {"success": False, "error": "Project and member required"})
+                    return
+                access = self._load_access_control()
+                actor = self._current_user()
+                acl = self._get_project_acl(access, project)
+                actor_role = self._role_for_user(access, project, actor)
+                if actor_role != "owner" and not (self._auth_config()["allow_local"] and self._is_local_client()):
+                    self._send_json(403, {"success": False, "error": "Only owner can remove members"})
+                    return
+                if acl.get("owner") == member:
+                    self._send_json(400, {"success": False, "error": "Cannot remove owner"})
+                    return
+                acl.get("members", {}).pop(member, None)
+                self._save_access_control(access)
+                self._send_json(200, {"success": True, "project": project, "member": member, "removed": True})
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "member_removed",
+                    "project": project,
+                    "user": actor,
+                    "member": member,
+                })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/projects/invite/revoke':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                token = str(payload.get("token") or "").strip()
+                if not token:
+                    self._send_json(400, {"success": False, "error": "Invite token required"})
+                    return
+                access = self._load_access_control()
+                invite = (access.get("invites") or {}).get(token)
+                if not invite:
+                    self._send_json(404, {"success": False, "error": "Invite not found"})
+                    return
+                project = self._slugify_name(str(invite.get("project") or "").strip())
+                actor = self._current_user()
+                actor_role = self._role_for_user(access, project, actor)
+                if actor_role != "owner" and not (self._auth_config()["allow_local"] and self._is_local_client()):
+                    self._send_json(403, {"success": False, "error": "Only owner can revoke invites"})
+                    return
+                invite["revoked"] = True
+                access.setdefault("invites", {})[token] = invite
+                self._save_access_control(access)
+                self._send_json(200, {"success": True, "token": token, "revoked": True, "project": project})
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "invite_revoked",
+                    "project": project,
+                    "user": actor,
                     "inviteToken": token,
                 })
             except Exception as e:
