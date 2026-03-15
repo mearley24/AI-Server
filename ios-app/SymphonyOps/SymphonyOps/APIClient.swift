@@ -445,6 +445,8 @@ class APIClient: ObservableObject {
         struct MarkupURLResponse: Decodable {
             let url: String?
             let httpsUrl: String?
+            let configuredHttpsUrl: String?
+            let warning: String?
         }
         do {
             let url = URL(string: "\(baseURL)/markup/url")!
@@ -452,7 +454,8 @@ class APIClient: ObservableObject {
             applyAuthHeaders(&request)
             let (data, _) = try await URLSession.shared.data(for: request)
             let resp = try JSONDecoder().decode(MarkupURLResponse.self, from: data)
-            let preferred = resp.httpsUrl ?? resp.url
+            // Prefer server-selected active URL; only use httpsUrl when URL is absent.
+            let preferred = resp.url ?? resp.httpsUrl ?? resp.configuredHttpsUrl
             await MainActor.run {
                 self.markupURL = preferred.flatMap { URL(string: $0) }
             }
