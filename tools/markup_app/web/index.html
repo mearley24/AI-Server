@@ -728,6 +728,8 @@
             <div id="access-invites" style="max-height:150px;overflow:auto;border:1px solid #2a2a4a;border-radius:8px;padding:8px;margin-bottom:12px;"></div>
             <div style="font-size:11px;color:#888;margin-bottom:6px;">AUDIT LOG</div>
             <div id="access-audit" style="max-height:180px;overflow:auto;border:1px solid #2a2a4a;border-radius:8px;padding:8px;margin-bottom:12px;"></div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;">TIME SPENT (SIGN-IN TRACKING)</div>
+            <div id="access-time" style="max-height:130px;overflow:auto;border:1px solid #2a2a4a;border-radius:8px;padding:8px;margin-bottom:12px;"></div>
             <div class="btns">
                 <button onclick="closeAccessManager()">Close</button>
             </div>
@@ -3479,6 +3481,8 @@ let currentPdfMime = 'application/pdf';
 let currentPdfOriginalName = '';
 let currentMarkupUser = 'local-user';
 let markupApiToken = localStorage.getItem('markupApiToken') || '';
+let sessionPingTimer = null;
+const SESSION_PING_MS = 60000;
 
 function getMarkupAuthHeaders(extra = {}) {
     const headers = { ...extra };
@@ -4805,6 +4809,39 @@ function formatAuditAction(action) {
     return map[action] || action || 'Event';
 }
 
+function formatDuration(seconds) {
+    const total = Math.max(0, Math.round(Number(seconds || 0)));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+
+function getActiveProjectContext() {
+    return (accessManagerProject || projectName || '').trim();
+}
+
+async function sendSessionPing() {
+    try {
+        const project = getActiveProjectContext();
+        await markupApiFetch('/api/session/ping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project })
+        });
+    } catch (_) {
+        // Session tracking should never block editing.
+    }
+}
+
+function startSessionPingLoop() {
+    if (sessionPingTimer) clearInterval(sessionPingTimer);
+    sendSessionPing();
+    sessionPingTimer = setInterval(sendSessionPing, SESSION_PING_MS);
+}
+
 async function setMemberRole(project, member, role) {
     try {
         const res = await markupApiFetch('/api/projects/member', {
@@ -5090,6 +5127,38 @@ async function openAccessManager(projectOverride = '') {
             }
         } catch (_) {
             auditWrap.innerHTML = '<div style="font-size:12px;color:#888;">Audit unavailable.</div>';
+        }
+
+        const timeWrap = document.getElementById('access-time');
+        timeWrap.innerHTML = '<div style="font-size:12px;color:#888;">Loading time tracking...</div>';
+        try {
+            const timeRes = await markupApiFetch(`/api/projects/time?project=${encodeURIComponent(data.project)}`);
+            const timeData = await timeRes.json();
+            const byUser = (timeRes.ok && timeData.success && timeData.timeByUserSeconds)
+                ? timeData.timeByUserSeconds
+                : {};
+            const rows = Object.entries(byUser)
+                .filter(([user, seconds]) => {
+                    if (!searchTerm) return true;
+                    return String(user).toLowerCase().includes(searchTerm);
+                })
+                .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+            timeWrap.innerHTML = '';
+            if (rows.length === 0) {
+                timeWrap.innerHTML = '<div style="font-size:12px;color:#888;">No tracked time yet.</div>';
+            } else {
+                for (const [user, seconds] of rows) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid #1f2a44;';
+                    row.innerHTML = `
+                        <div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">${user}</div>
+                        <div style="font-size:12px;color:#e5e7eb;">${formatDuration(seconds)}</div>
+                    `;
+                    timeWrap.appendChild(row);
+                }
+            }
+        } catch (_) {
+            timeWrap.innerHTML = '<div style="font-size:12px;color:#888;">Time tracking unavailable.</div>';
         }
 
         document.getElementById('access-modal').classList.add('open');
@@ -5795,6 +5864,7 @@ markupApiFetch('/api/config').then(r => r.json()).then(c => {
         .then((res) => res.ok ? res.json() : null)
         .then((who) => {
             if (who && who.user) currentMarkupUser = who.user;
+            startSessionPingLoop();
             if (!pendingInviteToken) return null;
             return markupApiFetch('/api/invites/accept', {
                 method: 'POST',
@@ -5815,6 +5885,12 @@ markupApiFetch('/api/config').then(r => r.json()).then(c => {
         })
         .catch(() => {});
 }).catch(() => {});
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        sendSessionPing();
+    }
+});
 
 // Set up project file input handler
 document.getElementById('project-input').addEventListener('change', function(e) {

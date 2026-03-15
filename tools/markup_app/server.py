@@ -41,6 +41,8 @@ ICLOUD_EXPORTS.mkdir(parents=True, exist_ok=True)
 LOCAL_EXPORTS.mkdir(parents=True, exist_ok=True)
 LOCAL_ACCESS_CONTROL_FILE = LOCAL_EXPORTS / ".access_control.json"
 ICLOUD_ACCESS_CONTROL_FILE = ICLOUD_EXPORTS / ".access_control.json"
+LOCAL_SESSION_FILE = LOCAL_EXPORTS / ".session_tracking.json"
+ICLOUD_SESSION_FILE = ICLOUD_EXPORTS / ".session_tracking.json"
 
 
 class MarkupHandler(BaseHTTPRequestHandler):
@@ -307,6 +309,135 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 continue
         return []
 
+    def _session_idle_seconds(self) -> int:
+        try:
+            value = int(os.environ.get("MARKUP_SESSION_IDLE_SECONDS", "900"))
+            return max(60, min(value, 24 * 3600))
+        except Exception:
+            return 900
+
+    def _load_session_db(self) -> dict:
+        for path in (LOCAL_SESSION_FILE, ICLOUD_SESSION_FILE):
+            try:
+                if path.exists():
+                    data = json.loads(path.read_text())
+                    if isinstance(data, dict):
+                        data.setdefault("users", {})
+                        return data
+            except Exception:
+                continue
+        return {"users": {}}
+
+    def _save_session_db(self, db: dict):
+        payload = json.dumps(db, indent=2)
+        LOCAL_SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+        LOCAL_SESSION_FILE.write_text(payload)
+        try:
+            ICLOUD_SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+            ICLOUD_SESSION_FILE.write_text(payload)
+        except Exception:
+            pass
+
+    def _track_session_ping(self, user: str, project: str = "") -> dict:
+        db = self._load_session_db()
+        users = db.setdefault("users", {})
+        now = datetime.utcnow()
+        now_iso = now.isoformat() + "Z"
+        idle_seconds = self._session_idle_seconds()
+        row = users.setdefault(user, {
+            "totalSeconds": 0.0,
+            "projectSeconds": {},
+            "current": {},
+            "sessions": [],
+            "lastSeenAt": "",
+        })
+        row.setdefault("totalSeconds", 0.0)
+        row.setdefault("projectSeconds", {})
+        row.setdefault("current", {})
+        row.setdefault("sessions", [])
+        row.setdefault("lastSeenAt", "")
+
+        current = row.get("current") or {}
+        last_seen_iso = str(current.get("lastSeenAt") or "")
+        prev_project = str(current.get("project") or "")
+
+        # Parse last seen
+        last_seen_dt = None
+        if last_seen_iso:
+            try:
+                last_seen_dt = datetime.fromisoformat(last_seen_iso.replace("Z", ""))
+            except Exception:
+                last_seen_dt = None
+
+        started_new = False
+        if not current.get("startedAt") or not last_seen_dt:
+            current = {"startedAt": now_iso, "lastSeenAt": now_iso, "project": project or prev_project}
+            started_new = True
+        else:
+            gap = (now - last_seen_dt).total_seconds()
+            if gap > idle_seconds:
+                # Close stale session
+                started_at = str(current.get("startedAt") or last_seen_iso)
+                duration = max(0.0, (last_seen_dt - datetime.fromisoformat(started_at.replace("Z", ""))).total_seconds())
+                row["sessions"].append({
+                    "startedAt": started_at,
+                    "endedAt": last_seen_iso,
+                    "durationSeconds": round(duration, 2),
+                    "project": prev_project,
+                })
+                current = {"startedAt": now_iso, "lastSeenAt": now_iso, "project": project or prev_project}
+                started_new = True
+            else:
+                delta = max(0.0, min(gap, idle_seconds))
+                row["totalSeconds"] = float(row.get("totalSeconds", 0.0)) + delta
+                bill_project = prev_project or project
+                if bill_project:
+                    proj = row["projectSeconds"]
+                    proj[bill_project] = float(proj.get(bill_project, 0.0)) + delta
+                if project:
+                    current["project"] = project
+                current["lastSeenAt"] = now_iso
+
+        row["current"] = current
+        row["lastSeenAt"] = now_iso
+        users[user] = row
+        self._save_session_db(db)
+
+        current_started = str(current.get("startedAt") or now_iso)
+        try:
+            current_seconds = max(0.0, (now - datetime.fromisoformat(current_started.replace("Z", ""))).total_seconds())
+        except Exception:
+            current_seconds = 0.0
+        return {
+            "startedNewSession": started_new,
+            "user": user,
+            "project": str(current.get("project") or ""),
+            "totalSeconds": round(float(row.get("totalSeconds", 0.0)), 2),
+            "currentSessionSeconds": round(current_seconds, 2),
+        }
+
+    def _project_time_summary(self, project: str) -> dict:
+        db = self._load_session_db()
+        out = {}
+        for user, row in (db.get("users") or {}).items():
+            seconds = float((row.get("projectSeconds") or {}).get(project, 0.0))
+            current = row.get("current") or {}
+            if str(current.get("project") or "") == project:
+                last_seen = str(current.get("lastSeenAt") or "")
+                started_at = str(current.get("startedAt") or "")
+                if last_seen and started_at:
+                    try:
+                        last_dt = datetime.fromisoformat(last_seen.replace("Z", ""))
+                        start_dt = datetime.fromisoformat(started_at.replace("Z", ""))
+                        gap = (datetime.utcnow() - last_dt).total_seconds()
+                        if gap <= self._session_idle_seconds():
+                            seconds += max(0.0, (datetime.utcnow() - max(last_dt, start_dt)).total_seconds())
+                    except Exception:
+                        pass
+            if seconds > 0:
+                out[user] = round(seconds, 2)
+        return out
+
     @staticmethod
     def _slugify_name(value: str) -> str:
         """Normalize project/file names for safe filesystem paths."""
@@ -444,7 +575,28 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 "project": project,
                 "owner": acl.get("owner"),
                 "members": acl.get("members") or {},
+                "timeByUserSeconds": self._project_time_summary(project),
                 "invites": invites[:100],
+            })
+            return
+
+        if path == '/api/projects/time':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            project = self._slugify_name((query.get("project", [""])[0] or "").strip())
+            if not project:
+                self._send_json(400, {"success": False, "error": "Project required"})
+                return
+            user = self._current_user()
+            access = self._load_access_control()
+            if not self._can_access_project(access, project, user, write=False):
+                self._send_json(403, {"success": False, "error": "No access to project"})
+                return
+            self._send_json(200, {
+                "success": True,
+                "project": project,
+                "timeByUserSeconds": self._project_time_summary(project),
             })
             return
 
@@ -888,6 +1040,25 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     "user": actor,
                     "inviteToken": token,
                 })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/session/ping':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                project_raw = str(payload.get("project") or "").strip()
+                project = self._slugify_name(project_raw) if project_raw else ""
+                user = self._current_user()
+                access = self._load_access_control()
+                if project and not self._can_access_project(access, project, user, write=False):
+                    # Ignore unauthorized project context but still track global session.
+                    project = ""
+                result = self._track_session_ping(user=user, project=project)
+                self._send_json(200, {"success": True, **result})
             except Exception as e:
                 self._send_json(500, {"success": False, "error": str(e)})
         else:
