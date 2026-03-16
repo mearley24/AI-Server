@@ -126,7 +126,11 @@ struct ContentView: View {
                     headerChip("D-Tools Agent", isSelected: salesMode == .dtoolsAgent) { salesMode = .dtoolsAgent }
                 case .install:
                     headerChip("Service Queue", isSelected: installMode == .queue) { installMode = .queue }
-                    headerChip("Conduit Calc", isSelected: installMode == .conduit) { installMode = .conduit }
+                    headerChip("Conduit Calc", isSelected: installMode.rawValue == 1) {
+                        if let conduitMode = InstallWorkspaceMode(rawValue: 1) {
+                            installMode = conduitMode
+                        }
+                    }
                 case .ops:
                     headerChip("Health", isSelected: opsMode == .health) { opsMode = .health }
                     headerChip("Dropout", isSelected: opsMode == .dropout) { opsMode = .dropout }

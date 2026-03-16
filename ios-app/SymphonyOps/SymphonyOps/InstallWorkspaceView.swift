@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InstallWorkspaceView: View {
     var mode: InstallWorkspaceMode = .queue
+    private var isConduitMode: Bool { mode.rawValue == 1 }
 
     var body: some View {
         List {
@@ -14,7 +15,7 @@ struct InstallWorkspaceView: View {
                     }
                 }
             }
-            if mode == .conduit {
+            if isConduitMode {
                 Section("Field Tools") {
                     NavigationLink {
                         ConduitCalculatorPlaceholderView()
