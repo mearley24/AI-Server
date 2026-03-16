@@ -135,11 +135,7 @@ struct ContentView: View {
                     headerChip("Health", isSelected: opsMode == .health) { opsMode = .health }
                     headerChip("Dropout", isSelected: opsMode == .dropout) { opsMode = .dropout }
                     headerChip("Notes", isSelected: opsMode == .notes) { opsMode = .notes }
-                    headerChip("Inventory", isSelected: opsMode.rawValue == 4) {
-                        if let inventoryMode = OpsWorkspaceMode(rawValue: 4) {
-                            opsMode = inventoryMode
-                        }
-                    }
+                    headerChip("Inventory", isSelected: isOpsInventoryModeSelected) { setOpsInventoryModeIfAvailable() }
                     headerChip("Weather", isSelected: opsMode == .weather) { opsMode = .weather }
                 case .settings:
                     headerChip("Connection", isSelected: true) {}
@@ -151,6 +147,16 @@ struct ContentView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
+    }
+
+    private var isOpsInventoryModeSelected: Bool {
+        opsMode.rawValue == 4
+    }
+
+    private func setOpsInventoryModeIfAvailable() {
+        if let inventoryMode = OpsWorkspaceMode(rawValue: 4) {
+            opsMode = inventoryMode
+        }
     }
 
     @ViewBuilder
