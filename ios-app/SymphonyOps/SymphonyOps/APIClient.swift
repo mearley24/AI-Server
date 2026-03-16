@@ -3494,7 +3494,7 @@ struct IMessageIntakeActionRequest: Codable {
     let confirmation_message: String?
 }
 
-struct IMessageIntakeActionResponse: Codable {
+struct IMessageIntakeActionResponse: Decodable {
     let success: Bool?
     let draft_id: String?
     let status: String?
