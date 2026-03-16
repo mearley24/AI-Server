@@ -100,7 +100,7 @@ struct ContentView: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(.ultraThinMaterial)
     }
 
     @ViewBuilder
@@ -165,11 +165,19 @@ struct ContentView: View {
             Text(title)
                 .font(.caption)
                 .fontWeight(.semibold)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? Color.orange.opacity(0.2) : Color(.systemGray5))
-                .foregroundColor(.primary)
-                .clipShape(Capsule())
+                .padding(.horizontal, 13)
+                .padding(.vertical, 7)
+                .foregroundColor(isSelected ? .orange : .primary)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.orange.opacity(0.16) : Color(.secondarySystemBackground))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? Color.orange.opacity(0.45) : Color.clear, lineWidth: 1)
+                )
+                .shadow(color: isSelected ? Color.orange.opacity(0.12) : .clear, radius: 8, x: 0, y: 2)
+                .animation(.spring(response: 0.22, dampingFraction: 0.85), value: isSelected)
         }
         .buttonStyle(.plain)
     }
