@@ -620,14 +620,19 @@ struct OpsAutomationView: View {
 
     @MainActor
     private func refreshForMode() async {
-        switch mode {
-        case .health:
+        if mode.rawValue == OpsWorkspaceMode.health.rawValue {
             opsHealth = await api.fetchOpsHealth()
             incidentQueue = await api.fetchIncidentQueue(limit: 20)
             turnkeyStatus = await api.fetchOpsTurnkeyStatus()
-        case .dropout:
+            return
+        }
+
+        if mode.rawValue == OpsWorkspaceMode.dropout.rawValue {
             networkDropoutStatus = await api.fetchNetworkDropoutStatus()
-        case .notes:
+            return
+        }
+
+        if mode.rawValue == OpsWorkspaceMode.notes.rawValue {
             notesPipelineStatus = await api.fetchNotesPipelineStatus()
             contactsStatus = await api.fetchContactsStatus()
             recentTexts = (await api.fetchRecentIMessageWork(limit: 10))?.items ?? []
@@ -637,12 +642,15 @@ struct OpsAutomationView: View {
             iMessageWatchlist = (await api.fetchIMessageWatchlist())?.watchlist ?? []
             contactsList = (await api.fetchContactsList(query: contactsSearch, limit: 200))?.contacts ?? []
             clientContacts = (await api.fetchClientContacts())?.clients ?? []
-        case .weather:
-            break
-        default:
-            if isInventoryMode {
-                inventorySummary = await api.fetchOpsInventorySummary(lowStockLimit: 25, topLimit: 60)
-            }
+            return
+        }
+
+        if mode.rawValue == OpsWorkspaceMode.weather.rawValue {
+            return
+        }
+
+        if isInventoryMode {
+            inventorySummary = await api.fetchOpsInventorySummary(lowStockLimit: 25, topLimit: 60)
         }
     }
 
