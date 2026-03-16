@@ -40,6 +40,8 @@ struct OpsAutomationView: View {
     @AppStorage("weather.location.v1") private var weatherLocation = ""
     @AppStorage("weather.provider.v1") private var weatherProvider = "openweather"
     @AppStorage("weather.api_key_name.v1") private var weatherAPIKeyName = "OPENWEATHER_API_KEY"
+    // Keep inventory mode compatible across app variants that may not include enum case.
+    private var isInventoryMode: Bool { mode.rawValue == 4 }
 
     var body: some View {
         List {
@@ -438,7 +440,7 @@ struct OpsAutomationView: View {
             }
             }
 
-            if mode == .inventory {
+            if isInventoryMode {
                 Section("AI Inventory Rep") {
                 actionButtons(
                     primaryTitle: "Rebuild Inventory",
@@ -637,8 +639,10 @@ struct OpsAutomationView: View {
             clientContacts = (await api.fetchClientContacts())?.clients ?? []
         case .weather:
             break
-        case .inventory:
-            inventorySummary = await api.fetchOpsInventorySummary(lowStockLimit: 25, topLimit: 60)
+        default:
+            if isInventoryMode {
+                inventorySummary = await api.fetchOpsInventorySummary(lowStockLimit: 25, topLimit: 60)
+            }
         }
     }
 
