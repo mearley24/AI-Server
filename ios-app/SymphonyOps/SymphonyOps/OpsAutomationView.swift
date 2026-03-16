@@ -30,6 +30,7 @@ struct OpsAutomationView: View {
     @State private var contactsSearch = ""
     @State private var deviceContactsSearch = ""
     @State private var deviceContacts: [DeviceContactItem] = []
+    @State private var selectedDeviceContactIDs: Set<String> = []
     @State private var contactsPermissionStatus = "Not requested"
     @State private var newClientName = ""
     @State private var newClientPhone = ""
@@ -388,8 +389,45 @@ struct OpsAutomationView: View {
                 }
                 TextField("Search iPhone contacts", text: $deviceContactsSearch)
                     .textFieldStyle(.roundedBorder)
-                ForEach(filteredDeviceContacts().prefix(30), id: \.id) { contact in
+                let visibleDeviceContacts = Array(filteredDeviceContacts().prefix(30))
+                HStack {
+                    Button("Select All Visible") {
+                        for contact in visibleDeviceContacts {
+                            selectedDeviceContactIDs.insert(contact.id)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading || visibleDeviceContacts.isEmpty)
+                    Button("Clear Selection") {
+                        selectedDeviceContactIDs.removeAll()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading || selectedDeviceContactIDs.isEmpty)
+                }
+                HStack {
+                    Button("Monitor Selected") {
+                        Task { await setSelectedDeviceContactsMonitoring(monitored: true) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading || selectedDeviceContactIDs.isEmpty)
+                    Button("Unmonitor Selected") {
+                        Task { await setSelectedDeviceContactsMonitoring(monitored: false) }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading || selectedDeviceContactIDs.isEmpty)
+                }
+                Text("Selected: \(selectedDeviceContactIDs.count)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                ForEach(visibleDeviceContacts, id: \.id) { contact in
                     HStack {
+                        Button {
+                            toggleDeviceContactSelection(contact.id)
+                        } label: {
+                            Image(systemName: selectedDeviceContactIDs.contains(contact.id) ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(selectedDeviceContactIDs.contains(contact.id) ? .accentColor : .secondary)
+                        }
+                        .buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(contact.name)
                                 .font(.caption)
@@ -889,6 +927,14 @@ struct OpsAutomationView: View {
         return contact.handles.contains { current.contains(normalizedHandle($0)) }
     }
 
+    private func toggleDeviceContactSelection(_ id: String) {
+        if selectedDeviceContactIDs.contains(id) {
+            selectedDeviceContactIDs.remove(id)
+        } else {
+            selectedDeviceContactIDs.insert(id)
+        }
+    }
+
     @MainActor
     private func refreshContactsData() async {
         contactsList = (await api.fetchContactsList(query: contactsSearch, limit: 200))?.contacts ?? []
@@ -980,6 +1026,40 @@ struct OpsAutomationView: View {
     }
 
     @MainActor
+    private func setSelectedDeviceContactsMonitoring(monitored: Bool) async {
+        let selected = deviceContacts.filter { selectedDeviceContactIDs.contains($0.id) }
+        guard !selected.isEmpty else {
+            resultMessage = "No iPhone contacts selected."
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        let existing = iMessageWatchlist
+        let selectedHandleSet = Set(selected.flatMap { $0.handles }.map(normalizedHandle))
+        var merged = existing
+
+        if monitored {
+            let existingNorm = Set(existing.map(normalizedHandle))
+            let allSelectedHandles = selected.flatMap { $0.handles }
+            for handle in allSelectedHandles where !existingNorm.contains(normalizedHandle(handle)) {
+                merged.append(handle)
+            }
+        } else {
+            merged = existing.filter { !selectedHandleSet.contains(normalizedHandle($0)) }
+        }
+
+        let response = await api.setIMessageWatchlist(numbers: merged, monitorAll: false)
+        if response?.success == true || response?.command_success == true {
+            iMessageWatchlist = merged
+            let action = monitored ? "added to" : "removed from"
+            resultMessage = "\(selected.count) contacts \(action) scan list."
+        } else {
+            resultMessage = api.error ?? "Could not update scan list."
+        }
+    }
+
+    @MainActor
     private func loadDeviceContacts(forceRefresh: Bool = false) async {
         #if canImport(Contacts)
         if !forceRefresh && !deviceContacts.isEmpty {
@@ -991,10 +1071,9 @@ struct OpsAutomationView: View {
 
         let store = CNContactStore()
         let status = CNContactStore.authorizationStatus(for: .contacts)
-        switch status {
-        case .authorized:
+        if status == .authorized {
             contactsPermissionStatus = "Authorized"
-        case .notDetermined:
+        } else if status == .notDetermined {
             let granted = await withCheckedContinuation { continuation in
                 store.requestAccess(for: .contacts) { ok, _ in
                     continuation.resume(returning: ok)
@@ -1005,15 +1084,15 @@ struct OpsAutomationView: View {
                 resultMessage = "Contacts access was denied."
                 return
             }
-        case .denied:
+        } else if status == .denied {
             contactsPermissionStatus = "Denied"
             resultMessage = "Contacts access denied. Enable it in Settings for in-app filtering."
             return
-        case .restricted:
+        } else if status == .restricted {
             contactsPermissionStatus = "Restricted"
             resultMessage = "Contacts access is restricted on this device."
             return
-        @unknown default:
+        } else {
             contactsPermissionStatus = "Unknown"
             resultMessage = "Could not determine Contacts permission status."
             return
@@ -1041,6 +1120,8 @@ struct OpsAutomationView: View {
                 rows.append(DeviceContactItem(id: contact.identifier, name: fallbackName, handles: clean))
             }
             deviceContacts = rows.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            let validIDs = Set(deviceContacts.map(\.id))
+            selectedDeviceContactIDs = selectedDeviceContactIDs.intersection(validIDs)
             resultMessage = "Loaded \(deviceContacts.count) iPhone contacts."
         } catch {
             resultMessage = "Could not load iPhone contacts: \(error.localizedDescription)"
