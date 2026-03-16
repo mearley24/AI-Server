@@ -1082,6 +1082,146 @@ class APIClient: ObservableObject {
         }
     }
 
+    func fetchOpsInventorySummary(lowStockLimit: Int = 25, topLimit: Int = 60) async -> OpsInventorySummaryResponse? {
+        do {
+            var comps = URLComponents(string: "\(baseURL)/ops/inventory/summary")!
+            comps.queryItems = [
+                URLQueryItem(name: "low_stock_limit", value: String(max(1, min(lowStockLimit, 200)))),
+                URLQueryItem(name: "top_limit", value: String(max(1, min(topLimit, 500)))),
+            ]
+            guard let url = comps.url else { return nil }
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(OpsInventorySummaryResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func rebuildOpsInventory(lowStockLimit: Int = 25, topLimit: Int = 60) async -> OpsInventoryRebuildResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/ops/inventory/rebuild")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = OpsInventoryRebuildRequest(force: true, low_stock_limit: lowStockLimit, top_limit: topLimit)
+            request.httpBody = try JSONEncoder().encode(payload)
+            request.timeoutInterval = 300
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(OpsInventoryRebuildResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func fetchOpsTurnkeyStatus() async -> OpsTurnkeyStatusResponse? {
+        do {
+            let url = URL(string: "\(baseURL)/ops/turnkey/status")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(OpsTurnkeyStatusResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func generateOpsIntegrationBrief(noCache: Bool = false) async -> OpsIntegrationBriefResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/ops/integration/brief")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = OpsIntegrationBriefRequest(no_cache: noCache)
+            request.httpBody = try JSONEncoder().encode(payload)
+            request.timeoutInterval = 310
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(OpsIntegrationBriefResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func fetchEmployeeBots() async -> EmployeeBotsResponse? {
+        do {
+            let url = URL(string: "\(baseURL)/ops/employee_bots")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(EmployeeBotsResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func createEmployeeBot(request payload: EmployeeBotCreateRequestPayload) async -> EmployeeBotCreateResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/ops/employee_bots/create")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(EmployeeBotCreateResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func startEmployeeBot(workerID: String) async -> EmployeeBotRuntimeActionResponse? {
+        await employeeBotAction(path: "/ops/employee_bots/start", workerID: workerID)
+    }
+
+    func stopEmployeeBot(workerID: String) async -> EmployeeBotRuntimeActionResponse? {
+        await employeeBotAction(path: "/ops/employee_bots/stop", workerID: workerID)
+    }
+
+    func restartEmployeeBot(workerID: String) async -> EmployeeBotRuntimeActionResponse? {
+        await employeeBotAction(path: "/ops/employee_bots/restart", workerID: workerID)
+    }
+
+    func testEmployeeBot(workerID: String) async -> EmployeeBotTestResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/ops/employee_bots/test")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(EmployeeBotWorkerRequestPayload(worker_id: workerID))
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(EmployeeBotTestResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    private func employeeBotAction(path: String, workerID: String) async -> EmployeeBotRuntimeActionResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)\(path)")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(EmployeeBotWorkerRequestPayload(worker_id: workerID))
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(EmployeeBotRuntimeActionResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
     func fetchIncidentQueue(limit: Int = 20) async -> IncidentQueueResponse? {
         do {
             let url = URL(string: "\(baseURL)/tasks/incidents?limit=\(max(1, min(limit, 100)))")!
@@ -1279,12 +1419,164 @@ class APIClient: ObservableObject {
         }
     }
 
+    func fetchIMessageAutomation() async -> IMessageAutomationResponse? {
+        do {
+            let url = URL(string: "\(baseURL)/imessages/automation")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(IMessageAutomationResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func setIMessageAutomation(
+        createServiceInvoiceDrafts: Bool? = nil,
+        createAppointmentDrafts: Bool? = nil
+    ) async -> IMessageAutomationSetResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/automation")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = IMessageAutomationSetRequest(
+                create_service_invoice_drafts: createServiceInvoiceDrafts,
+                create_appointment_drafts: createAppointmentDrafts
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageAutomationSetResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func backfillIMessages(weeks: Int, dryRun: Bool = true, limit: Int = 5000) async -> IMessageBackfillResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/backfill")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = IMessageBackfillRequest(
+                weeks: max(1, min(weeks, 26)),
+                dry_run: dryRun,
+                limit: max(1, min(limit, 50000))
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            request.timeoutInterval = 240
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageBackfillResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
     func fetchRecentIMessageWork(limit: Int = 20) async -> IMessageRecentFeedResponse? {
         do {
             let capped = max(1, min(limit, 200))
             let url = URL(string: "\(baseURL)/imessages/recent?limit=\(capped)")!
             let (data, _) = try await URLSession.shared.data(from: url)
             return try JSONDecoder().decode(IMessageRecentFeedResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func fetchIMessageIntake(status: String = "draft", limit: Int = 50) async -> IMessageIntakeResponse? {
+        do {
+            var comps = URLComponents(string: "\(baseURL)/imessages/intake")!
+            comps.queryItems = [
+                URLQueryItem(name: "status", value: status),
+                URLQueryItem(name: "limit", value: String(max(1, min(limit, 500)))),
+            ]
+            guard let url = comps.url else { return nil }
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(IMessageIntakeResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func approveInvoiceDraft(
+        draftID: String,
+        note: String = "",
+        sendConfirmation: Bool = true,
+        confirmationMessage: String? = nil
+    ) async -> IMessageIntakeActionResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/intake/invoice/approve")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = IMessageIntakeActionRequest(
+                draft_id: draftID,
+                note: note,
+                proposed_start: nil,
+                duration_min: nil,
+                send_confirmation: sendConfirmation,
+                confirmation_message: confirmationMessage
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageIntakeActionResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func scheduleAppointmentDraft(
+        draftID: String,
+        proposedStartISO: String? = nil,
+        durationMin: Int = 60,
+        sendConfirmation: Bool = true,
+        confirmationMessage: String? = nil
+    ) async -> IMessageIntakeActionResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/intake/appointment/calendar")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = IMessageIntakeActionRequest(
+                draft_id: draftID,
+                note: "",
+                proposed_start: proposedStartISO,
+                duration_min: max(15, durationMin),
+                send_confirmation: sendConfirmation,
+                confirmation_message: confirmationMessage
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageIntakeActionResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func sendIMessageConfirmation(kind: String, draftID: String, message: String? = nil) async -> IMessageSendConfirmationResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/intake/confirmation/send")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = IMessageConfirmationSendRequest(kind: kind, draft_id: draftID, message: message)
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageSendConfirmationResponse.self, from: data)
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
@@ -1315,6 +1607,68 @@ class APIClient: ObservableObject {
             request.timeoutInterval = 90
             let (data, _) = try await URLSession.shared.data(for: request)
             return try JSONDecoder().decode(AddClientContactResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func fetchClientContacts() async -> ClientContactsListResponse? {
+        do {
+            let url = URL(string: "\(baseURL)/contacts/clients")!
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(ClientContactsListResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func removeClientContact(clientID: String, removeFromWatchlist: Bool = true) async -> RemoveClientContactResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/contacts/clients/remove")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = RemoveClientContactRequest(
+                client_id: clientID,
+                remove_from_watchlist: removeFromWatchlist
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            request.timeoutInterval = 60
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(RemoveClientContactResponse.self, from: data)
+        } catch {
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            return nil
+        }
+    }
+
+    func seedIMessageWatchlistFromContacts(
+        includeClientsRegistry: Bool = true,
+        includeContactsIndex: Bool = true,
+        includeEmails: Bool = true,
+        overwrite: Bool = false
+    ) async -> SeedWatchlistResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/contacts/watchlist/seed")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = SeedWatchlistRequest(
+                include_clients_registry: includeClientsRegistry,
+                include_contacts_index: includeContactsIndex,
+                include_emails: includeEmails,
+                overwrite: overwrite
+            )
+            request.httpBody = try JSONEncoder().encode(payload)
+            request.timeoutInterval = 120
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(SeedWatchlistResponse.self, from: data)
         } catch {
             await MainActor.run {
                 self.error = error.localizedDescription
@@ -2708,6 +3062,159 @@ struct OpsRecoveryRunResponse: Codable {
     let applied_count: Int?
 }
 
+struct OpsInventoryRebuildRequest: Codable {
+    let force: Bool?
+    let low_stock_limit: Int?
+    let top_limit: Int?
+}
+
+struct OpsIntegrationBriefRequest: Codable {
+    let no_cache: Bool
+}
+
+struct OpsInventorySummaryResponse: Codable {
+    let success: Bool
+    let generated_at: String?
+    let paths: OpsInventoryPaths?
+    let counts: OpsInventoryCounts?
+    let low_stock_items: [OpsInventoryItem]?
+    let top_items: [OpsInventoryItem]?
+    let missing_stock_setup: [OpsInventoryItem]?
+    let manual_queue_preview: [OpsInventoryManualQueueItem]?
+}
+
+struct OpsInventoryRebuildResponse: Codable {
+    let success: Bool?
+    let command_success: Bool?
+    let command_output: String?
+    let command_error: String?
+    let summary: OpsInventorySummaryResponse?
+}
+
+struct OpsInventoryPaths: Codable {
+    let inventory_csv: String?
+    let manual_queue_csv: String?
+    let stock_file: String?
+}
+
+struct OpsInventoryCounts: Codable {
+    let inventory_rows: Int?
+    let tracked_stock_items: Int?
+    let low_stock_count: Int?
+    let manual_queue_todo_count: Int?
+}
+
+struct OpsInventoryItem: Codable, Identifiable {
+    let sku: String
+    let manufacturer: String?
+    let category: String?
+    let observed_count: Int?
+    let on_hand: Int?
+    let reorder_point: Int?
+    let low_stock: Bool?
+    let supplier: String?
+    let notes: String?
+
+    var id: String { sku }
+}
+
+struct OpsInventoryManualQueueItem: Codable, Identifiable {
+    let manufacturer_guess: String?
+    let model_sku: String?
+    let category_guess: String?
+    let priority_score: String?
+    let status: String?
+    let notes: String?
+
+    var id: String { model_sku ?? UUID().uuidString }
+}
+
+struct OpsTurnkeyStatusResponse: Codable {
+    let success: Bool
+    let ready: Bool?
+    let timestamp: String?
+    let env: [String: Bool]?
+    let missing_env: [String]?
+    let job_issues: [String]?
+    let next_steps: [String]?
+}
+
+struct OpsIntegrationBriefResponse: Codable {
+    let success: Bool?
+    let command_success: Bool?
+    let command_output: String?
+    let command_error: String?
+    let brief_path: String?
+    let preview: String?
+    let timestamp: String?
+}
+
+struct EmployeeBotCreateRequestPayload: Codable {
+    let worker_id: String
+    let name: String
+    let role: String
+    let emoji: String?
+    let skills: [String]
+    let intro: String?
+    let token_env: String?
+}
+
+struct EmployeeBotWorkerRequestPayload: Codable {
+    let worker_id: String
+}
+
+struct EmployeeBotsResponse: Codable {
+    let success: Bool
+    let count: Int?
+    let workers: [EmployeeBotProfile]
+    let path: String?
+    let valid_task_types: [String]?
+}
+
+struct EmployeeBotProfile: Codable, Identifiable {
+    let worker_id: String
+    let name: String?
+    let role: String?
+    let emoji: String?
+    let skills: [String]?
+    let intro: String?
+    let token_env: String?
+    let token_configured: Bool?
+    let start_command: String?
+    let running: Bool?
+    let pid: Int?
+    let log_file: String?
+    let error_log_file: String?
+
+    var id: String { worker_id }
+}
+
+struct EmployeeBotCreateResponse: Codable {
+    let success: Bool?
+    let worker_id: String?
+    let profile: EmployeeBotProfile?
+    let token_configured: Bool?
+    let start_command: String?
+    let notes: String?
+}
+
+struct EmployeeBotRuntimeActionResponse: Codable {
+    let success: Bool?
+    let message: String?
+    let worker_id: String?
+    let running: Bool?
+    let pid: Int?
+    let log_file: String?
+    let error_log_file: String?
+}
+
+struct EmployeeBotTestResponse: Codable {
+    let success: Bool?
+    let worker_id: String?
+    let token_env: String?
+    let telegram_ok: Bool?
+}
+
 struct NetworkDropoutStartRequest: Codable {
     let gateway_ip: String
     let wan_ip: String
@@ -2839,6 +3346,8 @@ struct IMessageWatchlistResponse: Codable {
     let watchlist: [String]
     let watchlist_count: Int
     let monitor_all: Bool
+    let mode: String?
+    let automation: IMessageAutomationConfig?
     let last_check: String?
 }
 
@@ -2860,7 +3369,123 @@ struct IMessageProcessResponse: Codable {
     let messages_monitored: Int?
     let messages_logged: Int?
     let tasks_created: Int?
+    let invoice_drafts_created: Int?
+    let appointment_drafts_created: Int?
     let command_success: Bool?
+}
+
+struct IMessageAutomationConfig: Codable {
+    let create_service_invoice_drafts: Bool?
+    let create_appointment_drafts: Bool?
+}
+
+struct IMessageAutomationResponse: Codable {
+    let success: Bool
+    let automation: IMessageAutomationConfig?
+}
+
+struct IMessageAutomationSetRequest: Codable {
+    let create_service_invoice_drafts: Bool?
+    let create_appointment_drafts: Bool?
+}
+
+struct IMessageAutomationSetResponse: Codable {
+    let success: Bool?
+    let automation: IMessageAutomationConfig?
+    let command_success: Bool?
+}
+
+struct IMessageBackfillRequest: Codable {
+    let weeks: Int
+    let dry_run: Bool
+    let limit: Int
+}
+
+struct IMessageBackfillResponse: Codable {
+    let success: Bool?
+    let mode: String?
+    let since: String?
+    let weeks: Int?
+    let dry_run: Bool?
+    let messages_seen: Int?
+    let messages_monitored: Int?
+    let messages_logged: Int?
+    let tasks_created: Int?
+    let invoice_drafts_created: Int?
+    let appointment_drafts_created: Int?
+    let command_success: Bool?
+}
+
+struct IMessageIntakeResponse: Codable {
+    let success: Bool
+    let count: Int
+    let status_filter: String?
+    let items: [IMessageIntakeItem]
+}
+
+struct IMessageIntakeItem: Codable, Identifiable {
+    let kind: String
+    let draft_id: String
+    let status: String
+    let created_at: String?
+    let rowid: Int?
+    let handle_masked: String?
+    let contact_name_masked: String?
+    let project_hint: String?
+    let request_text_redacted: String?
+    let linked_projects: [String]?
+    let proposed_start: String?
+    let last_action_at: String?
+
+    var id: String { "\(kind)-\(draft_id)" }
+}
+
+struct IMessageIntakeActionRequest: Codable {
+    let draft_id: String
+    let note: String?
+    let proposed_start: String?
+    let duration_min: Int?
+    let send_confirmation: Bool?
+    let confirmation_message: String?
+}
+
+struct IMessageIntakeActionResponse: Codable {
+    let success: Bool?
+    let draft_id: String?
+    let status: String?
+    let confirmation: [String: StringOrBool]?
+    let error: String?
+}
+
+struct IMessageConfirmationSendRequest: Codable {
+    let kind: String
+    let draft_id: String
+    let message: String?
+}
+
+struct IMessageSendConfirmationResponse: Codable {
+    let success: Bool?
+    let draft_id: String?
+    let kind: String?
+    let error: String?
+}
+
+enum StringOrBool: Decodable {
+    case string(String)
+    case bool(Bool)
+    case number(Double)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let b = try? container.decode(Bool.self) {
+            self = .bool(b); return
+        }
+        if let n = try? container.decode(Double.self) {
+            self = .number(n); return
+        }
+        let s = (try? container.decode(String.self)) ?? ""
+        self = .string(s)
+    }
 }
 
 struct IMessageRecentFeedResponse: Codable {
@@ -2907,5 +3532,42 @@ struct AddClientContactResponse: Codable {
     let client: ClientContactRecord?
     let clients_count: Int?
     let watchlist_updated: Bool?
+    let error: String?
+}
+
+struct ClientContactsListResponse: Codable {
+    let success: Bool
+    let count: Int
+    let clients: [ClientContactRecord]
+}
+
+struct RemoveClientContactRequest: Codable {
+    let client_id: String
+    let remove_from_watchlist: Bool
+}
+
+struct RemoveClientContactResponse: Codable {
+    let success: Bool
+    let removed_client_id: String?
+    let removed_client_name: String?
+    let clients_count: Int?
+    let watchlist_updated: Bool?
+    let error: String?
+}
+
+struct SeedWatchlistRequest: Codable {
+    let include_clients_registry: Bool
+    let include_contacts_index: Bool
+    let include_emails: Bool
+    let overwrite: Bool
+}
+
+struct SeedWatchlistResponse: Codable {
+    let success: Bool?
+    let seeded_count: Int?
+    let final_watchlist_count: Int?
+    let watchlist_count: Int?
+    let mode: String?
+    let command_success: Bool?
     let error: String?
 }

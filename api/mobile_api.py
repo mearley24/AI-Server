@@ -29,7 +29,7 @@ import tempfile
 import time
 import urllib.request
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -73,6 +73,18 @@ def _normalize_auth_token(value: str) -> str:
     return token
 
 
+def normalize_contact_identifier(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if "@" in raw:
+        return raw.lower()
+    digits = re.sub(r"\D", "", raw)
+    if digits.startswith("1") and len(digits) == 11:
+        digits = digits[1:]
+    return digits or raw.lower()
+
+
 API_AUTH_TOKEN = _normalize_auth_token(os.environ.get("SYMPHONY_API_TOKEN", ""))
 DTOOLS_PRODUCT_AGENT_DIR = BASE_DIR / "data" / "dtools_product_agent"
 DTOOLS_PRODUCT_AGENT_DIR.mkdir(parents=True, exist_ok=True)
@@ -97,6 +109,9 @@ PROJECT_WATCHES_FILE = TASK_UPLOAD_DIR / "project_watches.json"
 PROJECT_WATCH_STATE_FILE = TASK_UPLOAD_DIR / "project_watch_state.json"
 PROJECT_WATCH_LOG_DIR = TASK_UPLOAD_DIR / "project_watch_logs"
 PROJECT_WATCH_LOG_DIR.mkdir(parents=True, exist_ok=True)
+EMPLOYEE_BOTS_FILE = BASE_DIR / "data" / "employee_bots.json"
+EMPLOYEE_BOTS_RUNTIME_DIR = BASE_DIR / "data" / "employee_bots_runtime"
+EMPLOYEE_BOTS_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 TASK_BOARD_DB = BASE_DIR / "orchestrator" / "task_board.db"
 KNOWLEDGE_PROJECTS_DIR = BASE_DIR / "knowledge" / "projects"
 KNOWLEDGE_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -146,6 +161,16 @@ NETWORK_WATCH_STATUS_FILE = NETWORK_WATCH_DIR / "dropout_watch_status.json"
 NETWORK_WATCH_EVENTS_FILE = NETWORK_WATCH_DIR / "dropout_watch_events.jsonl"
 NETWORK_WATCH_STDOUT = BASE_DIR / "logs" / "dropout_watch.log"
 NETWORK_WATCH_STDERR = BASE_DIR / "logs" / "dropout_watch_error.log"
+INVENTORY_REPORTS_DIR = BASE_DIR / "knowledge" / "reports"
+INVENTORY_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+INVENTORY_STOCK_DIR = BASE_DIR / "data" / "inventory"
+INVENTORY_STOCK_DIR.mkdir(parents=True, exist_ok=True)
+INVENTORY_STOCK_FILE = INVENTORY_STOCK_DIR / "stock_levels.json"
+IMESSAGE_AUTOMATION_DIR = BASE_DIR / "data" / "imessage_automation"
+IMESSAGE_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
+IMESSAGE_INVOICE_DRAFTS_FILE = IMESSAGE_AUTOMATION_DIR / "service_invoice_drafts.jsonl"
+IMESSAGE_APPOINTMENT_DRAFTS_FILE = IMESSAGE_AUTOMATION_DIR / "appointment_schedule_drafts.jsonl"
+MESSAGES_DB_PATH = Path.home() / "Library" / "Messages" / "chat.db"
 
 PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
     "auto": {
@@ -1646,10 +1671,423 @@ def _read_recent_jsonl(path: Path, limit: int = 20) -> List[Dict[str, Any]]:
         return []
 
 
+def _read_all_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    items: List[Dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for raw in f:
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    payload = json.loads(raw)
+                    if isinstance(payload, dict):
+                        items.append(payload)
+                except json.JSONDecodeError:
+                    continue
+    except Exception:
+        return []
+    return items
+
+
+def _write_all_jsonl(path: Path, items: List[Dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for item in items:
+            f.write(json.dumps(item) + "\n")
+
+
+def _append_jsonl(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload) + "\n")
+
+
+def _update_draft(path: Path, draft_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    rows = _read_all_jsonl(path)
+    changed = False
+    target: Optional[Dict[str, Any]] = None
+    for row in rows:
+        if str(row.get("draft_id", "")) != draft_id:
+            continue
+        row.update(updates)
+        changed = True
+        target = row
+    if changed:
+        _write_all_jsonl(path, rows)
+    return target
+
+
+def _parse_iso_or_default(value: Optional[str], fallback: datetime) -> datetime:
+    if not value:
+        return fallback
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return fallback
+
+
+def _send_imessage_text(handle: str, message: str) -> Dict[str, Any]:
+    target = (handle or "").strip()
+    body = (message or "").strip()
+    if not target:
+        return {"success": False, "error": "Missing destination handle"}
+    if not body:
+        return {"success": False, "error": "Missing message body"}
+
+    script = (
+        'on run argv\n'
+        'set targetHandle to item 1 of argv\n'
+        'set bodyText to item 2 of argv\n'
+        'tell application "Messages"\n'
+        'set targetService to first service whose service type = iMessage\n'
+        'set targetBuddy to buddy targetHandle of targetService\n'
+        'send bodyText to targetBuddy\n'
+        'end tell\n'
+        'return "ok"\n'
+        'end run\n'
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script, target, body],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return {
+                "success": False,
+                "error": (result.stderr or result.stdout or "osascript failed").strip(),
+            }
+        return {"success": True}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def _create_calendar_event(title: str, notes: str, start_at: datetime, duration_min: int = 60) -> Dict[str, Any]:
+    end_at = start_at.timestamp() + max(15, int(duration_min)) * 60
+    end_dt = datetime.fromtimestamp(end_at)
+    # RFC3339-like strings accepted by AppleScript date parser.
+    start_str = start_at.strftime("%Y-%m-%d %H:%M:%S")
+    end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+    script = (
+        'on run argv\n'
+        'set titleText to item 1 of argv\n'
+        'set notesText to item 2 of argv\n'
+        'set startText to item 3 of argv\n'
+        'set endText to item 4 of argv\n'
+        'tell application "Calendar"\n'
+        'if not (exists calendar "Symphony Ops") then\n'
+        'make new calendar with properties {name:"Symphony Ops"}\n'
+        'end if\n'
+        'set startDate to date startText\n'
+        'set endDate to date endText\n'
+        'tell calendar "Symphony Ops"\n'
+        'set newEvent to make new event with properties {summary:titleText, description:notesText, start date:startDate, end date:endDate}\n'
+        'end tell\n'
+        'end tell\n'
+        'return "ok"\n'
+        'end run\n'
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script, title, notes, start_str, end_str],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return {
+                "success": False,
+                "error": (result.stderr or result.stdout or "calendar osascript failed").strip(),
+            }
+        return {"success": True, "start": start_str, "end": end_str}
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+def _lookup_handle_for_rowid(rowid: Any) -> str:
+    try:
+        rowid_int = int(rowid)
+    except Exception:
+        return ""
+    if not MESSAGES_DB_PATH.exists():
+        return ""
+    try:
+        conn = sqlite3.connect(f"file:{MESSAGES_DB_PATH}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            """
+            SELECT COALESCE(h.id, '') AS handle
+            FROM message m
+            LEFT JOIN handle h ON h.ROWID = m.handle_id
+            WHERE m.ROWID = ?
+            LIMIT 1
+            """,
+            (rowid_int,),
+        ).fetchone()
+        conn.close()
+        return str(row["handle"]) if row else ""
+    except Exception:
+        return ""
+
+
 def _http_get_json(url: str, timeout: int = 6) -> Dict[str, Any]:
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _read_csv_rows(path: Path) -> List[Dict[str, str]]:
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            rows: List[Dict[str, str]] = []
+            for row in reader:
+                rows.append({str(k): str(v or "").strip() for k, v in row.items() if k is not None})
+            return rows
+    except Exception:
+        return []
+
+
+def _normalize_sku_key(value: str) -> str:
+    return re.sub(r"[^A-Z0-9\-]+", "-", (value or "").strip().upper()).strip("-")
+
+
+def _load_inventory_stock_levels() -> Dict[str, Dict[str, Any]]:
+    if not INVENTORY_STOCK_FILE.exists():
+        try:
+            INVENTORY_STOCK_FILE.write_text(json.dumps({"items": []}, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+    payload = _read_json_file(INVENTORY_STOCK_FILE)
+    raw_items = payload.get("items", []) if isinstance(payload, dict) else []
+    stock: Dict[str, Dict[str, Any]] = {}
+    if isinstance(raw_items, list):
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            sku = _normalize_sku_key(str(item.get("sku") or item.get("model_sku") or ""))
+            if not sku:
+                continue
+            try:
+                on_hand = int(float(item.get("on_hand", 0) or 0))
+            except Exception:
+                on_hand = 0
+            try:
+                reorder = int(float(item.get("reorder_point", 0) or 0))
+            except Exception:
+                reorder = 0
+            stock[sku] = {
+                "sku": sku,
+                "on_hand": on_hand,
+                "reorder_point": reorder,
+                "supplier": str(item.get("supplier", "") or "").strip(),
+                "notes": str(item.get("notes", "") or "").strip(),
+            }
+    return stock
+
+
+def _build_inventory_summary(low_stock_limit: int = 25, top_limit: int = 100) -> Dict[str, Any]:
+    inventory_rows = _read_csv_rows(INVENTORY_REPORTS_DIR / "SKU_Inventory.csv")
+    manual_queue_rows = _read_csv_rows(INVENTORY_REPORTS_DIR / "manual_fetch_queue.csv")
+    stock_map = _load_inventory_stock_levels()
+
+    items: List[Dict[str, Any]] = []
+    for row in inventory_rows:
+        sku = _normalize_sku_key(row.get("model_sku", ""))
+        if not sku:
+            continue
+        try:
+            observed = int(float(row.get("count", 0) or 0))
+        except Exception:
+            observed = 0
+        stock = stock_map.get(sku, {})
+        on_hand = int(stock.get("on_hand", 0) or 0)
+        reorder = int(stock.get("reorder_point", 0) or 0)
+        low = bool(reorder > 0 and on_hand <= reorder)
+        items.append({
+            "sku": sku,
+            "manufacturer": row.get("manufacturer", ""),
+            "category": row.get("category", ""),
+            "observed_count": observed,
+            "on_hand": on_hand,
+            "reorder_point": reorder,
+            "low_stock": low,
+            "supplier": stock.get("supplier", ""),
+            "notes": stock.get("notes", ""),
+        })
+
+    items.sort(key=lambda r: (not r.get("low_stock", False), -(r.get("observed_count", 0) or 0), r.get("sku", "")))
+    low_stock_items = [r for r in items if r.get("low_stock")][: max(1, min(low_stock_limit, 200))]
+    top_items = items[: max(1, min(top_limit, 500))]
+    missing_stock_setup = [
+        r for r in items
+        if r.get("observed_count", 0) >= 2 and int(r.get("reorder_point", 0) or 0) <= 0
+    ][:50]
+
+    todo_manuals = [
+        r for r in manual_queue_rows
+        if str(r.get("status", "todo") or "todo").strip().lower() in {"", "todo", "pending"}
+    ]
+
+    return {
+        "success": True,
+        "generated_at": datetime.now().isoformat(),
+        "paths": {
+            "inventory_csv": str(INVENTORY_REPORTS_DIR / "SKU_Inventory.csv"),
+            "manual_queue_csv": str(INVENTORY_REPORTS_DIR / "manual_fetch_queue.csv"),
+            "stock_file": str(INVENTORY_STOCK_FILE),
+        },
+        "counts": {
+            "inventory_rows": len(inventory_rows),
+            "tracked_stock_items": len(stock_map),
+            "low_stock_count": len([r for r in items if r.get("low_stock")]),
+            "manual_queue_todo_count": len(todo_manuals),
+        },
+        "low_stock_items": low_stock_items,
+        "top_items": top_items,
+        "missing_stock_setup": missing_stock_setup,
+        "manual_queue_preview": todo_manuals[:25],
+    }
+
+
+def _has_env_key(name: str) -> bool:
+    value = (os.environ.get(name, "") or "").strip()
+    return bool(value)
+
+
+def _valid_task_types() -> List[str]:
+    return [
+        "research",
+        "documentation",
+        "troubleshooting",
+        "proposal",
+        "commissioning",
+        "learning",
+        "idea",
+        "maintenance",
+        "integration",
+        "claude",
+    ]
+
+
+def _default_employee_bots() -> Dict[str, Any]:
+    return {
+        "workers": {
+            "betty": {
+                "name": "Betty",
+                "role": "Research & Documentation Specialist",
+                "emoji": "📚",
+                "skills": ["research", "documentation", "learning", "troubleshooting"],
+                "intro": "Hi! I'm Betty, the research specialist.",
+                "token_env": "BETTY_BOT_TOKEN",
+            },
+            "beatrice": {
+                "name": "Beatrice",
+                "role": "Proposals & Commissioning Specialist",
+                "emoji": "📋",
+                "skills": ["proposal", "commissioning", "integration"],
+                "intro": "Hi! I'm Beatrice, the proposals specialist.",
+                "token_env": "BEATRICE_BOT_TOKEN",
+            },
+            "bill": {
+                "name": "Bill",
+                "role": "Maintenance & Integration Specialist",
+                "emoji": "🔧",
+                "skills": ["maintenance", "troubleshooting", "integration"],
+                "intro": "Hi! I'm Bill, the maintenance specialist.",
+                "token_env": "BILL_BOT_TOKEN",
+            },
+        }
+    }
+
+
+def _load_employee_bots() -> Dict[str, Any]:
+    if not EMPLOYEE_BOTS_FILE.exists():
+        EMPLOYEE_BOTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = _default_employee_bots()
+        try:
+            EMPLOYEE_BOTS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        return payload
+    payload = _read_json_file(EMPLOYEE_BOTS_FILE)
+    if not isinstance(payload, dict) or "workers" not in payload:
+        return _default_employee_bots()
+    return payload
+
+
+def _save_employee_bots(payload: Dict[str, Any]) -> None:
+    EMPLOYEE_BOTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    EMPLOYEE_BOTS_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _employee_bot_paths(worker_id: str) -> Dict[str, Path]:
+    safe_id = _slugify(worker_id, fallback="worker")
+    return {
+        "pid": EMPLOYEE_BOTS_RUNTIME_DIR / f"{safe_id}.pid",
+        "log": BASE_DIR / "logs" / f"employee-bot-{safe_id}.log",
+        "err": BASE_DIR / "logs" / f"employee-bot-{safe_id}.err.log",
+    }
+
+
+def _employee_bot_pid(worker_id: str) -> Optional[int]:
+    paths = _employee_bot_paths(worker_id)
+    pid_file = paths["pid"]
+    if not pid_file.exists():
+        return None
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+        return pid if pid > 0 else None
+    except Exception:
+        return None
+
+
+def _pick_python_with_module(module_name: str) -> str:
+    candidates = [
+        str(BASE_DIR / ".venv" / "bin" / "python3"),
+        "/opt/homebrew/bin/python3",
+        "/usr/local/bin/python3",
+        sys.executable,
+        "/usr/bin/python3",
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if not path.exists():
+            continue
+        try:
+            result = subprocess.run(
+                [str(path), "-c", f"import {module_name}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                return str(path)
+        except Exception:
+            continue
+    return ""
+
+
+def _employee_bot_runtime_status(worker_id: str) -> Dict[str, Any]:
+    pid = _employee_bot_pid(worker_id)
+    running = _pid_is_alive(pid)
+    paths = _employee_bot_paths(worker_id)
+    return {
+        "worker_id": worker_id,
+        "running": running,
+        "pid": pid if running else None,
+        "pid_file": str(paths["pid"]),
+        "log_file": str(paths["log"]),
+        "error_log_file": str(paths["err"]),
+    }
 
 
 def _to_money(value: Any) -> Optional[float]:
@@ -3089,6 +3527,28 @@ if HAS_FASTAPI:
         numbers: List[str]
         monitor_all: Optional[bool] = False
 
+    class IMessageAutomationRequest(BaseModel):
+        create_service_invoice_drafts: Optional[bool] = None
+        create_appointment_drafts: Optional[bool] = None
+
+    class IMessageBackfillRequest(BaseModel):
+        weeks: int = 4
+        dry_run: bool = True
+        limit: int = 5000
+
+    class IMessageIntakeActionRequest(BaseModel):
+        draft_id: str
+        note: Optional[str] = ""
+        proposed_start: Optional[str] = None
+        duration_min: Optional[int] = 60
+        send_confirmation: Optional[bool] = True
+        confirmation_message: Optional[str] = None
+
+    class IMessageConfirmationRequest(BaseModel):
+        kind: str
+        draft_id: str
+        message: Optional[str] = None
+
     class ContactsLookupRequest(BaseModel):
         query: str
 
@@ -3098,6 +3558,16 @@ if HAS_FASTAPI:
         emails: List[str] = []
         notes: Optional[str] = ""
         auto_monitor: Optional[bool] = True
+
+    class ClientContactRemoveRequest(BaseModel):
+        client_id: str
+        remove_from_watchlist: Optional[bool] = True
+
+    class ContactsSeedWatchlistRequest(BaseModel):
+        include_clients_registry: bool = True
+        include_contacts_index: bool = True
+        include_emails: bool = True
+        overwrite: bool = False
 
     class OpsRecoveryRunRequest(BaseModel):
         apply: bool = False
@@ -3116,6 +3586,26 @@ if HAS_FASTAPI:
         event_name: Optional[str] = None
         notes: Optional[str] = None
         priority: Optional[str] = "high"
+
+    class InventoryRebuildRequest(BaseModel):
+        force: Optional[bool] = False
+        low_stock_limit: Optional[int] = 25
+        top_limit: Optional[int] = 100
+
+    class IntegrationBriefRequest(BaseModel):
+        no_cache: Optional[bool] = False
+
+    class EmployeeBotCreateRequest(BaseModel):
+        worker_id: str
+        name: str
+        role: str
+        emoji: Optional[str] = "🤖"
+        skills: List[str]
+        intro: Optional[str] = ""
+        token_env: Optional[str] = ""
+
+    class EmployeeBotWorkerRequest(BaseModel):
+        worker_id: str
 
     class NotesProjectLinkUpsertRequest(BaseModel):
         match_text: str
@@ -3289,7 +3779,11 @@ if HAS_FASTAPI:
                 "success": True,
                 "watchlist": state.get("watchlist", []),
                 "watchlist_count": len(state.get("watchlist", [])),
-                "monitor_all": bool(state.get("monitor_all", False)),
+                "monitor_all": False,
+                "mode": "watchlist_plus_keywords",
+                "automation": state.get("automation", {}),
+                "keyword_discovery_enabled": bool(state.get("keyword_discovery_enabled", True)),
+                "work_signal_threshold": max(1, int(state.get("work_signal_threshold", 2))),
                 "last_check": state.get("last_check"),
             }
         except Exception as e:
@@ -3299,9 +3793,48 @@ if HAS_FASTAPI:
     async def imessages_set_watchlist(request: IMessageWatchlistRequest):
         """Set monitored numbers/emails for iMessage watcher."""
         try:
-            args = ["--set-watchlist", ",".join(request.numbers or [])]
-            if request.monitor_all:
-                args.append("--monitor-all")
+            numbers = request.numbers or []
+            args: List[str] = []
+            if numbers:
+                args = ["--set-watchlist", ",".join(numbers)]
+            else:
+                args = ["--clear-watchlist"]
+            result = run_tool_endpoint("imessage_watcher.py", args, timeout=30)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            payload["mode"] = "watchlist_plus_keywords"
+            payload["monitor_all"] = False
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/automation")
+    async def imessages_automation_status():
+        """Get iMessage automation toggles for invoice/scheduling drafts."""
+        try:
+            state = _read_json_file(IMESSAGE_WATCHER_STATE_FILE)
+            automation = state.get("automation", {}) if isinstance(state, dict) else {}
+            return {
+                "success": True,
+                "automation": {
+                    "create_service_invoice_drafts": bool(automation.get("create_service_invoice_drafts", True)),
+                    "create_appointment_drafts": bool(automation.get("create_appointment_drafts", True)),
+                },
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/automation")
+    async def imessages_set_automation(request: IMessageAutomationRequest):
+        """Update iMessage automation toggles for draft generation."""
+        try:
+            args: List[str] = []
+            if request.create_service_invoice_drafts is not None:
+                args.extend(["--set-auto-invoice-drafts", "true" if request.create_service_invoice_drafts else "false"])
+            if request.create_appointment_drafts is not None:
+                args.extend(["--set-auto-appointment-drafts", "true" if request.create_appointment_drafts else "false"])
+            if not args:
+                return {"success": True, "message": "No changes provided"}
             result = run_tool_endpoint("imessage_watcher.py", args, timeout=30)
             payload = _extract_json_from_output(result, fallback_key="output")
             payload.setdefault("command_success", result.get("success", False))
@@ -3314,6 +3847,22 @@ if HAS_FASTAPI:
         """Force immediate iMessage ingestion pass."""
         try:
             result = run_tool_endpoint("imessage_watcher.py", ["--check"], timeout=90)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            payload.setdefault("command_success", result.get("success", False))
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/backfill")
+    async def imessages_backfill(request: IMessageBackfillRequest):
+        """Process historical iMessages from the last N weeks."""
+        try:
+            weeks = max(1, min(int(request.weeks or 4), 26))
+            limit = max(1, min(int(request.limit or 5000), 50000))
+            args: List[str] = ["--backfill-weeks", str(weeks), "--limit", str(limit)]
+            if bool(request.dry_run):
+                args.append("--dry-run")
+            result = run_tool_endpoint("imessage_watcher.py", args, timeout=180)
             payload = _extract_json_from_output(result, fallback_key="output")
             payload.setdefault("command_success", result.get("success", False))
             return payload
@@ -3346,6 +3895,221 @@ if HAS_FASTAPI:
                 "source_file": str(IMESSAGE_WORK_LOG_FILE),
                 "timestamp": datetime.now().isoformat(),
             }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/intake")
+    async def imessages_intake(status: str = "draft", limit: int = 50):
+        """Unified queue for invoice + appointment drafts with action metadata."""
+        try:
+            capped = max(1, min(int(limit), 500))
+            target_status = (status or "draft").strip().lower()
+            invoice_rows = _read_all_jsonl(IMESSAGE_INVOICE_DRAFTS_FILE)
+            appt_rows = _read_all_jsonl(IMESSAGE_APPOINTMENT_DRAFTS_FILE)
+            items: List[Dict[str, Any]] = []
+
+            for row in invoice_rows:
+                row_status = str(row.get("status", "draft")).strip().lower()
+                if target_status != "all" and row_status != target_status:
+                    continue
+                items.append(
+                    {
+                        "kind": "invoice",
+                        "draft_id": row.get("draft_id"),
+                        "status": row.get("status", "draft"),
+                        "created_at": row.get("created_at"),
+                        "rowid": row.get("rowid"),
+                        "handle_masked": row.get("handle_masked"),
+                        "contact_name_masked": row.get("contact_name_masked"),
+                        "project_hint": row.get("project_hint"),
+                        "request_text_redacted": row.get("request_text_redacted"),
+                        "linked_projects": row.get("linked_projects", []),
+                        "last_action_at": row.get("last_action_at"),
+                    }
+                )
+
+            for row in appt_rows:
+                row_status = str(row.get("status", "draft")).strip().lower()
+                if target_status != "all" and row_status != target_status:
+                    continue
+                items.append(
+                    {
+                        "kind": "appointment",
+                        "draft_id": row.get("draft_id"),
+                        "status": row.get("status", "draft"),
+                        "created_at": row.get("created_at"),
+                        "rowid": row.get("rowid"),
+                        "handle_masked": row.get("handle_masked"),
+                        "contact_name_masked": row.get("contact_name_masked"),
+                        "project_hint": row.get("project_hint"),
+                        "request_text_redacted": row.get("request_text_redacted"),
+                        "linked_projects": row.get("linked_projects", []),
+                        "proposed_start": row.get("proposed_start"),
+                        "calendar_event_created_at": row.get("calendar_event_created_at"),
+                        "last_action_at": row.get("last_action_at"),
+                    }
+                )
+
+            items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+            items = items[:capped]
+            return {
+                "success": True,
+                "count": len(items),
+                "status_filter": target_status,
+                "items": items,
+                "invoice_file": str(IMESSAGE_INVOICE_DRAFTS_FILE),
+                "appointment_file": str(IMESSAGE_APPOINTMENT_DRAFTS_FILE),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/intake/invoice/approve")
+    async def imessages_intake_invoice_approve(request: IMessageIntakeActionRequest):
+        """Approve invoice draft and optionally send confirmation text."""
+        try:
+            draft_id = (request.draft_id or "").strip()
+            if not draft_id:
+                raise HTTPException(status_code=400, detail="draft_id is required")
+
+            now = datetime.now().isoformat()
+            updated = _update_draft(
+                IMESSAGE_INVOICE_DRAFTS_FILE,
+                draft_id,
+                {
+                    "status": "approved",
+                    "approved_at": now,
+                    "approval_note": (request.note or "").strip(),
+                    "last_action_at": now,
+                },
+            )
+            if not updated:
+                raise HTTPException(status_code=404, detail="Invoice draft not found")
+
+            sent = {"success": False, "skipped": True}
+            if bool(request.send_confirmation):
+                handle = str(updated.get("handle_raw") or "") or _lookup_handle_for_rowid(updated.get("rowid"))
+                msg = (request.confirmation_message or "").strip() or "Your service invoice draft has been approved. We will send final details shortly."
+                if handle:
+                    sent = _send_imessage_text(handle, msg)
+                else:
+                    sent = {"success": False, "error": "Draft has no raw handle for outbound text"}
+
+            return {
+                "success": True,
+                "draft_id": draft_id,
+                "status": "approved",
+                "confirmation": sent,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/intake/appointment/calendar")
+    async def imessages_intake_appointment_calendar(request: IMessageIntakeActionRequest):
+        """Create a calendar event from appointment draft and optionally send confirmation."""
+        try:
+            draft_id = (request.draft_id or "").strip()
+            if not draft_id:
+                raise HTTPException(status_code=400, detail="draft_id is required")
+
+            rows = _read_all_jsonl(IMESSAGE_APPOINTMENT_DRAFTS_FILE)
+            target = next((r for r in rows if str(r.get("draft_id", "")) == draft_id), None)
+            if not target:
+                raise HTTPException(status_code=404, detail="Appointment draft not found")
+
+            fallback_start = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+            if fallback_start <= datetime.now():
+                fallback_start = fallback_start + timedelta(days=1)
+            start_at = _parse_iso_or_default(request.proposed_start, fallback_start)
+            title = f"Service Appointment - {target.get('contact_name_masked') or target.get('handle_masked') or 'Client'}"
+            notes = f"{target.get('request_text_redacted', '')}\n\nProject: {target.get('project_hint', '')}\nDraft ID: {draft_id}"
+            cal = _create_calendar_event(title, notes, start_at, duration_min=max(15, int(request.duration_min or 60)))
+
+            now = datetime.now().isoformat()
+            status_value = "scheduled" if cal.get("success") else "schedule_failed"
+            updated = _update_draft(
+                IMESSAGE_APPOINTMENT_DRAFTS_FILE,
+                draft_id,
+                {
+                    "status": status_value,
+                    "proposed_start": start_at.isoformat(),
+                    "calendar_event_created_at": now if cal.get("success") else None,
+                    "calendar_result": cal,
+                    "last_action_at": now,
+                },
+            )
+            if not updated:
+                raise HTTPException(status_code=404, detail="Appointment draft not found")
+
+            sent = {"success": False, "skipped": True}
+            if bool(request.send_confirmation):
+                handle = str(updated.get("handle_raw") or "") or _lookup_handle_for_rowid(updated.get("rowid"))
+                when_text = start_at.strftime("%a %b %d at %I:%M %p")
+                msg = (request.confirmation_message or "").strip() or f"Your appointment is scheduled for {when_text}. Reply here if you need to adjust."
+                if handle:
+                    sent = _send_imessage_text(handle, msg)
+                else:
+                    sent = {"success": False, "error": "Draft has no raw handle for outbound text"}
+
+            return {
+                "success": True,
+                "draft_id": draft_id,
+                "status": status_value,
+                "calendar": cal,
+                "confirmation": sent,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/intake/confirmation/send")
+    async def imessages_intake_confirmation_send(request: IMessageConfirmationRequest):
+        """Send a confirmation iMessage for a draft."""
+        try:
+            kind = (request.kind or "").strip().lower()
+            draft_id = (request.draft_id or "").strip()
+            if kind not in {"invoice", "appointment"}:
+                raise HTTPException(status_code=400, detail="kind must be invoice or appointment")
+            if not draft_id:
+                raise HTTPException(status_code=400, detail="draft_id is required")
+
+            draft_file = IMESSAGE_INVOICE_DRAFTS_FILE if kind == "invoice" else IMESSAGE_APPOINTMENT_DRAFTS_FILE
+            rows = _read_all_jsonl(draft_file)
+            target = next((r for r in rows if str(r.get("draft_id", "")) == draft_id), None)
+            if not target:
+                raise HTTPException(status_code=404, detail="Draft not found")
+
+            handle = str(target.get("handle_raw") or "") or _lookup_handle_for_rowid(target.get("rowid"))
+            if not handle:
+                return {"success": False, "error": "Draft has no raw handle for outbound text"}
+
+            default_message = (
+                "Your service invoice draft has been approved. We will send final details shortly."
+                if kind == "invoice"
+                else "Your appointment request is in progress. We will confirm your time shortly."
+            )
+            message = (request.message or "").strip() or default_message
+            sent = _send_imessage_text(handle, message)
+            now = datetime.now().isoformat()
+            _update_draft(
+                draft_file,
+                draft_id,
+                {
+                    "last_confirmation_at": now if sent.get("success") else None,
+                    "last_confirmation_message": message,
+                    "last_action_at": now,
+                },
+            )
+            return {
+                "success": bool(sent.get("success")),
+                "draft_id": draft_id,
+                "kind": kind,
+                "result": sent,
+            }
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -3488,6 +4252,121 @@ if HAS_FASTAPI:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    @app.post("/contacts/clients/remove")
+    async def contacts_clients_remove(request: ClientContactRemoveRequest):
+        """Remove a client contact record and optionally remove its handles from iMessage watchlist."""
+        try:
+            client_id = (request.client_id or "").strip()
+            if not client_id:
+                raise HTTPException(status_code=400, detail="client_id is required")
+
+            data = _read_json_file(CLIENTS_REGISTRY_FILE)
+            clients = data.get("clients", []) if isinstance(data, dict) else []
+            target = None
+            kept = []
+            for item in clients:
+                if str(item.get("id", "")) == client_id and target is None:
+                    target = item
+                    continue
+                kept.append(item)
+            if target is None:
+                raise HTTPException(status_code=404, detail="Client not found")
+
+            CLIENTS_REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            CLIENTS_REGISTRY_FILE.write_text(json.dumps({"clients": kept}, indent=2), encoding="utf-8")
+
+            monitor_result = None
+            if bool(request.remove_from_watchlist):
+                state = _read_json_file(IMESSAGE_WATCHER_STATE_FILE)
+                current = [str(x) for x in state.get("watchlist", [])] if isinstance(state, dict) else []
+                removal = {
+                    normalize_contact_identifier(str(x))
+                    for x in ([*(target.get("phones", []) or []), *(target.get("emails", []) or [])])
+                    if str(x).strip()
+                }
+                merged = [x for x in current if normalize_contact_identifier(x) not in removal]
+                set_result = run_tool_endpoint(
+                    "imessage_watcher.py",
+                    ["--set-watchlist", ",".join(merged)] if merged else ["--clear-watchlist"],
+                    timeout=30,
+                )
+                monitor_result = _extract_json_from_output(set_result, fallback_key="output")
+                monitor_result.setdefault("command_success", set_result.get("success", False))
+
+            return {
+                "success": True,
+                "removed_client_id": client_id,
+                "removed_client_name": target.get("name"),
+                "clients_count": len(kept),
+                "watchlist_updated": bool(request.remove_from_watchlist),
+                "monitor_result": monitor_result,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/contacts/watchlist/seed")
+    async def contacts_seed_watchlist(request: ContactsSeedWatchlistRequest):
+        """Seed iMessage scan list from saved client/contact records."""
+        try:
+            candidates: List[str] = []
+
+            if bool(request.include_clients_registry):
+                data = _read_json_file(CLIENTS_REGISTRY_FILE)
+                clients = data.get("clients", []) if isinstance(data, dict) else []
+                for client in clients:
+                    phones = [str(x).strip() for x in (client.get("phones", []) or []) if str(x).strip()]
+                    emails = [str(x).strip().lower() for x in (client.get("emails", []) or []) if str(x).strip()]
+                    candidates.extend(phones)
+                    if bool(request.include_emails):
+                        candidates.extend(emails)
+
+            if bool(request.include_contacts_index):
+                idx = _read_json_file(CONTACTS_INDEX_FILE)
+                contacts = idx.get("contacts", []) if isinstance(idx, dict) else []
+                for contact in contacts:
+                    phones = [str(x).strip() for x in (contact.get("phones", []) or []) if str(x).strip()]
+                    emails = [str(x).strip().lower() for x in (contact.get("emails", []) or []) if str(x).strip()]
+                    candidates.extend(phones)
+                    if bool(request.include_emails):
+                        candidates.extend(emails)
+
+            unique: List[str] = []
+            seen: set[str] = set()
+            for raw in candidates:
+                norm = normalize_contact_identifier(raw)
+                if not norm or norm in seen:
+                    continue
+                seen.add(norm)
+                unique.append(raw)
+
+            state = _read_json_file(IMESSAGE_WATCHER_STATE_FILE)
+            existing = [str(x).strip() for x in (state.get("watchlist", []) if isinstance(state, dict) else []) if str(x).strip()]
+            existing_norm = {normalize_contact_identifier(x) for x in existing}
+
+            if bool(request.overwrite):
+                final = unique
+            else:
+                final = list(existing)
+                for raw in unique:
+                    norm = normalize_contact_identifier(raw)
+                    if norm in existing_norm:
+                        continue
+                    final.append(raw)
+                    existing_norm.add(norm)
+
+            args = ["--set-watchlist", ",".join(final)] if final else ["--clear-watchlist"]
+            set_result = run_tool_endpoint("imessage_watcher.py", args, timeout=45)
+            payload = _extract_json_from_output(set_result, fallback_key="output")
+            payload.setdefault("command_success", set_result.get("success", False))
+            payload["seeded_count"] = len(unique)
+            payload["final_watchlist_count"] = len(final)
+            payload["mode"] = "watchlist_plus_keywords"
+            return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
     @app.get("/ops/health")
     async def ops_health():
         """Unified operations health across APIs, pipelines, automations, and iOS guardian."""
@@ -3585,6 +4464,309 @@ if HAS_FASTAPI:
             payload = _extract_json_from_output(result, fallback_key="output")
             payload.setdefault("command_success", result.get("success", False))
             return payload
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/ops/inventory/summary")
+    async def ops_inventory_summary(low_stock_limit: int = 25, top_limit: int = 100):
+        """Inventory intelligence summary for Ops app (low stock, reorder candidates, manuals queue)."""
+        try:
+            summary = _build_inventory_summary(low_stock_limit=low_stock_limit, top_limit=top_limit)
+            # If reports are missing, generate once automatically then return summary.
+            if summary["counts"]["inventory_rows"] == 0:
+                run_tool_endpoint("bob_build_inventory.py", [], timeout=240)
+                summary = _build_inventory_summary(low_stock_limit=low_stock_limit, top_limit=top_limit)
+            return summary
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/inventory/rebuild")
+    async def ops_inventory_rebuild(request: InventoryRebuildRequest):
+        """Rebuild inventory reports from extracted knowledge and return fresh summary."""
+        try:
+            result = run_tool_endpoint("bob_build_inventory.py", [], timeout=300)
+            payload = _extract_json_from_output(result, fallback_key="output")
+            summary = _build_inventory_summary(
+                low_stock_limit=max(1, min(int(request.low_stock_limit or 25), 200)),
+                top_limit=max(1, min(int(request.top_limit or 100), 500)),
+            )
+            return {
+                "success": bool(result.get("success", False)),
+                "command_success": bool(result.get("success", False)),
+                "command_output": str(result.get("output", ""))[-2000:],
+                "command_error": result.get("error"),
+                "command_result": payload,
+                "summary": summary,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/ops/turnkey/status")
+    async def ops_turnkey_status():
+        """Turnkey readiness snapshot for app-driven operations."""
+        try:
+            env_checks = {
+                "PERPLEXITY_API_KEY": _has_env_key("PERPLEXITY_API_KEY"),
+                "DTOOLS_API_KEY": _has_env_key("DTOOLS_API_KEY"),
+                "OPENAI_API_KEY": _has_env_key("OPENAI_API_KEY"),
+                "SYMPHONY_API_TOKEN": _has_env_key("SYMPHONY_API_TOKEN"),
+                "TELEGRAM_BOT_TOKEN": _has_env_key("TELEGRAM_BOT_TOKEN"),
+            }
+            jobs = {
+                "mobile_api": get_launchd_job_status("com.symphony.mobile-api"),
+                "markup_app": get_launchd_job_status("com.symphony.markup-app"),
+                "incoming_tasks": get_launchd_job_status("com.symphony.incoming-tasks"),
+                "notes_watcher": get_launchd_job_status("com.symphony.notes-watcher"),
+            }
+            all_env_ok = all(env_checks.values())
+            job_issues = [
+                key for key, job in jobs.items()
+                if job.get("loaded") and not job.get("running") and job.get("last_exit_code", 0) not in (0, None)
+            ]
+            ready = all_env_ok and not job_issues
+            return {
+                "success": True,
+                "ready": ready,
+                "timestamp": datetime.now().isoformat(),
+                "env": env_checks,
+                "jobs": jobs,
+                "missing_env": [k for k, ok in env_checks.items() if not ok],
+                "job_issues": job_issues,
+                "next_steps": (
+                    [] if ready else [
+                        "Add missing API keys in .env",
+                        "Restart failed launchd services",
+                        "Run turnkey brief from Ops app and follow plan",
+                    ]
+                ),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/integration/brief")
+    async def ops_integration_brief(request: IntegrationBriefRequest):
+        """Generate unified Ops integration brief via Perplexity/local fallback."""
+        try:
+            args = [str(BASE_DIR / "tools" / "perplexity_integration_brief.py"), "--out", "docs/OPS_UNIFIED_BRIEF.md"]
+            if request.no_cache:
+                args.append("--no-cache")
+            result = run_command(["python3", *args], timeout=300)
+            out_path = BASE_DIR / "docs" / "OPS_UNIFIED_BRIEF.md"
+            preview = ""
+            if out_path.exists():
+                try:
+                    preview = out_path.read_text(encoding="utf-8", errors="ignore")[:4000]
+                except Exception:
+                    preview = ""
+            return {
+                "success": bool(result.get("success", False)),
+                "command_success": bool(result.get("success", False)),
+                "command_output": str(result.get("output", ""))[-2000:],
+                "command_error": result.get("error"),
+                "brief_path": str(out_path),
+                "preview": preview,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/ops/employee_bots")
+    async def ops_employee_bots():
+        """List employee bot profiles and launch hints."""
+        try:
+            payload = _load_employee_bots()
+            workers = payload.get("workers", {}) if isinstance(payload, dict) else {}
+            items: List[Dict[str, Any]] = []
+            for worker_id, cfg in workers.items():
+                if not isinstance(cfg, dict):
+                    continue
+                token_env = str(cfg.get("token_env") or f"{worker_id.upper()}_BOT_TOKEN")
+                items.append({
+                    "worker_id": worker_id,
+                    "name": str(cfg.get("name") or worker_id.title()),
+                    "role": str(cfg.get("role") or "Employee Bot"),
+                    "emoji": str(cfg.get("emoji") or "🤖"),
+                    "skills": [str(s) for s in cfg.get("skills", [])],
+                    "intro": str(cfg.get("intro") or ""),
+                    "token_env": token_env,
+                    "token_configured": _has_env_key(token_env),
+                    "start_command": f"EMPLOYEE={worker_id} TELEGRAM_BOT_TOKEN=${token_env} python3 telegram-bob-remote/employee_bot.py",
+                    **_employee_bot_runtime_status(worker_id),
+                })
+            items.sort(key=lambda x: x["worker_id"])
+            return {
+                "success": True,
+                "count": len(items),
+                "workers": items,
+                "path": str(EMPLOYEE_BOTS_FILE),
+                "valid_task_types": _valid_task_types(),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/employee_bots/create")
+    async def ops_employee_bots_create(request: EmployeeBotCreateRequest):
+        """Create or update an employee bot profile."""
+        try:
+            worker_id = _slugify(request.worker_id, fallback="")
+            if not worker_id:
+                raise HTTPException(status_code=400, detail="worker_id is required")
+            valid_types = set(_valid_task_types())
+            skills = [str(s).strip().lower() for s in request.skills if str(s).strip()]
+            bad = [s for s in skills if s not in valid_types]
+            if bad:
+                raise HTTPException(status_code=400, detail=f"Invalid skills: {', '.join(bad)}")
+            if not skills:
+                raise HTTPException(status_code=400, detail="At least one skill is required")
+            payload = _load_employee_bots()
+            workers = payload.setdefault("workers", {})
+            token_env = (request.token_env or "").strip() or f"{worker_id.upper()}_BOT_TOKEN"
+            workers[worker_id] = {
+                "name": request.name.strip() or worker_id.title(),
+                "role": request.role.strip() or "Employee Bot",
+                "emoji": (request.emoji or "🤖").strip() or "🤖",
+                "skills": skills,
+                "intro": (request.intro or "").strip(),
+                "token_env": token_env,
+            }
+            _save_employee_bots(payload)
+            profile = {"worker_id": worker_id, **workers[worker_id]}
+            return {
+                "success": True,
+                "worker_id": worker_id,
+                "profile": profile,
+                "token_configured": _has_env_key(token_env),
+                "start_command": f"EMPLOYEE={worker_id} TELEGRAM_BOT_TOKEN=${token_env} python3 telegram-bob-remote/employee_bot.py",
+                "notes": "Set token env in .env and restart worker/bot services to apply.",
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/ops/employee_bots/runtime")
+    async def ops_employee_bots_runtime(worker_id: str):
+        """Get runtime status for a specific employee bot."""
+        try:
+            worker = _slugify(worker_id, fallback="")
+            if not worker:
+                raise HTTPException(status_code=400, detail="worker_id is required")
+            return {"success": True, **_employee_bot_runtime_status(worker)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/employee_bots/start")
+    async def ops_employee_bots_start(request: EmployeeBotWorkerRequest):
+        """Start an employee Telegram bot in background."""
+        try:
+            worker = _slugify(request.worker_id, fallback="")
+            payload = _load_employee_bots()
+            workers = payload.get("workers", {})
+            if worker not in workers:
+                raise HTTPException(status_code=404, detail=f"Unknown worker_id: {worker}")
+            status = _employee_bot_runtime_status(worker)
+            if status.get("running"):
+                return {"success": True, "message": "Already running", **status}
+
+            cfg = workers.get(worker, {})
+            token_env = str(cfg.get("token_env") or f"{worker.upper()}_BOT_TOKEN")
+            token = (os.environ.get(token_env, "") or "").strip()
+            if not token:
+                raise HTTPException(status_code=400, detail=f"Missing token env: {token_env}")
+
+            py = _pick_python_with_module("telegram")
+            if not py:
+                raise HTTPException(status_code=500, detail="No python interpreter with telegram module found")
+
+            paths = _employee_bot_paths(worker)
+            paths["log"].parent.mkdir(parents=True, exist_ok=True)
+            script = BASE_DIR / "telegram-bob-remote" / "employee_bot.py"
+            env = os.environ.copy()
+            env["EMPLOYEE"] = worker
+            env["TELEGRAM_BOT_TOKEN"] = token
+            with paths["log"].open("a", encoding="utf-8") as out, paths["err"].open("a", encoding="utf-8") as err:
+                proc = subprocess.Popen(
+                    [py, str(script)],
+                    cwd=BASE_DIR,
+                    stdout=out,
+                    stderr=err,
+                    env=env,
+                    start_new_session=True,
+                )
+            paths["pid"].write_text(str(proc.pid), encoding="utf-8")
+            return {"success": True, "message": "Started", **_employee_bot_runtime_status(worker)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/employee_bots/stop")
+    async def ops_employee_bots_stop(request: EmployeeBotWorkerRequest):
+        """Stop an employee Telegram bot."""
+        try:
+            worker = _slugify(request.worker_id, fallback="")
+            if not worker:
+                raise HTTPException(status_code=400, detail="worker_id is required")
+            paths = _employee_bot_paths(worker)
+            pid = _employee_bot_pid(worker)
+            if not _pid_is_alive(pid):
+                try:
+                    paths["pid"].unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return {"success": True, "message": "Already stopped", **_employee_bot_runtime_status(worker)}
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(12):
+                if not _pid_is_alive(pid):
+                    break
+                time.sleep(0.1)
+            if _pid_is_alive(pid):
+                os.kill(pid, signal.SIGKILL)
+            try:
+                paths["pid"].unlink(missing_ok=True)
+            except Exception:
+                pass
+            return {"success": True, "message": "Stopped", **_employee_bot_runtime_status(worker)}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/ops/employee_bots/restart")
+    async def ops_employee_bots_restart(request: EmployeeBotWorkerRequest):
+        """Restart an employee bot."""
+        await ops_employee_bots_stop(request)
+        return await ops_employee_bots_start(request)
+
+    @app.post("/ops/employee_bots/test")
+    async def ops_employee_bots_test(request: EmployeeBotWorkerRequest):
+        """Validate employee bot token by calling Telegram getMe."""
+        try:
+            worker = _slugify(request.worker_id, fallback="")
+            payload = _load_employee_bots()
+            workers = payload.get("workers", {})
+            if worker not in workers:
+                raise HTTPException(status_code=404, detail=f"Unknown worker_id: {worker}")
+            cfg = workers.get(worker, {})
+            token_env = str(cfg.get("token_env") or f"{worker.upper()}_BOT_TOKEN")
+            token = (os.environ.get(token_env, "") or "").strip()
+            if not token:
+                raise HTTPException(status_code=400, detail=f"Missing token env: {token_env}")
+            url = f"https://api.telegram.org/bot{token}/getMe"
+            result = _http_get_json(url, timeout=8)
+            ok = bool(result.get("ok"))
+            return {
+                "success": ok,
+                "worker_id": worker,
+                "token_env": token_env,
+                "telegram_ok": ok,
+                "bot": result.get("result") if ok else None,
+                "raw": result if not ok else None,
+            }
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
