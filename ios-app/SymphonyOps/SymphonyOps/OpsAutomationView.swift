@@ -30,6 +30,7 @@ struct OpsAutomationView: View {
     @State private var iMessageAutomation: IMessageAutomationConfig?
     @State private var iMessageBackfillPreview: IMessageBackfillResponse?
     @State private var iMessageIntakeItems: [IMessageIntakeItem] = []
+    @State private var iMessageIntakeFailures: [IMessageIntakeFailureItem] = []
     @State private var showRealBackfillConfirm = false
     @State private var pendingRealBackfillWeeks = 4
     @State private var incidentNote = ""
@@ -302,6 +303,35 @@ struct OpsAutomationView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                    }
+                }
+                if !iMessageIntakeFailures.isEmpty {
+                    Divider()
+                    Text("Intake Action Failures")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Button("Retry All Pending Failures") {
+                        Task { await retryAllIntakeFailures() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isLoading)
+                    ForEach(iMessageIntakeFailures.prefix(8)) { failure in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(failure.kind ?? "unknown").capitalized · \(failure.action ?? "action")")
+                                    .font(.caption2)
+                                Text(failure.last_error ?? "Unknown error")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            Spacer()
+                            Button("Retry") {
+                                Task { await retryIntakeFailure(failure.id) }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isLoading)
+                        }
                     }
                 }
                 Divider()
@@ -601,6 +631,7 @@ struct OpsAutomationView: View {
             recentTexts = (await api.fetchRecentIMessageWork(limit: 10))?.items ?? []
             iMessageAutomation = (await api.fetchIMessageAutomation())?.automation
             iMessageIntakeItems = (await api.fetchIMessageIntake(status: "draft", limit: 50))?.items ?? []
+            iMessageIntakeFailures = (await api.fetchIMessageIntakeFailures(status: "pending", limit: 100))?.items ?? []
             iMessageWatchlist = (await api.fetchIMessageWatchlist())?.watchlist ?? []
             contactsList = (await api.fetchContactsList(query: contactsSearch, limit: 200))?.contacts ?? []
             clientContacts = (await api.fetchClientContacts())?.clients ?? []
@@ -660,6 +691,7 @@ struct OpsAutomationView: View {
         isLoading = true
         defer { isLoading = false }
         iMessageIntakeItems = (await api.fetchIMessageIntake(status: "draft", limit: 50))?.items ?? []
+        iMessageIntakeFailures = (await api.fetchIMessageIntakeFailures(status: "pending", limit: 100))?.items ?? []
         resultMessage = "Intake queue refreshed (\(iMessageIntakeItems.count) pending)."
     }
 
@@ -673,7 +705,11 @@ struct OpsAutomationView: View {
             await refreshForMode()
             resultMessage = "Invoice approved."
         } else {
-            resultMessage = response?.error ?? api.error ?? "Could not approve invoice draft."
+            if let failureID = response?.failure_id, !failureID.isEmpty {
+                resultMessage = "Invoice action failed; queued for retry (\(failureID))."
+            } else {
+                resultMessage = response?.error ?? api.error ?? "Could not approve invoice draft."
+            }
         }
     }
 
@@ -692,7 +728,11 @@ struct OpsAutomationView: View {
             await refreshForMode()
             resultMessage = "Calendar event action complete."
         } else {
-            resultMessage = response?.error ?? api.error ?? "Could not create calendar event."
+            if let failureID = response?.failure_id, !failureID.isEmpty {
+                resultMessage = "Scheduling failed; queued for retry (\(failureID))."
+            } else {
+                resultMessage = response?.error ?? api.error ?? "Could not create calendar event."
+            }
         }
     }
 
@@ -705,7 +745,39 @@ struct OpsAutomationView: View {
             await refreshForMode()
             resultMessage = "Confirmation text sent."
         } else {
-            resultMessage = response?.error ?? api.error ?? "Could not send confirmation text."
+            if let failureID = response?.failure_id, !failureID.isEmpty {
+                resultMessage = "Text send failed; queued for retry (\(failureID))."
+            } else {
+                resultMessage = response?.error ?? api.error ?? "Could not send confirmation text."
+            }
+        }
+    }
+
+    @MainActor
+    private func retryIntakeFailure(_ failureID: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.retryIMessageIntakeFailure(failureID: failureID)
+        if response?.success == true {
+            await refreshForMode()
+            resultMessage = "Failure retried successfully."
+        } else {
+            await refreshForMode()
+            resultMessage = api.error ?? "Retry failed."
+        }
+    }
+
+    @MainActor
+    private func retryAllIntakeFailures() async {
+        isLoading = true
+        defer { isLoading = false }
+        let response = await api.retryAllIMessageIntakeFailures(limit: 50)
+        if response?.success == true {
+            await refreshForMode()
+            resultMessage = "Retried \(response?.retried_count ?? 0). Resolved \(response?.resolved_count ?? 0), pending \(response?.still_pending_count ?? 0)."
+        } else {
+            await refreshForMode()
+            resultMessage = api.error ?? "Retry all failed."
         }
     }
 

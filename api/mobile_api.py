@@ -170,6 +170,8 @@ IMESSAGE_AUTOMATION_DIR = BASE_DIR / "data" / "imessage_automation"
 IMESSAGE_AUTOMATION_DIR.mkdir(parents=True, exist_ok=True)
 IMESSAGE_INVOICE_DRAFTS_FILE = IMESSAGE_AUTOMATION_DIR / "service_invoice_drafts.jsonl"
 IMESSAGE_APPOINTMENT_DRAFTS_FILE = IMESSAGE_AUTOMATION_DIR / "appointment_schedule_drafts.jsonl"
+IMESSAGE_INTAKE_AUDIT_FILE = IMESSAGE_AUTOMATION_DIR / "intake_actions_audit.jsonl"
+IMESSAGE_INTAKE_FAILURES_FILE = IMESSAGE_AUTOMATION_DIR / "intake_failures.json"
 MESSAGES_DB_PATH = Path.home() / "Library" / "Messages" / "chat.db"
 
 PARSE_PROFILES: Dict[str, Dict[str, Any]] = {
@@ -1813,6 +1815,185 @@ def _lookup_handle_for_rowid(rowid: Any) -> str:
         rowid_int = int(rowid)
     except Exception:
         return ""
+
+
+def _load_intake_failures() -> List[Dict[str, Any]]:
+    payload = _read_json_file(IMESSAGE_INTAKE_FAILURES_FILE)
+    rows = payload.get("items", []) if isinstance(payload, dict) else []
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def _save_intake_failures(rows: List[Dict[str, Any]]) -> None:
+    IMESSAGE_INTAKE_FAILURES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    IMESSAGE_INTAKE_FAILURES_FILE.write_text(json.dumps({"items": rows}, indent=2), encoding="utf-8")
+
+
+def _append_intake_audit(
+    action: str,
+    kind: str,
+    draft_id: str,
+    success: bool,
+    payload: Optional[Dict[str, Any]] = None,
+    result: Optional[Dict[str, Any]] = None,
+    error: str = "",
+) -> None:
+    _append_jsonl(
+        IMESSAGE_INTAKE_AUDIT_FILE,
+        {
+            "id": f"audit_{uuid4().hex[:12]}",
+            "timestamp": datetime.now().isoformat(),
+            "action": action,
+            "kind": kind,
+            "draft_id": draft_id,
+            "success": bool(success),
+            "error": error,
+            "payload": payload or {},
+            "result": result or {},
+        },
+    )
+
+
+def _enqueue_intake_failure(
+    action: str,
+    kind: str,
+    draft_id: str,
+    payload: Dict[str, Any],
+    error: str,
+) -> str:
+    rows = _load_intake_failures()
+    failure_id = f"ifail_{uuid4().hex[:10]}"
+    rows.append(
+        {
+            "id": failure_id,
+            "created_at": datetime.now().isoformat(),
+            "status": "pending",
+            "attempt_count": 0,
+            "last_attempt_at": None,
+            "resolved_at": None,
+            "action": action,
+            "kind": kind,
+            "draft_id": draft_id,
+            "payload": payload,
+            "last_error": error,
+        }
+    )
+    _save_intake_failures(rows)
+    return failure_id
+
+
+def _execute_invoice_approve(payload: Dict[str, Any]) -> Dict[str, Any]:
+    draft_id = str(payload.get("draft_id") or "").strip()
+    if not draft_id:
+        return {"success": False, "error": "draft_id is required"}
+    now = datetime.now().isoformat()
+    updated = _update_draft(
+        IMESSAGE_INVOICE_DRAFTS_FILE,
+        draft_id,
+        {
+            "status": "approved",
+            "approved_at": now,
+            "approval_note": str(payload.get("note") or "").strip(),
+            "last_action_at": now,
+        },
+    )
+    if not updated:
+        return {"success": False, "error": "Invoice draft not found", "draft_id": draft_id}
+
+    sent = {"success": False, "skipped": True}
+    if bool(payload.get("send_confirmation", True)):
+        handle = str(updated.get("handle_raw") or "") or _lookup_handle_for_rowid(updated.get("rowid"))
+        msg = str(payload.get("confirmation_message") or "").strip() or "Your service invoice draft has been approved. We will send final details shortly."
+        if handle:
+            sent = _send_imessage_text(handle, msg)
+        else:
+            sent = {"success": False, "error": "Draft has no raw handle for outbound text"}
+    ok = bool(sent.get("success", True) if not sent.get("skipped") else True)
+    return {"success": ok, "draft_id": draft_id, "status": "approved", "confirmation": sent}
+
+
+def _execute_appointment_schedule(payload: Dict[str, Any]) -> Dict[str, Any]:
+    draft_id = str(payload.get("draft_id") or "").strip()
+    if not draft_id:
+        return {"success": False, "error": "draft_id is required"}
+    rows = _read_all_jsonl(IMESSAGE_APPOINTMENT_DRAFTS_FILE)
+    target = next((r for r in rows if str(r.get("draft_id", "")) == draft_id), None)
+    if not target:
+        return {"success": False, "error": "Appointment draft not found", "draft_id": draft_id}
+
+    fallback_start = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
+    if fallback_start <= datetime.now():
+        fallback_start = fallback_start + timedelta(days=1)
+    start_at = _parse_iso_or_default(payload.get("proposed_start"), fallback_start)
+    title = f"Service Appointment - {target.get('contact_name_masked') or target.get('handle_masked') or 'Client'}"
+    notes = f"{target.get('request_text_redacted', '')}\n\nProject: {target.get('project_hint', '')}\nDraft ID: {draft_id}"
+    cal = _create_calendar_event(title, notes, start_at, duration_min=max(15, int(payload.get("duration_min") or 60)))
+
+    now = datetime.now().isoformat()
+    status_value = "scheduled" if cal.get("success") else "schedule_failed"
+    updated = _update_draft(
+        IMESSAGE_APPOINTMENT_DRAFTS_FILE,
+        draft_id,
+        {
+            "status": status_value,
+            "proposed_start": start_at.isoformat(),
+            "calendar_event_created_at": now if cal.get("success") else None,
+            "calendar_result": cal,
+            "last_action_at": now,
+        },
+    )
+    if not updated:
+        return {"success": False, "error": "Appointment draft not found", "draft_id": draft_id}
+
+    sent = {"success": False, "skipped": True}
+    if bool(payload.get("send_confirmation", True)):
+        handle = str(updated.get("handle_raw") or "") or _lookup_handle_for_rowid(updated.get("rowid"))
+        when_text = start_at.strftime("%a %b %d at %I:%M %p")
+        msg = str(payload.get("confirmation_message") or "").strip() or f"Your appointment is scheduled for {when_text}. Reply here if you need to adjust."
+        if handle:
+            sent = _send_imessage_text(handle, msg)
+        else:
+            sent = {"success": False, "error": "Draft has no raw handle for outbound text"}
+
+    ok = bool(cal.get("success")) and bool(sent.get("success", True) if not sent.get("skipped") else True)
+    return {"success": ok, "draft_id": draft_id, "status": status_value, "calendar": cal, "confirmation": sent}
+
+
+def _execute_confirmation_send(payload: Dict[str, Any]) -> Dict[str, Any]:
+    kind = str(payload.get("kind") or "").strip().lower()
+    draft_id = str(payload.get("draft_id") or "").strip()
+    if kind not in {"invoice", "appointment"}:
+        return {"success": False, "error": "kind must be invoice or appointment"}
+    if not draft_id:
+        return {"success": False, "error": "draft_id is required"}
+
+    draft_file = IMESSAGE_INVOICE_DRAFTS_FILE if kind == "invoice" else IMESSAGE_APPOINTMENT_DRAFTS_FILE
+    rows = _read_all_jsonl(draft_file)
+    target = next((r for r in rows if str(r.get("draft_id", "")) == draft_id), None)
+    if not target:
+        return {"success": False, "error": "Draft not found", "draft_id": draft_id, "kind": kind}
+
+    handle = str(target.get("handle_raw") or "") or _lookup_handle_for_rowid(target.get("rowid"))
+    if not handle:
+        return {"success": False, "error": "Draft has no raw handle for outbound text", "draft_id": draft_id, "kind": kind}
+
+    default_message = (
+        "Your service invoice draft has been approved. We will send final details shortly."
+        if kind == "invoice"
+        else "Your appointment request is in progress. We will confirm your time shortly."
+    )
+    message = str(payload.get("message") or "").strip() or default_message
+    sent = _send_imessage_text(handle, message)
+    now = datetime.now().isoformat()
+    _update_draft(
+        draft_file,
+        draft_id,
+        {
+            "last_confirmation_at": now if sent.get("success") else None,
+            "last_confirmation_message": message,
+            "last_action_at": now,
+        },
+    )
+    return {"success": bool(sent.get("success")), "draft_id": draft_id, "kind": kind, "result": sent}
     if not MESSAGES_DB_PATH.exists():
         return ""
     try:
@@ -3549,6 +3730,9 @@ if HAS_FASTAPI:
         draft_id: str
         message: Optional[str] = None
 
+    class IMessageRetryAllFailuresRequest(BaseModel):
+        limit: int = 25
+
     class ContactsLookupRequest(BaseModel):
         query: str
 
@@ -3967,41 +4151,32 @@ if HAS_FASTAPI:
     async def imessages_intake_invoice_approve(request: IMessageIntakeActionRequest):
         """Approve invoice draft and optionally send confirmation text."""
         try:
-            draft_id = (request.draft_id or "").strip()
-            if not draft_id:
-                raise HTTPException(status_code=400, detail="draft_id is required")
-
-            now = datetime.now().isoformat()
-            updated = _update_draft(
-                IMESSAGE_INVOICE_DRAFTS_FILE,
-                draft_id,
-                {
-                    "status": "approved",
-                    "approved_at": now,
-                    "approval_note": (request.note or "").strip(),
-                    "last_action_at": now,
-                },
-            )
-            if not updated:
-                raise HTTPException(status_code=404, detail="Invoice draft not found")
-
-            sent = {"success": False, "skipped": True}
-            if bool(request.send_confirmation):
-                handle = str(updated.get("handle_raw") or "") or _lookup_handle_for_rowid(updated.get("rowid"))
-                msg = (request.confirmation_message or "").strip() or "Your service invoice draft has been approved. We will send final details shortly."
-                if handle:
-                    sent = _send_imessage_text(handle, msg)
-                else:
-                    sent = {"success": False, "error": "Draft has no raw handle for outbound text"}
-
-            return {
-                "success": True,
-                "draft_id": draft_id,
-                "status": "approved",
-                "confirmation": sent,
+            payload = {
+                "draft_id": request.draft_id,
+                "note": request.note or "",
+                "send_confirmation": bool(request.send_confirmation),
+                "confirmation_message": request.confirmation_message,
             }
-        except HTTPException:
-            raise
+            result = _execute_invoice_approve(payload)
+            _append_intake_audit(
+                action="invoice_approve",
+                kind="invoice",
+                draft_id=str(request.draft_id or ""),
+                success=bool(result.get("success")),
+                payload=payload,
+                result=result,
+                error=str(result.get("error") or ""),
+            )
+            if not result.get("success"):
+                failure_id = _enqueue_intake_failure(
+                    action="invoice_approve",
+                    kind="invoice",
+                    draft_id=str(request.draft_id or ""),
+                    payload=payload,
+                    error=str(result.get("error") or "unknown failure"),
+                )
+                result["failure_id"] = failure_id
+            return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -4009,58 +4184,33 @@ if HAS_FASTAPI:
     async def imessages_intake_appointment_calendar(request: IMessageIntakeActionRequest):
         """Create a calendar event from appointment draft and optionally send confirmation."""
         try:
-            draft_id = (request.draft_id or "").strip()
-            if not draft_id:
-                raise HTTPException(status_code=400, detail="draft_id is required")
-
-            rows = _read_all_jsonl(IMESSAGE_APPOINTMENT_DRAFTS_FILE)
-            target = next((r for r in rows if str(r.get("draft_id", "")) == draft_id), None)
-            if not target:
-                raise HTTPException(status_code=404, detail="Appointment draft not found")
-
-            fallback_start = datetime.now().replace(hour=9, minute=0, second=0, microsecond=0)
-            if fallback_start <= datetime.now():
-                fallback_start = fallback_start + timedelta(days=1)
-            start_at = _parse_iso_or_default(request.proposed_start, fallback_start)
-            title = f"Service Appointment - {target.get('contact_name_masked') or target.get('handle_masked') or 'Client'}"
-            notes = f"{target.get('request_text_redacted', '')}\n\nProject: {target.get('project_hint', '')}\nDraft ID: {draft_id}"
-            cal = _create_calendar_event(title, notes, start_at, duration_min=max(15, int(request.duration_min or 60)))
-
-            now = datetime.now().isoformat()
-            status_value = "scheduled" if cal.get("success") else "schedule_failed"
-            updated = _update_draft(
-                IMESSAGE_APPOINTMENT_DRAFTS_FILE,
-                draft_id,
-                {
-                    "status": status_value,
-                    "proposed_start": start_at.isoformat(),
-                    "calendar_event_created_at": now if cal.get("success") else None,
-                    "calendar_result": cal,
-                    "last_action_at": now,
-                },
-            )
-            if not updated:
-                raise HTTPException(status_code=404, detail="Appointment draft not found")
-
-            sent = {"success": False, "skipped": True}
-            if bool(request.send_confirmation):
-                handle = str(updated.get("handle_raw") or "") or _lookup_handle_for_rowid(updated.get("rowid"))
-                when_text = start_at.strftime("%a %b %d at %I:%M %p")
-                msg = (request.confirmation_message or "").strip() or f"Your appointment is scheduled for {when_text}. Reply here if you need to adjust."
-                if handle:
-                    sent = _send_imessage_text(handle, msg)
-                else:
-                    sent = {"success": False, "error": "Draft has no raw handle for outbound text"}
-
-            return {
-                "success": True,
-                "draft_id": draft_id,
-                "status": status_value,
-                "calendar": cal,
-                "confirmation": sent,
+            payload = {
+                "draft_id": request.draft_id,
+                "proposed_start": request.proposed_start,
+                "duration_min": int(request.duration_min or 60),
+                "send_confirmation": bool(request.send_confirmation),
+                "confirmation_message": request.confirmation_message,
             }
-        except HTTPException:
-            raise
+            result = _execute_appointment_schedule(payload)
+            _append_intake_audit(
+                action="appointment_calendar",
+                kind="appointment",
+                draft_id=str(request.draft_id or ""),
+                success=bool(result.get("success")),
+                payload=payload,
+                result=result,
+                error=str(result.get("error") or ""),
+            )
+            if not result.get("success"):
+                failure_id = _enqueue_intake_failure(
+                    action="appointment_calendar",
+                    kind="appointment",
+                    draft_id=str(request.draft_id or ""),
+                    payload=payload,
+                    error=str(result.get("error") or "unknown failure"),
+                )
+                result["failure_id"] = failure_id
+            return result
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -4068,48 +4218,182 @@ if HAS_FASTAPI:
     async def imessages_intake_confirmation_send(request: IMessageConfirmationRequest):
         """Send a confirmation iMessage for a draft."""
         try:
-            kind = (request.kind or "").strip().lower()
-            draft_id = (request.draft_id or "").strip()
-            if kind not in {"invoice", "appointment"}:
-                raise HTTPException(status_code=400, detail="kind must be invoice or appointment")
-            if not draft_id:
-                raise HTTPException(status_code=400, detail="draft_id is required")
-
-            draft_file = IMESSAGE_INVOICE_DRAFTS_FILE if kind == "invoice" else IMESSAGE_APPOINTMENT_DRAFTS_FILE
-            rows = _read_all_jsonl(draft_file)
-            target = next((r for r in rows if str(r.get("draft_id", "")) == draft_id), None)
-            if not target:
-                raise HTTPException(status_code=404, detail="Draft not found")
-
-            handle = str(target.get("handle_raw") or "") or _lookup_handle_for_rowid(target.get("rowid"))
-            if not handle:
-                return {"success": False, "error": "Draft has no raw handle for outbound text"}
-
-            default_message = (
-                "Your service invoice draft has been approved. We will send final details shortly."
-                if kind == "invoice"
-                else "Your appointment request is in progress. We will confirm your time shortly."
+            payload = {
+                "kind": request.kind,
+                "draft_id": request.draft_id,
+                "message": request.message,
+            }
+            result = _execute_confirmation_send(payload)
+            _append_intake_audit(
+                action="confirmation_send",
+                kind=str(request.kind or ""),
+                draft_id=str(request.draft_id or ""),
+                success=bool(result.get("success")),
+                payload=payload,
+                result=result,
+                error=str(result.get("error") or ""),
             )
-            message = (request.message or "").strip() or default_message
-            sent = _send_imessage_text(handle, message)
-            now = datetime.now().isoformat()
-            _update_draft(
-                draft_file,
-                draft_id,
-                {
-                    "last_confirmation_at": now if sent.get("success") else None,
-                    "last_confirmation_message": message,
-                    "last_action_at": now,
-                },
-            )
+            if not result.get("success"):
+                failure_id = _enqueue_intake_failure(
+                    action="confirmation_send",
+                    kind=str(request.kind or ""),
+                    draft_id=str(request.draft_id or ""),
+                    payload=payload,
+                    error=str(result.get("error") or "unknown failure"),
+                )
+                result["failure_id"] = failure_id
+            return result
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/intake/audit")
+    async def imessages_intake_audit(limit: int = 100):
+        """Recent intake actions audit entries."""
+        try:
+            items = _read_recent_jsonl(IMESSAGE_INTAKE_AUDIT_FILE, limit=max(1, min(limit, 1000)))
             return {
-                "success": bool(sent.get("success")),
-                "draft_id": draft_id,
-                "kind": kind,
-                "result": sent,
+                "success": True,
+                "count": len(items),
+                "items": items,
+                "source_file": str(IMESSAGE_INTAKE_AUDIT_FILE),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get("/imessages/intake/failures")
+    async def imessages_intake_failures(status: str = "pending", limit: int = 100):
+        """List intake action failures queued for retry."""
+        try:
+            rows = _load_intake_failures()
+            target = (status or "pending").strip().lower()
+            if target != "all":
+                rows = [r for r in rows if str(r.get("status", "")).lower() == target]
+            rows = sorted(rows, key=lambda x: str(x.get("created_at") or ""), reverse=True)
+            rows = rows[: max(1, min(limit, 1000))]
+            return {"success": True, "count": len(rows), "status_filter": target, "items": rows}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/intake/failures/{failure_id}/retry")
+    async def imessages_intake_failures_retry(failure_id: str):
+        """Retry a queued intake failure by id."""
+        try:
+            rows = _load_intake_failures()
+            target = None
+            for row in rows:
+                if str(row.get("id", "")) == failure_id:
+                    target = row
+                    break
+            if target is None:
+                raise HTTPException(status_code=404, detail="Failure item not found")
+
+            action = str(target.get("action", "")).strip().lower()
+            payload = target.get("payload", {}) if isinstance(target.get("payload"), dict) else {}
+            if action == "invoice_approve":
+                result = _execute_invoice_approve(payload)
+            elif action == "appointment_calendar":
+                result = _execute_appointment_schedule(payload)
+            elif action == "confirmation_send":
+                result = _execute_confirmation_send(payload)
+            else:
+                result = {"success": False, "error": f"Unsupported action: {action}"}
+
+            target["attempt_count"] = int(target.get("attempt_count", 0)) + 1
+            target["last_attempt_at"] = datetime.now().isoformat()
+            if result.get("success"):
+                target["status"] = "resolved"
+                target["resolved_at"] = datetime.now().isoformat()
+                target["last_error"] = ""
+            else:
+                target["status"] = "pending"
+                target["last_error"] = str(result.get("error") or "retry failed")
+            _save_intake_failures(rows)
+
+            _append_intake_audit(
+                action=f"retry:{action}",
+                kind=str(target.get("kind", "")),
+                draft_id=str(target.get("draft_id", "")),
+                success=bool(result.get("success")),
+                payload=payload,
+                result=result,
+                error=str(result.get("error") or ""),
+            )
+
+            return {
+                "success": bool(result.get("success")),
+                "failure_id": failure_id,
+                "failure_status": target.get("status"),
+                "result": result,
             }
         except HTTPException:
             raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @app.post("/imessages/intake/failures/retry_all")
+    async def imessages_intake_failures_retry_all(request: IMessageRetryAllFailuresRequest):
+        """Retry multiple pending intake failures."""
+        try:
+            rows = _load_intake_failures()
+            pending = [r for r in rows if str(r.get("status", "")).lower() == "pending"]
+            pending = sorted(pending, key=lambda x: str(x.get("created_at") or ""))
+            capped = pending[: max(1, min(int(request.limit or 25), 200))]
+            retried = 0
+            resolved = 0
+            still_pending = 0
+            results: List[Dict[str, Any]] = []
+
+            for target in capped:
+                action = str(target.get("action", "")).strip().lower()
+                payload = target.get("payload", {}) if isinstance(target.get("payload"), dict) else {}
+                if action == "invoice_approve":
+                    result = _execute_invoice_approve(payload)
+                elif action == "appointment_calendar":
+                    result = _execute_appointment_schedule(payload)
+                elif action == "confirmation_send":
+                    result = _execute_confirmation_send(payload)
+                else:
+                    result = {"success": False, "error": f"Unsupported action: {action}"}
+
+                target["attempt_count"] = int(target.get("attempt_count", 0)) + 1
+                target["last_attempt_at"] = datetime.now().isoformat()
+                retried += 1
+                if result.get("success"):
+                    target["status"] = "resolved"
+                    target["resolved_at"] = datetime.now().isoformat()
+                    target["last_error"] = ""
+                    resolved += 1
+                else:
+                    target["status"] = "pending"
+                    target["last_error"] = str(result.get("error") or "retry failed")
+                    still_pending += 1
+
+                _append_intake_audit(
+                    action=f"retry_all:{action}",
+                    kind=str(target.get("kind", "")),
+                    draft_id=str(target.get("draft_id", "")),
+                    success=bool(result.get("success")),
+                    payload=payload,
+                    result=result,
+                    error=str(result.get("error") or ""),
+                )
+                results.append(
+                    {
+                        "failure_id": target.get("id"),
+                        "action": action,
+                        "success": bool(result.get("success")),
+                        "error": str(result.get("error") or ""),
+                    }
+                )
+
+            _save_intake_failures(rows)
+            return {
+                "success": True,
+                "retried_count": retried,
+                "resolved_count": resolved,
+                "still_pending_count": still_pending,
+                "results": results,
+            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

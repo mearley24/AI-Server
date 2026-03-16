@@ -1585,6 +1585,51 @@ class APIClient: ObservableObject {
         }
     }
 
+    func fetchIMessageIntakeFailures(status: String = "pending", limit: Int = 100) async -> IMessageIntakeFailuresResponse? {
+        do {
+            var comps = URLComponents(string: "\(baseURL)/imessages/intake/failures")!
+            comps.queryItems = [
+                URLQueryItem(name: "status", value: status),
+                URLQueryItem(name: "limit", value: String(max(1, min(limit, 1000)))),
+            ]
+            guard let url = comps.url else { return nil }
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(IMessageIntakeFailuresResponse.self, from: data)
+        } catch {
+            await MainActor.run { self.error = error.localizedDescription }
+            return nil
+        }
+    }
+
+    func retryIMessageIntakeFailure(failureID: String) async -> IMessageRetryFailureResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/intake/failures/\(failureID)/retry")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = Data("{}".utf8)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageRetryFailureResponse.self, from: data)
+        } catch {
+            await MainActor.run { self.error = error.localizedDescription }
+            return nil
+        }
+    }
+
+    func retryAllIMessageIntakeFailures(limit: Int = 25) async -> IMessageRetryAllFailuresResponse? {
+        do {
+            var request = URLRequest(url: URL(string: "\(baseURL)/imessages/intake/failures/retry_all")!)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = IMessageRetryAllFailuresRequest(limit: max(1, min(limit, 200)))
+            request.httpBody = try JSONEncoder().encode(payload)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            return try JSONDecoder().decode(IMessageRetryAllFailuresResponse.self, from: data)
+        } catch {
+            await MainActor.run { self.error = error.localizedDescription }
+            return nil
+        }
+    }
+
     func addClientContact(
         name: String,
         phones: [String],
@@ -3453,6 +3498,7 @@ struct IMessageIntakeActionResponse: Codable {
     let success: Bool?
     let draft_id: String?
     let status: String?
+    let failure_id: String?
     let confirmation: [String: StringOrBool]?
     let error: String?
 }
@@ -3467,7 +3513,44 @@ struct IMessageSendConfirmationResponse: Codable {
     let success: Bool?
     let draft_id: String?
     let kind: String?
+    let failure_id: String?
     let error: String?
+}
+
+struct IMessageIntakeFailureItem: Codable, Identifiable {
+    let id: String
+    let created_at: String?
+    let status: String?
+    let attempt_count: Int?
+    let last_attempt_at: String?
+    let action: String?
+    let kind: String?
+    let draft_id: String?
+    let last_error: String?
+}
+
+struct IMessageIntakeFailuresResponse: Codable {
+    let success: Bool
+    let count: Int
+    let status_filter: String?
+    let items: [IMessageIntakeFailureItem]
+}
+
+struct IMessageRetryFailureResponse: Codable {
+    let success: Bool
+    let failure_id: String?
+    let failure_status: String?
+}
+
+struct IMessageRetryAllFailuresRequest: Codable {
+    let limit: Int
+}
+
+struct IMessageRetryAllFailuresResponse: Codable {
+    let success: Bool?
+    let retried_count: Int?
+    let resolved_count: Int?
+    let still_pending_count: Int?
 }
 
 enum StringOrBool: Decodable {
