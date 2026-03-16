@@ -135,7 +135,11 @@ struct ContentView: View {
                     headerChip("Health", isSelected: opsMode == .health) { opsMode = .health }
                     headerChip("Dropout", isSelected: opsMode == .dropout) { opsMode = .dropout }
                     headerChip("Notes", isSelected: opsMode == .notes) { opsMode = .notes }
-                    headerChip("Inventory", isSelected: opsMode == .inventory) { opsMode = .inventory }
+                    headerChip("Inventory", isSelected: opsMode.rawValue == 4) {
+                        if let inventoryMode = OpsWorkspaceMode(rawValue: 4) {
+                            opsMode = inventoryMode
+                        }
+                    }
                     headerChip("Weather", isSelected: opsMode == .weather) { opsMode = .weather }
                 case .settings:
                     headerChip("Connection", isSelected: true) {}
