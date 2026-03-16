@@ -1696,8 +1696,12 @@ class APIClient: ObservableObject {
 
     func seedIMessageWatchlistFromContacts(
         includeClientsRegistry: Bool = true,
-        includeContactsIndex: Bool = true,
+        includeContactsIndex: Bool = false,
+        includeMessageHistory: Bool = true,
         includeEmails: Bool = true,
+        startDate: String = "2024-05-01",
+        endDate: String? = nil,
+        minMessagesPerHandle: Int = 3,
         overwrite: Bool = false
     ) async -> SeedWatchlistResponse? {
         do {
@@ -1707,7 +1711,11 @@ class APIClient: ObservableObject {
             let payload = SeedWatchlistRequest(
                 include_clients_registry: includeClientsRegistry,
                 include_contacts_index: includeContactsIndex,
+                include_message_history: includeMessageHistory,
                 include_emails: includeEmails,
+                start_date: startDate,
+                end_date: endDate,
+                min_messages_per_handle: minMessagesPerHandle,
                 overwrite: overwrite
             )
             request.httpBody = try JSONEncoder().encode(payload)
@@ -3641,7 +3649,11 @@ struct RemoveClientContactResponse: Codable {
 struct SeedWatchlistRequest: Codable {
     let include_clients_registry: Bool
     let include_contacts_index: Bool
+    let include_message_history: Bool
     let include_emails: Bool
+    let start_date: String
+    let end_date: String?
+    let min_messages_per_handle: Int
     let overwrite: Bool
 }
 
@@ -3651,6 +3663,8 @@ struct SeedWatchlistResponse: Codable {
     let final_watchlist_count: Int?
     let watchlist_count: Int?
     let mode: String?
+    let start_date: String?
+    let end_date: String?
     let command_success: Bool?
     let error: String?
 }

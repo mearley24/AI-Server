@@ -1817,6 +1817,61 @@ def _lookup_handle_for_rowid(rowid: Any) -> str:
         return ""
 
 
+def _apple_ns_from_iso_date(value: str) -> int:
+    text = (value or "").strip()
+    if not text:
+        text = datetime.now().strftime("%Y-%m-%d")
+    dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    apple_epoch = datetime(2001, 1, 1, tzinfo=dt.tzinfo)
+    return int((dt - apple_epoch).total_seconds() * 1_000_000_000)
+
+
+def _collect_message_handles_between(
+    start_date: str,
+    end_date: Optional[str],
+    include_emails: bool,
+    min_messages_per_handle: int = 3,
+) -> List[str]:
+    if not MESSAGES_DB_PATH.exists():
+        return []
+    start_ns = _apple_ns_from_iso_date(start_date)
+    if end_date:
+        end_bound = f"{end_date}T23:59:59" if len(str(end_date).strip()) == 10 else str(end_date)
+    else:
+        end_bound = datetime.now().isoformat()
+    end_ns = _apple_ns_from_iso_date(end_bound)
+    if end_ns < start_ns:
+        start_ns, end_ns = end_ns, start_ns
+    try:
+        conn = sqlite3.connect(f"file:{MESSAGES_DB_PATH}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT COALESCE(h.id, '') AS handle, COUNT(*) AS msg_count
+            FROM message m
+            LEFT JOIN handle h ON h.ROWID = m.handle_id
+            WHERE COALESCE(h.id, '') != ''
+              AND COALESCE(m.is_from_me, 0) = 0
+              AND COALESCE(m.date, 0) BETWEEN ? AND ?
+            GROUP BY COALESCE(h.id, '')
+            HAVING COUNT(*) >= ?
+            """,
+            (int(start_ns), int(end_ns), max(1, int(min_messages_per_handle))),
+        ).fetchall()
+        conn.close()
+        handles: List[str] = []
+        for row in rows:
+            raw = str(row["handle"] or "").strip()
+            if not raw:
+                continue
+            if "@" in raw and not include_emails:
+                continue
+            handles.append(raw)
+        return handles
+    except Exception:
+        return []
+
+
 def _load_intake_failures() -> List[Dict[str, Any]]:
     payload = _read_json_file(IMESSAGE_INTAKE_FAILURES_FILE)
     rows = payload.get("items", []) if isinstance(payload, dict) else []
@@ -3749,8 +3804,12 @@ if HAS_FASTAPI:
 
     class ContactsSeedWatchlistRequest(BaseModel):
         include_clients_registry: bool = True
-        include_contacts_index: bool = True
+        include_contacts_index: bool = False
+        include_message_history: bool = True
         include_emails: bool = True
+        start_date: str = "2024-05-01"
+        end_date: Optional[str] = None
+        min_messages_per_handle: int = 3
         overwrite: bool = False
 
     class OpsRecoveryRunRequest(BaseModel):
@@ -4595,6 +4654,7 @@ if HAS_FASTAPI:
         """Seed iMessage scan list from saved client/contact records."""
         try:
             candidates: List[str] = []
+            source_counts: Dict[str, int] = {"clients_registry": 0, "contacts_index": 0, "message_history": 0}
 
             if bool(request.include_clients_registry):
                 data = _read_json_file(CLIENTS_REGISTRY_FILE)
@@ -4605,16 +4665,30 @@ if HAS_FASTAPI:
                     candidates.extend(phones)
                     if bool(request.include_emails):
                         candidates.extend(emails)
+                source_counts["clients_registry"] = len(candidates)
 
             if bool(request.include_contacts_index):
                 idx = _read_json_file(CONTACTS_INDEX_FILE)
                 contacts = idx.get("contacts", []) if isinstance(idx, dict) else []
+                before = len(candidates)
                 for contact in contacts:
                     phones = [str(x).strip() for x in (contact.get("phones", []) or []) if str(x).strip()]
                     emails = [str(x).strip().lower() for x in (contact.get("emails", []) or []) if str(x).strip()]
                     candidates.extend(phones)
                     if bool(request.include_emails):
                         candidates.extend(emails)
+                source_counts["contacts_index"] = len(candidates) - before
+
+            if bool(request.include_message_history):
+                before = len(candidates)
+                msg_handles = _collect_message_handles_between(
+                    start_date=request.start_date or "2024-05-01",
+                    end_date=request.end_date,
+                    include_emails=bool(request.include_emails),
+                    min_messages_per_handle=max(1, int(request.min_messages_per_handle or 1)),
+                )
+                candidates.extend(msg_handles)
+                source_counts["message_history"] = len(candidates) - before
 
             unique: List[str] = []
             seen: set[str] = set()
@@ -4647,6 +4721,9 @@ if HAS_FASTAPI:
             payload["seeded_count"] = len(unique)
             payload["final_watchlist_count"] = len(final)
             payload["mode"] = "watchlist_plus_keywords"
+            payload["start_date"] = request.start_date or "2024-05-01"
+            payload["end_date"] = request.end_date or datetime.now().strftime("%Y-%m-%d")
+            payload["source_counts"] = source_counts
             return payload
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

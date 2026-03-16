@@ -99,5 +99,7 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSContactsUsageDescription</key>
+	<string>SymphonyOps uses your contacts so you can quickly choose who is monitored in iMessage scan lists.</string>
 </dict>
 </plist>

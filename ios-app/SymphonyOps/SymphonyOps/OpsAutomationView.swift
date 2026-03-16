@@ -2,7 +2,16 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(Contacts)
+import Contacts
+#endif
 import LocalAuthentication
+
+private struct DeviceContactItem: Identifiable {
+    let id: String
+    let name: String
+    let handles: [String]
+}
 
 struct OpsAutomationView: View {
     @EnvironmentObject var api: APIClient
@@ -19,6 +28,9 @@ struct OpsAutomationView: View {
     @State private var clientContacts: [ClientContactRecord] = []
     @State private var iMessageWatchlist: [String] = []
     @State private var contactsSearch = ""
+    @State private var deviceContactsSearch = ""
+    @State private var deviceContacts: [DeviceContactItem] = []
+    @State private var contactsPermissionStatus = "Not requested"
     @State private var newClientName = ""
     @State private var newClientPhone = ""
     @State private var newClientEmail = ""
@@ -354,6 +366,53 @@ struct OpsAutomationView: View {
                     }
                     .buttonStyle(.bordered)
                 }
+                #if canImport(Contacts)
+                Divider()
+                Text("iPhone Contacts (In-App)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("Permission: \(contactsPermissionStatus)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                HStack {
+                    Button("Load iPhone Contacts") {
+                        Task { await loadDeviceContacts() }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+                    Button("Refresh iPhone Contacts") {
+                        Task { await loadDeviceContacts(forceRefresh: true) }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isLoading)
+                }
+                TextField("Search iPhone contacts", text: $deviceContactsSearch)
+                    .textFieldStyle(.roundedBorder)
+                ForEach(filteredDeviceContacts().prefix(30), id: \.id) { contact in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(contact.name)
+                                .font(.caption)
+                            Text(contact.handles.joined(separator: " • "))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Button(isDeviceContactMonitored(contact) ? "Monitored" : "Monitor") {
+                            Task {
+                                await setDeviceContactMonitoring(
+                                    contact,
+                                    monitored: !isDeviceContactMonitored(contact)
+                                )
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(isDeviceContactMonitored(contact) ? .green : .blue)
+                        .disabled(isLoading)
+                    }
+                }
+                #endif
                 Button("Seed Scan List from Existing Clients") {
                     Task { await seedScanListFromExistingClients() }
                 }
@@ -811,9 +870,23 @@ struct OpsAutomationView: View {
         return merged.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
+    private func filteredDeviceContacts() -> [DeviceContactItem] {
+        let query = deviceContactsSearch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if query.isEmpty { return deviceContacts }
+        return deviceContacts.filter { contact in
+            if contact.name.lowercased().contains(query) { return true }
+            return contact.handles.contains { $0.lowercased().contains(query) }
+        }
+    }
+
     private func isContactMonitored(_ contact: ContactListItem) -> Bool {
         let current = Set(iMessageWatchlist.map(normalizedHandle))
         return contactHandles(contact).contains { current.contains(normalizedHandle($0)) }
+    }
+
+    private func isDeviceContactMonitored(_ contact: DeviceContactItem) -> Bool {
+        let current = Set(iMessageWatchlist.map(normalizedHandle))
+        return contact.handles.contains { current.contains(normalizedHandle($0)) }
     }
 
     @MainActor
@@ -839,15 +912,19 @@ struct OpsAutomationView: View {
         _ = await api.syncContactsNow()
         let response = await api.seedIMessageWatchlistFromContacts(
             includeClientsRegistry: true,
-            includeContactsIndex: true,
+            includeContactsIndex: false,
+            includeMessageHistory: true,
             includeEmails: true,
+            startDate: "2024-05-01",
+            endDate: nil,
+            minMessagesPerHandle: 3,
             overwrite: false
         )
         if response?.success == true || response?.command_success == true {
             await refreshContactsData()
             let seeded = response?.seeded_count ?? 0
             let total = response?.final_watchlist_count ?? response?.watchlist_count ?? iMessageWatchlist.count
-            resultMessage = "Seed complete. Added \(seeded) contact handles. Scan list total: \(total)."
+            resultMessage = "Seed complete (May 2024 to today). Added \(seeded) handles. Scan list total: \(total)."
         } else {
             resultMessage = response?.error ?? api.error ?? "Could not seed scan list."
         }
@@ -876,6 +953,101 @@ struct OpsAutomationView: View {
         } else {
             resultMessage = api.error ?? "Could not update scan list."
         }
+    }
+
+    @MainActor
+    private func setDeviceContactMonitoring(_ contact: DeviceContactItem, monitored: Bool) async {
+        isLoading = true
+        defer { isLoading = false }
+        let existing = iMessageWatchlist
+        let targetSet = Set(contact.handles.map(normalizedHandle))
+        var merged = existing
+        if monitored {
+            let existingNorm = Set(existing.map(normalizedHandle))
+            for handle in contact.handles where !existingNorm.contains(normalizedHandle(handle)) {
+                merged.append(handle)
+            }
+        } else {
+            merged = existing.filter { !targetSet.contains(normalizedHandle($0)) }
+        }
+        let response = await api.setIMessageWatchlist(numbers: merged, monitorAll: false)
+        if response?.success == true || response?.command_success == true {
+            iMessageWatchlist = merged
+            resultMessage = monitored ? "\(contact.name) added to scan list." : "\(contact.name) removed from scan list."
+        } else {
+            resultMessage = api.error ?? "Could not update scan list."
+        }
+    }
+
+    @MainActor
+    private func loadDeviceContacts(forceRefresh: Bool = false) async {
+        #if canImport(Contacts)
+        if !forceRefresh && !deviceContacts.isEmpty {
+            resultMessage = "Loaded \(deviceContacts.count) iPhone contacts."
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        let store = CNContactStore()
+        let status = CNContactStore.authorizationStatus(for: .contacts)
+        switch status {
+        case .authorized:
+            contactsPermissionStatus = "Authorized"
+        case .notDetermined:
+            let granted = await withCheckedContinuation { continuation in
+                store.requestAccess(for: .contacts) { ok, _ in
+                    continuation.resume(returning: ok)
+                }
+            }
+            contactsPermissionStatus = granted ? "Authorized" : "Denied"
+            if !granted {
+                resultMessage = "Contacts access was denied."
+                return
+            }
+        case .denied:
+            contactsPermissionStatus = "Denied"
+            resultMessage = "Contacts access denied. Enable it in Settings for in-app filtering."
+            return
+        case .restricted:
+            contactsPermissionStatus = "Restricted"
+            resultMessage = "Contacts access is restricted on this device."
+            return
+        @unknown default:
+            contactsPermissionStatus = "Unknown"
+            resultMessage = "Could not determine Contacts permission status."
+            return
+        }
+
+        let keys: [CNKeyDescriptor] = [
+            CNContactGivenNameKey as CNKeyDescriptor,
+            CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactPhoneNumbersKey as CNKeyDescriptor,
+            CNContactEmailAddressesKey as CNKeyDescriptor,
+            CNContactIdentifierKey as CNKeyDescriptor,
+        ]
+        let request = CNContactFetchRequest(keysToFetch: keys)
+        var rows: [DeviceContactItem] = []
+        do {
+            try store.enumerateContacts(with: request) { contact, _ in
+                let name = CNContactFormatter.string(from: contact, style: .fullName)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                var handles: [String] = []
+                handles.append(contentsOf: contact.phoneNumbers.map { $0.value.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) })
+                handles.append(contentsOf: contact.emailAddresses.map { String($0.value).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+                let clean = Array(Set(handles.filter { !$0.isEmpty })).sorted()
+                guard !clean.isEmpty else { return }
+                let fallbackName = name.isEmpty ? "Contact" : name
+                rows.append(DeviceContactItem(id: contact.identifier, name: fallbackName, handles: clean))
+            }
+            deviceContacts = rows.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            resultMessage = "Loaded \(deviceContacts.count) iPhone contacts."
+        } catch {
+            resultMessage = "Could not load iPhone contacts: \(error.localizedDescription)"
+        }
+        #else
+        resultMessage = "This build does not support in-app Contacts access."
+        #endif
     }
 
     @MainActor
