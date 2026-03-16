@@ -501,6 +501,57 @@ class MarkupHandler(BaseHTTPRequestHandler):
             if self._can_access_project(access, name, user, write=False):
                 visible.append(name)
         return visible[: max(1, min(limit, 1000))]
+
+    def _list_project_files(self, project: str, limit: int = 200) -> list[dict]:
+        """List .symphony files for a project (prefer local metadata, mirror path included)."""
+        safe_project = self._slugify_name(project or "")
+        if not safe_project:
+            return []
+        user = self._current_user()
+        access = self._load_access_control()
+        if not self._can_access_project(access, safe_project, user, write=False):
+            return []
+
+        files = {}
+        roots = [
+            ("local", LOCAL_EXPORTS / safe_project),
+            ("icloud", ICLOUD_EXPORTS / safe_project),
+        ]
+        for source, folder in roots:
+            if not folder.exists() or not folder.is_dir():
+                continue
+            try:
+                for entry in folder.iterdir():
+                    if not entry.is_file():
+                        continue
+                    if entry.name.startswith("."):
+                        continue
+                    if entry.suffix.lower() not in {".symphony", ".json"}:
+                        continue
+                    key = entry.name.lower()
+                    row = files.get(key) or {
+                        "filename": entry.name,
+                        "savePath": f"{safe_project}/{entry.name}",
+                        "sizeBytes": 0,
+                        "modifiedAt": "",
+                        "sources": [],
+                    }
+                    try:
+                        st = entry.stat()
+                        row["sizeBytes"] = max(int(row.get("sizeBytes") or 0), int(st.st_size))
+                        modified = datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z"
+                        if not row["modifiedAt"] or modified > row["modifiedAt"]:
+                            row["modifiedAt"] = modified
+                    except Exception:
+                        pass
+                    if source not in row["sources"]:
+                        row["sources"].append(source)
+                    files[key] = row
+            except Exception:
+                continue
+
+        rows = sorted(files.values(), key=lambda r: (r.get("modifiedAt") or "", r.get("filename") or ""), reverse=True)
+        return rows[: max(1, min(int(limit or 200), 1000))]
     
     def do_GET(self):
         """Serve static files and /api/config."""
@@ -661,6 +712,27 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 "query": q,
                 "count": len(folders),
                 "folders": folders,
+            })
+            return
+
+        if path == '/api/project-files':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            project = self._slugify_name((query.get("project", [""])[0] or "").strip())
+            if not project:
+                self._send_json(400, {"success": False, "error": "Project required"})
+                return
+            try:
+                limit = int(query.get("limit", ["200"])[0])
+            except (TypeError, ValueError):
+                limit = 200
+            files = self._list_project_files(project=project, limit=limit)
+            self._send_json(200, {
+                "success": True,
+                "project": project,
+                "count": len(files),
+                "files": files,
             })
             return
 

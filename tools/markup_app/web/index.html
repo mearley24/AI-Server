@@ -645,6 +645,21 @@
                     💾 Save Project (.symphony)
                 </button>
                 <div style="font-size:11px;color:#666;margin:-6px 0 0 4px;">→ Reopen later with all markups and page state</div>
+                <div style="border:1px solid #2a2a4a;border-radius:8px;padding:10px;background:#0f0f23;">
+                    <div style="font-size:12px;color:#cbd5e1;margin-bottom:8px;">☁️ Save to iCloud Server (overwrite existing file)</div>
+                    <label style="font-size:11px;color:#94a3b8;">Project folder</label>
+                    <input id="save-project-name" list="server-folder-options" placeholder="Project folder" style="width:100%;padding:8px;border-radius:6px;border:1px solid #2a2a4a;background:#0b1220;color:#eee;margin-top:4px;">
+                    <datalist id="server-folder-options"></datalist>
+                    <div id="server-folder-matches" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;"></div>
+                    <label style="font-size:11px;color:#94a3b8;margin-top:8px;display:block;">Existing file to replace</label>
+                    <select id="server-existing-file" style="width:100%;padding:8px;border-radius:6px;border:1px solid #2a2a4a;background:#0b1220;color:#eee;margin-top:4px;">
+                        <option value="">(Create / overwrite canonical file)</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:6px;">Select a file to overwrite, or leave default to save to the project canonical file.</div>
+                    <button style="width:100%;padding:10px;font-size:14px;background:#2563eb;color:#fff;border:none;border-radius:8px;margin-top:8px;" onclick="saveToServerFromModal()">
+                        Save to iCloud Server
+                    </button>
+                </div>
                 <button style="width:100%;padding:14px;font-size:15px;background:#3b82f6;color:#fff;border:none;border-radius:8px;text-align:left;" onclick="exportProjectBundleToFiles()">
                     📦 Export PDF + Markup Data
                 </button>
@@ -792,6 +807,9 @@ let rooms = [];
 let textLabels = [];
 let markupNotes = [];
 let freehandLines = []; // Freehand drawing strokes
+let connectedLines = []; // Ordered symbol routes [{id, symbolIds:[]}]
+let activeConnectedLine = null; // In-progress route while using connect tool
+let connectMedium = 'wired'; // wired | wireless
 let legendPanel = null; // Auto-generated legend block for current page
 let legendResizeMode = false;
 let tool = null;
@@ -841,6 +859,7 @@ const ROOM_COLORS = [
 let freehandEnabled = localStorage.getItem('freehandEnabled') === '1';
 let snapEnabled = localStorage.getItem('snapEnabled') === '1';
 let layerVisibility = JSON.parse(localStorage.getItem('layerVisibility') || '{}');
+const GRID_SIZE_PX = 50;
 
 const ROOM_NAME_PRESETS = {
     standard: ['Entry', 'Great Room', 'Kitchen', 'Dining', 'Primary Suite', 'Office', 'Media Room', 'Patio'],
@@ -855,6 +874,7 @@ let currentStroke = null;
 // Scale/measurement
 let measureScale = parseFloat(localStorage.getItem('measureScale')) || 0; // pixels per foot
 let measuringLine = null; // {x1, y1, x2, y2}
+let scaleAreas = []; // Local scale references [{id,label,x1,y1,x2,y2,realFeet,pixelsPerFoot}]
 
 function makePlacedSymbolId() {
     return `sym-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -864,6 +884,128 @@ function ensurePlacedSymbolIds() {
     for (const p of placed) {
         if (!p.id) p.id = makePlacedSymbolId();
     }
+}
+
+function makeConnectedLineId() {
+    return `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function makeScaleAreaId() {
+    return `scale-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeScaleAreas(input) {
+    const out = [];
+    for (const area of (Array.isArray(input) ? input : [])) {
+        const x1 = Number(area?.x1);
+        const y1 = Number(area?.y1);
+        const x2 = Number(area?.x2);
+        const y2 = Number(area?.y2);
+        const ppf = Number(area?.pixelsPerFoot);
+        const feet = Number(area?.realFeet);
+        if (![x1, y1, x2, y2, ppf, feet].every((v) => Number.isFinite(v))) continue;
+        if (!(ppf > 0) || !(feet > 0)) continue;
+        out.push({
+            id: area?.id || makeScaleAreaId(),
+            label: String(area?.label || 'Area').trim() || 'Area',
+            x1, y1, x2, y2,
+            realFeet: feet,
+            pixelsPerFoot: ppf
+        });
+    }
+    return out;
+}
+
+function segmentLengthPx(a, b) {
+    return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
+}
+
+function snapPointToGrid(x, y) {
+    return {
+        x: Math.round((x || 0) / GRID_SIZE_PX) * GRID_SIZE_PX,
+        y: Math.round((y || 0) / GRID_SIZE_PX) * GRID_SIZE_PX
+    };
+}
+
+function segmentFeetUsingGrid(a, b) {
+    if (!a || !b) return 0;
+    const ax = Number(a.x || 0);
+    const ay = Number(a.y || 0);
+    const bx = Number(b.x || 0);
+    const by = Number(b.y || 0);
+    const midX = (ax + bx) / 2;
+    const midY = (ay + by) / 2;
+    const ppf = getPixelsPerFootAt(midX, midY);
+    if (!(ppf > 0)) return 0;
+    const feetPerGridCell = GRID_SIZE_PX / ppf;
+    const dxCells = (bx - ax) / GRID_SIZE_PX;
+    const dyCells = (by - ay) / GRID_SIZE_PX;
+    const gridCells = Math.hypot(dxCells, dyCells);
+    return gridCells * feetPerGridCell;
+}
+
+function getPixelsPerFootAt(x, y) {
+    const refs = normalizeScaleAreas(scaleAreas);
+    if (refs.length > 0) {
+        if (refs.length === 1) return refs[0].pixelsPerFoot;
+        // Blend all scale references using distance to each reference segment.
+        // This gives smoother scaling across large footprints with perimeter calibrations.
+        let weightedSum = 0;
+        let weightTotal = 0;
+        for (const area of refs) {
+            const nearest = closestPointOnSegment(x, y, area.x1, area.y1, area.x2, area.y2);
+            const d = Math.hypot((nearest.x || 0) - x, (nearest.y || 0) - y);
+            const w = 1 / Math.pow(d + 24, 1.15);
+            weightedSum += (area.pixelsPerFoot * w);
+            weightTotal += w;
+        }
+        if (weightTotal > 0) return weightedSum / weightTotal;
+        return refs[0].pixelsPerFoot;
+    }
+    return measureScale > 0 ? measureScale : 0;
+}
+
+function normalizeConnectedLines(input) {
+    const idSet = new Set((placed || []).map((p) => p.id).filter(Boolean));
+    const out = [];
+    for (const line of (Array.isArray(input) ? input : [])) {
+        const symbolIds = Array.isArray(line?.symbolIds)
+            ? line.symbolIds.filter((id) => idSet.has(id))
+            : [];
+        if (symbolIds.length < 2) continue;
+        out.push({
+            id: line?.id || makeConnectedLineId(),
+            symbolIds,
+            medium: String(line?.medium || 'wired').toLowerCase() === 'wireless' ? 'wireless' : 'wired',
+            createdAt: line?.createdAt || new Date().toISOString()
+        });
+    }
+    return out;
+}
+
+function finalizeActiveConnectedLine() {
+    if (!activeConnectedLine || !Array.isArray(activeConnectedLine.symbolIds)) {
+        activeConnectedLine = null;
+        return false;
+    }
+    const deduped = [];
+    for (const id of activeConnectedLine.symbolIds) {
+        if (!deduped.length || deduped[deduped.length - 1] !== id) deduped.push(id);
+    }
+    if (deduped.length < 2) {
+        activeConnectedLine = null;
+        return false;
+    }
+    saveState();
+    connectedLines.push({
+        id: makeConnectedLineId(),
+        symbolIds: deduped,
+        medium: connectMedium === 'wireless' ? 'wireless' : 'wired',
+        createdAt: new Date().toISOString()
+    });
+    connectedLines = normalizeConnectedLines(connectedLines);
+    activeConnectedLine = null;
+    return true;
 }
 
 const canvas = document.getElementById('canvas');
@@ -881,6 +1023,8 @@ function saveState() {
         textLabels: JSON.parse(JSON.stringify(textLabels)),
         markupNotes: JSON.parse(JSON.stringify(markupNotes)),
         freehandLines: JSON.parse(JSON.stringify(freehandLines)),
+        connectedLines: JSON.parse(JSON.stringify(connectedLines)),
+        scaleAreas: JSON.parse(JSON.stringify(scaleAreas)),
         legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
     undoStack.push(state);
@@ -901,6 +1045,8 @@ function undo() {
         textLabels: JSON.parse(JSON.stringify(textLabels)),
         markupNotes: JSON.parse(JSON.stringify(markupNotes)),
         freehandLines: JSON.parse(JSON.stringify(freehandLines)),
+        connectedLines: JSON.parse(JSON.stringify(connectedLines)),
+        scaleAreas: JSON.parse(JSON.stringify(scaleAreas)),
         legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
     redoStack.push(current);
@@ -910,6 +1056,8 @@ function undo() {
     textLabels = prev.textLabels;
     markupNotes = prev.markupNotes || [];
     freehandLines = prev.freehandLines || [];
+    connectedLines = normalizeConnectedLines(prev.connectedLines || []);
+    scaleAreas = normalizeScaleAreas(prev.scaleAreas || []);
     legendPanel = prev.legendPanel || null;
     updateUndoButtons();
     render();
@@ -924,6 +1072,8 @@ function redo() {
         textLabels: JSON.parse(JSON.stringify(textLabels)),
         markupNotes: JSON.parse(JSON.stringify(markupNotes)),
         freehandLines: JSON.parse(JSON.stringify(freehandLines)),
+        connectedLines: JSON.parse(JSON.stringify(connectedLines)),
+        scaleAreas: JSON.parse(JSON.stringify(scaleAreas)),
         legendPanel: legendPanel ? JSON.parse(JSON.stringify(legendPanel)) : null
     };
     undoStack.push(current);
@@ -933,6 +1083,8 @@ function redo() {
     textLabels = next.textLabels;
     markupNotes = next.markupNotes || [];
     freehandLines = next.freehandLines || [];
+    connectedLines = normalizeConnectedLines(next.connectedLines || []);
+    scaleAreas = normalizeScaleAreas(next.scaleAreas || []);
     legendPanel = next.legendPanel || null;
     updateUndoButtons();
     render();
@@ -1109,6 +1261,7 @@ function deleteMultiSelected() {
     }
     if (removedSymbolIds.length) {
         markupNotes = markupNotes.filter((n) => !removedSymbolIds.includes(n.symbolId));
+        connectedLines = normalizeConnectedLines(connectedLines);
     }
     multiSelected = [];
     buildToolbar();
@@ -1138,17 +1291,38 @@ function setScale() {
         alert('Draw a line on the plan first (tap two points)');
         return;
     }
-    const realFeet = prompt('How many feet is this line?', '10');
+    const realFeet = prompt('How many feet is this line in this area?', '10');
     if (!realFeet || isNaN(parseFloat(realFeet))) return;
-    const dx = measuringLine.x2 - measuringLine.x1;
-    const dy = measuringLine.y2 - measuringLine.y1;
+    const feetValue = parseFloat(realFeet);
+    if (!(feetValue > 0)) return;
+    const areaLabel = (prompt('Optional area label (e.g., Great Room, Rack Hallway):', `Area ${scaleAreas.length + 1}`) || '').trim() || `Area ${scaleAreas.length + 1}`;
+    const p1 = snapPointToGrid(measuringLine.x1, measuringLine.y1);
+    const p2 = snapPointToGrid(measuringLine.x2, measuringLine.y2);
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
     const pixelLength = Math.sqrt(dx*dx + dy*dy);
-    measureScale = pixelLength / parseFloat(realFeet);
+    if (!(pixelLength > 0)) {
+        showToast('Scale line too short after grid snap. Try a longer line.');
+        return;
+    }
+    measureScale = pixelLength / feetValue;
     localStorage.setItem('measureScale', measureScale);
+    saveState();
+    scaleAreas.push({
+        id: makeScaleAreaId(),
+        label: areaLabel,
+        x1: p1.x,
+        y1: p1.y,
+        x2: p2.x,
+        y2: p2.y,
+        realFeet: feetValue,
+        pixelsPerFoot: measureScale
+    });
+    scaleAreas = normalizeScaleAreas(scaleAreas);
     measuringLine = null;
     selectTool(null);
     render();
-    alert(`Scale set: ${measureScale.toFixed(1)} pixels/foot`);
+    alert(`Scale area saved (${areaLabel}): ${measureScale.toFixed(1)} pixels/foot`);
 }
 
 // Track which category/menu is expanded
@@ -1157,7 +1331,12 @@ let toolsExpanded = false;
 
 // Check if current tool is a "tool" (not a symbol)
 function isToolSelected(toolId) {
-    return ['select', 'multi', 'delete', 'room', 'text', 'note', 'freehand', 'measure'].includes(toolId);
+    return ['select', 'multi', 'delete', 'room', 'text', 'note', 'freehand', 'measure', 'connect'].includes(toolId);
+}
+
+function toggleConnectMedium() {
+    connectMedium = connectMedium === 'wireless' ? 'wired' : 'wireless';
+    buildToolbar();
 }
 
 // Get category for current tool (symbol)
@@ -1403,6 +1582,19 @@ function buildToolbar() {
         measureBtn.classList.add('category-symbol');
         if (tool === 'measure') measureBtn.classList.add('selected');
         bar.appendChild(measureBtn);
+
+        const connectBtn = createToolBtn('connect', '⟷', 'Connect', '#0891b2');
+        connectBtn.classList.add('category-symbol');
+        if (tool === 'connect') connectBtn.classList.add('selected');
+        bar.appendChild(connectBtn);
+
+        if (tool === 'connect') {
+            const mediumBtn = document.createElement('button');
+            mediumBtn.className = 'tool-btn category-symbol';
+            mediumBtn.innerHTML = `<div class="preview" style="background:${connectMedium === 'wireless' ? '#7c3aed' : '#0891b2'};color:#fff;font-size:11px;">${connectMedium === 'wireless' ? '⋯' : '━'}</div><span>${connectMedium === 'wireless' ? 'Wireless' : 'Wired'}</span>`;
+            mediumBtn.onclick = (e) => { e.stopPropagation(); toggleConnectMedium(); };
+            bar.appendChild(mediumBtn);
+        }
         
         // Divider before lib/add
         bar.appendChild(createDivider());
@@ -1592,16 +1784,32 @@ function selectTool(id) {
         roomPoints = [];
         render();
     }
+
+    // Finalize in-progress connected route when leaving connect tool.
+    if (tool === 'connect' && id !== 'connect') {
+        if (finalizeActiveConnectedLine()) {
+            showToast('Connected line saved');
+        }
+    }
     
     // If tapping the already selected tool, deselect it
     if (tool === id) {
+        if (id === 'connect') {
+            if (finalizeActiveConnectedLine()) {
+                showToast('Connected line saved');
+            } else {
+                activeConnectedLine = null;
+            }
+        }
         tool = null;
         buildToolbar();
+        render();
         return;
     }
     
     tool = id;
     buildToolbar();
+    render();
 }
 
 // Symbol editor
@@ -1810,8 +2018,10 @@ function openOptionsModal() {
     
     // Update scale info
     const scaleInfo = document.getElementById('scale-info');
-    if (measureScale > 0) {
-        scaleInfo.textContent = `Current: ${measureScale.toFixed(1)} pixels/foot`;
+    if (scaleAreas.length > 0) {
+        scaleInfo.textContent = `${scaleAreas.length} area scales set · latest ${measureScale.toFixed(1)} px/ft`;
+    } else if (measureScale > 0) {
+        scaleInfo.textContent = `Current: ${measureScale.toFixed(1)} pixels/foot (global)`;
     } else {
         scaleInfo.textContent = 'Not set - use Scale tool to measure';
     }
@@ -1839,9 +2049,11 @@ function closeOptionsModal() {
 }
 
 function clearScale() {
+    saveState();
     measureScale = 0;
     localStorage.removeItem('measureScale');
     measuringLine = null;
+    scaleAreas = [];
     document.getElementById('scale-info').textContent = 'Not set - use Scale tool to measure';
     render();
 }
@@ -1938,6 +2150,21 @@ document.getElementById('markup-import-input').onchange = (e) => {
             // Load freehand lines
             if (d.freehandLines && Array.isArray(d.freehandLines)) {
                 freehandLines = d.freehandLines;
+            }
+
+            // Load connected lines
+            if (d.connectedLines && Array.isArray(d.connectedLines)) {
+                connectedLines = normalizeConnectedLines(d.connectedLines);
+            } else {
+                connectedLines = [];
+            }
+            activeConnectedLine = null;
+
+            // Load area scales
+            if (d.scaleAreas && Array.isArray(d.scaleAreas)) {
+                scaleAreas = normalizeScaleAreas(d.scaleAreas);
+            } else {
+                scaleAreas = [];
             }
             
             // Load symbol definitions if included
@@ -2391,13 +2618,15 @@ function resize() {
 
 function render() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    connectedLines = normalizeConnectedLines(connectedLines);
+    scaleAreas = normalizeScaleAreas(scaleAreas);
     ctx.save();
     ctx.translate(panX,panY);
     ctx.scale(scale,scale);
     
     // Draw grid if enabled
     if (showGrid && planImg.naturalWidth) {
-        const gridSize = 50; // pixels
+        const gridSize = GRID_SIZE_PX; // pixels
         ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
         ctx.lineWidth = 0.5;
         for (let x = 0; x < planImg.naturalWidth; x += gridSize) {
@@ -2566,6 +2795,79 @@ function render() {
         ctx.lineJoin = 'round';
         ctx.stroke();
     }
+
+    // Draw scale area references
+    for (const area of scaleAreas) {
+        ctx.beginPath();
+        ctx.moveTo(area.x1, area.y1);
+        ctx.lineTo(area.x2, area.y2);
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        const mx = (area.x1 + area.x2) / 2;
+        const my = (area.y1 + area.y2) / 2;
+        const feet = Number(area.realFeet || 0);
+        ctx.fillStyle = '#3b82f6';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(`${area.label} · ${feet.toFixed(1)}ft`, mx, my - 8);
+    }
+
+    // Draw connected symbol routes
+    for (const line of connectedLines) {
+        const pts = (line.symbolIds || [])
+            .map((id) => placed.find((p) => p.id === id))
+            .filter(Boolean);
+        if (pts.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) {
+            ctx.lineTo(pts[i].x, pts[i].y);
+        }
+        const isWireless = line.medium === 'wireless';
+        ctx.strokeStyle = isWireless ? '#a78bfa' : '#22d3ee';
+        ctx.lineWidth = 3;
+        ctx.setLineDash(isWireless ? [8, 6] : []);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        for (let i = 0; i < pts.length; i++) {
+            ctx.beginPath();
+            ctx.arc(pts[i].x, pts[i].y, i === 0 || i === (pts.length - 1) ? 5 : 4, 0, Math.PI * 2);
+            ctx.fillStyle = '#0e7490';
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+    }
+
+    // Draw in-progress connected route
+    if (activeConnectedLine && Array.isArray(activeConnectedLine.symbolIds)) {
+        const pts = activeConnectedLine.symbolIds
+            .map((id) => placed.find((p) => p.id === id))
+            .filter(Boolean);
+        if (pts.length >= 1) {
+            if (pts.length >= 2) {
+                ctx.beginPath();
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+                ctx.strokeStyle = connectMedium === 'wireless' ? '#c4b5fd' : '#67e8f9';
+                ctx.lineWidth = 3;
+                ctx.setLineDash(connectMedium === 'wireless' ? [8, 6] : [4, 4]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+            const last = pts[pts.length - 1];
+            ctx.beginPath();
+            ctx.arc(last.x, last.y, 8, 0, Math.PI * 2);
+            ctx.strokeStyle = '#67e8f9';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+    }
     
     // Draw current stroke
     if (currentStroke && currentStroke.points.length > 1) {
@@ -2610,7 +2912,10 @@ function render() {
         ctx.font = 'bold 12px Arial';
         ctx.textAlign = 'center';
         let label = `${px.toFixed(0)}px`;
-        if (measureScale > 0) label += ` (${(px/measureScale).toFixed(1)}ft)`;
+        const ppf = getPixelsPerFootAt(mx, my);
+        if (ppf > 0) label += ` (${(px/ppf).toFixed(1)}ft)`;
+        const gridCells = px / GRID_SIZE_PX;
+        label += ` · ${gridCells.toFixed(2)} cells`;
         ctx.fillText(label, mx, my - 10);
     }
     
@@ -2802,6 +3107,8 @@ function updateCounts() {
     let html = Object.entries(c).map(([k,v]) => `${v} ${k}`).join(' | ');
     if (rooms.length) html += (html ? ' | ' : '') + rooms.length + ' room' + (rooms.length > 1 ? 's' : '');
     if (markupNotes.length) html += (html ? ' | ' : '') + markupNotes.length + ' note' + (markupNotes.length > 1 ? 's' : '');
+    if (connectedLines.length) html += (html ? ' | ' : '') + connectedLines.length + ' line' + (connectedLines.length > 1 ? 's' : '');
+    if (scaleAreas.length) html += (html ? ' | ' : '') + scaleAreas.length + ' scale area' + (scaleAreas.length > 1 ? 's' : '');
     document.getElementById('counts').innerHTML = html;
 }
 
@@ -3042,6 +3349,38 @@ function handleSinglePointerDown(e) {
             else { measuringLine = null; render(); }
         }
         render();
+    } else if (tool === 'connect') {
+        const symbol = findSymbolAt(x, y);
+        if (!symbol) {
+            if (finalizeActiveConnectedLine()) {
+                showToast('Connected line saved');
+            } else {
+                activeConnectedLine = null;
+            }
+            render();
+            return;
+        }
+        if (!activeConnectedLine) {
+            activeConnectedLine = { symbolIds: [symbol.id] };
+            showToast('Line started: tap next symbol');
+            render();
+            return;
+        }
+        const route = activeConnectedLine.symbolIds || [];
+        const lastId = route.length ? route[route.length - 1] : null;
+        if (symbol.id === lastId) {
+            if (finalizeActiveConnectedLine()) {
+                showToast('Connected line saved');
+            } else {
+                activeConnectedLine = null;
+            }
+            render();
+            return;
+        }
+        route.push(symbol.id);
+        activeConnectedLine.symbolIds = route;
+        render();
+        return;
     } else if (tool === 'select') {
         let found = false;
         
@@ -3316,6 +3655,7 @@ function handleSinglePointerDown(e) {
             placed.splice(i,1);
             if (removed && removed.id) {
                 markupNotes = markupNotes.filter((n) => n.symbolId !== removed.id);
+                connectedLines = normalizeConnectedLines(connectedLines);
             }
             updateCounts();
             render();
@@ -3374,7 +3714,7 @@ function handleSinglePointerMove(e) {
         if (legendResizeMode) {
             const sections = Array.isArray(legendPanel.sections) && legendPanel.sections.length
                 ? legendPanel.sections
-                : buildLegendSections(legendPanel.entries || []);
+                : buildLegendSections(legendPanel.entries || [], legendPanel.connectedLineEntries || []);
             const layout = computeLegendColumnLayout(sections);
             const maxRows = Math.max(1, ...layout.rowsByCol);
             const minWidth = 780;
@@ -3517,7 +3857,9 @@ function savePageMarkups() {
         textLabels: textLabels,
         markupNotes: markupNotes,
         freehandLines: freehandLines,
+        connectedLines: connectedLines,
         measureScale: measureScale,
+        scaleAreas: scaleAreas,
         legendPanel: legendPanel
     };
     localStorage.setItem(key, JSON.stringify(data));
@@ -3563,7 +3905,11 @@ let accessManagerProject = '';
 let serverSavePath = '';
 let serverAutosaveEnabled = false;
 let serverAutosaveTimer = null;
+let serverAutosaveHeartbeatTimer = null;
+let serverAutosaveInitialTimer = null;
 const SERVER_AUTOSAVE_DEBOUNCE_MS = 8000;
+const SERVER_AUTOSAVE_HEARTBEAT_MS = 60000;
+const SERVER_AUTOSAVE_INITIAL_MS = 12000;
 
 // Open file menu modal
 function openProjectMenu() {
@@ -3611,7 +3957,9 @@ function gatherAllPageMarkups() {
         textLabels: textLabels,
         markupNotes: markupNotes,
         freehandLines: freehandLines,
+        connectedLines: connectedLines,
         measureScale: measureScale,
+        scaleAreas: scaleAreas,
         legendPanel: legendPanel
     };
     
@@ -3625,6 +3973,7 @@ function saveProject() {
         return;
     }
     savePageMarkups();
+    prepareServerSaveUI();
     document.getElementById('save-modal').classList.add('open');
 }
 
@@ -3634,6 +3983,7 @@ function closeSaveModal() {
 
 async function saveToServerFromModal() {
     const input = document.getElementById('save-project-name');
+    const existingSelect = document.getElementById('server-existing-file');
     const defaultName = deriveDefaultProjectName();
     const name = (input && input.value ? input.value : defaultName).trim();
     if (!name) {
@@ -3641,9 +3991,14 @@ async function saveToServerFromModal() {
         return;
     }
     try {
+        let explicitSavePath = '';
+        if (existingSelect && existingSelect.value) {
+            explicitSavePath = existingSelect.value;
+        }
         const result = await saveProjectToServer({
             requestedProjectName: name,
-            forceCanonicalPath: true,
+            forceCanonicalPath: !explicitSavePath,
+            explicitSavePath,
             silent: true
         });
         if (result && result.success) {
@@ -3674,6 +4029,7 @@ async function saveProjectToServer(options = {}) {
     const {
         requestedProjectName = '',
         forceCanonicalPath = false,
+        explicitSavePath = '',
         silent = false,
         mode = 'manual'
     } = options;
@@ -3686,9 +4042,9 @@ async function saveProjectToServer(options = {}) {
 
     const project = buildSaveProjectData();
     project.project = project.projectName = name;
-    const targetPath = (forceCanonicalPath || !serverSavePath)
+    const targetPath = explicitSavePath || ((forceCanonicalPath || !serverSavePath)
         ? canonicalServerSavePathForProject(name)
-        : serverSavePath;
+        : serverSavePath);
     if (targetPath) project.savePath = targetPath;
 
     const response = await markupApiFetch('/api/save', {
@@ -3724,6 +4080,52 @@ function scheduleServerAutosave() {
             // Ignore transient network failures while editing.
         }
     }, SERVER_AUTOSAVE_DEBOUNCE_MS);
+}
+
+function stopProjectAutosaveCycle() {
+    if (serverAutosaveInitialTimer) {
+        clearTimeout(serverAutosaveInitialTimer);
+        serverAutosaveInitialTimer = null;
+    }
+    if (serverAutosaveHeartbeatTimer) {
+        clearInterval(serverAutosaveHeartbeatTimer);
+        serverAutosaveHeartbeatTimer = null;
+    }
+}
+
+function ensureServerAutosaveTargetForCurrentProject() {
+    const fallbackName = String(projectName || deriveDefaultProjectName() || currentPdfName || 'untitled').trim();
+    if (!serverSavePath) {
+        serverSavePath = canonicalServerSavePathForProject(fallbackName);
+    }
+    serverAutosaveEnabled = Boolean(serverSavePath);
+    localStorage.setItem('markupServerSavePath', serverSavePath);
+    localStorage.setItem('markupServerAutosaveEnabled', serverAutosaveEnabled ? '1' : '0');
+}
+
+function startProjectAutosaveCycle(initialDelayMs = SERVER_AUTOSAVE_INITIAL_MS) {
+    stopProjectAutosaveCycle();
+    if (!currentPdfName) return;
+    ensureServerAutosaveTargetForCurrentProject();
+    if (!serverAutosaveEnabled || !serverSavePath) return;
+
+    const runAutosave = async () => {
+        try {
+            await saveProjectToServer({ silent: true, mode: 'autosave' });
+            const status = document.getElementById('save-status');
+            if (status) status.title = 'Autosaved to server';
+        } catch (_) {
+            // Keep running; intermittent failures should self-heal on next cycle.
+        }
+    };
+
+    serverAutosaveInitialTimer = setTimeout(async () => {
+        await runAutosave();
+    }, Math.max(0, initialDelayMs));
+
+    serverAutosaveHeartbeatTimer = setInterval(async () => {
+        await runAutosave();
+    }, SERVER_AUTOSAVE_HEARTBEAT_MS);
 }
 
 function deriveDefaultProjectName() {
@@ -3785,7 +4187,10 @@ function setSaveFolderSuggestions(folders, referenceName) {
         btn.style.cssText = 'padding:4px 8px;border:1px solid #3a3a5a;background:#1a1a2e;color:#ddd;border-radius:999px;font-size:11px;cursor:pointer;';
         btn.onclick = () => {
             const input = document.getElementById('save-project-name');
-            if (input) input.value = name;
+            if (input) {
+                input.value = name;
+                populateExistingServerFiles(name);
+            }
         };
         matchesEl.appendChild(btn);
     }
@@ -3793,19 +4198,58 @@ function setSaveFolderSuggestions(folders, referenceName) {
 
 async function prepareServerSaveUI() {
     const input = document.getElementById('save-project-name');
+    const existingSelect = document.getElementById('server-existing-file');
     if (!input) return;
 
     const defaultName = deriveDefaultProjectName();
+    const inferredFromSavePath = (() => {
+        const parts = String(serverSavePath || '').split('/').filter(Boolean);
+        return parts.length ? parts[0] : '';
+    })();
+    const initialName = inferredFromSavePath || defaultName;
     input.value = defaultName;
-    setSaveFolderSuggestions([], defaultName);
+    if (initialName) input.value = initialName;
+    setSaveFolderSuggestions([], initialName || defaultName);
+    if (existingSelect) {
+        existingSelect.innerHTML = '<option value="">(Create / overwrite canonical file)</option>';
+    }
 
     try {
         const response = await markupApiFetch('/api/folders?limit=200');
         const data = await response.json();
         const folders = Array.isArray(data.folders) ? data.folders : [];
-        setSaveFolderSuggestions(folders, defaultName);
+        setSaveFolderSuggestions(folders, initialName || defaultName);
+        await populateExistingServerFiles(initialName || defaultName);
     } catch (_) {
         // Keep the save flow working even if suggestions fail.
+    }
+}
+
+async function populateExistingServerFiles(projectNameInput) {
+    const existingSelect = document.getElementById('server-existing-file');
+    if (!existingSelect) return;
+    const project = String(projectNameInput || '').trim();
+    existingSelect.innerHTML = '<option value="">(Create / overwrite canonical file)</option>';
+    if (!project) return;
+    try {
+        const res = await markupApiFetch(`/api/project-files?project=${encodeURIComponent(project)}&limit=200`);
+        const data = await res.json();
+        const files = Array.isArray(data.files) ? data.files : [];
+        let selected = false;
+        for (const row of files) {
+            if (!row || !row.savePath) continue;
+            const opt = document.createElement('option');
+            opt.value = row.savePath;
+            opt.textContent = `${row.filename || row.savePath}`;
+            if (serverSavePath && row.savePath === serverSavePath) {
+                opt.selected = true;
+                selected = true;
+            }
+            existingSelect.appendChild(opt);
+        }
+        if (!selected) existingSelect.value = '';
+    } catch (_) {
+        // Ignore file listing failures; canonical save still works.
     }
 }
 
@@ -4081,17 +4525,19 @@ function getPageMarkupForExport(pageNum) {
             textLabels: Array.isArray(textLabels) ? textLabels : [],
             markupNotes: Array.isArray(markupNotes) ? markupNotes : [],
             freehandLines: Array.isArray(freehandLines) ? freehandLines : [],
+            connectedLines: Array.isArray(connectedLines) ? connectedLines : [],
             measureScale: Number(measureScale || 0) || 0,
+            scaleAreas: Array.isArray(scaleAreas) ? scaleAreas : [],
             legendPanel: legendPanel || null,
         };
     }
     const key = getPageStorageKey(pageNum);
     if (!key) {
-        return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], connectedLines: [], measureScale: 0, scaleAreas: [], legendPanel: null };
     }
     try {
         const raw = localStorage.getItem(key);
-        if (!raw) return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        if (!raw) return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], connectedLines: [], measureScale: 0, scaleAreas: [], legendPanel: null };
         const data = JSON.parse(raw);
         return {
             placed: Array.isArray(data.placed) ? data.placed : [],
@@ -4099,11 +4545,13 @@ function getPageMarkupForExport(pageNum) {
             textLabels: Array.isArray(data.textLabels) ? data.textLabels : [],
             markupNotes: Array.isArray(data.markupNotes) ? data.markupNotes : [],
             freehandLines: Array.isArray(data.freehandLines) ? data.freehandLines : [],
+            connectedLines: Array.isArray(data.connectedLines) ? data.connectedLines : [],
             measureScale: Number(data.measureScale || 0) || 0,
+            scaleAreas: Array.isArray(data.scaleAreas) ? data.scaleAreas : [],
             legendPanel: data.legendPanel || null,
         };
     } catch (_) {
-        return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], measureScale: 0, legendPanel: null };
+        return { placed: [], rooms: [], textLabels: [], markupNotes: [], freehandLines: [], connectedLines: [], measureScale: 0, scaleAreas: [], legendPanel: null };
     }
 }
 
@@ -4114,6 +4562,7 @@ function drawMarkupOverlayForExport(ctxOut, pageData, defs) {
     const pageLabels = Array.isArray(pageData.textLabels) ? pageData.textLabels : [];
     const pageNotes = Array.isArray(pageData.markupNotes) ? pageData.markupNotes : [];
     const pageFreehand = Array.isArray(pageData.freehandLines) ? pageData.freehandLines : [];
+    const pageConnectedLines = Array.isArray(pageData.connectedLines) ? pageData.connectedLines : [];
 
     // Rooms
     for (let ri = 0; ri < pageRooms.length; ri++) {
@@ -4211,6 +4660,36 @@ function drawMarkupOverlayForExport(ctxOut, pageData, defs) {
         ctxOut.restore();
     }
 
+    // Connected routes
+    for (const route of pageConnectedLines) {
+        const points = (route.symbolIds || [])
+            .map((id) => pagePlaced.find((p) => p.id === id))
+            .filter(Boolean);
+        if (points.length < 2) continue;
+        const isWireless = String(route.medium || 'wired').toLowerCase() === 'wireless';
+        ctxOut.beginPath();
+        ctxOut.moveTo(points[0].x || 0, points[0].y || 0);
+        for (let i = 1; i < points.length; i++) {
+            ctxOut.lineTo(points[i].x || 0, points[i].y || 0);
+        }
+        ctxOut.strokeStyle = isWireless ? '#a78bfa' : '#22d3ee';
+        ctxOut.lineWidth = 3;
+        ctxOut.setLineDash(isWireless ? [8, 6] : []);
+        ctxOut.stroke();
+        ctxOut.setLineDash([]);
+        for (let i = 0; i < points.length; i++) {
+            const px = points[i].x || 0;
+            const py = points[i].y || 0;
+            ctxOut.beginPath();
+            ctxOut.arc(px, py, i === 0 || i === (points.length - 1) ? 5 : 4, 0, Math.PI * 2);
+            ctxOut.fillStyle = '#0e7490';
+            ctxOut.fill();
+            ctxOut.strokeStyle = '#ffffff';
+            ctxOut.lineWidth = 1.2;
+            ctxOut.stroke();
+        }
+    }
+
     // Legend panel (when generated for this page)
     drawLegendPanel(ctxOut, pageData.legendPanel || null);
 }
@@ -4221,9 +4700,10 @@ function drawLegendPanel(ctxOut, panel) {
     const y = Number(panel.y || 24);
     const title = panel.title || 'LEGEND';
     const entries = panel.entries;
+    const connectedLineEntries = Array.isArray(panel.connectedLineEntries) ? panel.connectedLineEntries : [];
     const sections = Array.isArray(panel.sections) && panel.sections.length
         ? panel.sections
-        : buildLegendSections(entries);
+        : buildLegendSections(entries, connectedLineEntries);
     const width = Number(panel.width || 980);
     const height = Number(panel.height || 420);
     const baseWidth = Number(panel.baseWidth || 980);
@@ -4276,6 +4756,16 @@ function drawLegendPanel(ctxOut, panel) {
             rowY += lineHeight;
 
             for (const entry of (section.items || [])) {
+                if (entry.kind === 'connected-route') {
+                    const styleTag = entry.medium === 'wireless' ? 'wireless' : 'wired';
+                    const feetTag = Number.isFinite(Number(entry.totalFeet)) && Number(entry.totalFeet) > 0 ? ` · ${Number(entry.totalFeet).toFixed(1)}ft` : '';
+                    const routeText = `${entry.routeId} (${styleTag}${feetTag}): ${entry.route}`;
+                    ctxOut.fillStyle = '#ffffff';
+                    ctxOut.font = `bold ${itemFont}px Arial`;
+                    ctxOut.fillText(routeText, colX, rowY);
+                    rowY += lineHeight;
+                    continue;
+                }
                 const iconCx = colX + swatchSize * 0.6;
                 const iconCy = rowY + swatchSize * 0.6;
                 ctxOut.save();
@@ -4473,6 +4963,7 @@ function openProject() {
 
 // Load project data into app state
 async function loadProjectData(project) {
+    stopProjectAutosaveCycle();
     projectData = project;
     projectName = project.projectName || project.pdfName || project.project || 'markup';
     serverSavePath = String(project.serverSavePath || '').trim();
@@ -4525,6 +5016,7 @@ async function loadProjectData(project) {
             currentPdfMime = embeddedSource.mimeType || 'application/pdf';
             currentPdfOriginalName = embeddedSource.filename || `${projectName || 'project'}.pdf`;
             await loadPDF(currentPdfBytes.buffer.slice(0));
+            startProjectAutosaveCycle();
             showToast(`Project loaded with embedded PDF: ${currentPdfOriginalName}`);
             return;
         } catch (e) {
@@ -4559,6 +5051,7 @@ async function loadProjectData(project) {
             }
         }, 0);
     }
+    startProjectAutosaveCycle();
 }
 
 function parseProjectJsonText(rawText) {
@@ -4586,7 +5079,9 @@ function normalizeProjectFile(project) {
             textLabels: markups.textLabels || markups.labels || data.textLabels || data.labels || [],
             markupNotes: markups.markupNotes || markups.notes || data.markupNotes || data.notes || [],
             freehandLines: markups.freehandLines || markups.freehand || data.freehandLines || data.freehand || [],
+            connectedLines: normalizeConnectedLines(markups.connectedLines || data.connectedLines || []),
             measureScale: Number(markups.measureScale ?? data.measureScale ?? 0) || 0,
+            scaleAreas: normalizeScaleAreas(markups.scaleAreas || data.scaleAreas || []),
             legendPanel: markups.legendPanel || data.legendPanel || null,
         };
     };
@@ -4700,8 +5195,11 @@ function exportCurrentPage() {
         placed: placed,
         rooms: rooms,
         textLabels: textLabels,
+        markupNotes: markupNotes,
         freehandLines: freehandLines,
+        connectedLines: connectedLines,
         measureScale: measureScale,
+        scaleAreas: scaleAreas,
         definitions: symbols
     };
     
@@ -5185,7 +5683,9 @@ function loadPageMarkups(pageNum) {
             textLabels = data.textLabels || [];
             markupNotes = data.markupNotes || [];
             freehandLines = data.freehandLines || [];
+            connectedLines = normalizeConnectedLines(data.connectedLines || []);
             measureScale = data.measureScale || 0;
+            scaleAreas = normalizeScaleAreas(data.scaleAreas || []);
             legendPanel = data.legendPanel || null;
             multiSelected = [];
             selectedItem = null;
@@ -5206,6 +5706,9 @@ function clearMarkupsForNewPage() {
     textLabels = [];
     markupNotes = [];
     freehandLines = [];
+    connectedLines = [];
+    activeConnectedLine = null;
+    scaleAreas = [];
     legendPanel = null;
     multiSelected = [];
     selectedItem = null;
@@ -5458,7 +5961,51 @@ function buildExportData(name) {
     }
     
     data.legend = buildLegendEntriesForPlaced(placed);
+    data.connectedLines = normalizeConnectedLines(connectedLines);
+    data.connectedLineLegend = buildConnectedLineLegendEntries(connectedLines);
+    data.scaleAreas = normalizeScaleAreas(scaleAreas);
     return data;
+}
+
+function formatConnectedSymbolNameById(symbolId, fallback = '?') {
+    const idx = (placed || []).findIndex((p) => p.id === symbolId);
+    if (idx < 0) return fallback;
+    const symbol = placed[idx];
+    const def = symbols[symbol.type] || {};
+    const base = def.label || symbol.type || fallback;
+    let ordinal = 0;
+    for (let i = 0; i <= idx; i++) {
+        if ((placed[i] || {}).type === symbol.type) ordinal += 1;
+    }
+    return `${base}${ordinal}`;
+}
+
+function buildConnectedLineLegendEntries(lines) {
+    const normalized = normalizeConnectedLines(lines || []);
+    const entries = [];
+    for (let i = 0; i < normalized.length; i++) {
+        const line = normalized[i];
+        const routeParts = (line.symbolIds || []).map((id) => formatConnectedSymbolNameById(id, 'Unknown'));
+        if (routeParts.length < 2) continue;
+        let totalFeet = 0;
+        for (let si = 0; si < (line.symbolIds || []).length - 1; si++) {
+            const from = placed.find((p) => p.id === line.symbolIds[si]);
+            const to = placed.find((p) => p.id === line.symbolIds[si + 1]);
+            if (!from || !to) continue;
+            totalFeet += segmentFeetUsingGrid(from, to);
+        }
+        const medium = line.medium === 'wireless' ? 'wireless' : 'wired';
+        entries.push({
+            kind: 'connected-route',
+            routeId: `L${i + 1}`,
+            route: routeParts.join(' -> '),
+            medium,
+            totalFeet: Number(totalFeet.toFixed(1)),
+            category: 'connected-lines',
+            order: i
+        });
+    }
+    return entries;
 }
 
 function buildLegendEntriesForPlaced(placedItems) {
@@ -5506,20 +6053,24 @@ function prettyLegendCategory(category) {
     if (normalized === 'lighting') return 'Lighting';
     if (normalized === 'shade') return 'Shades';
     if (normalized === 'camera') return 'Cameras';
+    if (normalized === 'connected-lines') return 'Connected Lines';
     return c
         .replace(/[_-]+/g, ' ')
         .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-function buildLegendSections(entries) {
+function buildLegendSections(entries, connectedLineEntries = []) {
     const byCategory = {};
     for (const entry of (entries || [])) {
         const cat = String(entry.category || 'custom');
         if (!byCategory[cat]) byCategory[cat] = [];
         byCategory[cat].push(entry);
     }
+    if (connectedLineEntries && connectedLineEntries.length) {
+        byCategory['connected-lines'] = connectedLineEntries;
+    }
 
-    const preferredOrder = ['network', 'tv', 'speaker', 'lighting', 'shade', 'camera'];
+    const preferredOrder = ['network', 'tv', 'speaker', 'lighting', 'shade', 'camera', 'connected-lines'];
     const allCategories = Object.keys(byCategory);
     const preferred = preferredOrder.filter((cat) => byCategory[cat]);
     const remaining = allCategories
@@ -5548,7 +6099,8 @@ function generateLegendForCurrentPage() {
         showToast('No legend entries found');
         return;
     }
-    const sections = buildLegendSections(entries);
+    const connectedLineEntries = buildConnectedLineLegendEntries(connectedLines);
+    const sections = buildLegendSections(entries, connectedLineEntries);
 
     clearAutoLegendLabels(); // keep backward cleanup for older generated legends
 
@@ -5566,6 +6118,7 @@ function generateLegendForCurrentPage() {
     legendPanel = {
         title: 'LEGEND',
         entries,
+        connectedLineEntries,
         sections,
         x: 24,
         y: 24,
@@ -5582,7 +6135,8 @@ function generateLegendForCurrentPage() {
 
     saveState();
     render();
-    showToast(`Legend placed on page ${currentPageNum} (${entries.length} items)`);
+    const lineSuffix = connectedLineEntries.length ? ` + ${connectedLineEntries.length} routes` : '';
+    showToast(`Legend placed on page ${currentPageNum} (${entries.length} items${lineSuffix})`);
 }
 
 function downloadExport(data, name) {
@@ -5797,11 +6351,14 @@ function pointInPolygon(point, polygon) {
 }
 
 function clearAll() {
-    if ((placed.length || rooms.length || textLabels.length || markupNotes.length || legendPanel) && confirm('Clear all?')) {
+    if ((placed.length || rooms.length || textLabels.length || markupNotes.length || connectedLines.length || scaleAreas.length || legendPanel) && confirm('Clear all?')) {
         placed = [];
         rooms = [];
         textLabels = [];
         markupNotes = [];
+        connectedLines = [];
+        activeConnectedLine = null;
+        scaleAreas = [];
         legendPanel = null;
         roomPoints = [];
         drawingRoom = false;
@@ -5919,6 +6476,20 @@ document.getElementById('project-input').addEventListener('change', function(e) 
     e.target.value = '';
 });
 
+const saveProjectNameInput = document.getElementById('save-project-name');
+if (saveProjectNameInput) {
+    let saveFolderInputTimer = null;
+    saveProjectNameInput.addEventListener('input', () => {
+        if (saveFolderInputTimer) clearTimeout(saveFolderInputTimer);
+        saveFolderInputTimer = setTimeout(() => {
+            populateExistingServerFiles(saveProjectNameInput.value || '');
+        }, 250);
+    });
+    saveProjectNameInput.addEventListener('change', () => {
+        populateExistingServerFiles(saveProjectNameInput.value || '');
+    });
+}
+
 // Auto-load last session's markups if available (even without PDF loaded)
 if (currentPdfName) {
     const hasMarkups = loadPageMarkups(currentPageNum);
@@ -5930,6 +6501,9 @@ if (currentPdfName) {
 // Restore prior server autosave target for this browser session.
 serverSavePath = String(localStorage.getItem('markupServerSavePath') || '').trim();
 serverAutosaveEnabled = localStorage.getItem('markupServerAutosaveEnabled') === '1' && Boolean(serverSavePath);
+if (serverAutosaveEnabled && currentPdfName) {
+    startProjectAutosaveCycle();
+}
 
 // Register service worker for offline use
 if ('serviceWorker' in navigator) {
