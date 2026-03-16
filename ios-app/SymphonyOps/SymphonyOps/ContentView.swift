@@ -126,10 +126,12 @@ struct ContentView: View {
                     headerChip("D-Tools Agent", isSelected: salesMode == .dtoolsAgent) { salesMode = .dtoolsAgent }
                 case .install:
                     headerChip("Service Queue", isSelected: installMode == .queue) { installMode = .queue }
+                    headerChip("Conduit Calc", isSelected: installMode == .conduit) { installMode = .conduit }
                 case .ops:
                     headerChip("Health", isSelected: opsMode == .health) { opsMode = .health }
                     headerChip("Dropout", isSelected: opsMode == .dropout) { opsMode = .dropout }
                     headerChip("Notes", isSelected: opsMode == .notes) { opsMode = .notes }
+                    headerChip("Inventory", isSelected: opsMode == .inventory) { opsMode = .inventory }
                     headerChip("Weather", isSelected: opsMode == .weather) { opsMode = .weather }
                 case .settings:
                     headerChip("Connection", isSelected: true) {}
@@ -4077,6 +4079,14 @@ struct SettingsView: View {
 
                 Section(header: Text("API Keys + Secrets Vault")) {
                     NavigationLink {
+                        TurnkeySetupPlaceholderView()
+                            .environmentObject(api)
+                            .environmentObject(secretsVault)
+                    } label: {
+                        Label("Turnkey Setup Wizard", systemImage: "checklist")
+                    }
+
+                    NavigationLink {
                         SecretsVaultView()
                             .environmentObject(secretsVault)
                     } label: {
@@ -4630,6 +4640,20 @@ struct NeuralMapWebView: View {
             .navigationTitle("Neural Map")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+private struct TurnkeySetupPlaceholderView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Turnkey Setup Wizard")
+                .font(.headline)
+            Text("This setup wizard is not available in this app build variant yet.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .navigationTitle("Turnkey Setup")
     }
 }
 

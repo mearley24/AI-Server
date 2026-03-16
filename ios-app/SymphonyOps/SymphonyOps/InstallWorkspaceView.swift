@@ -14,7 +14,30 @@ struct InstallWorkspaceView: View {
                     }
                 }
             }
+            if mode == .conduit {
+                Section("Field Tools") {
+                    NavigationLink {
+                        ConduitCalculatorPlaceholderView()
+                    } label: {
+                        Label("Conduit Bend Calculator", systemImage: "ruler")
+                    }
+                }
+            }
         }
         .navigationTitle("Install")
+    }
+}
+
+private struct ConduitCalculatorPlaceholderView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Conduit Calculator")
+                .font(.headline)
+            Text("This tool is not available in this app build variant yet.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .navigationTitle("Conduit Calculator")
     }
 }

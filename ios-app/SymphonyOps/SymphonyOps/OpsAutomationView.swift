@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 #endif
 #if canImport(Contacts)
-import Contacts
+@preconcurrency import Contacts
 #endif
 import LocalAuthentication
 
