@@ -1098,27 +1098,8 @@ struct OpsAutomationView: View {
             return
         }
 
-        let keys: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactFamilyNameKey as CNKeyDescriptor,
-            CNContactPhoneNumbersKey as CNKeyDescriptor,
-            CNContactEmailAddressesKey as CNKeyDescriptor,
-            CNContactIdentifierKey as CNKeyDescriptor,
-        ]
-        let request = CNContactFetchRequest(keysToFetch: keys)
-        var rows: [DeviceContactItem] = []
         do {
-            try store.enumerateContacts(with: request) { contact, _ in
-                let name = CNContactFormatter.string(from: contact, style: .fullName)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                var handles: [String] = []
-                handles.append(contentsOf: contact.phoneNumbers.map { $0.value.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) })
-                handles.append(contentsOf: contact.emailAddresses.map { String($0.value).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
-                let clean = Array(Set(handles.filter { !$0.isEmpty })).sorted()
-                guard !clean.isEmpty else { return }
-                let fallbackName = name.isEmpty ? "Contact" : name
-                rows.append(DeviceContactItem(id: contact.identifier, name: fallbackName, handles: clean))
-            }
+            let rows = try await fetchDeviceContactsSnapshot(store: store)
             deviceContacts = rows.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             let validIDs = Set(deviceContacts.map(\.id))
             selectedDeviceContactIDs = selectedDeviceContactIDs.intersection(validIDs)
@@ -1129,6 +1110,38 @@ struct OpsAutomationView: View {
         #else
         resultMessage = "This build does not support in-app Contacts access."
         #endif
+    }
+
+    private func fetchDeviceContactsSnapshot(store: CNContactStore) async throws -> [DeviceContactItem] {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let keys: [CNKeyDescriptor] = [
+                    CNContactGivenNameKey as CNKeyDescriptor,
+                    CNContactFamilyNameKey as CNKeyDescriptor,
+                    CNContactPhoneNumbersKey as CNKeyDescriptor,
+                    CNContactEmailAddressesKey as CNKeyDescriptor,
+                    CNContactIdentifierKey as CNKeyDescriptor,
+                ]
+                let request = CNContactFetchRequest(keysToFetch: keys)
+                var rows: [DeviceContactItem] = []
+                do {
+                    try store.enumerateContacts(with: request) { contact, _ in
+                        let name = CNContactFormatter.string(from: contact, style: .fullName)?
+                            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                        var handles: [String] = []
+                        handles.append(contentsOf: contact.phoneNumbers.map { $0.value.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) })
+                        handles.append(contentsOf: contact.emailAddresses.map { String($0.value).trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+                        let clean = Array(Set(handles.filter { !$0.isEmpty })).sorted()
+                        guard !clean.isEmpty else { return }
+                        let fallbackName = name.isEmpty ? "Contact" : name
+                        rows.append(DeviceContactItem(id: contact.identifier, name: fallbackName, handles: clean))
+                    }
+                    continuation.resume(returning: rows)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     @MainActor
