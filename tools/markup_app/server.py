@@ -12,6 +12,9 @@ For HTTPS (Share → Save to Files on iPad): tailscale serve 8091, set MARKUP_HT
 """
 
 import argparse
+import base64
+import csv
+import io
 import json
 import os
 import secrets
@@ -43,6 +46,8 @@ LOCAL_ACCESS_CONTROL_FILE = LOCAL_EXPORTS / ".access_control.json"
 ICLOUD_ACCESS_CONTROL_FILE = ICLOUD_EXPORTS / ".access_control.json"
 LOCAL_SESSION_FILE = LOCAL_EXPORTS / ".session_tracking.json"
 ICLOUD_SESSION_FILE = ICLOUD_EXPORTS / ".session_tracking.json"
+LOCAL_ORG_SYMBOLS_FILE = LOCAL_EXPORTS / ".org_symbols.json"
+ICLOUD_ORG_SYMBOLS_FILE = ICLOUD_EXPORTS / ".org_symbols.json"
 
 
 class MarkupHandler(BaseHTTPRequestHandler):
@@ -417,26 +422,215 @@ class MarkupHandler(BaseHTTPRequestHandler):
         }
 
     def _project_time_summary(self, project: str) -> dict:
+        return {row["user"]: row["seconds"] for row in self._project_time_rows(project)}
+
+    def _project_time_rows(self, project: str) -> list[dict]:
         db = self._load_session_db()
-        out = {}
+        rows = []
+        now = datetime.utcnow()
+        idle_seconds = self._session_idle_seconds()
         for user, row in (db.get("users") or {}).items():
             seconds = float((row.get("projectSeconds") or {}).get(project, 0.0))
+            first_seen = ""
+            last_seen = ""
+            for session in (row.get("sessions") or []):
+                if str((session or {}).get("project") or "") != project:
+                    continue
+                started = str((session or {}).get("startedAt") or "")
+                ended = str((session or {}).get("endedAt") or "")
+                if started and (not first_seen or started < first_seen):
+                    first_seen = started
+                if ended and (not last_seen or ended > last_seen):
+                    last_seen = ended
             current = row.get("current") or {}
             if str(current.get("project") or "") == project:
-                last_seen = str(current.get("lastSeenAt") or "")
-                started_at = str(current.get("startedAt") or "")
-                if last_seen and started_at:
+                cur_started = str(current.get("startedAt") or "")
+                cur_last = str(current.get("lastSeenAt") or "")
+                if cur_started and (not first_seen or cur_started < first_seen):
+                    first_seen = cur_started
+                if cur_last and (not last_seen or cur_last > last_seen):
+                    last_seen = cur_last
+                if cur_last and cur_started:
                     try:
-                        last_dt = datetime.fromisoformat(last_seen.replace("Z", ""))
-                        start_dt = datetime.fromisoformat(started_at.replace("Z", ""))
-                        gap = (datetime.utcnow() - last_dt).total_seconds()
-                        if gap <= self._session_idle_seconds():
-                            seconds += max(0.0, (datetime.utcnow() - max(last_dt, start_dt)).total_seconds())
+                        last_dt = datetime.fromisoformat(cur_last.replace("Z", ""))
+                        start_dt = datetime.fromisoformat(cur_started.replace("Z", ""))
+                        gap = (now - last_dt).total_seconds()
+                        if gap <= idle_seconds:
+                            seconds += max(0.0, (now - max(last_dt, start_dt)).total_seconds())
                     except Exception:
                         pass
             if seconds > 0:
-                out[user] = round(seconds, 2)
-        return out
+                rows.append({
+                    "user": user,
+                    "seconds": round(seconds, 2),
+                    "firstSeenAt": first_seen or str(row.get("lastSeenAt") or ""),
+                    "lastSeenAt": last_seen or str(row.get("lastSeenAt") or ""),
+                })
+        rows.sort(key=lambda r: (-float(r.get("seconds", 0.0)), str(r.get("user", "")).lower()))
+        return rows
+
+    @staticmethod
+    def _sanitize_symbol_definitions(raw: dict) -> dict:
+        if not isinstance(raw, dict):
+            return {}
+        safe = {}
+        for key, value in raw.items():
+            symbol_id = str(key or "").strip().lower().replace(" ", "-")
+            if not symbol_id or not isinstance(value, dict):
+                continue
+            safe[symbol_id] = {
+                "label": str(value.get("label") or ""),
+                "category": str(value.get("category") or "custom"),
+                "shape": str(value.get("shape") or "roundrect"),
+                "color": str(value.get("color") or "#3B82F6"),
+                "sku": str(value.get("sku") or ""),
+            }
+        return safe
+
+    def _symbols_storage_targets(self, project: str = "") -> dict:
+        project = self._slugify_name(project or "") if project else ""
+        if project:
+            local_current = LOCAL_EXPORTS / project / ".symbols.json"
+            icloud_current = ICLOUD_EXPORTS / project / ".symbols.json"
+            local_history = LOCAL_EXPORTS / project / "symbols_history"
+            icloud_history = ICLOUD_EXPORTS / project / "symbols_history"
+            scope = "project"
+        else:
+            local_current = LOCAL_ORG_SYMBOLS_FILE
+            icloud_current = ICLOUD_ORG_SYMBOLS_FILE
+            local_history = LOCAL_EXPORTS / "symbols_history"
+            icloud_history = ICLOUD_EXPORTS / "symbols_history"
+            scope = "organization"
+        return {
+            "project": project,
+            "scope": scope,
+            "local_current": local_current,
+            "icloud_current": icloud_current,
+            "local_history": local_history,
+            "icloud_history": icloud_history,
+        }
+
+    def _load_symbols_bundle(self, project: str = "") -> dict:
+        targets = self._symbols_storage_targets(project)
+        for path in (targets["local_current"], targets["icloud_current"]):
+            try:
+                if not path.exists():
+                    continue
+                payload = json.loads(path.read_text())
+                if isinstance(payload, dict):
+                    symbols = self._sanitize_symbol_definitions(payload.get("symbols") or {})
+                    return {
+                        "project": targets["project"],
+                        "scope": targets["scope"],
+                        "symbols": symbols,
+                        "updatedAt": str(payload.get("updatedAt") or ""),
+                        "updatedBy": str(payload.get("updatedBy") or ""),
+                        "source": str(payload.get("source") or ""),
+                    }
+            except Exception:
+                continue
+        return {
+            "project": targets["project"],
+            "scope": targets["scope"],
+            "symbols": {},
+            "updatedAt": "",
+            "updatedBy": "",
+            "source": "",
+        }
+
+    def _list_symbol_backups(self, project: str = "", limit: int = 50) -> list[dict]:
+        targets = self._symbols_storage_targets(project)
+        rows = {}
+        max_rows = max(1, min(int(limit or 50), 500))
+        for source, folder in (("local", targets["local_history"]), ("icloud", targets["icloud_history"])):
+            if not folder.exists() or not folder.is_dir():
+                continue
+            try:
+                for entry in folder.iterdir():
+                    if not entry.is_file() or entry.suffix.lower() != ".json":
+                        continue
+                    key = entry.name
+                    row = rows.get(key) or {"filename": entry.name, "createdAt": "", "sources": []}
+                    try:
+                        st = entry.stat()
+                        created = datetime.utcfromtimestamp(st.st_mtime).isoformat() + "Z"
+                        if not row["createdAt"] or created > row["createdAt"]:
+                            row["createdAt"] = created
+                    except Exception:
+                        pass
+                    if source not in row["sources"]:
+                        row["sources"].append(source)
+                    rows[key] = row
+            except Exception:
+                continue
+        out = sorted(rows.values(), key=lambda r: (r.get("createdAt") or "", r.get("filename") or ""), reverse=True)
+        return out[:max_rows]
+
+    def _save_symbols_bundle(self, project: str, symbols: dict, user: str, source: str = "manual", create_backup: bool = True) -> dict:
+        targets = self._symbols_storage_targets(project)
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        safe_symbols = self._sanitize_symbol_definitions(symbols)
+        payload = {
+            "version": 1,
+            "scope": targets["scope"],
+            "project": targets["project"],
+            "updatedAt": now_iso,
+            "updatedBy": user,
+            "source": source,
+            "symbols": safe_symbols,
+        }
+        serialized = json.dumps(payload, indent=2)
+        targets["local_current"].parent.mkdir(parents=True, exist_ok=True)
+        targets["local_current"].write_text(serialized)
+        try:
+            targets["icloud_current"].parent.mkdir(parents=True, exist_ok=True)
+            targets["icloud_current"].write_text(serialized)
+        except Exception:
+            pass
+        backup_name = ""
+        if create_backup:
+            backup_name = f"symbols_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+            for history_dir in (targets["local_history"], targets["icloud_history"]):
+                try:
+                    history_dir.mkdir(parents=True, exist_ok=True)
+                    (history_dir / backup_name).write_text(serialized)
+                except Exception:
+                    continue
+        payload["backupFilename"] = backup_name
+        return payload
+
+    def _restore_latest_symbols(self, project: str, user: str) -> dict | None:
+        targets = self._symbols_storage_targets(project)
+        candidates: list[tuple[datetime, Path]] = []
+        for folder in (targets["local_history"], targets["icloud_history"]):
+            if not folder.exists() or not folder.is_dir():
+                continue
+            try:
+                for entry in folder.iterdir():
+                    if not entry.is_file() or entry.suffix.lower() != ".json":
+                        continue
+                    try:
+                        mtime = datetime.utcfromtimestamp(entry.stat().st_mtime)
+                    except Exception:
+                        mtime = datetime.utcnow()
+                    candidates.append((mtime, entry))
+            except Exception:
+                continue
+        if not candidates:
+            return None
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        for _, path in candidates:
+            try:
+                payload = json.loads(path.read_text())
+                symbols = self._sanitize_symbol_definitions(payload.get("symbols") or {})
+                if not symbols:
+                    continue
+                restored = self._save_symbols_bundle(project, symbols, user=user, source="restore_latest", create_backup=False)
+                restored["restoredFrom"] = path.name
+                return restored
+            except Exception:
+                continue
+        return None
 
     @staticmethod
     def _slugify_name(value: str) -> str:
@@ -474,6 +668,40 @@ class MarkupHandler(BaseHTTPRequestHandler):
         filename = f"{project}_{timestamp}.symphony"
         return project, filename
 
+    @staticmethod
+    def _has_embedded_source_pdf(data: dict) -> bool:
+        if not isinstance(data, dict):
+            return False
+        source_obj = data.get("sourcePdf")
+        if isinstance(source_obj, dict) and (source_obj.get("bytes_b64") or source_obj.get("bytes_arr")):
+            return True
+        for key in ("source_pdf_b64", "sourcePdfB64", "sourcePdfBytesB64", "pdf_b64", "pdfBase64"):
+            if data.get(key):
+                return True
+        return False
+
+    def _preserve_existing_source_pdf(self, data: dict, existing_paths: list[Path]) -> dict:
+        if self._has_embedded_source_pdf(data):
+            return data
+        for path in existing_paths:
+            try:
+                if not path.exists() or not path.is_file():
+                    continue
+                existing = json.loads(path.read_text())
+                if not isinstance(existing, dict):
+                    continue
+                if self._has_embedded_source_pdf(existing):
+                    # Preserve embedded source PDF from existing project file during lightweight autosaves.
+                    if isinstance(existing.get("sourcePdf"), dict):
+                        data["sourcePdf"] = existing["sourcePdf"]
+                    for key in ("source_pdf_b64", "sourcePdfB64", "sourcePdfBytesB64", "pdf_b64", "pdfBase64"):
+                        if existing.get(key) and not data.get(key):
+                            data[key] = existing[key]
+                    return data
+            except Exception:
+                continue
+        return data
+
     def _list_project_folders(self, query: str = "", limit: int = 200) -> list[str]:
         """List known project folders from iCloud/local export roots."""
         folders = set()
@@ -482,9 +710,15 @@ class MarkupHandler(BaseHTTPRequestHandler):
         for root in (ICLOUD_EXPORTS, LOCAL_EXPORTS):
             if not root.exists():
                 continue
-            for entry in root.iterdir():
-                if entry.is_dir() and not entry.name.startswith("."):
-                    folders.add(entry.name)
+            try:
+                for entry in root.iterdir():
+                    if entry.is_dir() and not entry.name.startswith("."):
+                        folders.add(entry.name)
+            except PermissionError:
+                # Some iCloud roots may be unavailable to this process; ignore them.
+                continue
+            except OSError:
+                continue
 
         names = sorted(folders, key=lambda s: s.lower())
         q = (query or "").strip().lower()
@@ -547,6 +781,8 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     if source not in row["sources"]:
                         row["sources"].append(source)
                     files[key] = row
+            except PermissionError:
+                continue
             except Exception:
                 continue
 
@@ -648,6 +884,72 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 "success": True,
                 "project": project,
                 "timeByUserSeconds": self._project_time_summary(project),
+            })
+            return
+
+        if path == '/api/projects/time/export':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            project = self._slugify_name((query.get("project", [""])[0] or "").strip())
+            if not project:
+                self._send_json(400, {"success": False, "error": "Project required"})
+                return
+            user = self._current_user()
+            access = self._load_access_control()
+            if not self._can_access_project(access, project, user, write=False):
+                self._send_json(403, {"success": False, "error": "No access to project"})
+                return
+            rows = self._project_time_rows(project)
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+            writer.writerow(["project", "user", "seconds", "hours", "first_seen_at", "last_seen_at"])
+            for row in rows:
+                seconds = float(row.get("seconds") or 0.0)
+                writer.writerow([
+                    project,
+                    row.get("user") or "",
+                    f"{seconds:.2f}",
+                    f"{seconds / 3600.0:.4f}",
+                    row.get("firstSeenAt") or "",
+                    row.get("lastSeenAt") or "",
+                ])
+            content = buffer.getvalue().encode("utf-8")
+            filename = f"{project}_time_report.csv"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(content)
+            return
+
+        if path == '/api/symbols':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            project = self._slugify_name((query.get("project", [""])[0] or "").strip()) if (query.get("project", [""])[0] or "").strip() else ""
+            user = self._current_user()
+            access = self._load_access_control()
+            if project and not self._can_access_project(access, project, user, write=False):
+                self._send_json(403, {"success": False, "error": "No access to project"})
+                return
+            try:
+                limit = int((query.get("backupLimit", ["25"])[0] or "25").strip())
+            except Exception:
+                limit = 25
+            bundle = self._load_symbols_bundle(project)
+            backups = self._list_symbol_backups(project, limit=limit)
+            self._send_json(200, {
+                "success": True,
+                "project": project,
+                "scope": bundle.get("scope"),
+                "symbols": bundle.get("symbols") or {},
+                "updatedAt": bundle.get("updatedAt") or "",
+                "updatedBy": bundle.get("updatedBy") or "",
+                "source": bundle.get("source") or "",
+                "backupCount": len(backups),
+                "backups": backups,
             })
             return
 
@@ -794,6 +1096,7 @@ class MarkupHandler(BaseHTTPRequestHandler):
                 local_dir.mkdir(parents=True, exist_ok=True)
                 icloud_path = icloud_dir / filename
                 local_path = local_dir / filename
+                data = self._preserve_existing_source_pdf(data, [local_path, icloud_path])
                 
                 with open(icloud_path, 'w') as f:
                     json.dump(data, f, indent=2)
@@ -1131,6 +1434,151 @@ class MarkupHandler(BaseHTTPRequestHandler):
                     project = ""
                 result = self._track_session_ping(user=user, project=project)
                 self._send_json(200, {"success": True, **result})
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/symbols/save':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                raw_project = str(payload.get("project") or "").strip()
+                project = self._slugify_name(raw_project) if raw_project else ""
+                user = self._current_user()
+                access = self._load_access_control()
+                if project:
+                    self._ensure_project_owner(access, project, user)
+                    if not self._can_access_project(access, project, user, write=True):
+                        self._send_json(403, {"success": False, "error": "No write access to project"})
+                        return
+                    self._save_access_control(access)
+                safe_symbols = self._sanitize_symbol_definitions(payload.get("symbols") or {})
+                source = str(payload.get("source") or "manual")
+                saved = self._save_symbols_bundle(project, safe_symbols, user=user, source=source, create_backup=True)
+                self._send_json(200, {
+                    "success": True,
+                    "project": project,
+                    "scope": saved.get("scope"),
+                    "symbolCount": len(saved.get("symbols") or {}),
+                    "updatedAt": saved.get("updatedAt"),
+                    "backupFilename": saved.get("backupFilename"),
+                })
+                if project:
+                    self._append_audit(project, {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "action": "symbols_saved",
+                        "project": project,
+                        "user": user,
+                        "count": len(saved.get("symbols") or {}),
+                        "source": source,
+                        "backupFilename": saved.get("backupFilename"),
+                    })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/symbols/restore-latest':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                raw_project = str(payload.get("project") or "").strip()
+                project = self._slugify_name(raw_project) if raw_project else ""
+                user = self._current_user()
+                access = self._load_access_control()
+                if project and not self._can_access_project(access, project, user, write=True):
+                    self._send_json(403, {"success": False, "error": "No write access to project"})
+                    return
+                restored = self._restore_latest_symbols(project, user=user)
+                if not restored:
+                    self._send_json(404, {"success": False, "error": "No symbol backups found"})
+                    return
+                self._send_json(200, {
+                    "success": True,
+                    "project": project,
+                    "scope": restored.get("scope"),
+                    "symbols": restored.get("symbols") or {},
+                    "updatedAt": restored.get("updatedAt"),
+                    "restoredFrom": restored.get("restoredFrom"),
+                })
+                if project:
+                    self._append_audit(project, {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "action": "symbols_restored_latest",
+                        "project": project,
+                        "user": user,
+                        "count": len(restored.get("symbols") or {}),
+                        "restoredFrom": restored.get("restoredFrom"),
+                    })
+            except Exception as e:
+                self._send_json(500, {"success": False, "error": str(e)})
+        elif path == '/api/save-binary':
+            if not self._is_authorized():
+                self._deny_unauthorized()
+                return
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b"{}")
+                raw_project = str(payload.get("project") or payload.get("projectName") or "").strip()
+                if not raw_project:
+                    self._send_json(400, {"success": False, "error": "Project required"})
+                    return
+                project = self._slugify_name(raw_project)
+                filename = self._slugify_name(str(payload.get("filename") or "").strip())
+                if not filename:
+                    self._send_json(400, {"success": False, "error": "Filename required"})
+                    return
+                if "." not in filename:
+                    filename = f"{filename}.zip"
+                b64 = str(payload.get("bytesB64") or "").strip()
+                if not b64:
+                    self._send_json(400, {"success": False, "error": "bytesB64 required"})
+                    return
+                try:
+                    content = base64.b64decode(b64, validate=True)
+                except Exception:
+                    self._send_json(400, {"success": False, "error": "Invalid base64 payload"})
+                    return
+                user = self._current_user()
+                access = self._load_access_control()
+                self._ensure_project_owner(access, project, user)
+                if not self._can_access_project(access, project, user, write=True):
+                    self._send_json(403, {"success": False, "error": "No write access to project"})
+                    return
+                self._save_access_control(access)
+
+                icloud_dir = ICLOUD_EXPORTS / project
+                local_dir = LOCAL_EXPORTS / project
+                icloud_dir.mkdir(parents=True, exist_ok=True)
+                local_dir.mkdir(parents=True, exist_ok=True)
+                icloud_path = icloud_dir / filename
+                local_path = local_dir / filename
+                with open(icloud_path, "wb") as f:
+                    f.write(content)
+                with open(local_path, "wb") as f:
+                    f.write(content)
+                rel_path = f"{project}/{filename}"
+                self._send_json(200, {
+                    "success": True,
+                    "project": project,
+                    "filename": rel_path,
+                    "savePath": rel_path,
+                    "icloud": str(icloud_path),
+                    "local": str(local_path),
+                    "bytes": len(content),
+                })
+                self._append_audit(project, {
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "action": "binary_saved",
+                    "project": project,
+                    "path": rel_path,
+                    "user": user,
+                    "bytes": len(content),
+                })
             except Exception as e:
                 self._send_json(500, {"success": False, "error": str(e)})
         else:
