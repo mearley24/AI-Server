@@ -6,7 +6,10 @@ import time
 from typing import Any
 
 from eth_account import Account
-from eth_account.messages import encode_structured_data
+try:
+    from eth_account.messages import encode_structured_data
+except ImportError:
+    from eth_account.messages import encode_typed_data as encode_structured_data
 
 # Polymarket CLOB exchange contract on Polygon
 EXCHANGE_ADDRESS = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"
