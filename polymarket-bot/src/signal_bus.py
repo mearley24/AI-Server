@@ -4,6 +4,11 @@ Data flow:
     Binance WS → Latency Detector → Signal Bus → Strategies
     BTC 15m Assistant → Redis → Signal Bus → Strategies
     Strategy Decision → Debate Engine → Execute or Reject
+
+Multi-platform extension:
+    Signals can now target specific platforms or be broadcast to all:
+    - signal.data["platform"] = "kalshi" | "polymarket" | "kraken" | "all"
+    - Platform-filtered subscribers only receive matching signals
 """
 
 from __future__ import annotations
@@ -40,10 +45,14 @@ class Signal:
     data: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
     signal_id: str = ""
+    platform: str = "all"  # "kalshi", "polymarket", "kraken", "coinbase", "crypto", "all"
 
     def __post_init__(self) -> None:
         if not self.signal_id:
             self.signal_id = f"{self.signal_type.value}_{self.source}_{int(self.timestamp * 1000)}"
+        # Also check data dict for platform hint
+        if self.platform == "all" and "platform" in self.data:
+            self.platform = self.data["platform"]
 
 
 class SignalBus:
@@ -75,6 +84,21 @@ class SignalBus:
             self._subscribers[signal_type] = []
         self._subscribers[signal_type].append(callback)
         logger.debug("signal_bus_subscribe", signal_type=signal_type.value)
+
+    def subscribe_platform(
+        self, signal_type: SignalType, platform: str, callback: SignalCallback
+    ) -> None:
+        """Subscribe to a signal type filtered by platform.
+
+        The callback is only invoked when signal.platform matches the given
+        platform or is "all" (broadcast).
+        """
+        async def _filtered(signal: Signal) -> None:
+            if signal.platform in (platform, "all"):
+                await callback(signal)
+
+        self.subscribe(signal_type, _filtered)
+        logger.debug("signal_bus_subscribe_platform", signal_type=signal_type.value, platform=platform)
 
     def subscribe_all(self, callback: SignalCallback) -> None:
         """Subscribe to all signal types."""

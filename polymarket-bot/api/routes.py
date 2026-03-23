@@ -40,6 +40,7 @@ class StatusResponse(BaseModel):
     strategies: dict[str, Any]
     open_orders: int
     polymarket_api: bool
+    platforms: dict[str, Any] = {}
 
 
 class PnLResponse(BaseModel):
@@ -69,6 +70,7 @@ class _Deps:
     audit_trail: Any = None
     sandbox: Any = None
     paper_ledger: Any = None
+    platform_clients: dict[str, Any] = {}  # {"polymarket": ..., "kalshi": ..., "crypto": ...}
 
 
 deps = _Deps()
@@ -78,7 +80,7 @@ deps = _Deps()
 
 @router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="healthy", service="polymarket-bot", version="2.0.0")
+    return HealthResponse(status="healthy", service="polymarket-bot", version="3.0.0")
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -93,50 +95,97 @@ async def status() -> StatusResponse:
         strat_status[name] = strat.status
         total_orders += len(strat.open_orders)
 
+    # Gather platform connection states
+    platform_info: dict[str, Any] = {}
+    for pname, pclient in deps.platform_clients.items():
+        try:
+            platform_info[pname] = {
+                "connected": True,
+                "dry_run": pclient.is_dry_run,
+                "platform_name": pclient.platform_name,
+            }
+        except Exception:
+            platform_info[pname] = {"connected": False}
+
     return StatusResponse(
         status="running",
         wallet=deps.client.wallet_address if deps.client else "",
         strategies=strat_status,
         open_orders=total_orders,
         polymarket_api=api_ok,
+        platforms=platform_info,
     )
 
 
 @router.get("/positions")
-async def positions() -> dict[str, Any]:
-    """Current open positions across all strategies."""
-    if not deps.client:
-        return {"positions": [], "source": "local"}
-
-    # Combine strategy-tracked positions with API positions
+async def positions(
+    platform: str | None = Query(None, description="Filter by platform: polymarket, kalshi, crypto"),
+) -> dict[str, Any]:
+    """Current open positions across all strategies and platforms."""
     all_positions: list[dict[str, Any]] = []
 
-    for name, strat in deps.strategies.items():
-        for order_id, order in strat.open_orders.items():
-            all_positions.append({
-                "order_id": order_id,
-                "token_id": order.token_id,
-                "market": order.market,
-                "side": order.side,
-                "price": order.price,
-                "size": order.size,
-                "strategy": name,
-            })
+    # Polymarket strategy-tracked positions
+    if platform is None or platform == "polymarket":
+        for name, strat in deps.strategies.items():
+            for order_id, order in strat.open_orders.items():
+                all_positions.append({
+                    "platform": "polymarket",
+                    "order_id": order_id,
+                    "token_id": order.token_id,
+                    "market": order.market,
+                    "side": order.side,
+                    "price": order.price,
+                    "size": order.size,
+                    "strategy": name,
+                })
 
-    # Also fetch from P&L tracker
-    if deps.pnl_tracker:
-        for tid, pos in deps.pnl_tracker.open_positions.items():
-            all_positions.append({
-                "token_id": tid,
-                "market": pos["market"],
-                "side": pos["side"],
-                "entry_price": pos["entry_price"],
-                "size": pos["size"],
-                "strategy": pos["strategy"],
-                "realized_pnl": pos["realized_pnl"],
-            })
+        # Also fetch from P&L tracker
+        if deps.pnl_tracker:
+            for tid, pos in deps.pnl_tracker.open_positions.items():
+                all_positions.append({
+                    "platform": "polymarket",
+                    "token_id": tid,
+                    "market": pos["market"],
+                    "side": pos["side"],
+                    "entry_price": pos["entry_price"],
+                    "size": pos["size"],
+                    "strategy": pos["strategy"],
+                    "realized_pnl": pos["realized_pnl"],
+                })
+
+    # Cross-platform positions from platform clients
+    for pname, pclient in deps.platform_clients.items():
+        if pname == "polymarket":
+            continue  # already handled above
+        if platform is not None and pname != platform:
+            continue
+        try:
+            positions_list = await pclient.get_positions()
+            for pos in positions_list:
+                pos_dict = pos.model_dump() if hasattr(pos, "model_dump") else vars(pos)
+                pos_dict["platform"] = pname
+                all_positions.append(pos_dict)
+        except Exception as exc:
+            logger.error("platform_positions_error", platform=pname, error=str(exc))
 
     return {"positions": all_positions, "count": len(all_positions)}
+
+
+@router.get("/platforms")
+async def platforms() -> dict[str, Any]:
+    """List connected trading platforms and their status."""
+    result: dict[str, Any] = {}
+    for pname, pclient in deps.platform_clients.items():
+        try:
+            balance = await pclient.get_balance()
+            result[pname] = {
+                "connected": True,
+                "dry_run": pclient.is_dry_run,
+                "balance": balance,
+            }
+        except Exception as exc:
+            result[pname] = {"connected": False, "error": str(exc)}
+    return {"platforms": result, "count": len(result)}
 
 
 @router.get("/strategies")
@@ -351,6 +400,7 @@ async def set_mode(req: SetModeRequest) -> dict[str, Any]:
 async def paper_trades(
     limit: int = Query(100, ge=1, le=10000, description="Max trades to return"),
     strategy: str | None = Query(None, description="Filter by strategy name"),
+    platform: str | None = Query(None, description="Filter by platform: polymarket, kalshi, crypto"),
 ) -> dict[str, Any]:
     """Return recent paper trades from the ledger."""
     if not deps.paper_ledger:
@@ -360,6 +410,8 @@ async def paper_trades(
 
     if strategy:
         trades = [t for t in trades if t.strategy == strategy]
+    if platform:
+        trades = [t for t in trades if getattr(t, "platform", "polymarket") == platform]
 
     return {
         "trades": [t.to_dict() for t in trades],

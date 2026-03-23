@@ -23,6 +23,9 @@ from src.latency_detector import LatencyDetector
 from src.market_scanner import MarketScanner
 from src.order_flow_analyzer import OrderFlowAnalyzer
 from src.paper_ledger import PaperLedger
+from src.platforms.crypto_client import CryptoClient
+from src.platforms.kalshi_client import KalshiClient
+from src.platforms.polymarket_client import PolymarketPlatformClient
 from src.pnl_tracker import PnLTracker
 from src.security.audit import AuditTrail
 from src.security.sandbox import ExecutionSandbox
@@ -188,6 +191,118 @@ async def lifespan(app: FastAPI):
         strat.set_debate_engine(debate_engine)
         strat.set_paper_ledger(paper_ledger)
 
+    # ── Multi-platform initialization ────────────────────────────────────
+    enabled_platforms = [p.strip() for p in settings.platforms_enabled.split(",") if p.strip()]
+    platform_clients: dict[str, Any] = {}
+    platform_strategies: list[Any] = []  # strategies with start/stop lifecycle
+
+    # Polymarket platform adapter (wraps existing client)
+    polymarket_platform = PolymarketPlatformClient(settings, client)
+    platform_clients["polymarket"] = polymarket_platform
+
+    # Kalshi platform
+    kalshi_client = None
+    kalshi_scanner = None
+    if "kalshi" in enabled_platforms:
+        kalshi_client = KalshiClient(
+            api_key_id=settings.kalshi_api_key_id,
+            private_key_path=settings.kalshi_private_key_path,
+            environment=settings.kalshi_environment,
+            dry_run=settings.kalshi_dry_run,
+            paper_ledger=paper_ledger,
+        )
+        connected = await kalshi_client.connect()
+        if connected:
+            platform_clients["kalshi"] = kalshi_client
+            log.info("kalshi_platform_enabled", environment=settings.kalshi_environment, dry_run=settings.kalshi_dry_run)
+
+            # Kalshi scanner
+            from strategies.kalshi.kalshi_scanner import KalshiScanner
+            kalshi_scanner = KalshiScanner(
+                kalshi_client=kalshi_client,
+                signal_bus=signal_bus,
+                scan_interval_seconds=settings.kalshi_scan_interval,
+            )
+
+            # Kalshi weather strategy
+            if settings.kalshi_weather_enabled:
+                from strategies.kalshi.kalshi_weather import KalshiWeatherStrategy
+                kalshi_weather = KalshiWeatherStrategy(
+                    kalshi_client=kalshi_client,
+                    signal_bus=signal_bus,
+                    noaa_stations=settings.weather_noaa_stations,
+                    edge_threshold=settings.kalshi_edge_threshold,
+                    max_position_size=settings.kalshi_max_position_size,
+                    check_interval=settings.weather_check_interval_seconds,
+                )
+                platform_strategies.append(("kalshi_weather", kalshi_weather))
+
+            # Kalshi Fed strategy
+            if settings.kalshi_fed_enabled:
+                from strategies.kalshi.kalshi_fed import KalshiFedStrategy
+                kalshi_fed = KalshiFedStrategy(
+                    kalshi_client=kalshi_client,
+                    signal_bus=signal_bus,
+                    edge_threshold=settings.kalshi_edge_threshold,
+                    max_position_size=settings.kalshi_max_position_size,
+                )
+                platform_strategies.append(("kalshi_fed", kalshi_fed))
+        else:
+            log.warning("kalshi_connect_failed", msg="Kalshi platform disabled")
+
+    # Crypto platform
+    crypto_client = None
+    if "crypto" in enabled_platforms:
+        crypto_client = CryptoClient(
+            exchange_id=settings.crypto_exchange,
+            api_key=settings.kraken_api_key,
+            api_secret=settings.kraken_api_secret,
+            dry_run=settings.kraken_dry_run,
+            symbols=settings.crypto_symbols,
+            paper_ledger=paper_ledger,
+        )
+        connected = await crypto_client.connect()
+        if connected:
+            platform_clients["crypto"] = crypto_client
+            log.info("crypto_platform_enabled", exchange=settings.crypto_exchange, dry_run=settings.kraken_dry_run)
+
+            # BTC Correlation strategy
+            if settings.crypto_btc_correlation_enabled:
+                from strategies.crypto.btc_correlation import BTCCorrelationStrategy
+                btc_corr = BTCCorrelationStrategy(
+                    crypto_client=crypto_client,
+                    signal_bus=signal_bus,
+                    alt_symbols=settings.crypto_symbols,
+                    trade_amount_usd=settings.crypto_trade_amount_usd,
+                )
+                platform_strategies.append(("btc_correlation", btc_corr))
+
+            # Mean Reversion strategy
+            if settings.crypto_mean_reversion_enabled:
+                from strategies.crypto.mean_reversion import MeanReversionStrategy
+                mean_rev = MeanReversionStrategy(
+                    crypto_client=crypto_client,
+                    signal_bus=signal_bus,
+                    symbols=settings.crypto_symbols,
+                    trade_amount_usd=settings.crypto_trade_amount_usd,
+                    check_interval=settings.crypto_poll_interval_seconds,
+                )
+                platform_strategies.append(("mean_reversion", mean_rev))
+
+            # Momentum strategy
+            if settings.crypto_momentum_enabled:
+                from strategies.crypto.momentum import MomentumStrategy
+                momentum = MomentumStrategy(
+                    crypto_client=crypto_client,
+                    signal_bus=signal_bus,
+                    symbols=settings.crypto_symbols,
+                    trade_amount_usd=settings.crypto_trade_amount_usd,
+                    check_interval=settings.crypto_poll_interval_seconds,
+                )
+                platform_strategies.append(("momentum", momentum))
+        else:
+            log.warning("crypto_connect_failed", msg="Crypto platform disabled")
+
     # Inject dependencies into API routes
     deps.client = client
     deps.scanner = scanner
@@ -197,6 +312,7 @@ async def lifespan(app: FastAPI):
     deps.audit_trail = audit_trail
     deps.sandbox = sandbox
     deps.paper_ledger = paper_ledger
+    deps.platform_clients = platform_clients
     deps.strategies = {
         "stink_bid": stink_bid,
         "flash_crash": flash_crash,
@@ -227,6 +343,18 @@ async def lifespan(app: FastAPI):
     await latency_detector.start()
     await order_flow.start()
 
+    # Start Kalshi scanner
+    if kalshi_scanner:
+        await kalshi_scanner.start()
+
+    # Start platform-specific strategies
+    for name, strat in platform_strategies:
+        try:
+            await strat.start()
+            log.info("platform_strategy_started", strategy=name)
+        except Exception as exc:
+            log.error("platform_strategy_start_failed", strategy=name, error=str(exc))
+
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
 
@@ -253,6 +381,8 @@ async def lifespan(app: FastAPI):
         port=settings.port,
         wallet=client.wallet_address or "(not configured)",
         strategies=list(deps.strategies.keys()),
+        platform_strategies=[n for n, _ in platform_strategies],
+        platforms=list(platform_clients.keys()),
         max_exposure=settings.poly_max_exposure,
         default_size=settings.poly_default_size,
         debate_engine=debate_engine.enabled,
@@ -288,6 +418,18 @@ async def lifespan(app: FastAPI):
             await redis_task
         except asyncio.CancelledError:
             pass
+
+    # Stop platform-specific strategies
+    for name, strat in platform_strategies:
+        try:
+            await strat.stop()
+        except Exception:
+            pass
+
+    # Stop Kalshi scanner
+    if kalshi_scanner:
+        await kalshi_scanner.stop()
+
     for strat in deps.strategies.values():
         await strat.stop()
     await order_flow.stop()
@@ -297,6 +439,14 @@ async def lifespan(app: FastAPI):
     await debate_engine.close()
     await paper_ledger.close()
     await client.close()
+
+    # Close platform clients
+    for pname, pclient in platform_clients.items():
+        try:
+            await pclient.close()
+        except Exception:
+            pass
+
     audit_trail.close()
     log.info("polymarket_bot_stopped")
 
@@ -313,12 +463,14 @@ def _print_banner(settings) -> None:
             ledger=settings.paper_ledger_file[:32]
         )
 
+    platforms_str = ", ".join(getattr(deps, "platform_clients", {}).keys()) or "polymarket"
     banner = f"""
 ╔══════════════════════════════════════════════════╗
-║           POLYMARKET TRADING BOT v2.0            ║
+║        MULTI-PLATFORM TRADING BOT v3.0           ║
 ║                                                  ║
 ║{mode_line}║
 ║  Port:      {settings.port:<37}║
+║  Platforms: {platforms_str[:37]:<37}║
 ║  Wallet:    {(deps.client.wallet_address or 'NOT SET')[:37]:<37}║
 ║  Exposure:  ${settings.poly_max_exposure:<36}║
 ║  Size:      ${settings.poly_default_size:<36}║

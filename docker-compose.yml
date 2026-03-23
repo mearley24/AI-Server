@@ -97,10 +97,20 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379
+      - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-kalshi,crypto}
+      - KALSHI_API_KEY_ID=${KALSHI_API_KEY_ID:-}
+      - KALSHI_PRIVATE_KEY_PATH=/app/secrets/kalshi.key
+      - KALSHI_ENVIRONMENT=${KALSHI_ENVIRONMENT:-demo}
+      - KALSHI_DRY_RUN=${KALSHI_DRY_RUN:-true}
+      - KRAKEN_API_KEY=${KRAKEN_API_KEY:-}
+      - KRAKEN_API_SECRET=${KRAKEN_API_SECRET:-}
+      - KRAKEN_DRY_RUN=${KRAKEN_DRY_RUN:-true}
+      - CRYPTO_EXCHANGE=${CRYPTO_EXCHANGE:-kraken}
     ports:
       - "127.0.0.1:8430:8430"
     volumes:
       - ./data/polymarket:/data
+      - ./polymarket-bot/secrets:/app/secrets:ro
     depends_on:
       - redis
     healthcheck:
