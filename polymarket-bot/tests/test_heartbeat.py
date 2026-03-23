@@ -161,17 +161,23 @@ async def test_heartbeat_runner_quick_pulse(tmp_path, mock_health):
 @pytest.mark.asyncio
 async def test_health_checker_connected():
     """Test health checker with a successfully connected platform."""
+    import heartbeat.health_check as hc_mod
     from heartbeat.health_check import HealthChecker
 
     checker = HealthChecker()
 
     mock_client = AsyncMock()
     mock_client.connect = AsyncMock(return_value=True)
-    mock_client.get_balance = AsyncMock(return_value={"total": 500.0})
+    mock_client.get_balance = AsyncMock(return_value={"balance": 500.0})
     mock_client.is_dry_run = True
+    mock_client.close = AsyncMock()
+
+    def _mock_builder():
+        return mock_client, None
 
     with patch.object(checker, "_get_enabled_platforms", return_value=["kalshi"]), \
-         patch.object(checker, "_get_platform_client", return_value=mock_client):
+         patch.dict(hc_mod._CLIENT_BUILDERS, {"kalshi": _mock_builder}), \
+         patch.dict(hc_mod._IMPORT_ERRORS, {}, clear=True):
 
         result = await checker.check_all()
 
@@ -184,6 +190,7 @@ async def test_health_checker_connected():
 @pytest.mark.asyncio
 async def test_health_checker_disconnected():
     """Test health checker with a disconnected platform."""
+    import heartbeat.health_check as hc_mod
     from heartbeat.health_check import HealthChecker
 
     checker = HealthChecker()
@@ -191,9 +198,14 @@ async def test_health_checker_disconnected():
     mock_client = AsyncMock()
     mock_client.connect = AsyncMock(return_value=False)
     mock_client.is_dry_run = True
+    mock_client.close = AsyncMock()
+
+    def _mock_builder():
+        return mock_client, None
 
     with patch.object(checker, "_get_enabled_platforms", return_value=["crypto"]), \
-         patch.object(checker, "_get_platform_client", return_value=mock_client):
+         patch.dict(hc_mod._CLIENT_BUILDERS, {"crypto": _mock_builder}), \
+         patch.dict(hc_mod._IMPORT_ERRORS, {}, clear=True):
 
         result = await checker.check_all()
 
@@ -203,15 +215,17 @@ async def test_health_checker_disconnected():
 @pytest.mark.asyncio
 async def test_health_checker_error():
     """Test health checker when platform throws an exception."""
+    import heartbeat.health_check as hc_mod
     from heartbeat.health_check import HealthChecker
 
     checker = HealthChecker()
 
-    mock_client = AsyncMock()
-    mock_client.connect = AsyncMock(side_effect=Exception("Connection refused"))
+    def _mock_builder():
+        raise Exception("Connection refused")
 
     with patch.object(checker, "_get_enabled_platforms", return_value=["kalshi"]), \
-         patch.object(checker, "_get_platform_client", return_value=mock_client):
+         patch.dict(hc_mod._CLIENT_BUILDERS, {"kalshi": _mock_builder}), \
+         patch.dict(hc_mod._IMPORT_ERRORS, {}, clear=True):
 
         result = await checker.check_all()
 
@@ -221,17 +235,18 @@ async def test_health_checker_error():
 
 @pytest.mark.asyncio
 async def test_health_checker_not_installed():
-    """Test health checker when platform client can't be imported."""
+    """Test health checker when platform dependency is missing."""
+    import heartbeat.health_check as hc_mod
     from heartbeat.health_check import HealthChecker
 
     checker = HealthChecker()
 
     with patch.object(checker, "_get_enabled_platforms", return_value=["kalshi"]), \
-         patch.object(checker, "_get_platform_client", return_value=None):
+         patch.dict(hc_mod._IMPORT_ERRORS, {"kalshi": "No module named 'some_package'"}):
 
         result = await checker.check_all()
 
-    assert result["platforms"]["kalshi"]["status"] == "not_installed"
+    assert result["platforms"]["kalshi"]["status"] == "dependency_missing"
 
 
 # ── StrategyReviewer tests ───────────────────────────────────────────────

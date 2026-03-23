@@ -23,9 +23,6 @@ from src.latency_detector import LatencyDetector
 from src.market_scanner import MarketScanner
 from src.order_flow_analyzer import OrderFlowAnalyzer
 from src.paper_ledger import PaperLedger
-from src.platforms.crypto_client import CryptoClient
-from src.platforms.kalshi_client import KalshiClient
-from src.platforms.polymarket_client import PolymarketPlatformClient
 from src.pnl_tracker import PnLTracker
 from src.security.audit import AuditTrail
 from src.security.sandbox import ExecutionSandbox
@@ -36,6 +33,29 @@ from strategies.flash_crash import FlashCrashStrategy
 from strategies.sports_arb import SportsArbStrategy
 from strategies.stink_bid import StinkBidStrategy
 from strategies.weather_trader import WeatherTraderStrategy
+
+# Platform clients — imported with try/except so one broken dependency
+# doesn't crash the whole bot.  The health checker reports "dependency_missing"
+# instead.
+_PLATFORM_IMPORT_ERRORS: dict[str, str] = {}
+
+try:
+    from src.platforms.kalshi_client import KalshiClient
+except ImportError as _exc:
+    KalshiClient = None  # type: ignore[assignment,misc]
+    _PLATFORM_IMPORT_ERRORS["kalshi"] = str(_exc)
+
+try:
+    from src.platforms.crypto_client import CryptoClient
+except ImportError as _exc:
+    CryptoClient = None  # type: ignore[assignment,misc]
+    _PLATFORM_IMPORT_ERRORS["crypto"] = str(_exc)
+
+try:
+    from src.platforms.polymarket_client import PolymarketPlatformClient
+except ImportError as _exc:
+    PolymarketPlatformClient = None  # type: ignore[assignment,misc]
+    _PLATFORM_IMPORT_ERRORS["polymarket"] = str(_exc)
 
 
 def _configure_logging(level: str) -> None:
@@ -196,14 +216,23 @@ async def lifespan(app: FastAPI):
     platform_clients: dict[str, Any] = {}
     platform_strategies: list[Any] = []  # strategies with start/stop lifecycle
 
+    # Log any platform import failures
+    for pname, perr in _PLATFORM_IMPORT_ERRORS.items():
+        log.warning("platform_dependency_missing", platform=pname, error=perr)
+
     # Polymarket platform adapter (wraps existing client)
-    polymarket_platform = PolymarketPlatformClient(settings, client)
-    platform_clients["polymarket"] = polymarket_platform
+    if PolymarketPlatformClient is not None:
+        polymarket_platform = PolymarketPlatformClient(settings, client)
+        platform_clients["polymarket"] = polymarket_platform
+    else:
+        log.warning("polymarket_platform_unavailable", error=_PLATFORM_IMPORT_ERRORS.get("polymarket", "unknown"))
 
     # Kalshi platform
     kalshi_client = None
     kalshi_scanner = None
-    if "kalshi" in enabled_platforms:
+    if "kalshi" in enabled_platforms and KalshiClient is None:
+        log.warning("kalshi_dependency_missing", error=_PLATFORM_IMPORT_ERRORS.get("kalshi", "unknown"))
+    elif "kalshi" in enabled_platforms:
         kalshi_client = KalshiClient(
             api_key_id=settings.kalshi_api_key_id,
             private_key_path=settings.kalshi_private_key_path,
@@ -252,7 +281,9 @@ async def lifespan(app: FastAPI):
 
     # Crypto platform
     crypto_client = None
-    if "crypto" in enabled_platforms:
+    if "crypto" in enabled_platforms and CryptoClient is None:
+        log.warning("crypto_dependency_missing", error=_PLATFORM_IMPORT_ERRORS.get("crypto", "unknown"))
+    elif "crypto" in enabled_platforms:
         crypto_client = CryptoClient(
             exchange_id=settings.crypto_exchange,
             api_key=settings.kraken_api_key,
