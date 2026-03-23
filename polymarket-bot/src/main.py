@@ -375,6 +375,39 @@ async def lifespan(app: FastAPI):
 
         scoring_task = asyncio.create_task(_scoring_loop())
 
+    # ── Heartbeat scheduler ────────────────────────────────────────────────
+    heartbeat_scheduler = None
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from heartbeat.runner import HeartbeatRunner
+
+        heartbeat_runner = HeartbeatRunner()
+        heartbeat_scheduler = AsyncIOScheduler()
+
+        # Full review at 6:00 AM MT (13:00 UTC) daily
+        heartbeat_scheduler.add_job(
+            heartbeat_runner.run_full_review,
+            "cron",
+            hour=13,
+            minute=0,
+            id="heartbeat_full_review",
+        )
+
+        # Quick pulse every 4 hours
+        heartbeat_scheduler.add_job(
+            heartbeat_runner.run_quick_pulse,
+            "interval",
+            hours=4,
+            id="heartbeat_quick_pulse",
+        )
+
+        heartbeat_scheduler.start()
+        log.info("heartbeat_scheduler_started", full_review="13:00 UTC daily", quick_pulse="every 4h")
+    except ImportError as exc:
+        log.warning("heartbeat_scheduler_unavailable", error=str(exc), msg="pip install apscheduler>=3.10.0")
+    except Exception as exc:
+        log.error("heartbeat_scheduler_error", error=str(exc))
+
     log.info(
         "polymarket_bot_started",
         mode="OBSERVER (dry-run)" if settings.dry_run else "LIVE",
@@ -406,6 +439,14 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     log.info("polymarket_bot_stopping")
+
+    # Stop heartbeat scheduler
+    if heartbeat_scheduler:
+        try:
+            heartbeat_scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+
     if scoring_task and not scoring_task.done():
         scoring_task.cancel()
         try:
@@ -490,6 +531,9 @@ def _print_banner(settings) -> None:
 ║    POST /start         — Start a strategy        ║
 ║    POST /stop          — Stop a strategy         ║
 ║    POST /mode          — Switch mode             ║
+║    POST /heartbeat/run — Trigger heartbeat       ║
+║    GET  /heartbeat/status — HEARTBEAT.md         ║
+║    GET  /heartbeat/reports — Recent reports      ║
 ╚══════════════════════════════════════════════════╝
 """
     print(banner, flush=True)

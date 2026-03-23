@@ -11,6 +11,9 @@ knowledge/state/
 knowledge/manual_vault/
 knowledge/reports/manual_fetch_queue.csv
 
+# Heartbeat reports (local only)
+heartbeat_reports/*.json
+
 # Xcode user-local workspace state (never share)
 **/*.xcodeproj/project.xcworkspace/xcuserdata/
 **/*.xcodeproj/xcuserdata/
