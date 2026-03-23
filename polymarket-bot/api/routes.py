@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 import structlog
@@ -503,3 +504,41 @@ async def knowledge_recent(
     query = KnowledgeQuery()
     content = query.get_recent_learnings(days=days)
     return {"days": days, "content": content, "has_data": bool(content.strip())}
+
+
+# ── Heartbeat endpoints ────────────────────────────────────────────────
+
+@router.post("/heartbeat/run")
+async def run_heartbeat(
+    review_type: str = Query("full", description="Review type: 'full' or 'quick'"),
+) -> dict[str, Any]:
+    """Trigger a heartbeat review (full self-review or quick pulse)."""
+    from heartbeat.runner import HeartbeatRunner
+
+    runner = HeartbeatRunner()
+    if review_type == "quick":
+        result = await runner.run_quick_pulse()
+    else:
+        result = await runner.run_full_review()
+    return result
+
+
+@router.get("/heartbeat/status")
+async def heartbeat_status() -> dict[str, Any]:
+    """Get current HEARTBEAT.md contents."""
+    heartbeat_path = Path(__file__).parent.parent / "HEARTBEAT.md"
+    if heartbeat_path.exists():
+        return {"content": heartbeat_path.read_text()}
+    return {"content": "No heartbeat data yet. Run POST /heartbeat/run first."}
+
+
+@router.get("/heartbeat/reports")
+async def heartbeat_reports(
+    limit: int = Query(10, ge=1, le=100, description="Max reports to return"),
+) -> dict[str, Any]:
+    """List recent heartbeat report filenames."""
+    reports_dir = Path(__file__).parent.parent / "heartbeat_reports"
+    if not reports_dir.exists():
+        return {"reports": []}
+    files = sorted(reports_dir.glob("*.json"), reverse=True)[:limit]
+    return {"reports": [f.name for f in files]}
