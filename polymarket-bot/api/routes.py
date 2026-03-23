@@ -1,0 +1,233 @@
+"""REST API endpoints for the Polymarket trading bot."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import structlog
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+logger = structlog.get_logger(__name__)
+
+router = APIRouter()
+
+
+# ── Request / Response models ────────────────────────────────────────────
+
+class StartStrategyRequest(BaseModel):
+    strategy: str
+    params: dict[str, Any] = {}
+
+
+class StopStrategyRequest(BaseModel):
+    strategy: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    version: str
+
+
+class StatusResponse(BaseModel):
+    status: str
+    wallet: str
+    strategies: dict[str, Any]
+    open_orders: int
+    polymarket_api: bool
+
+
+class PnLResponse(BaseModel):
+    total_pnl: float
+    total_realized: float
+    total_unrealized: float
+    total_fees: float
+    trade_count: int
+    win_count: int
+    loss_count: int
+    win_rate: float
+    by_strategy: dict[str, float]
+    by_market: dict[str, float]
+
+
+# ── Dependency holder (set by main.py at startup) ────────────────────────
+
+class _Deps:
+    """Mutable container for runtime dependencies injected by main.py."""
+
+    client: Any = None
+    scanner: Any = None
+    orderbook: Any = None
+    pnl_tracker: Any = None
+    strategies: dict[str, Any] = {}
+    settings: Any = None
+
+
+deps = _Deps()
+
+
+# ── Routes ───────────────────────────────────────────────────────────────
+
+@router.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    return HealthResponse(status="healthy", service="polymarket-bot", version="1.0.0")
+
+
+@router.get("/status", response_model=StatusResponse)
+async def status() -> StatusResponse:
+    api_ok = False
+    if deps.client:
+        api_ok = await deps.client.health_check()
+
+    strat_status = {}
+    total_orders = 0
+    for name, strat in deps.strategies.items():
+        strat_status[name] = strat.status
+        total_orders += len(strat.open_orders)
+
+    return StatusResponse(
+        status="running",
+        wallet=deps.client.wallet_address if deps.client else "",
+        strategies=strat_status,
+        open_orders=total_orders,
+        polymarket_api=api_ok,
+    )
+
+
+@router.get("/positions")
+async def positions() -> dict[str, Any]:
+    """Current open positions across all strategies."""
+    if not deps.client:
+        return {"positions": [], "source": "local"}
+
+    # Combine strategy-tracked positions with API positions
+    all_positions: list[dict[str, Any]] = []
+
+    for name, strat in deps.strategies.items():
+        for order_id, order in strat.open_orders.items():
+            all_positions.append({
+                "order_id": order_id,
+                "token_id": order.token_id,
+                "market": order.market,
+                "side": order.side,
+                "price": order.price,
+                "size": order.size,
+                "strategy": name,
+            })
+
+    # Also fetch from P&L tracker
+    if deps.pnl_tracker:
+        for tid, pos in deps.pnl_tracker.open_positions.items():
+            all_positions.append({
+                "token_id": tid,
+                "market": pos["market"],
+                "side": pos["side"],
+                "entry_price": pos["entry_price"],
+                "size": pos["size"],
+                "strategy": pos["strategy"],
+                "realized_pnl": pos["realized_pnl"],
+            })
+
+    return {"positions": all_positions, "count": len(all_positions)}
+
+
+@router.get("/strategies")
+async def list_strategies() -> dict[str, Any]:
+    """List available strategies and their current configs."""
+    result = {}
+    for name, strat in deps.strategies.items():
+        result[name] = {
+            "name": strat.name,
+            "description": strat.description,
+            "state": strat.state.value,
+            "params": strat.params,
+        }
+    return {"strategies": result}
+
+
+@router.get("/pnl")
+async def pnl(keyword: str | None = None, hours: float | None = None, strategy: str | None = None) -> PnLResponse:
+    """Get P&L filtered by keyword, time window, and/or strategy."""
+    if not deps.pnl_tracker:
+        raise HTTPException(status_code=503, detail="P&L tracker not initialized")
+
+    summary = deps.pnl_tracker.get_pnl(keyword=keyword, hours=hours, strategy=strategy)
+    return PnLResponse(
+        total_pnl=summary.total_pnl,
+        total_realized=summary.total_realized,
+        total_unrealized=summary.total_unrealized,
+        total_fees=summary.total_fees,
+        trade_count=summary.trade_count,
+        win_count=summary.win_count,
+        loss_count=summary.loss_count,
+        win_rate=summary.win_rate,
+        by_strategy=summary.by_strategy,
+        by_market=summary.by_market,
+    )
+
+
+@router.post("/start")
+async def start_strategy(req: StartStrategyRequest) -> dict[str, Any]:
+    """Start a strategy by name with optional parameters."""
+    strat = deps.strategies.get(req.strategy)
+    if not strat:
+        available = list(deps.strategies.keys())
+        raise HTTPException(
+            status_code=404,
+            detail=f"Strategy '{req.strategy}' not found. Available: {available}",
+        )
+
+    if strat.state.value == "running":
+        return {"status": "already_running", "strategy": req.strategy}
+
+    await strat.start(params=req.params if req.params else None)
+    logger.info("strategy_started_via_api", strategy=req.strategy, params=req.params)
+    return {"status": "started", "strategy": req.strategy, "params": strat.params}
+
+
+@router.post("/stop")
+async def stop_strategy(req: StopStrategyRequest) -> dict[str, Any]:
+    """Stop a running strategy."""
+    strat = deps.strategies.get(req.strategy)
+    if not strat:
+        available = list(deps.strategies.keys())
+        raise HTTPException(
+            status_code=404,
+            detail=f"Strategy '{req.strategy}' not found. Available: {available}",
+        )
+
+    if strat.state.value != "running":
+        return {"status": "not_running", "strategy": req.strategy}
+
+    await strat.stop()
+    logger.info("strategy_stopped_via_api", strategy=req.strategy)
+    return {"status": "stopped", "strategy": req.strategy}
+
+
+@router.get("/markets")
+async def markets() -> dict[str, Any]:
+    """Get currently scanned markets."""
+    if not deps.scanner:
+        raise HTTPException(status_code=503, detail="Scanner not initialized")
+
+    result = await deps.scanner.scan()
+    return {
+        "markets": [
+            {
+                "condition_id": m.condition_id,
+                "question": m.question,
+                "token": m.token,
+                "timeframe": m.timeframe,
+                "direction": m.direction,
+                "token_id_yes": m.token_id_yes,
+                "token_id_no": m.token_id_no,
+                "last_price_yes": m.last_price_yes,
+                "volume": m.volume,
+            }
+            for m in result.markets
+        ],
+        "count": len(result.markets),
+        "scan_time": result.scan_time,
+        "errors": result.errors,
+    }

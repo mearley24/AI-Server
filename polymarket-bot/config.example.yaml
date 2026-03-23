@@ -1,0 +1,31 @@
+# Polymarket Trading Bot — Strategy Configuration
+# Copy to config.yaml and adjust as needed.
+# Env vars override values set here.
+
+# Market scanning
+scan_tokens:
+  - BTC
+  - ETH
+  - SOL
+
+# Strategy: Stink Bid
+strategies:
+  stink_bid:
+    drop_threshold: 0.15     # Place bid this far below current price
+    take_profit: 0.10        # Exit when price rises this much above entry
+    stop_loss: 0.08          # Exit when price drops this much below entry
+    size: 10.0               # Position size in USDC
+    timeframes:
+      - 5m
+      - 15m
+
+  # Strategy: Flash Crash
+  flash_crash:
+    drop_threshold: 0.30     # Price drop to trigger buy (e.g. 0.30 = 30 cents)
+    window_seconds: 10       # Time window to detect the drop
+    take_profit: 0.15        # Exit when price rises this much
+    stop_loss: 0.10          # Exit when price drops this much
+    size: 10.0               # Position size in USDC
+    timeframes:
+      - 5m
+      - 15m

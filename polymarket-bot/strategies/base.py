@@ -1,0 +1,220 @@
+"""Abstract base class for all trading strategies."""
+
+from __future__ import annotations
+
+import asyncio
+import time
+import uuid
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+
+import structlog
+
+from src.client import PolymarketClient
+from src.config import Settings
+from src.market_scanner import MarketScanner, ScannedMarket
+from src.pnl_tracker import PnLTracker, Trade
+from src.websocket_client import OrderbookFeed
+
+logger = structlog.get_logger(__name__)
+
+
+class StrategyState(str, Enum):
+    IDLE = "idle"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    ERROR = "error"
+
+
+@dataclass
+class OpenOrder:
+    """Tracks an order placed by a strategy."""
+
+    order_id: str
+    token_id: str
+    market: str
+    side: str
+    price: float
+    size: float
+    placed_at: float = field(default_factory=time.time)
+    strategy: str = ""
+
+
+class BaseStrategy(ABC):
+    """Abstract base strategy. Subclass and implement on_tick()."""
+
+    name: str = "base"
+    description: str = "Abstract base strategy"
+
+    def __init__(
+        self,
+        client: PolymarketClient,
+        settings: Settings,
+        scanner: MarketScanner,
+        orderbook: OrderbookFeed,
+        pnl_tracker: PnLTracker,
+    ) -> None:
+        self._client = client
+        self._settings = settings
+        self._scanner = scanner
+        self._orderbook = orderbook
+        self._pnl = pnl_tracker
+        self._state = StrategyState.IDLE
+        self._task: asyncio.Task | None = None
+        self._open_orders: dict[str, OpenOrder] = {}
+        self._tick_interval: float = 5.0  # seconds between ticks
+        self._params: dict[str, Any] = {}
+        self._started_at: float = 0.0
+        self._tick_count: int = 0
+
+    @property
+    def state(self) -> StrategyState:
+        return self._state
+
+    @property
+    def open_orders(self) -> dict[str, OpenOrder]:
+        return self._open_orders
+
+    @property
+    def params(self) -> dict[str, Any]:
+        return self._params
+
+    @property
+    def status(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "state": self._state.value,
+            "open_orders": len(self._open_orders),
+            "tick_count": self._tick_count,
+            "started_at": self._started_at,
+            "uptime_seconds": time.time() - self._started_at if self._started_at else 0,
+            "params": self._params,
+        }
+
+    def configure(self, params: dict[str, Any]) -> None:
+        """Update strategy parameters."""
+        self._params.update(params)
+        logger.info("strategy_configured", strategy=self.name, params=params)
+
+    async def start(self, params: dict[str, Any] | None = None) -> None:
+        """Start the strategy loop."""
+        if self._state == StrategyState.RUNNING:
+            logger.warning("strategy_already_running", strategy=self.name)
+            return
+
+        if params:
+            self.configure(params)
+
+        self._state = StrategyState.RUNNING
+        self._started_at = time.time()
+        self._task = asyncio.create_task(self._run_loop())
+        logger.info("strategy_started", strategy=self.name)
+
+    async def stop(self) -> None:
+        """Stop the strategy loop and cancel open orders."""
+        if self._state != StrategyState.RUNNING:
+            return
+
+        self._state = StrategyState.STOPPING
+        logger.info("strategy_stopping", strategy=self.name)
+
+        # Cancel all open orders
+        for order_id in list(self._open_orders.keys()):
+            try:
+                await self._client.cancel_order(order_id)
+            except Exception as exc:
+                logger.error("cancel_order_error", order_id=order_id, error=str(exc))
+        self._open_orders.clear()
+
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+        self._state = StrategyState.IDLE
+        logger.info("strategy_stopped", strategy=self.name)
+
+    async def _run_loop(self) -> None:
+        """Main strategy loop — calls on_tick() repeatedly."""
+        while self._state == StrategyState.RUNNING:
+            try:
+                await self.on_tick()
+                self._tick_count += 1
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("strategy_tick_error", strategy=self.name, error=str(exc))
+                self._state = StrategyState.ERROR
+                break
+
+            await asyncio.sleep(self._tick_interval)
+
+    @abstractmethod
+    async def on_tick(self) -> None:
+        """Called on each strategy tick. Implement trading logic here."""
+        ...
+
+    # ── Helper methods for subclasses ────────────────────────────────────
+
+    async def _place_limit_order(
+        self,
+        token_id: str,
+        market: str,
+        price: float,
+        size: float,
+        side: int,
+    ) -> OpenOrder | None:
+        """Place a limit order and track it."""
+        # Check exposure limit
+        current_exposure = sum(o.price * o.size for o in self._open_orders.values())
+        if current_exposure + (price * size) > self._settings.poly_max_exposure:
+            logger.warning(
+                "exposure_limit_reached",
+                current=current_exposure,
+                max=self._settings.poly_max_exposure,
+            )
+            return None
+
+        try:
+            result = await self._client.place_order(
+                token_id=token_id,
+                price=price,
+                size=size,
+                side=side,
+            )
+            order_id = result.get("orderID", str(uuid.uuid4()))
+            order = OpenOrder(
+                order_id=order_id,
+                token_id=token_id,
+                market=market,
+                side="BUY" if side == 0 else "SELL",
+                price=price,
+                size=size,
+                strategy=self.name,
+            )
+            self._open_orders[order_id] = order
+            return order
+        except Exception as exc:
+            logger.error("place_order_error", error=str(exc), token_id=token_id)
+            return None
+
+    def _record_fill(self, order: OpenOrder, fill_price: float) -> None:
+        """Record a filled order as a trade in the P&L tracker."""
+        trade = Trade(
+            trade_id=order.order_id,
+            timestamp=time.time(),
+            market=order.market,
+            token_id=order.token_id,
+            side=order.side,
+            price=fill_price,
+            size=order.size,
+            strategy=self.name,
+        )
+        self._pnl.record_trade(trade)
+
+        if order.order_id in self._open_orders:
+            del self._open_orders[order.order_id]

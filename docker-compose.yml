@@ -74,6 +74,29 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  polymarket-bot:
+    build:
+      context: ./polymarket-bot
+    container_name: polymarket-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8430:8430"
+    volumes:
+      - ./data/polymarket:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8430/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   kuma:
   openwebui:
