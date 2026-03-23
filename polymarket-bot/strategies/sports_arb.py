@@ -290,6 +290,34 @@ class SportsArbStrategy(BaseStrategy):
             return False
 
         try:
+            if self._settings.dry_run:
+                # Paper trade both sides
+                paper_a = self._record_paper_trade(
+                    token_id=arb["token_id_a"],
+                    market=arb["question"],
+                    price=price_a,
+                    size=size_a,
+                    side=SIDE_BUY,
+                )
+                paper_b = self._record_paper_trade(
+                    token_id=arb["token_id_b"],
+                    market=arb["question"],
+                    price=price_b,
+                    size=size_b,
+                    side=SIDE_BUY,
+                )
+                logger.info(
+                    "sports_arb_executed",
+                    market=arb["question"],
+                    arb_type=arb["arb_type"],
+                    order_a_id=paper_a.order_id,
+                    order_b_id=paper_b.order_id,
+                    cost=round(price_a * size_a + price_b * size_b, 2),
+                    expected_profit=round(arb["net_profit_per_share"] * size_a, 2),
+                    dry_run=True,
+                )
+                return True
+
             # Place both orders concurrently
             results = await asyncio.gather(
                 self._client.place_order(

@@ -24,6 +24,10 @@ class StopStrategyRequest(BaseModel):
     strategy: str
 
 
+class SetModeRequest(BaseModel):
+    mode: str  # "dry_run" or "live"
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
@@ -64,6 +68,7 @@ class _Deps:
     settings: Any = None
     audit_trail: Any = None
     sandbox: Any = None
+    paper_ledger: Any = None
 
 
 deps = _Deps()
@@ -291,3 +296,82 @@ async def security_status() -> dict[str, Any]:
         "kill_reason": deps.sandbox.kill_reason,
         "daily_stats": deps.sandbox.daily_stats,
     }
+
+
+# ── Observer / Dry-run mode endpoints ────────────────────────────────────
+
+@router.get("/mode")
+async def get_mode() -> dict[str, Any]:
+    """Return current operating mode (dry_run or live)."""
+    if not deps.settings:
+        raise HTTPException(status_code=503, detail="Settings not initialized")
+    return {
+        "mode": "dry_run" if deps.settings.dry_run else "live",
+        "dry_run": deps.settings.dry_run,
+    }
+
+
+@router.post("/mode")
+async def set_mode(req: SetModeRequest) -> dict[str, Any]:
+    """Toggle between dry_run and live mode.
+
+    Switching to live requires the vault to be unlocked (i.e. a wallet
+    private key must be configured).
+    """
+    if not deps.settings:
+        raise HTTPException(status_code=503, detail="Settings not initialized")
+
+    if req.mode not in ("dry_run", "live"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid mode '{req.mode}'. Must be 'dry_run' or 'live'.",
+        )
+
+    if req.mode == "live":
+        # Require wallet credentials to go live
+        if not deps.client or not deps.client.wallet_address:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot switch to live mode — no wallet configured. "
+                "Unlock the vault or set POLY_PRIVATE_KEY first.",
+            )
+        deps.settings.dry_run = False
+        logger.warning("mode_switched_to_live", wallet=deps.client.wallet_address)
+    else:
+        deps.settings.dry_run = True
+        logger.info("mode_switched_to_dry_run")
+
+    return {
+        "mode": "dry_run" if deps.settings.dry_run else "live",
+        "dry_run": deps.settings.dry_run,
+    }
+
+
+@router.get("/paper-trades")
+async def paper_trades(
+    limit: int = Query(100, ge=1, le=10000, description="Max trades to return"),
+    strategy: str | None = Query(None, description="Filter by strategy name"),
+) -> dict[str, Any]:
+    """Return recent paper trades from the ledger."""
+    if not deps.paper_ledger:
+        raise HTTPException(status_code=503, detail="Paper ledger not initialized")
+
+    trades = deps.paper_ledger.read_recent(limit=limit)
+
+    if strategy:
+        trades = [t for t in trades if t.strategy == strategy]
+
+    return {
+        "trades": [t.to_dict() for t in trades],
+        "count": len(trades),
+        "mode": "dry_run" if deps.settings and deps.settings.dry_run else "live",
+    }
+
+
+@router.get("/paper-pnl")
+async def paper_pnl() -> dict[str, Any]:
+    """Return hypothetical P&L calculated from resolved paper trades."""
+    if not deps.paper_ledger:
+        raise HTTPException(status_code=503, detail="Paper ledger not initialized")
+
+    return deps.paper_ledger.get_paper_pnl()

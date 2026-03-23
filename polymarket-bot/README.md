@@ -2,6 +2,40 @@
 
 Automated trading bot for Polymarket prediction markets, integrated into the AI-Server stack.
 
+## Observer Mode (Dry Run)
+
+The bot defaults to **observer/dry-run mode** (`POLY_DRY_RUN=true`). In this mode it runs ALL subsystems — latency detector, market scanner, order flow analyzer, signal bus, debate engine, and all strategies — but instead of placing real orders, it logs **paper trades** to `/data/paper_trades.jsonl`.
+
+A background scoring loop periodically checks the Gamma API for resolved markets and retroactively determines whether each paper trade would have been profitable. By the time you're ready to go live, you'll have weeks of data showing which strategies and signal combinations actually work.
+
+### How it works
+
+1. **All systems run normally** — signals fire, debates run, strategies decide to "trade"
+2. **Orders are intercepted** — instead of hitting the Polymarket CLOB, trades are written to the paper ledger
+3. **Retroactive scoring** — every hour (configurable), resolved markets are checked against paper trades
+4. **P&L tracking** — `GET /paper-pnl` shows hypothetical profit/loss by strategy
+
+### Switching to live
+
+When your Polymarket account is funded and ready:
+
+```bash
+# Option 1: Environment variable
+POLY_DRY_RUN=false
+
+# Option 2: API endpoint (requires wallet to be configured)
+curl -X POST http://localhost:8430/mode -H 'Content-Type: application/json' -d '{"mode": "live"}'
+```
+
+### API endpoints for observer mode
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/mode` | Current mode (`dry_run` or `live`) |
+| POST | `/mode` | Switch mode (requires wallet for live) |
+| GET | `/paper-trades` | Recent paper trades from ledger |
+| GET | `/paper-pnl` | Hypothetical P&L from resolved markets |
+
 ## Architecture
 
 - **FastAPI service** on port 8430
@@ -104,15 +138,19 @@ Before executing trades above a configurable threshold ($25 default), runs a bul
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | GET | `/status` | Bot status, wallet, active strategies |
+| GET | `/mode` | Current operating mode (dry_run or live) |
 | GET | `/positions` | Open positions across all strategies |
 | GET | `/strategies` | Available strategies and configs |
 | GET | `/pnl?keyword=bitcoin&hours=72` | Filtered P&L |
+| GET | `/paper-trades` | Paper trade ledger (observer mode) |
+| GET | `/paper-pnl` | Hypothetical P&L from resolved paper trades |
 | GET | `/markets` | Currently scanned markets |
 | GET | `/audit?date=2026-03-23&strategy=sports_arb` | Audit trail query |
 | GET | `/audit/dates` | Available audit dates |
 | GET | `/security/status` | Security sandbox status and kill switch |
 | POST | `/start` | Start a strategy (`{"strategy": "sports_arb"}`) |
 | POST | `/stop` | Stop a strategy (`{"strategy": "sports_arb"}`) |
+| POST | `/mode` | Switch between dry_run and live mode |
 
 ## Configuration
 
@@ -120,6 +158,7 @@ Before executing trades above a configurable threshold ($25 default), runs a bul
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
+| `POLY_DRY_RUN` | No | true | Observer mode — no real orders, logs paper trades |
 | `POLY_PRIVATE_KEY` | Yes | — | Wallet private key (64 hex chars, no 0x) |
 | `POLY_SAFE_ADDRESS` | Yes | — | Polymarket Safe address |
 | `POLY_BUILDER_API_KEY` | No | — | Builder Program API key (gasless) |

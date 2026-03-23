@@ -2,6 +2,17 @@
 # Copy to config.yaml and adjust as needed.
 # Env vars override values set here.
 
+# Observer mode — watches markets and logs paper trades without executing
+# Set to false when your Polymarket account is active and funded
+dry_run: true
+
+# Paper trade ledger
+paper_ledger:
+  enabled: true
+  file: /data/paper_trades.jsonl
+  score_resolved_markets: true  # retroactively check if paper trades would have profited
+  scoring_interval_seconds: 3600  # check resolved markets every hour
+
 # Market scanning
 scan_tokens:
   - BTC

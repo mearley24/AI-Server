@@ -22,6 +22,7 @@ from src.debate_engine import DebateEngine
 from src.latency_detector import LatencyDetector
 from src.market_scanner import MarketScanner
 from src.order_flow_analyzer import OrderFlowAnalyzer
+from src.paper_ledger import PaperLedger
 from src.pnl_tracker import PnLTracker
 from src.security.audit import AuditTrail
 from src.security.sandbox import ExecutionSandbox
@@ -176,9 +177,16 @@ async def lifespan(app: FastAPI):
     weather_trader = WeatherTraderStrategy(**strategy_args)
     sports_arb = SportsArbStrategy(**strategy_args)
 
-    # Attach debate engine to all strategies
+    # Initialise paper ledger for dry-run mode
+    paper_ledger = PaperLedger(
+        ledger_path=settings.paper_ledger_file,
+        gamma_api_url=settings.gamma_api_url,
+    )
+
+    # Attach debate engine and paper ledger to all strategies
     for strat in (stink_bid, flash_crash, weather_trader, sports_arb):
         strat.set_debate_engine(debate_engine)
+        strat.set_paper_ledger(paper_ledger)
 
     # Inject dependencies into API routes
     deps.client = client
@@ -188,6 +196,7 @@ async def lifespan(app: FastAPI):
     deps.settings = settings
     deps.audit_trail = audit_trail
     deps.sandbox = sandbox
+    deps.paper_ledger = paper_ledger
     deps.strategies = {
         "stink_bid": stink_bid,
         "flash_crash": flash_crash,
@@ -204,10 +213,11 @@ async def lifespan(app: FastAPI):
                 await strat.stop()
             except Exception:
                 pass
-        try:
-            await client.cancel_all_orders()
-        except Exception:
-            pass
+        if not settings.dry_run:
+            try:
+                await client.cancel_all_orders()
+            except Exception:
+                pass
 
     sandbox.on_kill(_on_kill)
 
@@ -220,8 +230,26 @@ async def lifespan(app: FastAPI):
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
 
+    # Start paper ledger scoring loop (periodically checks resolved markets)
+    scoring_task: asyncio.Task | None = None
+    if settings.dry_run:
+        async def _scoring_loop() -> None:
+            while True:
+                try:
+                    await asyncio.sleep(settings.paper_ledger_scoring_interval)
+                    result = await paper_ledger.score_resolved_markets()
+                    if result["scored"] > 0:
+                        log.info("paper_ledger_scoring_complete", **result)
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    log.error("paper_ledger_scoring_error", error=str(exc))
+
+        scoring_task = asyncio.create_task(_scoring_loop())
+
     log.info(
         "polymarket_bot_started",
+        mode="OBSERVER (dry-run)" if settings.dry_run else "LIVE",
         port=settings.port,
         wallet=client.wallet_address or "(not configured)",
         strategies=list(deps.strategies.keys()),
@@ -234,12 +262,26 @@ async def lifespan(app: FastAPI):
         audit_trail="active",
     )
 
+    if settings.dry_run:
+        log.info(
+            "observer_mode_active",
+            msg="OBSERVER MODE — watching markets, logging paper trades, no real orders",
+            paper_ledger=settings.paper_ledger_file,
+            scoring_interval=settings.paper_ledger_scoring_interval,
+        )
+
     _print_banner(settings)
 
     yield
 
     # Shutdown
     log.info("polymarket_bot_stopping")
+    if scoring_task and not scoring_task.done():
+        scoring_task.cancel()
+        try:
+            await scoring_task
+        except asyncio.CancelledError:
+            pass
     if redis_task and not redis_task.done():
         redis_task.cancel()
         try:
@@ -253,6 +295,7 @@ async def lifespan(app: FastAPI):
     await signal_bus.stop()
     await orderbook.stop()
     await debate_engine.close()
+    await paper_ledger.close()
     await client.close()
     audit_trail.close()
     log.info("polymarket_bot_stopped")
@@ -260,26 +303,41 @@ async def lifespan(app: FastAPI):
 
 def _print_banner(settings) -> None:
     """Print startup banner."""
+    mode_str = "OBSERVER (dry-run)" if settings.dry_run else "LIVE"
+    mode_line = f"  Mode:     {mode_str:<37}"
+    observer_lines = ""
+    if settings.dry_run:
+        observer_lines = """║                                                  ║
+║  OBSERVER MODE — no real orders placed       ║
+║  Paper trades → {ledger:<32}║""".format(
+            ledger=settings.paper_ledger_file[:32]
+        )
+
     banner = f"""
 ╔══════════════════════════════════════════════════╗
 ║           POLYMARKET TRADING BOT v2.0            ║
 ║                                                  ║
+║{mode_line}║
 ║  Port:      {settings.port:<37}║
 ║  Wallet:    {(deps.client.wallet_address or 'NOT SET')[:37]:<37}║
 ║  Exposure:  ${settings.poly_max_exposure:<36}║
 ║  Size:      ${settings.poly_default_size:<36}║
-║                                                  ║
+{observer_lines}║                                                  ║
 ║  Endpoints:                                      ║
-║    GET  /health      — Health check              ║
-║    GET  /status      — Bot status                ║
-║    GET  /positions   — Open positions             ║
-║    GET  /strategies  — Available strategies       ║
-║    GET  /pnl         — Profit & Loss             ║
-║    GET  /markets     — Scanned markets           ║
-║    GET  /audit       — Audit trail               ║
+║    GET  /health        — Health check            ║
+║    GET  /status        — Bot status              ║
+║    GET  /mode          — Current mode            ║
+║    GET  /positions     — Open positions          ║
+║    GET  /strategies    — Available strategies    ║
+║    GET  /pnl           — Profit & Loss           ║
+║    GET  /paper-trades  — Paper trade ledger      ║
+║    GET  /paper-pnl     — Paper P&L               ║
+║    GET  /markets       — Scanned markets         ║
+║    GET  /audit         — Audit trail             ║
 ║    GET  /security/status — Security sandbox      ║
-║    POST /start       — Start a strategy          ║
-║    POST /stop        — Stop a strategy           ║
+║    POST /start         — Start a strategy        ║
+║    POST /stop          — Stop a strategy         ║
+║    POST /mode          — Switch mode             ║
 ╚══════════════════════════════════════════════════╝
 """
     print(banner, flush=True)

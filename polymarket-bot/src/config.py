@@ -26,6 +26,11 @@ def _load_yaml(path: str | Path | None) -> dict[str, Any]:
 class Settings(BaseSettings):
     """All bot configuration — env vars take precedence over YAML."""
 
+    # --- Observer / Dry-run mode ---
+    dry_run: bool = Field(default=True, validation_alias="poly_dry_run", description="Observer mode — no real orders, logs paper trades")
+    paper_ledger_file: str = Field(default="/data/paper_trades.jsonl", description="Path to paper trades ledger")
+    paper_ledger_scoring_interval: int = Field(default=3600, description="Seconds between resolved-market scoring checks")
+
     # --- Polymarket credentials ---
     poly_private_key: str = Field(default="", description="Wallet private key (64 hex chars, no 0x)")
     poly_safe_address: str = Field(default="", description="Polymarket Safe address")
@@ -106,6 +111,7 @@ class Settings(BaseSettings):
         "env_prefix": "",
         "env_file": ".env",
         "extra": "ignore",
+        "populate_by_name": True,
     }
 
 

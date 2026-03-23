@@ -231,13 +231,22 @@ class StinkBidStrategy(BaseStrategy):
             return
 
         try:
-            await self._client.place_order(
-                token_id=token_id,
-                price=price,
-                size=pos["size"],
-                side=SIDE_SELL,
-                order_type="FOK",
-            )
+            if self._settings.dry_run:
+                self._record_paper_trade(
+                    token_id=token_id,
+                    market=pos["market"].question,
+                    price=price,
+                    size=pos["size"],
+                    side=SIDE_SELL,
+                )
+            else:
+                await self._client.place_order(
+                    token_id=token_id,
+                    price=price,
+                    size=pos["size"],
+                    side=SIDE_SELL,
+                    order_type="FOK",
+                )
             logger.info(
                 "position_exited",
                 market=pos["market"].question,
@@ -245,6 +254,7 @@ class StinkBidStrategy(BaseStrategy):
                 exit_price=price,
                 entry_price=pos["entry_price"],
                 pnl=price - pos["entry_price"],
+                dry_run=self._settings.dry_run,
             )
         except Exception as exc:
             logger.error("exit_position_error", token_id=token_id, error=str(exc))

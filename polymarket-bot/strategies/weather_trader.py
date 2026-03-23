@@ -684,13 +684,22 @@ class WeatherTraderStrategy(BaseStrategy):
 
         try:
             current_price = await self._client.get_midpoint(token_id)
-            await self._client.place_order(
-                token_id=token_id,
-                price=current_price,
-                size=pos["size"],
-                side=SIDE_SELL,
-                order_type="FOK",
-            )
+            if self._settings.dry_run:
+                self._record_paper_trade(
+                    token_id=token_id,
+                    market=pos["market"],
+                    price=current_price,
+                    size=pos["size"],
+                    side=SIDE_SELL,
+                )
+            else:
+                await self._client.place_order(
+                    token_id=token_id,
+                    price=current_price,
+                    size=pos["size"],
+                    side=SIDE_SELL,
+                    order_type="FOK",
+                )
             logger.info(
                 "weather_position_exited",
                 market=pos["market"],
@@ -698,6 +707,7 @@ class WeatherTraderStrategy(BaseStrategy):
                 exit_price=current_price,
                 entry_price=pos["entry_price"],
                 pnl=round(current_price - pos["entry_price"], 4),
+                dry_run=self._settings.dry_run,
             )
         except Exception as exc:
             logger.error("weather_exit_error", token_id=token_id, error=str(exc))

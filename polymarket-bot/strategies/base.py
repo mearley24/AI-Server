@@ -20,6 +20,7 @@ from src.websocket_client import OrderbookFeed
 
 if TYPE_CHECKING:
     from src.debate_engine import DebateEngine
+    from src.paper_ledger import PaperLedger
 
 logger = structlog.get_logger(__name__)
 
@@ -72,10 +73,15 @@ class BaseStrategy(ABC):
         self._started_at: float = 0.0
         self._tick_count: int = 0
         self._debate_engine: DebateEngine | None = None
+        self._paper_ledger: PaperLedger | None = None
 
     def set_debate_engine(self, engine: DebateEngine) -> None:
         """Attach the debate engine for pre-trade validation."""
         self._debate_engine = engine
+
+    def set_paper_ledger(self, ledger: PaperLedger) -> None:
+        """Attach the paper ledger for dry-run mode."""
+        self._paper_ledger = ledger
 
     @property
     def state(self) -> StrategyState:
@@ -128,12 +134,13 @@ class BaseStrategy(ABC):
         self._state = StrategyState.STOPPING
         logger.info("strategy_stopping", strategy=self.name)
 
-        # Cancel all open orders
+        # Cancel all open orders (skip API calls in dry-run mode)
         for order_id in list(self._open_orders.keys()):
-            try:
-                await self._client.cancel_order(order_id)
-            except Exception as exc:
-                logger.error("cancel_order_error", order_id=order_id, error=str(exc))
+            if not self._settings.dry_run:
+                try:
+                    await self._client.cancel_order(order_id)
+                except Exception as exc:
+                    logger.error("cancel_order_error", order_id=order_id, error=str(exc))
         self._open_orders.clear()
 
         if self._task:
@@ -192,9 +199,11 @@ class BaseStrategy(ABC):
             return None
 
         # Run debate engine if attached and qualifying
+        debate_confidence: float | None = None
+        debate_recommendation: str | None = None
         if self._debate_engine:
             side_str = "BUY" if side == 0 else "SELL"
-            result = await self._debate_engine.should_execute(
+            debate_out = await self._debate_engine.should_execute(
                 strategy_name=self.name,
                 market=market,
                 side=side_str,
@@ -202,17 +211,31 @@ class BaseStrategy(ABC):
                 size=size,
                 context={"token_id": token_id, "params": self._params},
             )
-            if result is not None:
-                if result.confidence < self._debate_engine.confidence_threshold:
+            if debate_out is not None:
+                debate_confidence = debate_out.confidence
+                debate_recommendation = debate_out.recommendation
+                if debate_out.confidence < self._debate_engine.confidence_threshold:
                     logger.info(
                         "trade_rejected_by_debate",
                         strategy=self.name,
                         market=market,
-                        confidence=result.confidence,
-                        recommendation=result.recommendation,
-                        reasoning=result.reasoning,
+                        confidence=debate_out.confidence,
+                        recommendation=debate_out.recommendation,
+                        reasoning=debate_out.reasoning,
                     )
                     return None
+
+        # --- Dry-run mode: log paper trade instead of placing real order ---
+        if self._settings.dry_run:
+            return self._record_paper_trade(
+                token_id=token_id,
+                market=market,
+                price=price,
+                size=size,
+                side=side,
+                debate_confidence=debate_confidence,
+                debate_recommendation=debate_recommendation,
+            )
 
         try:
             result = await self._client.place_order(
@@ -236,6 +259,60 @@ class BaseStrategy(ABC):
         except Exception as exc:
             logger.error("place_order_error", error=str(exc), token_id=token_id)
             return None
+
+    def _record_paper_trade(
+        self,
+        token_id: str,
+        market: str,
+        price: float,
+        size: float,
+        side: int,
+        debate_confidence: float | None = None,
+        debate_recommendation: str | None = None,
+    ) -> OpenOrder:
+        """Record a paper trade in dry-run mode and return a mock OpenOrder."""
+        from src.paper_ledger import PaperTrade
+
+        side_str = "BUY" if side == 0 else "SELL"
+        paper_order_id = f"paper-{uuid.uuid4().hex[:12]}"
+
+        if self._paper_ledger:
+            paper_trade = PaperTrade(
+                timestamp=time.time(),
+                strategy=self.name,
+                market_id=token_id,
+                market_question=market,
+                side=side_str,
+                size=size,
+                price=price,
+                signals=self._params,
+                debate_confidence=debate_confidence,
+                debate_recommendation=debate_recommendation,
+            )
+            self._paper_ledger.record(paper_trade)
+
+        logger.info(
+            "paper_trade_logged",
+            strategy=self.name,
+            market=market,
+            side=side_str,
+            price=price,
+            size=size,
+            order_id=paper_order_id,
+        )
+
+        # Return a mock OpenOrder so the strategy loop continues normally
+        order = OpenOrder(
+            order_id=paper_order_id,
+            token_id=token_id,
+            market=market,
+            side=side_str,
+            price=price,
+            size=size,
+            strategy=self.name,
+        )
+        self._open_orders[paper_order_id] = order
+        return order
 
     def _record_fill(self, order: OpenOrder, fill_price: float) -> None:
         """Record a filled order as a trade in the P&L tracker."""
