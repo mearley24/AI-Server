@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
@@ -62,6 +62,8 @@ class _Deps:
     pnl_tracker: Any = None
     strategies: dict[str, Any] = {}
     settings: Any = None
+    audit_trail: Any = None
+    sandbox: Any = None
 
 
 deps = _Deps()
@@ -71,7 +73,7 @@ deps = _Deps()
 
 @router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="healthy", service="polymarket-bot", version="1.0.0")
+    return HealthResponse(status="healthy", service="polymarket-bot", version="2.0.0")
 
 
 @router.get("/status", response_model=StatusResponse)
@@ -230,4 +232,62 @@ async def markets() -> dict[str, Any]:
         "count": len(result.markets),
         "scan_time": result.scan_time,
         "errors": result.errors,
+    }
+
+
+# ── Audit endpoint ───────────────────────────────────────────────────────
+
+@router.get("/audit")
+async def audit(
+    date: str | None = Query(None, description="ISO date (YYYY-MM-DD), defaults to today"),
+    strategy: str | None = Query(None, description="Filter by strategy name"),
+    type: str | None = Query(None, description="Entry type: trade_decision, api_call, security_event"),
+    limit: int = Query(500, ge=1, le=10000, description="Max entries to return"),
+) -> dict[str, Any]:
+    """Query the audit trail for trade decisions, API calls, and security events."""
+    if not deps.audit_trail:
+        raise HTTPException(status_code=503, detail="Audit trail not initialized")
+
+    entries = deps.audit_trail.query(
+        date=date,
+        strategy=strategy,
+        entry_type=type,
+        limit=limit,
+    )
+
+    return {
+        "entries": entries,
+        "count": len(entries),
+        "date": date or "today",
+        "filters": {
+            "strategy": strategy,
+            "type": type,
+            "limit": limit,
+        },
+    }
+
+
+@router.get("/audit/dates")
+async def audit_dates() -> dict[str, Any]:
+    """List available audit trail dates."""
+    if not deps.audit_trail:
+        raise HTTPException(status_code=503, detail="Audit trail not initialized")
+
+    dates = deps.audit_trail.get_available_dates()
+    return {"dates": dates, "count": len(dates)}
+
+
+# ── Security endpoints ───────────────────────────────────────────────────
+
+@router.get("/security/status")
+async def security_status() -> dict[str, Any]:
+    """Get security sandbox status including daily limits and kill switch."""
+    if not deps.sandbox:
+        return {"status": "not_configured"}
+
+    return {
+        "status": "active",
+        "kill_switch": deps.sandbox.is_killed,
+        "kill_reason": deps.sandbox.kill_reason,
+        "daily_stats": deps.sandbox.daily_stats,
     }
