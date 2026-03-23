@@ -78,9 +78,12 @@ class Settings(BaseSettings):
     weather_max_position_size: float = Field(default=10.0, description="Max per-position in USDC")
     weather_check_interval_seconds: float = Field(default=300.0, description="Seconds between checks")
 
+    # --- BTC Price Feed ---
+    btc_feed_source: str = Field(default="kraken", description="BTC price feed: 'kraken', 'coinbase', or 'binance'")
+
     # --- Latency Detector ---
-    latency_detector_enabled: bool = Field(default=True, description="Enable Binance-Polymarket latency detector")
-    latency_binance_symbol: str = Field(default="btcusdt", description="Binance symbol to monitor")
+    latency_detector_enabled: bool = Field(default=True, description="Enable BTC-Polymarket latency detector")
+    latency_binance_symbol: str = Field(default="btcusdt", description="Binance symbol to monitor (legacy, used when btc_feed_source=binance)")
     latency_momentum_window_seconds: float = Field(default=10.0, description="Momentum calculation window")
     latency_price_change_threshold_pct: float = Field(default=0.11, description="Min BTC move % to signal")
     latency_polymarket_lag_threshold_seconds: float = Field(default=3.0, description="Min Polymarket lag")

@@ -370,7 +370,13 @@ async def lifespan(app: FastAPI):
 
     # Start components
     await signal_bus.start()
-    await orderbook.start()
+
+    # Only start Polymarket WebSocket feed if polymarket is an enabled platform
+    if "polymarket" in enabled_platforms:
+        await orderbook.start()
+    else:
+        log.info("polymarket_ws_disabled", msg="Polymarket WebSocket disabled — platform not enabled")
+
     await latency_detector.start()
     await order_flow.start()
 

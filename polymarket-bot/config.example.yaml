@@ -98,11 +98,15 @@ security:
   audit_retention_days: 90
   kill_switch_enabled: true
 
-# Latency Detector (Binance-Polymarket spread)
+# BTC price feed source for latency detection and correlation strategies
+# Options: kraken (default, US-friendly), coinbase, binance (geoblocked in US)
+btc_feed_source: kraken
+
+# Latency Detector (BTC-Polymarket spread)
 # Uses proven 9-16 second timing window for structural Polymarket repricing lag
 latency_detector:
   enabled: true
-  binance_symbol: btcusdt
+  binance_symbol: btcusdt  # legacy, only used when btc_feed_source=binance
   momentum_window_seconds: 10
   price_change_threshold_pct: 0.11  # 0.11% BTC move triggers detection
   entry_delay_ms: 9000  # wait 9 seconds after detection before entering

@@ -1,10 +1,11 @@
-"""Binance-Polymarket latency detector.
+"""BTC price feed latency detector.
 
-Opens a WebSocket to Binance for real-time BTC/USDT spot price and detects
-when BTC moves >threshold but Polymarket hasn't repriced yet. Uses a proven
-9-16 second timing window: after detecting a BTC move, waits 9 seconds, checks
-if Polymarket already repriced (skip if so), and only emits a signal during the
-9-16 second window where Polymarket structurally misprices continuation.
+Monitors real-time BTC price via WebSocket (Kraken, Coinbase, or Binance) and
+detects when BTC moves >threshold but Polymarket hasn't repriced yet. Uses a
+proven 9-16 second timing window.
+
+The feed source is configurable via BTC_FEED_SOURCE env var (default: kraken).
+Falls back to REST polling if WebSocket connections fail repeatedly.
 """
 
 from __future__ import annotations
@@ -25,10 +26,24 @@ from src.websocket_client import OrderbookFeed
 
 logger = structlog.get_logger(__name__)
 
+# WebSocket URLs per feed source
+_WS_URLS: dict[str, str] = {
+    "kraken": "wss://ws.kraken.com/v2",
+    "coinbase": "wss://ws-feed.exchange.coinbase.com",
+    "binance": "wss://stream.binance.com:9443/ws/{symbol}@trade",
+}
+
+# Max consecutive WS failures before switching to REST fallback
+_MAX_WS_FAILURES_BEFORE_REST = 10
+# Backoff cap for normal reconnects
+_BACKOFF_CAP_SECONDS = 300.0  # 5 minutes
+# Reduced poll interval once in degraded mode
+_DEGRADED_POLL_SECONDS = 600.0  # 10 minutes
+
 
 @dataclass
 class TimingMetrics:
-    """Tracks timing between Binance moves and Polymarket repricing."""
+    """Tracks timing between BTC moves and Polymarket repricing."""
 
     reprice_delays: list[float] = field(default_factory=list)
 
@@ -72,17 +87,18 @@ class LatencyMetrics:
 
 
 class LatencyDetector:
-    """Detects pricing lag between Binance BTC spot and Polymarket contracts.
+    """Detects pricing lag between BTC spot price and Polymarket contracts.
+
+    Supports multiple BTC price feed sources (Kraken, Coinbase, Binance).
+    Falls back to REST polling if WebSocket connections fail repeatedly.
 
     Uses a 9-16 second timing window based on structural Polymarket repricing
     lag. After detecting a BTC move exceeding the threshold:
       1. Wait entry_delay_ms (default 9000ms)
-      2. Check if Polymarket already repriced — if so, skip (edge is gone)
+      2. Check if Polymarket already repriced -- if so, skip (edge is gone)
       3. If still mispriced, emit signal valid for entry_window_ms (default 7000ms)
       4. Signal expires at second 16 (9 + 7) after detection
     """
-
-    BINANCE_WS_URL = "wss://stream.binance.com:9443/ws/{symbol}@trade"
 
     def __init__(
         self,
@@ -93,6 +109,16 @@ class LatencyDetector:
         self._settings = settings
         self._signal_bus = signal_bus
         self._orderbook = orderbook
+
+        # Feed source config
+        self._feed_source = getattr(settings, "btc_feed_source", "kraken").lower()
+        if self._feed_source not in _WS_URLS:
+            logger.warning(
+                "unknown_btc_feed_source",
+                source=self._feed_source,
+                falling_back="kraken",
+            )
+            self._feed_source = "kraken"
 
         # Config
         self._symbol = settings.latency_binance_symbol
@@ -112,11 +138,15 @@ class LatencyDetector:
         # State
         self._running = False
         self._task: asyncio.Task | None = None
-        self._binance_prices: deque[tuple[float, float]] = deque(maxlen=5000)
+        self._btc_prices: deque[tuple[float, float]] = deque(maxlen=5000)
         self._last_signal_time: float = 0.0
         self._last_polymarket_update: dict[str, float] = {}  # token_id -> timestamp
         self._polymarket_price_at_detection: float | None = None
         self._metrics = LatencyMetrics()
+
+        # WebSocket reconnect state
+        self._consecutive_ws_failures: int = 0
+        self._using_rest_fallback: bool = False
 
     @property
     def metrics(self) -> dict[str, Any]:
@@ -126,10 +156,12 @@ class LatencyDetector:
             "signals_skipped_window_expired": self._metrics.signals_skipped_window_expired,
             "avg_spread_pct": round(self._metrics.avg_spread_pct, 4),
             "max_spread_pct": round(self._metrics.max_spread_pct, 4),
-            "binance_observations": len(self._binance_prices),
+            "btc_observations": len(self._btc_prices),
             "enabled": self._enabled,
             "entry_delay_ms": self._entry_delay_ms,
             "entry_window_ms": self._entry_window_ms,
+            "feed_source": self._feed_source,
+            "using_rest_fallback": self._using_rest_fallback,
         }
         if self._track_timing:
             result["avg_reprice_delay_ms"] = round(
@@ -139,7 +171,7 @@ class LatencyDetector:
         return result
 
     async def start(self) -> None:
-        """Start the Binance WebSocket listener and detection loop."""
+        """Start the BTC price feed listener and detection loop."""
         if not self._enabled:
             logger.info("latency_detector_disabled")
             return
@@ -149,9 +181,10 @@ class LatencyDetector:
         self._running = True
         # Register callback to track Polymarket update times
         self._orderbook.on_price_update(self._on_polymarket_update)
-        self._task = asyncio.create_task(self._run_binance_ws())
+        self._task = asyncio.create_task(self._run_price_feed())
         logger.info(
             "latency_detector_started",
+            feed_source=self._feed_source,
             symbol=self._symbol,
             momentum_window=self._momentum_window,
             price_threshold=self._price_threshold,
@@ -174,16 +207,184 @@ class LatencyDetector:
         """Track when Polymarket prices update for lag calculation."""
         self._last_polymarket_update[token_id] = time.time()
 
-    async def _run_binance_ws(self) -> None:
-        """Connect to Binance trade stream and process price updates."""
-        url = self.BINANCE_WS_URL.format(symbol=self._symbol)
+    # ── Price feed dispatcher ───────────────────────────────────────────
+
+    async def _run_price_feed(self) -> None:
+        """Run the appropriate price feed based on configured source."""
+        if self._feed_source == "kraken":
+            await self._run_kraken_ws()
+        elif self._feed_source == "coinbase":
+            await self._run_coinbase_ws()
+        elif self._feed_source == "binance":
+            await self._run_binance_ws()
+        else:
+            await self._run_kraken_ws()
+
+    # ── Kraken WebSocket ────────────────────────────────────────────────
+
+    async def _run_kraken_ws(self) -> None:
+        """Connect to Kraken WebSocket v2 for BTC/USD trades."""
+        url = _WS_URLS["kraken"]
         backoff = 1.0
 
         while self._running:
             try:
                 async with websockets.connect(url) as ws:
                     backoff = 1.0
-                    logger.info("binance_ws_connected", symbol=self._symbol)
+                    self._consecutive_ws_failures = 0
+                    self._using_rest_fallback = False
+                    logger.info("btc_ws_connected", source="kraken")
+
+                    # Subscribe to BTC/USD trades
+                    subscribe_msg = {
+                        "method": "subscribe",
+                        "params": {
+                            "channel": "trade",
+                            "symbol": ["BTC/USD"],
+                        },
+                    }
+                    await ws.send(json.dumps(subscribe_msg))
+
+                    async for raw_msg in ws:
+                        if not self._running:
+                            break
+                        try:
+                            msg = json.loads(raw_msg)
+                            await self._handle_kraken_message(msg)
+                        except json.JSONDecodeError:
+                            continue
+                        except Exception as exc:
+                            logger.error("kraken_msg_error", error=str(exc))
+
+            except websockets.ConnectionClosed:
+                logger.warning("btc_ws_disconnected", source="kraken")
+            except Exception as exc:
+                self._consecutive_ws_failures += 1
+                if self._consecutive_ws_failures <= _MAX_WS_FAILURES_BEFORE_REST:
+                    logger.error(
+                        "btc_ws_error",
+                        source="kraken",
+                        error=str(exc),
+                        consecutive_failures=self._consecutive_ws_failures,
+                    )
+                elif self._consecutive_ws_failures == _MAX_WS_FAILURES_BEFORE_REST + 1:
+                    logger.warning(
+                        "btc_ws_degraded_mode",
+                        source="kraken",
+                        msg="Too many failures, switching to REST polling and reducing retry frequency",
+                        consecutive_failures=self._consecutive_ws_failures,
+                    )
+
+            if self._running:
+                if self._consecutive_ws_failures > _MAX_WS_FAILURES_BEFORE_REST:
+                    # Switch to REST fallback
+                    if not self._using_rest_fallback:
+                        self._using_rest_fallback = True
+                        asyncio.create_task(self._run_rest_fallback())
+                    # Reduced retry frequency for WS reconnect attempts
+                    await asyncio.sleep(_DEGRADED_POLL_SECONDS)
+                else:
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, _BACKOFF_CAP_SECONDS)
+
+    async def _handle_kraken_message(self, msg: dict[str, Any]) -> None:
+        """Process a Kraken WebSocket v2 trade message."""
+        # Kraken v2 trade messages have channel="trade" and data array
+        if msg.get("channel") != "trade" or "data" not in msg:
+            return
+
+        for trade in msg["data"]:
+            price = float(trade.get("price", 0))
+            if price <= 0:
+                continue
+            await self._record_price_and_check(price)
+
+    # ── Coinbase WebSocket ──────────────────────────────────────────────
+
+    async def _run_coinbase_ws(self) -> None:
+        """Connect to Coinbase WebSocket for BTC-USD trades."""
+        url = _WS_URLS["coinbase"]
+        backoff = 1.0
+
+        while self._running:
+            try:
+                async with websockets.connect(url) as ws:
+                    backoff = 1.0
+                    self._consecutive_ws_failures = 0
+                    self._using_rest_fallback = False
+                    logger.info("btc_ws_connected", source="coinbase")
+
+                    subscribe_msg = {
+                        "type": "subscribe",
+                        "product_ids": ["BTC-USD"],
+                        "channels": ["matches"],
+                    }
+                    await ws.send(json.dumps(subscribe_msg))
+
+                    async for raw_msg in ws:
+                        if not self._running:
+                            break
+                        try:
+                            msg = json.loads(raw_msg)
+                            await self._handle_coinbase_message(msg)
+                        except json.JSONDecodeError:
+                            continue
+                        except Exception as exc:
+                            logger.error("coinbase_msg_error", error=str(exc))
+
+            except websockets.ConnectionClosed:
+                logger.warning("btc_ws_disconnected", source="coinbase")
+            except Exception as exc:
+                self._consecutive_ws_failures += 1
+                if self._consecutive_ws_failures <= _MAX_WS_FAILURES_BEFORE_REST:
+                    logger.error(
+                        "btc_ws_error",
+                        source="coinbase",
+                        error=str(exc),
+                        consecutive_failures=self._consecutive_ws_failures,
+                    )
+                elif self._consecutive_ws_failures == _MAX_WS_FAILURES_BEFORE_REST + 1:
+                    logger.warning(
+                        "btc_ws_degraded_mode",
+                        source="coinbase",
+                        msg="Too many failures, switching to REST polling and reducing retry frequency",
+                        consecutive_failures=self._consecutive_ws_failures,
+                    )
+
+            if self._running:
+                if self._consecutive_ws_failures > _MAX_WS_FAILURES_BEFORE_REST:
+                    if not self._using_rest_fallback:
+                        self._using_rest_fallback = True
+                        asyncio.create_task(self._run_rest_fallback())
+                    await asyncio.sleep(_DEGRADED_POLL_SECONDS)
+                else:
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, _BACKOFF_CAP_SECONDS)
+
+    async def _handle_coinbase_message(self, msg: dict[str, Any]) -> None:
+        """Process a Coinbase WebSocket match/trade message."""
+        if msg.get("type") not in ("match", "last_match"):
+            return
+
+        price = float(msg.get("price", 0))
+        if price <= 0:
+            return
+        await self._record_price_and_check(price)
+
+    # ── Binance WebSocket (legacy, geoblocked in US) ────────────────────
+
+    async def _run_binance_ws(self) -> None:
+        """Connect to Binance trade stream and process price updates."""
+        url = _WS_URLS["binance"].format(symbol=self._symbol)
+        backoff = 1.0
+
+        while self._running:
+            try:
+                async with websockets.connect(url) as ws:
+                    backoff = 1.0
+                    self._consecutive_ws_failures = 0
+                    self._using_rest_fallback = False
+                    logger.info("btc_ws_connected", source="binance", symbol=self._symbol)
 
                     async for raw_msg in ws:
                         if not self._running:
@@ -197,24 +398,76 @@ class LatencyDetector:
                             logger.error("binance_msg_error", error=str(exc))
 
             except websockets.ConnectionClosed:
-                logger.warning("binance_ws_disconnected")
+                logger.warning("btc_ws_disconnected", source="binance")
             except Exception as exc:
-                logger.error("binance_ws_error", error=str(exc))
+                self._consecutive_ws_failures += 1
+                if self._consecutive_ws_failures <= _MAX_WS_FAILURES_BEFORE_REST:
+                    logger.error(
+                        "btc_ws_error",
+                        source="binance",
+                        error=str(exc),
+                        consecutive_failures=self._consecutive_ws_failures,
+                    )
+                elif self._consecutive_ws_failures == _MAX_WS_FAILURES_BEFORE_REST + 1:
+                    logger.warning(
+                        "btc_ws_degraded_mode",
+                        source="binance",
+                        msg="Too many failures (likely US geoblocked), switching to REST polling",
+                        consecutive_failures=self._consecutive_ws_failures,
+                    )
 
             if self._running:
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60.0)
+                if self._consecutive_ws_failures > _MAX_WS_FAILURES_BEFORE_REST:
+                    if not self._using_rest_fallback:
+                        self._using_rest_fallback = True
+                        asyncio.create_task(self._run_rest_fallback())
+                    await asyncio.sleep(_DEGRADED_POLL_SECONDS)
+                else:
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, _BACKOFF_CAP_SECONDS)
 
     async def _handle_binance_trade(self, msg: dict[str, Any]) -> None:
-        """Process a Binance trade message and check for momentum."""
+        """Process a Binance trade message."""
         price = float(msg.get("p", 0))
-        trade_time = float(msg.get("T", 0)) / 1000.0  # ms -> seconds
-
         if price <= 0:
             return
+        await self._record_price_and_check(price)
 
+    # ── REST polling fallback ───────────────────────────────────────────
+
+    async def _run_rest_fallback(self) -> None:
+        """Poll BTC price via CCXT/Kraken REST API every 5 seconds as fallback."""
+        logger.info("btc_rest_fallback_started", msg="Polling BTC/USD via REST every 5s")
+
+        try:
+            import ccxt.async_support as ccxt
+        except ImportError:
+            logger.error("btc_rest_fallback_no_ccxt", msg="ccxt not installed, cannot poll REST")
+            return
+
+        exchange = ccxt.kraken({"enableRateLimit": True})
+
+        try:
+            while self._running and self._using_rest_fallback:
+                try:
+                    ticker = await exchange.fetch_ticker("BTC/USD")
+                    price = float(ticker.get("last", 0))
+                    if price > 0:
+                        await self._record_price_and_check(price)
+                except Exception as exc:
+                    logger.error("btc_rest_poll_error", error=str(exc))
+
+                await asyncio.sleep(5.0)
+        finally:
+            await exchange.close()
+            logger.info("btc_rest_fallback_stopped")
+
+    # ── Shared price recording + momentum detection ─────────────────────
+
+    async def _record_price_and_check(self, price: float) -> None:
+        """Record a BTC price and check for momentum signal."""
         now = time.time()
-        self._binance_prices.append((now, price))
+        self._btc_prices.append((now, price))
 
         # Calculate momentum over the window
         momentum = self._calculate_momentum()
@@ -233,7 +486,6 @@ class LatencyDetector:
             return
 
         # --- Timing window logic ---
-        # Record detection time and snapshot Polymarket state
         detected_at = now
         polymarket_lag_at_detection = self._estimate_polymarket_lag()
 
@@ -247,23 +499,24 @@ class LatencyDetector:
             "latency_move_detected",
             direction=direction,
             momentum_pct=round(momentum, 4),
-            binance_price=price,
+            btc_price=price,
             polymarket_lag=round(polymarket_lag_at_detection, 2),
             waiting_ms=self._entry_delay_ms,
+            feed_source=self._feed_source,
         )
 
-        # Schedule the delayed signal check as a fire-and-forget task
+        # Schedule the delayed signal check
         asyncio.create_task(
             self._delayed_signal_check(
                 detected_at=detected_at,
                 direction=direction,
                 momentum=momentum,
-                binance_price=price,
+                btc_price=price,
                 polymarket_lag_at_detection=polymarket_lag_at_detection,
             )
         )
 
-        # Mark cooldown immediately to prevent duplicate detections
+        # Mark cooldown immediately
         self._last_signal_time = now
 
     async def _delayed_signal_check(
@@ -272,17 +525,15 @@ class LatencyDetector:
         detected_at: float,
         direction: str,
         momentum: float,
-        binance_price: float,
+        btc_price: float,
         polymarket_lag_at_detection: float,
     ) -> None:
         """Wait entry_delay_ms, then check if Polymarket repriced. Emit signal if not."""
-        # Wait the entry delay (9 seconds by default)
         await asyncio.sleep(self._entry_delay_s)
 
         now = time.time()
         elapsed = now - detected_at
 
-        # Check if we're still within the entry window
         window_end = self._entry_delay_s + self._entry_window_s
         if elapsed > window_end:
             self._metrics.signals_skipped_window_expired += 1
@@ -293,16 +544,12 @@ class LatencyDetector:
             )
             return
 
-        # Check if Polymarket has already repriced during the wait
         current_polymarket_lag = self._estimate_polymarket_lag()
         if current_polymarket_lag < self._lag_threshold:
-            # Polymarket caught up — edge is gone
             self._metrics.signals_skipped_repriced += 1
 
-            # Track timing: how long it took Polymarket to reprice
             if self._track_timing:
-                reprice_delay = elapsed
-                self._metrics.timing.record_reprice_delay(reprice_delay)
+                self._metrics.timing.record_reprice_delay(elapsed)
 
             logger.info(
                 "latency_signal_skipped_repriced",
@@ -312,7 +559,6 @@ class LatencyDetector:
             )
             return
 
-        # Polymarket still hasn't repriced — emit the signal
         entry_valid_from = detected_at + self._entry_delay_s
         entry_valid_until = detected_at + window_end
 
@@ -322,9 +568,10 @@ class LatencyDetector:
             data={
                 "direction": direction,
                 "momentum_pct": round(momentum, 4),
-                "binance_price": binance_price,
+                "btc_price": btc_price,
                 "polymarket_lag_seconds": round(current_polymarket_lag, 2),
                 "symbol": self._symbol,
+                "feed_source": self._feed_source,
                 "detected_at": detected_at,
                 "entry_valid_from": entry_valid_from,
                 "entry_valid_until": entry_valid_until,
@@ -340,7 +587,7 @@ class LatencyDetector:
             "latency_signal_emitted",
             direction=direction,
             momentum_pct=round(momentum, 4),
-            binance_price=binance_price,
+            btc_price=btc_price,
             polymarket_lag=round(current_polymarket_lag, 2),
             detection_delay_s=round(elapsed, 2),
             entry_window_remaining_s=round(entry_valid_until - now, 2),
@@ -348,15 +595,14 @@ class LatencyDetector:
 
     def _calculate_momentum(self) -> float | None:
         """Calculate price change percentage over the momentum window."""
-        if len(self._binance_prices) < 2:
+        if len(self._btc_prices) < 2:
             return None
 
         now = time.time()
         cutoff = now - self._momentum_window
 
-        # Find the oldest price within the window
         old_price = None
-        for ts, price in self._binance_prices:
+        for ts, price in self._btc_prices:
             if ts >= cutoff:
                 old_price = price
                 break
@@ -364,17 +610,12 @@ class LatencyDetector:
         if old_price is None or old_price == 0:
             return None
 
-        current_price = self._binance_prices[-1][1]
+        current_price = self._btc_prices[-1][1]
         return ((current_price - old_price) / old_price) * 100.0
 
     def _estimate_polymarket_lag(self) -> float:
-        """Estimate how stale Polymarket pricing is.
-
-        Returns the average age of the last Polymarket price updates
-        across all tracked tokens.
-        """
+        """Estimate how stale Polymarket pricing is."""
         if not self._last_polymarket_update:
-            # If no Polymarket updates seen, assume maximum lag
             return self._lag_threshold + 1.0
 
         now = time.time()

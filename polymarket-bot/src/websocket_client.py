@@ -113,13 +113,23 @@ class OrderbookFeed:
         logger.info("orderbook_feed_stopped")
 
     async def _run_loop(self) -> None:
-        """Main reconnect loop."""
+        """Main reconnect loop with exponential backoff capped at 5 minutes.
+
+        After 10 consecutive failures, reduces to checking every 10 minutes
+        with a single warning log line instead of error spam.
+        """
         backoff = 1.0
+        consecutive_failures = 0
+        _MAX_FAILURES_FOR_DEGRADED = 10
+        _BACKOFF_CAP = 300.0  # 5 minutes
+        _DEGRADED_INTERVAL = 600.0  # 10 minutes
+
         while self._running:
             try:
                 async with websockets.connect(self._ws_url) as ws:
                     self._ws = ws
                     backoff = 1.0
+                    consecutive_failures = 0
                     logger.info("ws_connected", url=self._ws_url)
 
                     # Subscribe to all tracked tokens
@@ -139,14 +149,27 @@ class OrderbookFeed:
                             logger.error("ws_message_error", error=str(exc))
 
             except websockets.ConnectionClosed as exc:
-                logger.warning("ws_disconnected", code=exc.code, reason=exc.reason)
+                consecutive_failures += 1
+                if consecutive_failures <= _MAX_FAILURES_FOR_DEGRADED:
+                    logger.warning("ws_disconnected", code=exc.code, reason=exc.reason)
             except Exception as exc:
-                logger.error("ws_error", error=str(exc))
+                consecutive_failures += 1
+                if consecutive_failures <= _MAX_FAILURES_FOR_DEGRADED:
+                    logger.error("ws_error", error=str(exc), consecutive_failures=consecutive_failures)
+                elif consecutive_failures == _MAX_FAILURES_FOR_DEGRADED + 1:
+                    logger.warning(
+                        "ws_degraded_mode",
+                        msg="Polymarket WS: too many failures, reducing retry to every 10 min",
+                        consecutive_failures=consecutive_failures,
+                    )
 
             if self._running:
-                logger.info("ws_reconnecting", backoff=backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60.0)
+                if consecutive_failures > _MAX_FAILURES_FOR_DEGRADED:
+                    await asyncio.sleep(_DEGRADED_INTERVAL)
+                else:
+                    logger.info("ws_reconnecting", backoff=backoff)
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, _BACKOFF_CAP)
 
     async def _send_subscribe(self, ws: Any, token_id: str) -> None:
         """Send a subscription message for a token's orderbook."""
