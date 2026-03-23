@@ -8,7 +8,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -17,6 +17,9 @@ from src.config import Settings
 from src.market_scanner import MarketScanner, ScannedMarket
 from src.pnl_tracker import PnLTracker, Trade
 from src.websocket_client import OrderbookFeed
+
+if TYPE_CHECKING:
+    from src.debate_engine import DebateEngine
 
 logger = structlog.get_logger(__name__)
 
@@ -68,6 +71,11 @@ class BaseStrategy(ABC):
         self._params: dict[str, Any] = {}
         self._started_at: float = 0.0
         self._tick_count: int = 0
+        self._debate_engine: DebateEngine | None = None
+
+    def set_debate_engine(self, engine: DebateEngine) -> None:
+        """Attach the debate engine for pre-trade validation."""
+        self._debate_engine = engine
 
     @property
     def state(self) -> StrategyState:
@@ -168,7 +176,11 @@ class BaseStrategy(ABC):
         size: float,
         side: int,
     ) -> OpenOrder | None:
-        """Place a limit order and track it."""
+        """Place a limit order and track it.
+
+        If a debate engine is attached and the position exceeds its threshold,
+        runs a bull/bear debate before placing the order.
+        """
         # Check exposure limit
         current_exposure = sum(o.price * o.size for o in self._open_orders.values())
         if current_exposure + (price * size) > self._settings.poly_max_exposure:
@@ -178,6 +190,29 @@ class BaseStrategy(ABC):
                 max=self._settings.poly_max_exposure,
             )
             return None
+
+        # Run debate engine if attached and qualifying
+        if self._debate_engine:
+            side_str = "BUY" if side == 0 else "SELL"
+            result = await self._debate_engine.should_execute(
+                strategy_name=self.name,
+                market=market,
+                side=side_str,
+                price=price,
+                size=size,
+                context={"token_id": token_id, "params": self._params},
+            )
+            if result is not None:
+                if result.confidence < self._debate_engine.confidence_threshold:
+                    logger.info(
+                        "trade_rejected_by_debate",
+                        strategy=self.name,
+                        market=market,
+                        confidence=result.confidence,
+                        recommendation=result.recommendation,
+                        reasoning=result.reasoning,
+                    )
+                    return None
 
         try:
             result = await self._client.place_order(

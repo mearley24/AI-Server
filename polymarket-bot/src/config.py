@@ -63,6 +63,34 @@ class Settings(BaseSettings):
     flash_crash_take_profit: float = Field(default=0.15, description="Take-profit delta")
     flash_crash_stop_loss: float = Field(default=0.10, description="Stop-loss delta")
 
+    # --- Weather Trader ---
+    weather_trader_enabled: bool = Field(default=False, description="Enable weather trader strategy")
+    weather_noaa_stations: list[str] = Field(
+        default_factory=lambda: ["KDEN", "KJFK", "KLAX"],
+        description="NOAA station IDs to track",
+    )
+    weather_edge_threshold: float = Field(default=0.10, description="Minimum edge (10%) to enter")
+    weather_max_position_size: float = Field(default=10.0, description="Max per-position in USDC")
+    weather_check_interval_seconds: float = Field(default=300.0, description="Seconds between checks")
+
+    # --- Latency Detector ---
+    latency_detector_enabled: bool = Field(default=True, description="Enable Binance-Polymarket latency detector")
+    latency_binance_symbol: str = Field(default="btcusdt", description="Binance symbol to monitor")
+    latency_momentum_window_seconds: float = Field(default=10.0, description="Momentum calculation window")
+    latency_price_change_threshold_pct: float = Field(default=0.15, description="Min BTC move % to signal")
+    latency_polymarket_lag_threshold_seconds: float = Field(default=3.0, description="Min Polymarket lag")
+    latency_signal_cooldown_seconds: float = Field(default=30.0, description="Cooldown between signals")
+
+    # --- Debate Engine ---
+    debate_enabled: bool = Field(default=True, description="Enable bull/bear debate engine")
+    debate_model: str = Field(default="claude-3-5-sonnet-20241022", description="Claude model for debates")
+    debate_min_position_for_debate: float = Field(default=25.0, description="Only debate trades >= this size")
+    debate_confidence_threshold: float = Field(default=0.65, description="Min confidence to proceed")
+    debate_max_debate_time_seconds: float = Field(default=10.0, description="Max debate duration")
+
+    # --- Redis ---
+    redis_url: str = Field(default="redis://redis:6379", description="Redis connection URL")
+
     # Polygon chain id
     chain_id: int = Field(default=137)
 

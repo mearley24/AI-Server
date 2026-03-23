@@ -74,6 +74,20 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   polymarket-bot:
     build:
       context: ./polymarket-bot
@@ -81,10 +95,14 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - REDIS_URL=redis://redis:6379
     ports:
       - "127.0.0.1:8430:8430"
     volumes:
       - ./data/polymarket:/data
+    depends_on:
+      - redis
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8430/health"]
       interval: 30s
@@ -97,6 +115,24 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  btc-15m-assistant:
+    build:
+      context: ./polymarket-bot/sidecar
+    container_name: btc-15m-assistant
+    restart: unless-stopped
+    environment:
+      - POLYMARKET_AUTO_SELECT_LATEST=true
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - polymarket-bot
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   kuma:
   openwebui:
+  redis_data:

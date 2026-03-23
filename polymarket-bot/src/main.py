@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import sys
 from contextlib import asynccontextmanager
@@ -15,11 +17,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import deps, router
 from src.client import PolymarketClient
 from src.config import load_settings
+from src.debate_engine import DebateEngine
+from src.latency_detector import LatencyDetector
 from src.market_scanner import MarketScanner
 from src.pnl_tracker import PnLTracker
+from src.signal_bus import Signal, SignalBus, SignalType
 from src.websocket_client import OrderbookFeed
 from strategies.flash_crash import FlashCrashStrategy
 from strategies.stink_bid import StinkBidStrategy
+from strategies.weather_trader import WeatherTraderStrategy
 
 
 def _configure_logging(level: str) -> None:
@@ -42,6 +48,42 @@ def _configure_logging(level: str) -> None:
     )
 
 
+async def _start_redis_listener(settings, signal_bus, log) -> asyncio.Task | None:
+    """Start a background task that subscribes to Redis TA signals and
+    forwards them to the signal bus. Returns the task or None if Redis
+    is unavailable."""
+    try:
+        import redis.asyncio as aioredis
+    except ImportError:
+        log.warning("redis_not_installed", msg="pip install redis[hiredis]")
+        return None
+
+    async def _listen() -> None:
+        try:
+            client = aioredis.from_url(settings.redis_url, decode_responses=True)
+            pubsub = client.pubsub()
+            await pubsub.subscribe("polymarket:ta_signals")
+            log.info("redis_ta_listener_started", channel="polymarket:ta_signals")
+
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                try:
+                    data = json.loads(message["data"])
+                    signal = Signal(
+                        signal_type=SignalType.TA_INDICATOR,
+                        source=data.get("source", "redis"),
+                        data=data,
+                    )
+                    await signal_bus.publish(signal)
+                except (json.JSONDecodeError, Exception) as exc:
+                    log.error("redis_ta_parse_error", error=str(exc))
+        except Exception as exc:
+            log.error("redis_listener_error", error=str(exc))
+
+    return asyncio.create_task(_listen())
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
@@ -52,7 +94,7 @@ async def lifespan(app: FastAPI):
     # Ensure data directory exists
     Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
 
-    # Initialise components
+    # Initialise core components
     client = PolymarketClient(settings)
     scanner = MarketScanner(client, settings)
     orderbook = OrderbookFeed(settings)
@@ -63,21 +105,27 @@ async def lifespan(app: FastAPI):
     if trades_csv.exists():
         pnl_tracker.load_csv(trades_csv)
 
+    # Initialise new components
+    signal_bus = SignalBus()
+    debate_engine = DebateEngine(settings)
+    latency_detector = LatencyDetector(settings, signal_bus, orderbook)
+
     # Build strategies
-    stink_bid = StinkBidStrategy(
+    strategy_args = dict(
         client=client,
         settings=settings,
         scanner=scanner,
         orderbook=orderbook,
         pnl_tracker=pnl_tracker,
     )
-    flash_crash = FlashCrashStrategy(
-        client=client,
-        settings=settings,
-        scanner=scanner,
-        orderbook=orderbook,
-        pnl_tracker=pnl_tracker,
-    )
+
+    stink_bid = StinkBidStrategy(**strategy_args)
+    flash_crash = FlashCrashStrategy(**strategy_args)
+    weather_trader = WeatherTraderStrategy(**strategy_args)
+
+    # Attach debate engine to all strategies
+    for strat in (stink_bid, flash_crash, weather_trader):
+        strat.set_debate_engine(debate_engine)
 
     # Inject dependencies into API routes
     deps.client = client
@@ -88,10 +136,16 @@ async def lifespan(app: FastAPI):
     deps.strategies = {
         "stink_bid": stink_bid,
         "flash_crash": flash_crash,
+        "weather_trader": weather_trader,
     }
 
-    # Start WebSocket feed
+    # Start components
+    await signal_bus.start()
     await orderbook.start()
+    await latency_detector.start()
+
+    # Start Redis TA signal listener
+    redis_task = await _start_redis_listener(settings, signal_bus, log)
 
     log.info(
         "polymarket_bot_started",
@@ -100,6 +154,8 @@ async def lifespan(app: FastAPI):
         strategies=list(deps.strategies.keys()),
         max_exposure=settings.poly_max_exposure,
         default_size=settings.poly_default_size,
+        debate_engine=debate_engine.enabled,
+        latency_detector=settings.latency_detector_enabled,
     )
 
     _print_banner(settings)
@@ -108,9 +164,18 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     log.info("polymarket_bot_stopping")
+    if redis_task and not redis_task.done():
+        redis_task.cancel()
+        try:
+            await redis_task
+        except asyncio.CancelledError:
+            pass
     for strat in deps.strategies.values():
         await strat.stop()
+    await latency_detector.stop()
+    await signal_bus.stop()
     await orderbook.stop()
+    await debate_engine.close()
     await client.close()
     log.info("polymarket_bot_stopped")
 

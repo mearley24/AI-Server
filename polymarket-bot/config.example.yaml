@@ -29,3 +29,34 @@ strategies:
     timeframes:
       - 5m
       - 15m
+
+# Strategy: Weather Trader (NOAA temperature brackets)
+weather_trader:
+  enabled: false
+  noaa_stations:
+    - KDEN  # Denver
+    - KJFK  # New York JFK
+    - KLAX  # Los Angeles
+  edge_threshold: 0.10  # minimum edge (10%) to enter
+  max_position_size: 10.0
+  check_interval_seconds: 300  # check every 5 min
+
+# Latency Detector (Binance-Polymarket spread)
+latency_detector:
+  enabled: true
+  binance_symbol: btcusdt
+  momentum_window_seconds: 10
+  price_change_threshold_pct: 0.15  # 0.15% BTC move
+  polymarket_lag_threshold_seconds: 3  # if PM hasn't repriced within 3s
+  signal_cooldown_seconds: 30
+
+# Debate Engine (Bull/Bear/Judge pre-trade validation)
+debate_engine:
+  enabled: true
+  model: claude-3-5-sonnet-20241022  # uses CONDUCTOR_MODEL from .env if not set
+  min_position_for_debate: 25.0  # only debate trades >= $25
+  confidence_threshold: 0.65  # minimum confidence to proceed
+  max_debate_time_seconds: 10
+
+# Redis (for TA sidecar signals)
+redis_url: redis://redis:6379
