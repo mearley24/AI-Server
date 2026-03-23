@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query
@@ -26,6 +26,12 @@ class StopStrategyRequest(BaseModel):
 
 class SetModeRequest(BaseModel):
     mode: str  # "dry_run" or "live"
+
+
+class IngestRequest(BaseModel):
+    text: Optional[str] = None
+    source_url: Optional[str] = None
+    url: Optional[str] = None
 
 
 class HealthResponse(BaseModel):
@@ -427,3 +433,73 @@ async def paper_pnl() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Paper ledger not initialized")
 
     return deps.paper_ledger.get_paper_pnl()
+
+
+# ── Knowledge pipeline endpoints ─────────────────────────────────────────
+
+@router.post("/knowledge/ingest")
+async def knowledge_ingest(req: IngestRequest) -> dict[str, Any]:
+    """Ingest raw text or URL into the knowledge graph."""
+    from knowledge.ingest import KnowledgeIngester
+
+    ingester = KnowledgeIngester()
+
+    if req.url:
+        result = await ingester.ingest_url(req.url)
+    elif req.text:
+        result = await ingester.ingest_text(req.text, source_url=req.source_url)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide either 'text' (with optional 'source_url') or 'url'.",
+        )
+
+    return {"status": "ingested", "extraction": result}
+
+
+@router.get("/knowledge/search")
+async def knowledge_search(
+    q: str = Query(..., description="Search query"),
+    type: str | None = Query(None, description="Filter by type: strategy, market, wallet, research"),
+    tags: str | None = Query(None, description="Comma-separated tags to filter by"),
+) -> dict[str, Any]:
+    """Search the knowledge graph."""
+    from knowledge.query import KnowledgeQuery
+
+    query = KnowledgeQuery()
+    tag_list = [t.strip() for t in tags.split(",")] if tags else None
+    results = query.search(q, ktype=type, tags=tag_list)
+    return {"results": results, "count": len(results), "query": q}
+
+
+@router.get("/knowledge/digest")
+async def knowledge_digest() -> dict[str, Any]:
+    """Generate today's learning digest via Claude."""
+    from knowledge.digest import generate_daily_digest
+
+    digest = await generate_daily_digest()
+    return {"digest": digest}
+
+
+@router.get("/knowledge/strategy/{name}")
+async def knowledge_strategy(name: str) -> dict[str, Any]:
+    """Get all knowledge for a specific strategy."""
+    from knowledge.query import KnowledgeQuery
+
+    query = KnowledgeQuery()
+    content = query.get_strategy_knowledge(name)
+    if not content:
+        raise HTTPException(status_code=404, detail=f"No knowledge found for strategy '{name}'")
+    return {"strategy": name, "content": content}
+
+
+@router.get("/knowledge/recent")
+async def knowledge_recent(
+    days: int = Query(7, ge=1, le=90, description="Number of days to look back"),
+) -> dict[str, Any]:
+    """Get recent learning log entries."""
+    from knowledge.query import KnowledgeQuery
+
+    query = KnowledgeQuery()
+    content = query.get_recent_learnings(days=days)
+    return {"days": days, "content": content, "has_data": bool(content.strip())}
