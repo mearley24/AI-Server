@@ -1,0 +1,112 @@
+# Polymarket Trading Bot — Strategy Configuration
+# Copy to config.yaml and adjust as needed.
+# Env vars override values set here.
+
+# Market scanning
+scan_tokens:
+  - BTC
+  - ETH
+  - SOL
+
+# Strategy: Stink Bid
+strategies:
+  stink_bid:
+    drop_threshold: 0.15     # Place bid this far below current price
+    take_profit: 0.10        # Exit when price rises this much above entry
+    stop_loss: 0.08          # Exit when price drops this much below entry
+    size: 10.0               # Position size in USDC
+    timeframes:
+      - 5m
+      - 15m
+
+  # Strategy: Flash Crash
+  flash_crash:
+    drop_threshold: 0.30     # Price drop to trigger buy (e.g. 0.30 = 30 cents)
+    window_seconds: 10       # Time window to detect the drop
+    take_profit: 0.15        # Exit when price rises this much
+    stop_loss: 0.10          # Exit when price drops this much
+    size: 10.0               # Position size in USDC
+    timeframes:
+      - 5m
+      - 15m
+
+# Strategy: Weather Trader (NOAA + AccuWeather)
+weather_trader:
+  enabled: false
+  noaa_stations:
+    - KDEN  # Denver
+    - KJFK  # New York JFK
+    - KLAX  # Los Angeles
+  edge_threshold: 0.10  # minimum edge (10%) to enter
+  max_position_size: 10.0
+  check_interval_seconds: 300  # check every 5 min
+  accuweather_api_key_env: ACCUWEATHER_API_KEY
+  use_multi_source_confirmation: true
+  min_sources_agree: 2  # both NOAA and AccuWeather must agree
+  scan_all_weather_types: true  # not just temperature — frost, precip, wind
+  rare_event_scanner:
+    enabled: true
+    max_probability: 0.10  # scan contracts priced below 10%
+    min_forecast_edge: 0.15  # forecast suggests >= 15% more likely than market
+    max_position_size: 25.0  # small positions for rare events
+  min_time_to_expiry_minutes: 30
+  take_profit_at_fair_value: true
+  stop_loss_pct: 0.05
+
+# Strategy: Sports Arbitrage
+sports_arb:
+  enabled: false
+  scan_interval_seconds: 45
+  arb_threshold: 0.98  # combined price must be below this
+  max_position_per_side: 5000.0
+  slippage_tolerance: 0.005
+  min_liquidity_shares: 100  # minimum order book depth
+  use_fok_orders: true  # Fill-or-Kill for simultaneous execution
+  market_types:
+    - sports
+    - esports
+
+# Order Flow Analyzer
+order_flow:
+  enabled: true
+  imbalance_threshold: 2.5  # bid:ask ratio to trigger signal
+  compression_atr_periods: 14
+  compression_squeeze_factor: 0.5  # ATR < 50% of 20-period avg
+  delta_divergence_threshold: 0.3  # 30% divergence between price and CVD
+  lookback_candles: 50
+
+# Security
+security:
+  vault_enabled: true
+  vault_path: /data/vault.enc
+  max_single_trade: 10000.0
+  max_daily_volume: 50000.0
+  max_daily_loss: 2500.0  # halt everything if down $2,500 in a day
+  max_orders_per_minute: 10
+  max_api_calls_per_minute: 100
+  audit_retention_days: 90
+  kill_switch_enabled: true
+
+# Latency Detector (Binance-Polymarket spread)
+# Uses proven 9-16 second timing window for structural Polymarket repricing lag
+latency_detector:
+  enabled: true
+  binance_symbol: btcusdt
+  momentum_window_seconds: 10
+  price_change_threshold_pct: 0.11  # 0.11% BTC move triggers detection
+  entry_delay_ms: 9000  # wait 9 seconds after detection before entering
+  entry_window_ms: 7000  # window closes 16 seconds after detection (9+7)
+  polymarket_lag_threshold_seconds: 3  # if PM hasn't repriced within 3s
+  signal_cooldown_seconds: 30
+  track_timing_metrics: true
+
+# Debate Engine (Bull/Bear/Judge pre-trade validation)
+debate_engine:
+  enabled: true
+  model: claude-3-5-sonnet-20241022  # uses CONDUCTOR_MODEL from .env if not set
+  min_position_for_debate: 25.0  # only debate trades >= $25
+  confidence_threshold: 0.65  # minimum confidence to proceed
+  max_debate_time_seconds: 10
+
+# Redis (for TA sidecar signals)
+redis_url: redis://redis:6379
