@@ -88,13 +88,17 @@ security:
   kill_switch_enabled: true
 
 # Latency Detector (Binance-Polymarket spread)
+# Uses proven 9-16 second timing window for structural Polymarket repricing lag
 latency_detector:
   enabled: true
   binance_symbol: btcusdt
   momentum_window_seconds: 10
-  price_change_threshold_pct: 0.15  # 0.15% BTC move
+  price_change_threshold_pct: 0.11  # 0.11% BTC move triggers detection
+  entry_delay_ms: 9000  # wait 9 seconds after detection before entering
+  entry_window_ms: 7000  # window closes 16 seconds after detection (9+7)
   polymarket_lag_threshold_seconds: 3  # if PM hasn't repriced within 3s
   signal_cooldown_seconds: 30
+  track_timing_metrics: true
 
 # Debate Engine (Bull/Bear/Judge pre-trade validation)
 debate_engine:

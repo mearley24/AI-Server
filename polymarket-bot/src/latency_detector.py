@@ -1,9 +1,10 @@
 """Binance-Polymarket latency detector.
 
-Opens a WebSocket to Binance for real-time BTC/USDT spot price and compares
-momentum against Polymarket 5m/15m contract pricing. When Binance shows
-clear directional momentum but Polymarket hasn't repriced, emits a signal
-to the signal bus.
+Opens a WebSocket to Binance for real-time BTC/USDT spot price and detects
+when BTC moves >threshold but Polymarket hasn't repriced yet. Uses a proven
+9-16 second timing window: after detecting a BTC move, waits 9 seconds, checks
+if Polymarket already repriced (skip if so), and only emits a signal during the
+9-16 second window where Polymarket structurally misprices continuation.
 """
 
 from __future__ import annotations
@@ -26,14 +27,39 @@ logger = structlog.get_logger(__name__)
 
 
 @dataclass
+class TimingMetrics:
+    """Tracks timing between Binance moves and Polymarket repricing."""
+
+    reprice_delays: list[float] = field(default_factory=list)
+
+    def record_reprice_delay(self, delay_seconds: float) -> None:
+        self.reprice_delays.append(delay_seconds)
+        if len(self.reprice_delays) > 1000:
+            self.reprice_delays = self.reprice_delays[-1000:]
+
+    @property
+    def avg_reprice_delay_ms(self) -> float:
+        if not self.reprice_delays:
+            return 0.0
+        return (sum(self.reprice_delays) / len(self.reprice_delays)) * 1000.0
+
+    @property
+    def observations(self) -> int:
+        return len(self.reprice_delays)
+
+
+@dataclass
 class LatencyMetrics:
     """Tracks detector performance metrics."""
 
     signals_emitted: int = 0
+    signals_skipped_repriced: int = 0
+    signals_skipped_window_expired: int = 0
     avg_spread_pct: float = 0.0
     max_spread_pct: float = 0.0
     avg_latency_ms: float = 0.0
     spreads: list[float] = field(default_factory=list)
+    timing: TimingMetrics = field(default_factory=TimingMetrics)
 
     def record_spread(self, spread_pct: float) -> None:
         self.spreads.append(spread_pct)
@@ -48,8 +74,12 @@ class LatencyMetrics:
 class LatencyDetector:
     """Detects pricing lag between Binance BTC spot and Polymarket contracts.
 
-    When Binance spot shows momentum (% change over window) but Polymarket
-    contract prices haven't moved, a signal is emitted for strategies to act on.
+    Uses a 9-16 second timing window based on structural Polymarket repricing
+    lag. After detecting a BTC move exceeding the threshold:
+      1. Wait entry_delay_ms (default 9000ms)
+      2. Check if Polymarket already repriced — if so, skip (edge is gone)
+      3. If still mispriced, emit signal valid for entry_window_ms (default 7000ms)
+      4. Signal expires at second 16 (9 + 7) after detection
     """
 
     BINANCE_WS_URL = "wss://stream.binance.com:9443/ws/{symbol}@trade"
@@ -71,6 +101,13 @@ class LatencyDetector:
         self._lag_threshold = settings.latency_polymarket_lag_threshold_seconds
         self._cooldown = settings.latency_signal_cooldown_seconds
         self._enabled = settings.latency_detector_enabled
+        self._entry_delay_ms = settings.latency_entry_delay_ms
+        self._entry_window_ms = settings.latency_entry_window_ms
+        self._track_timing = settings.latency_track_timing_metrics
+
+        # Derived: entry window boundaries in seconds
+        self._entry_delay_s = self._entry_delay_ms / 1000.0
+        self._entry_window_s = self._entry_window_ms / 1000.0
 
         # State
         self._running = False
@@ -78,17 +115,28 @@ class LatencyDetector:
         self._binance_prices: deque[tuple[float, float]] = deque(maxlen=5000)
         self._last_signal_time: float = 0.0
         self._last_polymarket_update: dict[str, float] = {}  # token_id -> timestamp
+        self._polymarket_price_at_detection: float | None = None
         self._metrics = LatencyMetrics()
 
     @property
     def metrics(self) -> dict[str, Any]:
-        return {
+        result = {
             "signals_emitted": self._metrics.signals_emitted,
+            "signals_skipped_repriced": self._metrics.signals_skipped_repriced,
+            "signals_skipped_window_expired": self._metrics.signals_skipped_window_expired,
             "avg_spread_pct": round(self._metrics.avg_spread_pct, 4),
             "max_spread_pct": round(self._metrics.max_spread_pct, 4),
             "binance_observations": len(self._binance_prices),
             "enabled": self._enabled,
+            "entry_delay_ms": self._entry_delay_ms,
+            "entry_window_ms": self._entry_window_ms,
         }
+        if self._track_timing:
+            result["avg_reprice_delay_ms"] = round(
+                self._metrics.timing.avg_reprice_delay_ms, 1
+            )
+            result["timing_observations"] = self._metrics.timing.observations
+        return result
 
     async def start(self) -> None:
         """Start the Binance WebSocket listener and detection loop."""
@@ -107,6 +155,8 @@ class LatencyDetector:
             symbol=self._symbol,
             momentum_window=self._momentum_window,
             price_threshold=self._price_threshold,
+            entry_delay_ms=self._entry_delay_ms,
+            entry_window_ms=self._entry_window_ms,
         )
 
     async def stop(self) -> None:
@@ -182,35 +232,118 @@ class LatencyDetector:
         if now - self._last_signal_time < self._cooldown:
             return
 
-        # Check if Polymarket is lagging
-        polymarket_lag = self._estimate_polymarket_lag()
-        if polymarket_lag < self._lag_threshold:
+        # --- Timing window logic ---
+        # Record detection time and snapshot Polymarket state
+        detected_at = now
+        polymarket_lag_at_detection = self._estimate_polymarket_lag()
+
+        # Check if Polymarket is already lagging enough to be interesting
+        if polymarket_lag_at_detection < self._lag_threshold:
             return
 
-        # Emit signal
         direction = "bullish" if momentum > 0 else "bearish"
+
+        logger.info(
+            "latency_move_detected",
+            direction=direction,
+            momentum_pct=round(momentum, 4),
+            binance_price=price,
+            polymarket_lag=round(polymarket_lag_at_detection, 2),
+            waiting_ms=self._entry_delay_ms,
+        )
+
+        # Schedule the delayed signal check as a fire-and-forget task
+        asyncio.create_task(
+            self._delayed_signal_check(
+                detected_at=detected_at,
+                direction=direction,
+                momentum=momentum,
+                binance_price=price,
+                polymarket_lag_at_detection=polymarket_lag_at_detection,
+            )
+        )
+
+        # Mark cooldown immediately to prevent duplicate detections
+        self._last_signal_time = now
+
+    async def _delayed_signal_check(
+        self,
+        *,
+        detected_at: float,
+        direction: str,
+        momentum: float,
+        binance_price: float,
+        polymarket_lag_at_detection: float,
+    ) -> None:
+        """Wait entry_delay_ms, then check if Polymarket repriced. Emit signal if not."""
+        # Wait the entry delay (9 seconds by default)
+        await asyncio.sleep(self._entry_delay_s)
+
+        now = time.time()
+        elapsed = now - detected_at
+
+        # Check if we're still within the entry window
+        window_end = self._entry_delay_s + self._entry_window_s
+        if elapsed > window_end:
+            self._metrics.signals_skipped_window_expired += 1
+            logger.debug(
+                "latency_window_expired",
+                elapsed_s=round(elapsed, 2),
+                window_end_s=round(window_end, 2),
+            )
+            return
+
+        # Check if Polymarket has already repriced during the wait
+        current_polymarket_lag = self._estimate_polymarket_lag()
+        if current_polymarket_lag < self._lag_threshold:
+            # Polymarket caught up — edge is gone
+            self._metrics.signals_skipped_repriced += 1
+
+            # Track timing: how long it took Polymarket to reprice
+            if self._track_timing:
+                reprice_delay = elapsed
+                self._metrics.timing.record_reprice_delay(reprice_delay)
+
+            logger.info(
+                "latency_signal_skipped_repriced",
+                direction=direction,
+                elapsed_s=round(elapsed, 2),
+                polymarket_lag=round(current_polymarket_lag, 2),
+            )
+            return
+
+        # Polymarket still hasn't repriced — emit the signal
+        entry_valid_from = detected_at + self._entry_delay_s
+        entry_valid_until = detected_at + window_end
+
         signal = Signal(
             signal_type=SignalType.LATENCY_SPREAD,
             source="latency_detector",
             data={
                 "direction": direction,
                 "momentum_pct": round(momentum, 4),
-                "binance_price": price,
-                "polymarket_lag_seconds": round(polymarket_lag, 2),
+                "binance_price": binance_price,
+                "polymarket_lag_seconds": round(current_polymarket_lag, 2),
                 "symbol": self._symbol,
+                "detected_at": detected_at,
+                "entry_valid_from": entry_valid_from,
+                "entry_valid_until": entry_valid_until,
+                "detection_delay_s": round(elapsed, 2),
+                "entry_window_remaining_s": round(entry_valid_until - now, 2),
             },
         )
 
         await self._signal_bus.publish(signal)
-        self._last_signal_time = now
         self._metrics.signals_emitted += 1
 
         logger.info(
             "latency_signal_emitted",
             direction=direction,
             momentum_pct=round(momentum, 4),
-            binance_price=price,
-            polymarket_lag=round(polymarket_lag, 2),
+            binance_price=binance_price,
+            polymarket_lag=round(current_polymarket_lag, 2),
+            detection_delay_s=round(elapsed, 2),
+            entry_window_remaining_s=round(entry_valid_until - now, 2),
         )
 
     def _calculate_momentum(self) -> float | None:
