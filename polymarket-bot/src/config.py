@@ -102,6 +102,37 @@ class Settings(BaseSettings):
     # Polygon chain id
     chain_id: int = Field(default=137)
 
+    # --- Multi-platform: Enabled platforms ---
+    platforms_enabled: str = Field(default="kalshi,crypto", description="Comma-separated: kalshi, crypto, polymarket")
+
+    # --- Kalshi ---
+    kalshi_api_key_id: str = Field(default="", description="Kalshi API key UUID")
+    kalshi_private_key_path: str = Field(default="/app/secrets/kalshi.key", description="Path to Kalshi RSA private key")
+    kalshi_environment: str = Field(default="demo", description="'demo' or 'production'")
+    kalshi_dry_run: bool = Field(default=True, description="Kalshi paper trading mode")
+    kalshi_scan_interval: float = Field(default=300.0, description="Kalshi market scan interval (seconds)")
+    kalshi_edge_threshold: float = Field(default=0.08, description="Min edge to trade on Kalshi")
+    kalshi_max_position_size: float = Field(default=20.0, description="Max Kalshi position in contracts")
+    kalshi_fed_enabled: bool = Field(default=True, description="Enable Kalshi Fed/economics strategy")
+    kalshi_weather_enabled: bool = Field(default=True, description="Enable Kalshi weather strategy")
+
+    # --- Crypto (CCXT) ---
+    kraken_api_key: str = Field(default="", description="Kraken API key")
+    kraken_api_secret: str = Field(default="", description="Kraken API secret")
+    kraken_dry_run: bool = Field(default=True, description="Crypto paper trading mode")
+    crypto_exchange: str = Field(default="kraken", description="Primary crypto exchange (CCXT ID)")
+    crypto_symbols: list[str] = Field(
+        default_factory=lambda: ["XRP/USD", "HBAR/USD", "XCN/USD", "PI/USD"],
+        description="Crypto symbols to trade",
+    )
+    crypto_trade_amount_usd: float = Field(default=50.0, description="Per-trade amount in USD")
+    crypto_max_position_usd: float = Field(default=500.0, description="Max per-symbol position in USD")
+    crypto_max_total_exposure_usd: float = Field(default=2000.0, description="Max total crypto exposure in USD")
+    crypto_poll_interval_seconds: float = Field(default=60.0, description="Crypto strategy poll interval")
+    crypto_btc_correlation_enabled: bool = Field(default=True, description="Enable BTC correlation strategy")
+    crypto_mean_reversion_enabled: bool = Field(default=True, description="Enable mean reversion strategy")
+    crypto_momentum_enabled: bool = Field(default=False, description="Enable momentum strategy (Phase 2)")
+
     @field_validator("poly_log_level")
     @classmethod
     def _normalise_log_level(cls, v: str) -> str:

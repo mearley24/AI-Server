@@ -121,3 +121,34 @@ debate_engine:
 
 # Redis (for TA sidecar signals)
 redis_url: redis://redis:6379
+
+# ── Multi-platform Configuration ─────────────────────────────────
+# Enabled platforms (also set PLATFORMS_ENABLED env var)
+platforms_enabled: "kalshi,crypto"
+
+# Kalshi — CFTC-regulated prediction markets
+kalshi:
+  environment: demo          # "demo" or "production"
+  dry_run: true
+  scan_interval: 300.0       # market scan interval (seconds)
+  edge_threshold: 0.08       # minimum edge to trade
+  max_position_size: 20.0    # max contracts per position
+  weather_enabled: true      # Kalshi weather strategy
+  fed_enabled: true          # Kalshi Fed/economics strategy
+
+# Crypto — spot trading via CCXT
+crypto:
+  exchange: kraken
+  dry_run: true
+  symbols:
+    - XRP/USD
+    - HBAR/USD
+    - XCN/USD
+    - PI/USD
+  trade_amount_usd: 50.0
+  max_position_usd: 500.0
+  max_total_exposure_usd: 2000.0
+  poll_interval_seconds: 60.0
+  btc_correlation_enabled: true
+  mean_reversion_enabled: true
+  momentum_enabled: false     # Phase 2 — enable when tested
