@@ -1,25 +1,9 @@
 # =============================================================================
 # AI-Server Docker Compose
-# Active services: 15 | Disabled: 3 (telegram-interface, btc-15m-assistant, uptime-kuma)
-# Resource note: disabling 3 services saves ~1.5 GB RAM and reduces build time
+# Active services: 15
 # =============================================================================
 
 services:
-
-  # DISABLED — replaced by mission-control health monitoring
-  # uptime-kuma:
-  #   image: louislam/uptime-kuma:1
-  #   container_name: uptime-kuma
-  #   restart: unless-stopped
-  #   ports:
-  #     - "127.0.0.1:3001:3001"
-  #   volumes:
-  #     - kuma:/app/data
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "5"
 
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
@@ -39,31 +23,6 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # DISABLED — replaced by notification-hub (iMessage via native AppleScript bridge)
-  # telegram-interface:
-  #   build:
-  #     context: ./telegram-interface
-  #   container_name: telegram-interface
-  #   restart: unless-stopped
-  #   env_file:
-  #     - ./telegram-interface/.env
-  #   depends_on:
-  #     - openwebui
-  #   volumes:
-  #     - "./data:/data"
-  #     - "/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH/Bob_Library:/library"
-  #   healthcheck:
-  #     test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/health"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 20s
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "5"
-
   remediator:
     build:
       context: ./remediator
@@ -77,8 +36,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       - redis
-    # TODO: rewire alert delivery from Telegram to Redis pub/sub notifications channel
-    # so notification-hub can dispatch alerts via iMessage
     logging:
       driver: "json-file"
       options:
@@ -167,24 +124,6 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
-
-  # DISABLED — Avellaneda strategy uses direct orderbook data
-  # btc-15m-assistant:
-  #   build:
-  #     context: ./polymarket-bot/sidecar
-  #   container_name: btc-15m-assistant
-  #   restart: unless-stopped
-  #   environment:
-  #     - POLYMARKET_AUTO_SELECT_LATEST=true
-  #     - REDIS_URL=redis://redis:6379
-  #   depends_on:
-  #     - redis
-  #     - polymarket-bot
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "5"
 
   proposals:
     build:
@@ -473,6 +412,5 @@ services:
         max-file: "5"
 
 volumes:
-  # kuma volume removed — uptime-kuma disabled
   openwebui:
   redis_data:

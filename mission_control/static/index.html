@@ -267,6 +267,60 @@
   .strategy-active { background: #00e67622; color: #00e676; }
   .strategy-idle { background: #88888822; color: #888; }
   .bps-label { font-size: 10px; color: #888; }
+  /* ── Kraken Live Trades ── */
+  .live-trades-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .live-trades-header .card-title { margin-bottom: 0; }
+  .live-trades-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .live-trades-meta .meta-item { color: #888; }
+  .live-trades-meta .meta-value { font-weight: 600; }
+  .live-trades-meta .meta-value.pnl-positive { color: #00e676; }
+  .live-trades-meta .meta-value.pnl-negative { color: #ff5252; }
+  .live-trades-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+  .live-trades-table th {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid #2a2a3a;
+    color: #666;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .live-trades-table th:nth-child(n+4) { text-align: right; }
+  .live-trades-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #1a1a24;
+    color: #bbb;
+  }
+  .live-trades-table td:nth-child(n+4) { text-align: right; }
+  .live-trades-table tr:hover { background: #1a1a24; }
+  .live-trades-table .side-buy { color: #00e676; font-weight: 700; }
+  .live-trades-table .side-sell { color: #ff5252; font-weight: 700; }
+  .live-trades-table .ts-col { color: #555; white-space: nowrap; }
+  .live-trades-table .pair-col { color: #e0e0e0; font-weight: 600; }
+  .live-trades-table .pnl-col { font-weight: 600; }
+  .live-trades-scroll {
+    max-height: 420px;
+    overflow-y: auto;
+  }
+  .live-trades-scroll::-webkit-scrollbar { width: 6px; }
+  .live-trades-scroll::-webkit-scrollbar-track { background: transparent; }
+  .live-trades-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -366,7 +420,37 @@
   </div>
 </div>
 
-<div class="refresh-info">Trading data refreshes every 5s</div>
+<div class="main-grid">
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="live-trades-header">
+      <div class="card-title">Recent Trades — Kraken XRP/USDT <span style="font-size:10px;color:#555;font-weight:400;letter-spacing:0">(auto-refresh 15s)</span></div>
+      <div class="live-trades-meta">
+        <span class="meta-item">Trades: <span class="meta-value" id="kraken-trade-count">-</span></span>
+        <span class="meta-item">Win Rate: <span class="meta-value" id="kraken-win-rate">-</span></span>
+        <span class="meta-item">P&amp;L: <span class="meta-value" id="kraken-pnl">-</span></span>
+      </div>
+    </div>
+    <div class="live-trades-scroll">
+      <table class="live-trades-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Pair</th>
+            <th>Side</th>
+            <th>Price</th>
+            <th>Qty</th>
+            <th>P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody id="kraken-trades-body">
+          <tr><td colspan="6" style="text-align:center;color:#555;padding:20px">Loading trades...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-info">Trading data refreshes every 5s &bull; Kraken trades refresh every 15s</div>
 
 <script>
 (function() {
@@ -686,16 +770,94 @@
     el.innerHTML = html;
   }
 
+  // ── Kraken Live Trades ──
+  const KRAKEN_POLL = 15000;
+
+  async function pollKrakenTrades() {
+    try {
+      const resp = await fetch('/api/trading/live-trades');
+      const data = await resp.json();
+      renderKrakenTrades(data);
+    } catch (e) {
+      console.error('Kraken trades poll failed:', e);
+    }
+  }
+
+  function renderKrakenTrades(data) {
+    const tbody = document.getElementById('kraken-trades-body');
+    const trades = data.trades || [];
+
+    // Update summary metrics from pnl data
+    const pnl = data.pnl;
+    if (pnl) {
+      const countEl = document.getElementById('kraken-trade-count');
+      const winEl = document.getElementById('kraken-win-rate');
+      const pnlEl = document.getElementById('kraken-pnl');
+
+      countEl.textContent = pnl.trade_count || 0;
+
+      const winRate = pnl.win_rate;
+      if (winRate !== undefined && winRate !== null) {
+        winEl.textContent = (winRate * 100).toFixed(1) + '%';
+      } else {
+        winEl.textContent = '-';
+      }
+
+      const totalPnl = pnl.total_pnl || 0;
+      pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + '$' + totalPnl.toFixed(2);
+      pnlEl.className = 'meta-value ' + (totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative');
+    }
+
+    if (trades.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#555;padding:20px">No trades yet</td></tr>';
+      return;
+    }
+
+    let html = '';
+    for (const t of trades) {
+      const tsRaw = t.timestamp || t.time || '';
+      let ts = '';
+      if (tsRaw) {
+        const d = typeof tsRaw === 'number' ? new Date(tsRaw * 1000) : new Date(tsRaw);
+        ts = d.toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      }
+      const pair = t.market_question || t.market_id || 'XRP/USDT';
+      const displayPair = pair.replace(' spot trade', '');
+      const side = (t.side || '').toUpperCase();
+      const sideClass = side === 'BUY' ? 'side-buy' : 'side-sell';
+      const price = t.price !== undefined ? Number(t.price).toFixed(4) : '-';
+      const size = t.size || t.quantity || t.amount || '-';
+      const tradePnl = t.pnl;
+      let pnlHtml = '<span style="color:#555">-</span>';
+      if (tradePnl !== undefined && tradePnl !== null) {
+        const pnlClass = tradePnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+        pnlHtml = '<span class="pnl-col ' + pnlClass + '">' + (tradePnl >= 0 ? '+' : '') + '$' + Number(tradePnl).toFixed(4) + '</span>';
+      }
+
+      html += '<tr>' +
+        '<td class="ts-col">' + ts + '</td>' +
+        '<td class="pair-col">' + escapeHtml(displayPair) + '</td>' +
+        '<td class="' + sideClass + '">' + side + '</td>' +
+        '<td>' + price + '</td>' +
+        '<td>' + size + '</td>' +
+        '<td>' + pnlHtml + '</td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
   // ── Init ──
   pollServices();
   pollStatus();
   connectWS();
   pollTrading();
   pollBotStatus();
+  pollKrakenTrades();
   setInterval(pollServices, POLL_INTERVAL);
   setInterval(pollStatus, POLL_INTERVAL);
   setInterval(pollTrading, TRADING_POLL);
   setInterval(pollBotStatus, 30000);
+  setInterval(pollKrakenTrades, KRAKEN_POLL);
 })();
 </script>
 </body>

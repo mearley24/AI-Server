@@ -81,9 +81,9 @@ launchctl load ~/Library/LaunchAgents/com.symphony.bob-maintenance.plist
 
 Automatically wind down non-essential processes at 10:55 PM and restart them at 5:55 AM so Bob and team services keep running with more memory overnight.
 
-**Winddown (10:55 PM):** Quit Cursor, quit Xcode, stop uptime-kuma, purge. (chrome-headless-shell left running for team automation.)
+**Winddown (10:55 PM):** Quit Cursor, quit Xcode, purge. (chrome-headless-shell left running for team automation.)
 
-**Wakeup (5:55 AM):** Start Cursor, start uptime-kuma, purge.
+**Wakeup (5:55 AM):** Start Cursor, purge.
 
 **Never touched:** mobile API, Bob/Telegram, voice webhook, remediator, openwebui.
 

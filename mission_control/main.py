@@ -25,7 +25,6 @@ TRADING_BOT_URL = "http://vpn:8430"
 # Service map: name -> (container_hostname, internal_port, external_port)
 SERVICES = [
     {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000},
-    {"name": "Uptime Kuma", "host": "uptime-kuma", "port": 3001, "ext_port": 3001},
     {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090},
     {"name": "Proposals", "host": "proposals", "port": 8091, "ext_port": 8091},
     {"name": "Email Monitor", "host": "email-monitor", "port": 8092, "ext_port": 8092},
@@ -302,6 +301,29 @@ async def api_trading():
         "recent_trades": recent,
         "total_pnl": total_pnl,
     }
+
+
+@app.get("/api/trading/live-trades")
+async def api_trading_live_trades():
+    """Proxy to the polymarket-bot /pnl and /paper-trades endpoints for Kraken live trade data."""
+    result = {"trades": [], "pnl": None}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{TRADING_BOT_URL}/paper-trades", params={"limit": 20, "platform": "crypto"})
+            if resp.status_code == 200:
+                data = resp.json()
+                result["trades"] = data.get("trades", [])
+                result["mode"] = data.get("mode", "unknown")
+    except Exception:
+        pass
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{TRADING_BOT_URL}/pnl", params={"strategy": "avellaneda"})
+            if resp.status_code == 200:
+                result["pnl"] = resp.json()
+    except Exception:
+        pass
+    return result
 
 
 @app.get("/api/trading/bot-status")
