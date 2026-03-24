@@ -107,6 +107,9 @@ def ask_openclaw(message: str) -> str:
         # Direct service queries (skip LLM, just call the API)
         lower = message.lower()
 
+        if any(w in lower for w in ["help", "commands", "what can you do"]):
+            return "I respond to:\n• trades — live P&L + positions\n• status — all services health\n• email — inbox summary\n• calendar — today's schedule\n• weather — NOAA edges\n• help — this message\n\nAnything else, I'll think about it and respond."
+
         if any(w in lower for w in ["trade", "trading", "p&l", "pnl", "profit", "balance", "portfolio"]):
             return get_trading_status()
 
@@ -140,33 +143,75 @@ def ask_openclaw(message: str) -> str:
 
 
 def get_trading_status() -> str:
-    """Get live trading P&L from Kraken via the bot API."""
+    """Get live trading P&L and positions."""
+    parts = []
+
     try:
+        # Bot status
         resp = urlopen("http://127.0.0.1:8430/status", timeout=10)
         status = json.loads(resp.read())
-
-        resp2 = urlopen("http://127.0.0.1:8430/strategies", timeout=10)
-        strats = json.loads(resp2.read())
-
         mode = "LIVE" if not status.get("platforms", {}).get("crypto", {}).get("dry_run") else "PAPER"
-        active = sum(1 for s in strats.get("strategies", {}).values() if s.get("state") == "running")
-        total = len(strats.get("strategies", {}))
+        parts.append(f"Mode: {mode}")
+    except:
+        parts.append("Mode: Unknown")
 
-        try:
-            resp3 = urlopen("http://127.0.0.1:8430/weather/edges", timeout=10)
-            edges = json.loads(resp3.read())
-            positions = edges.get("positions", 0)
-        except Exception:
-            positions = 0
+    try:
+        # Strategies
+        resp = urlopen("http://127.0.0.1:8430/strategies", timeout=10)
+        strats = json.loads(resp.read()).get("strategies", {})
+        running = [name for name, s in strats.items() if s.get("state") == "running"]
+        parts.append(f"Strategies: {len(running)} running ({', '.join(running[:4])})")
+    except:
+        pass
 
-        return (
-            f"Trading: {mode} mode\n"
-            f"{active}/{total} strategies running\n"
-            f"Weather positions: {positions}\n"
-            f"Platforms: Polymarket, Kalshi, Kraken"
-        )
+    try:
+        # Real Kraken balance via a helper endpoint or direct calculation
+        # Hit the mission control trading API which reads paper_trades.jsonl
+        resp = urlopen("http://127.0.0.1:8098/api/trading", timeout=10)
+        data = json.loads(resp.read())
+        total_trades = data.get("total_trades", 0)
+
+        # Per-pair P&L
+        pairs = data.get("pairs", {})
+        for pair_name, info in pairs.items():
+            display = info.get("display_name", pair_name)
+            buys = info.get("buys", 0)
+            sells = info.get("sells", 0)
+            pnl = info.get("estimated_pnl", 0)
+            spread = info.get("spread_capture", 0)
+            parts.append(f"{display}: {buys}B/{sells}S spread=${spread:.4f} P&L=${pnl:.2f}")
+
+        parts.append(f"Total trades: {total_trades}")
+        total_pnl = data.get("total_pnl", 0)
+        if total_pnl:
+            parts.append(f"Total P&L: ${total_pnl:.2f}")
     except Exception as e:
-        return f"Trading status unavailable: {e}"
+        parts.append(f"P&L data unavailable: {e}")
+
+    try:
+        # Weather positions
+        resp = urlopen("http://127.0.0.1:8430/weather/edges", timeout=10)
+        data = json.loads(resp.read())
+        edges = data.get("count", 0)
+        positions = data.get("positions", 0)
+
+        if positions > 0:
+            open_pos = data.get("open_positions", [])
+            total_weather_pnl = sum(p.get("unrealized_pnl", 0) for p in open_pos)
+            parts.append(f"Weather: {edges} edges, {positions} positions, unrealized=${total_weather_pnl:.2f}")
+    except:
+        pass
+
+    try:
+        # Open orders
+        resp = urlopen("http://127.0.0.1:8430/status", timeout=10)
+        data = json.loads(resp.read())
+        open_orders = data.get("open_orders", 0)
+        parts.append(f"Open orders: {open_orders}")
+    except:
+        pass
+
+    return "\n".join(parts) if parts else "Trading status unavailable"
 
 
 def get_email_status() -> str:
@@ -206,28 +251,33 @@ def get_weather_status() -> str:
 def get_system_status() -> str:
     """Check health of all services."""
     services = {
-        "OpenClaw": "http://127.0.0.1:8099/health",
-        "Trading": "http://127.0.0.1:8430/health",
-        "Email": "http://127.0.0.1:8092/health",
-        "Calendar": "http://127.0.0.1:8094/health",
-        "Proposals": "http://127.0.0.1:8091/health",
-        "Voice": "http://127.0.0.1:8093/health",
-        "Notifications": "http://127.0.0.1:8095/health",
-        "D-Tools": "http://127.0.0.1:8096/health",
-        "ClawWork": "http://127.0.0.1:8097/health",
-        "Mission Control": "http://127.0.0.1:8098/health",
-        "Knowledge": "http://127.0.0.1:8100/health",
+        "OpenClaw": 8099,
+        "Trading": 8430,
+        "Email": 8092,
+        "Calendar": 8094,
+        "Proposals": 8091,
+        "Voice": 8093,
+        "Notifications": 8095,
+        "D-Tools": 8096,
+        "ClawWork": 8097,
+        "Mission Ctrl": 8098,
+        "Knowledge": 8100,
     }
-    results = []
     up = 0
-    for name, url in services.items():
+    down = []
+    for name, port in services.items():
         try:
-            urlopen(url, timeout=5)
+            urlopen(f"http://127.0.0.1:{port}/health", timeout=3)
             up += 1
-        except Exception:
-            results.append(f"  {name}: DOWN")
+        except:
+            down.append(name)
 
-    return f"Systems: {up}/{len(services)} online" + ("\n" + "\n".join(results) if results else "\nAll services healthy")
+    result = f"Systems: {up}/{len(services)} online"
+    if down:
+        result += f"\nDown: {', '.join(down)}"
+    else:
+        result += "\nAll services healthy"
+    return result
 
 
 # Monitoring loop
