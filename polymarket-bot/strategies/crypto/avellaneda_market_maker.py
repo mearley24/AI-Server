@@ -412,7 +412,11 @@ class AvellanedaMarketMaker:
         # When short (negative inventory), push price up to encourage buying
         inventory_skew = 0.0
         if inventory_coins != 0:
-            inventory_skew = inventory_coins * mid * 0.001  # 0.1% per unit of inventory
+            max_inv = self._inventory._effective_max(pair, mid)
+            if max_inv > 0:
+                # Skew as fraction of max inventory: at 100% full, skew = 0.1% of mid
+                inventory_ratio = inventory_coins / max_inv  # in [-1, 1]
+                inventory_skew = inventory_ratio * mid * 0.001
             r -= inventory_skew
 
         # Apply Hawkes order flow adjustment
