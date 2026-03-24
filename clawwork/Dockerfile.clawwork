@@ -29,6 +29,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
         numpy>=1.26 \
         pandas>=2.2
 
+# Copy application source
+COPY . .
+
 # Create symphony directories
 RUN mkdir -p /root/.symphony/data \
     /root/.symphony/logs \
