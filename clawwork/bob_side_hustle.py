@@ -28,8 +28,10 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
 
@@ -67,6 +69,47 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("clawwork.main")
+
+# ── Health endpoint ──────────────────────────────────────────────────────────────────
+# Minimal HTTP server so Mission Control can hit /health on port 8097.
+
+_orchestrator_ref = None  # set in main() before starting the server
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            state = {}
+            if _orchestrator_ref is not None:
+                s = _orchestrator_ref.state
+                state = {
+                    "status": "paused" if s.paused else "ok",
+                    "service": "clawwork",
+                    "daemon": "running",
+                    "balance": f"${s.current_balance:.2f}",
+                    "tasks_today": s.tasks_today,
+                    "daily_earnings": f"${s.daily_earnings:.2f}",
+                    "daily_spend": f"${s.daily_spend:.2f}",
+                }
+            else:
+                state = {"status": "starting", "service": "clawwork"}
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(state).encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # suppress per-request logs
+
+
+def start_health_server(port=8097):
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    log.info(f"Health endpoint listening on :{port}/health")
 
 
 class ClawWorkState:
@@ -426,6 +469,11 @@ def main():
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     orchestrator = SideHustleOrchestrator()
+
+    global _orchestrator_ref
+    _orchestrator_ref = orchestrator
+    start_health_server()
+
     if args.status:
         orchestrator.print_status()
     elif args.pause:

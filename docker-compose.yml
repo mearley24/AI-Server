@@ -325,7 +325,7 @@ services:
     depends_on:
       - redis
     healthcheck:
-      test: ["CMD", "python", "-c", "import json,pathlib; pathlib.Path('/root/.symphony/data').mkdir(parents=True,exist_ok=True); print('ok')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8097/health')"]
       interval: 60s
       timeout: 10s
       retries: 3
