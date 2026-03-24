@@ -82,15 +82,23 @@ class MessageMonitor:
             return []
 
 
-def send_imessage(phone: str, message: str):
+def send_imessage(address: str, message: str):
     """Send an iMessage via AppleScript."""
-    # Escape special characters for AppleScript
     message = message.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
-    # Truncate long messages (iMessage has limits)
     if len(message) > 2000:
         message = message[:1997] + "..."
-    cmd = f'tell application "Messages" to send "{message}" to buddy "{phone}"'
-    subprocess.run(["osascript", "-e", cmd], capture_output=True, timeout=10)
+
+    cmd = '''tell application "Messages"
+set targetService to 1st account whose service type = iMessage
+set targetBuddy to participant "%s" of targetService
+send "%s" to targetBuddy
+end tell''' % (address, message)
+
+    result = subprocess.run(["osascript", "-e", cmd], capture_output=True, text=True, timeout=10)
+    if result.returncode != 0:
+        print(f"[send] AppleScript error: {result.stderr}")
+    else:
+        print(f"[send] Sent to {address}")
 
 
 def ask_openclaw(message: str) -> str:
