@@ -73,6 +73,26 @@ _CLIENT_BUILDERS: dict[str, callable] = {
 }
 
 
+def _format_balance_note(balance: dict) -> str:
+    """Extract a numeric USD total from a platform balance dict.
+
+    Kalshi returns ``{"balance": 123.45, ...}`` (numeric).
+    Crypto/CCXT returns ``{"balance": {"USD": 10000.0, ...}, ...}`` (dict).
+    """
+    if not balance:
+        return ""
+    raw = balance.get("balance", 0)
+    if isinstance(raw, (int, float)):
+        return f"Balance: ${raw:,.2f}"
+    if isinstance(raw, dict):
+        # Paper trader: {"USD": 10000.0, "BTC": 0.0, ...}
+        # CCXT total sub-dict: {"USD": 10000.0, ...}
+        usd = raw.get("USD", 0) or 0
+        total = sum(v for v in raw.values() if isinstance(v, (int, float)) and v > 0) if not usd else usd
+        return f"Balance: ${total:,.2f}"
+    return "Balance: unknown"
+
+
 class HealthChecker:
     """Checks connectivity and balance for all enabled trading platforms."""
 
@@ -123,7 +143,7 @@ class HealthChecker:
                     "last_check": now,
                     "balance": balance,
                     "dry_run": client.is_dry_run,
-                    "notes": f"Balance: ${balance.get('balance', 0):.2f}" if balance else "",
+                    "notes": _format_balance_note(balance),
                 }
 
                 # Clean up
