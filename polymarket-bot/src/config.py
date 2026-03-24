@@ -169,7 +169,7 @@ class Settings(BaseSettings):
     avellaneda_pair_configs: dict[str, dict[str, float]] = Field(
         default_factory=lambda: {
             "BTC/USDT": {"min_spread_bps": 10, "max_spread_bps": 100, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
-            "XRP/USDT": {"min_spread_bps": 30, "max_spread_bps": 200, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
+            "XRP/USDT": {"min_spread_bps": 30, "max_spread_bps": 100, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
             "SOL/USDT": {"min_spread_bps": 20, "max_spread_bps": 150, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
         },
         description="Per-pair overrides for spread bounds, order size, and inventory limits",

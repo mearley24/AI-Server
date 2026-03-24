@@ -276,12 +276,30 @@ class AvellanedaMarketMaker:
 
         # 4. Compute reservation price
         q = self._inventory.inventory(pair)
+        inventory_coins = self._inventory.get_position(pair).quantity
         tau = self._T  # rolling horizon for 24/7 crypto
         r = mid - q * self._gamma * (sigma ** 2) * tau
+
+        # Apply additional inventory skew independent of sigma
+        # When long (positive inventory), push price down to encourage selling
+        # When short (negative inventory), push price up to encourage buying
+        inventory_skew = 0.0
+        if inventory_coins != 0:
+            inventory_skew = inventory_coins * mid * 0.001  # 0.1% per unit of inventory
+            r -= inventory_skew
 
         # Apply Hawkes order flow adjustment
         hawkes_adj = self._hawkes[pair].reservation_price_adjustment()
         r_adjusted = r + hawkes_adj * mid  # scale by mid-price
+
+        # Log inventory status each tick
+        logger.info(
+            "avellaneda_inventory",
+            pair=pair,
+            coins=round(inventory_coins, 6),
+            value_usdt=round(inventory_coins * mid, 4),
+            skew=round(inventory_skew, 8),
+        )
 
         # 5. Compute optimal spread
         kappa = self._estimate_kappa(pair)
@@ -313,9 +331,21 @@ class AvellanedaMarketMaker:
 
         delta *= vpin_action.spread_multiplier
 
-        # 8. Compute quote prices
-        bid_price = r_adjusted - delta / 2.0
-        ask_price = r_adjusted + delta / 2.0
+        # 8. Compute quote prices — asymmetric spreads based on inventory
+        if inventory_coins > 0:
+            # Holding long: tighten sells, widen buys to unwind
+            sell_spread = delta * 0.5
+            buy_spread = delta * 1.5
+        elif inventory_coins < 0:
+            # Holding short: tighten buys, widen sells to unwind
+            buy_spread = delta * 0.5
+            sell_spread = delta * 1.5
+        else:
+            sell_spread = delta
+            buy_spread = delta
+
+        bid_price = r_adjusted - buy_spread / 2.0
+        ask_price = r_adjusted + sell_spread / 2.0
 
         # Sanity: bid must be below ask, both must be positive
         if bid_price <= 0 or ask_price <= 0 or bid_price >= ask_price:
@@ -332,8 +362,21 @@ class AvellanedaMarketMaker:
         base_size = pair_order_usdt / mid
         base_size *= vpin_action.size_multiplier
 
-        bid_size = self._inventory.bid_size_limit(pair, base_size, mid)
-        ask_size = self._inventory.ask_size_limit(pair, base_size, mid)
+        # Scale order sizes based on inventory direction
+        if inventory_coins > 0:
+            # Long: buy less, sell more aggressively
+            bid_base = base_size * 0.5
+            ask_base = base_size * 1.5
+        elif inventory_coins < 0:
+            # Short: sell less, buy more aggressively
+            bid_base = base_size * 1.5
+            ask_base = base_size * 0.5
+        else:
+            bid_base = base_size
+            ask_base = base_size
+
+        bid_size = self._inventory.bid_size_limit(pair, bid_base, mid)
+        ask_size = self._inventory.ask_size_limit(pair, ask_base, mid)
 
         # 10. Exposure limit check — skip if total open value would exceed max
         total_open_value = sum(
