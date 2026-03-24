@@ -476,7 +476,7 @@ class AvellanedaMarketMaker:
 
         # Sanity: bid must be below ask, both must be positive
         if bid_price <= 0 or ask_price <= 0 or bid_price >= ask_price:
-            logger.debug(
+            logger.info(
                 "avellaneda_invalid_quotes",
                 pair=pair,
                 bid=round(bid_price, 8),
@@ -519,15 +519,25 @@ class AvellanedaMarketMaker:
         base_currency, quote_currency = pair.split("/") if "/" in pair else (pair, "USDT")
 
         # 12. Place at most ONE buy and ONE sell per pair per tick
+        logger.info(
+            "avellaneda_tick_debug",
+            pair=pair,
+            bid_size=round(bid_size, 6),
+            ask_size=round(ask_size, 6),
+            can_bid=self._inventory.can_quote_bid(pair, mid),
+            can_ask=self._inventory.can_quote_ask(pair, mid),
+            total_open_value=round(total_open_value, 2),
+            max_exposure=self._max_total_exposure,
+        )
         if bid_size > 0 and self._inventory.can_quote_bid(pair, mid):
             if total_open_value + (bid_size * bid_price) > self._max_total_exposure:
-                logger.debug("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), max=self._max_total_exposure)
+                logger.info("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
                 # Check free quote currency balance before buying
                 free_quote = float(free_balance.get(quote_currency, 0))
                 order_cost = bid_size * bid_price
                 if free_quote < order_cost:
-                    logger.debug(
+                    logger.info(
                         "insufficient_free_balance",
                         pair=pair,
                         side="buy",
@@ -539,12 +549,12 @@ class AvellanedaMarketMaker:
 
         if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
             if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
-                logger.debug("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), max=self._max_total_exposure)
+                logger.info("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
                 # Check free base currency balance before selling
                 free_base = float(free_balance.get(base_currency, 0))
                 if free_base < ask_size:
-                    logger.debug(
+                    logger.info(
                         "insufficient_free_balance",
                         pair=pair,
                         side="sell",
