@@ -532,6 +532,22 @@ async def heartbeat_status() -> dict[str, Any]:
     return {"content": "No heartbeat data yet. Run POST /heartbeat/run first."}
 
 
+class TestNotificationRequest(BaseModel):
+    message: str = "Test notification from Bob"
+
+
+@router.post("/notifications/test")
+async def test_notification(req: TestNotificationRequest) -> dict[str, Any]:
+    """Send a test notification to verify iMessage/console is working."""
+    try:
+        from notifications.manager import NotificationManager
+        nm = NotificationManager()
+        success = await nm.notifier.send_message(text=req.message)
+        return {"status": "sent" if success else "failed", "channel": type(nm.notifier).__name__}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Notification error: {exc}")
+
+
 @router.get("/heartbeat/reports")
 async def heartbeat_reports(
     limit: int = Query(10, ge=1, le=100, description="Max reports to return"),

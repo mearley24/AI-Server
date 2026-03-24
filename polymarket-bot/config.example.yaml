@@ -156,3 +156,16 @@ crypto:
   btc_correlation_enabled: true
   mean_reversion_enabled: true
   momentum_enabled: false     # Phase 2 — enable when tested
+  cvd_enabled: true
+  cvd_lookback_trades: 500
+  cvd_divergence_threshold: 0.02
+  cvd_poll_interval: 120
+
+# ── Notifications ─────────────────────────────────────────────────
+notifications:
+  channel: console             # "imessage" or "console"
+  linq:
+    api_url: https://api.linqapp.com/v1
+    api_key_env: LINQ_API_KEY
+    phone_number_env: LINQ_PHONE_NUMBER
+    owner_phone_env: OWNER_PHONE_NUMBER

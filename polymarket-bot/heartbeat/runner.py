@@ -72,10 +72,20 @@ class HeartbeatRunner:
         # 5. Generate briefing
         report["briefing"] = await self.briefing_generator.generate(report)
 
-        # 6. Update HEARTBEAT.md
+        # 6. Send notifications
+        try:
+            from notifications.manager import NotificationManager
+            nm = NotificationManager()
+            await nm.on_heartbeat_complete(report)
+            if report.get("proposals"):
+                await nm.on_proposal(report["proposals"])
+        except Exception as e:
+            logger.error("heartbeat_notification_error", error=str(e))
+
+        # 7. Update HEARTBEAT.md
         self._update_heartbeat_md(report)
 
-        # 7. Save full report
+        # 8. Save full report
         self._save_report(report)
 
         logger.info(

@@ -105,6 +105,7 @@ class StrategyReviewer:
             ("btc_correlation", "crypto"),
             ("mean_reversion", "crypto"),
             ("momentum", "crypto"),
+            ("cvd", "crypto"),
         ]
 
     def _empty_reviews(self) -> list[dict]:

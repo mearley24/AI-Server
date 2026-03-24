@@ -254,6 +254,41 @@ curl localhost:8430/strategies        # Available strategies + configs
 
 ---
 
+## Known Issues & Fixes (Never Repeat These)
+
+Every bug we encounter gets documented here so no AI agent makes the same mistake twice.
+
+### eth_account API Rename
+- **Problem**: `from eth_account.messages import encode_structured_data` fails on newer eth_account versions
+- **Fix**: Use try/except fallback: `except ImportError: from eth_account.messages import encode_typed_data as encode_structured_data`
+- **File**: `src/signer.py`
+
+### Binance WebSocket Geoblocked in US
+- **Problem**: Binance returns HTTP 451 "Unavailable for Legal Reasons" from US IPs
+- **Fix**: Use Kraken WebSocket (`wss://ws.kraken.com/v2`) as default BTC feed. Set `BTC_FEED_SOURCE=kraken` in .env
+- **File**: `src/latency_detector.py`
+
+### Polymarket WebSocket When Not Enabled
+- **Problem**: Bot tries to connect to Polymarket CLOB WebSocket even when Polymarket is not in PLATFORMS_ENABLED, causing 404 spam
+- **Fix**: Check PLATFORMS_ENABLED before starting WebSocket. Skip if "polymarket" not listed.
+- **File**: `src/main.py`
+
+### CCXT Balance Dict Formatting
+- **Problem**: CCXT `fetch_balance()` returns nested dicts. Formatting with `:.2f` on a dict throws "unsupported format string"
+- **Fix**: Extract numeric value from `balance.get('USD', {}).get('total', 0)` or sum non-zero values
+- **File**: `heartbeat/health_check.py`
+
+### Docker .env Not Reloading on Restart
+- **Problem**: `docker compose restart` does NOT reload .env changes
+- **Fix**: Must use `docker compose down <service> && docker compose up -d <service>` to pick up .env changes
+
+### Platform Import Crashes
+- **Problem**: Missing platform SDK dependency crashes entire bot on startup
+- **Fix**: All platform imports in main.py use try/except ImportError. Health checker reports "dependency_missing" instead of crashing.
+- **File**: `src/main.py`, `heartbeat/health_check.py`
+
+---
+
 ## Principles
 
 - **Dry-run first.** Always. No exceptions.
