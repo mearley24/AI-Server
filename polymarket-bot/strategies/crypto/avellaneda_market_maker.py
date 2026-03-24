@@ -537,10 +537,10 @@ class AvellanedaMarketMaker:
             if total_open_value + (bid_size * bid_price) > self._max_total_exposure:
                 logger.info("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
-                # Check free quote currency balance before buying
+                # Check free quote currency balance before buying — cap size to available
                 free_quote = float(free_balance.get(quote_currency, 0))
                 order_cost = bid_size * bid_price
-                if free_quote < order_cost:
+                if free_quote <= 0:
                     logger.info(
                         "insufficient_free_balance",
                         pair=pair,
@@ -549,15 +549,18 @@ class AvellanedaMarketMaker:
                         needed=round(order_cost, 4),
                     )
                 else:
+                    if free_quote < order_cost:
+                        # Reduce bid size to fit available balance
+                        bid_size = free_quote / bid_price
                     await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
 
         if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
             if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
                 logger.info("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
-                # Check free base currency balance before selling
+                # Check free base currency balance before selling — cap size to available
                 free_base = float(free_balance.get(base_currency, 0))
-                if free_base < ask_size:
+                if free_base <= 0:
                     logger.info(
                         "insufficient_free_balance",
                         pair=pair,
@@ -566,7 +569,8 @@ class AvellanedaMarketMaker:
                         needed=round(ask_size, 6),
                     )
                 else:
-                    await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
+                    sell_size = min(ask_size, free_base)
+                    await self._place_quote(pair, "sell", ask_price, sell_size, mid, sigma, delta)
 
         # 11. Publish signal for debate engine / monitoring
         await self._bus.publish(Signal(
