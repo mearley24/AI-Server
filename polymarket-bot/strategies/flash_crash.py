@@ -62,7 +62,7 @@ class FlashCrashStrategy(BaseStrategy):
             "stop_loss": settings.flash_crash_stop_loss,
             "size": settings.poly_default_size,
             "tokens": settings.stink_bid_markets,
-            "timeframes": ["5m", "15m"],
+            "timeframes": ["5m", "15m", "1h", "spot"],
         }
 
     async def start(self, params: dict[str, Any] | None = None) -> None:

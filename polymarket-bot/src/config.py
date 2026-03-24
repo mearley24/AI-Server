@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     config_yaml_path: str = Field(default="")
 
     # --- Strategy defaults (overridable via YAML) ---
-    stink_bid_drop_threshold: float = Field(default=0.15, description="Min price drop from fair value")
+    stink_bid_drop_threshold: float = Field(default=0.08, description="Min price drop from fair value")
     stink_bid_take_profit: float = Field(default=0.10, description="Take-profit delta")
     stink_bid_stop_loss: float = Field(default=0.08, description="Stop-loss delta")
     stink_bid_markets: list[str] = Field(
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
         description="Tokens to scan for stink bid markets",
     )
 
-    flash_crash_drop_threshold: float = Field(default=0.30, description="Orderbook drop to trigger buy")
+    flash_crash_drop_threshold: float = Field(default=0.15, description="Orderbook drop to trigger buy")
     flash_crash_window_seconds: int = Field(default=10, description="Seconds to detect drop")
     flash_crash_take_profit: float = Field(default=0.15, description="Take-profit delta")
     flash_crash_stop_loss: float = Field(default=0.10, description="Stop-loss delta")
@@ -74,9 +74,16 @@ class Settings(BaseSettings):
         default_factory=lambda: ["KDEN", "KJFK", "KLAX"],
         description="NOAA station IDs to track",
     )
-    weather_edge_threshold: float = Field(default=0.10, description="Minimum edge (10%) to enter")
+    weather_edge_threshold: float = Field(default=0.05, description="Minimum edge (5%) to enter")
     weather_max_position_size: float = Field(default=10.0, description="Max per-position in USDC")
     weather_check_interval_seconds: float = Field(default=300.0, description="Seconds between checks")
+
+    # --- Sports Arb ---
+    sports_arb_arb_threshold: float = Field(default=0.995, description="Max combined price for arbitrage")
+    sports_arb_scan_interval_seconds: float = Field(default=45.0, description="Scan interval in seconds")
+    sports_arb_max_position_per_side: float = Field(default=5000.0, description="Max position per side in USDC")
+    sports_arb_slippage_tolerance: float = Field(default=0.005, description="Slippage tolerance")
+    sports_arb_min_liquidity_shares: int = Field(default=100, description="Min liquidity in shares")
 
     # --- BTC Price Feed ---
     btc_feed_source: str = Field(default="kraken", description="BTC price feed: 'kraken', 'coinbase', or 'binance'")
@@ -139,7 +146,7 @@ class Settings(BaseSettings):
     # --- Avellaneda-Stoikov Market Maker ---
     crypto_avellaneda_enabled: bool = Field(default=True, description="Enable Avellaneda-Stoikov market maker")
     avellaneda_pairs: list[str] = Field(
-        default_factory=lambda: ["XRP/USDT"],
+        default_factory=lambda: ["XRP/USDT", "HBAR/USDT", "SOL/USDT"],
         description="Pairs for Avellaneda MM to quote",
     )
     avellaneda_risk_aversion: float = Field(default=0.1, description="Risk aversion parameter (γ)")

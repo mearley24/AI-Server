@@ -58,10 +58,10 @@ class SportsArbStrategy(BaseStrategy):
         self._tick_interval = getattr(settings, "sports_arb_scan_interval_seconds", 45)
 
         self._params = {
-            "arb_threshold": getattr(settings, "sports_arb_arb_threshold", 0.98),
-            "max_position_per_side": getattr(settings, "sports_arb_max_position_per_side", 5000.0),
-            "slippage_tolerance": getattr(settings, "sports_arb_slippage_tolerance", 0.005),
-            "min_liquidity_shares": getattr(settings, "sports_arb_min_liquidity_shares", 100),
+            "arb_threshold": settings.sports_arb_arb_threshold,
+            "max_position_per_side": settings.sports_arb_max_position_per_side,
+            "slippage_tolerance": settings.sports_arb_slippage_tolerance,
+            "min_liquidity_shares": settings.sports_arb_min_liquidity_shares,
             "use_fok_orders": getattr(settings, "sports_arb_use_fok_orders", True),
             "market_types": getattr(settings, "sports_arb_market_types", ["sports", "esports"]),
         }

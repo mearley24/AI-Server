@@ -61,7 +61,7 @@ class StinkBidStrategy(BaseStrategy):
             "stop_loss": settings.stink_bid_stop_loss,
             "size": settings.poly_default_size,
             "tokens": settings.stink_bid_markets,
-            "timeframes": ["5m", "15m"],
+            "timeframes": ["5m", "15m", "1h", "spot"],
         }
 
     async def on_tick(self) -> None:

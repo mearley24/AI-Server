@@ -41,7 +41,7 @@ from strategies.crypto.vpin import VPINCalculator
 logger = structlog.get_logger(__name__)
 
 # Default parameters matching the spec
-DEFAULT_PAIRS = ["XRP/USDT"]
+DEFAULT_PAIRS = ["XRP/USDT", "HBAR/USDT", "SOL/USDT"]
 DEFAULT_RISK_AVERSION = 0.1
 DEFAULT_SESSION_HORIZON = 3600  # 1 hour rolling window for 24/7 crypto
 DEFAULT_VOLATILITY_WINDOW = 100  # last 100 mid-price changes

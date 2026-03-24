@@ -34,6 +34,18 @@ DIRECTION_PATTERNS = [
     (r"\bdown\b|\bbelow\b|\blower\b|\bunder\b", "down"),
 ]
 
+# Broader search terms to discover more market types beyond just directional moves
+EXTRA_SEARCH_TERMS: list[str] = [
+    "BTC price",
+    "ETH price",
+    "SOL price",
+    "bitcoin above",
+    "bitcoin below",
+    "ethereum above",
+    "ethereum below",
+    "crypto",
+]
+
 
 @dataclass
 class ScannedMarket:
@@ -85,15 +97,35 @@ class MarketScanner:
 
         start = time.time()
         result = ScanResult()
+        seen_ids: set[str] = set()
 
         for token in self._scan_tokens:
             try:
                 markets = await self._scan_token(token)
-                result.markets.extend(markets)
+                for m in markets:
+                    if m.condition_id not in seen_ids:
+                        seen_ids.add(m.condition_id)
+                        result.markets.append(m)
             except Exception as exc:
                 err = f"Error scanning {token}: {exc}"
                 logger.error("scan_error", token=token, error=str(exc))
                 result.errors.append(err)
+
+        # Broader search: "BTC price", "bitcoin above", etc. to catch markets
+        # that don't match the strict alias patterns (e.g. "Will BTC be above $70k?")
+        for term in EXTRA_SEARCH_TERMS:
+            try:
+                raw_markets = await self._client.search_markets(term, limit=100)
+                for mkt in raw_markets:
+                    # Try to match against all known tokens
+                    for token, aliases in CRYPTO_ALIASES.items():
+                        parsed = self._parse_market(mkt, token)
+                        if parsed and parsed.condition_id not in seen_ids:
+                            seen_ids.add(parsed.condition_id)
+                            result.markets.append(parsed)
+                            break
+            except Exception as exc:
+                logger.warning("extra_search_failed", term=term, error=str(exc))
 
         result.scan_time = time.time() - start
         self._cached_markets = result.markets
@@ -144,7 +176,8 @@ class MarketScanner:
         if not raw.get("active", False):
             return None
 
-        # Detect timeframe
+        # Detect timeframe — also accept markets without an explicit timeframe
+        # (e.g. "Will BTC be above $70k?" style) as "spot"
         timeframe = None
         for pattern, tf in TIMEFRAME_PATTERNS:
             if re.search(pattern, text):
@@ -152,7 +185,10 @@ class MarketScanner:
                 break
 
         if not timeframe:
-            return None
+            # Accept price-level markets ("above $X", "below $X") without a timeframe
+            if not re.search(r"\b(above|below|over|under)\b.*\$[\d,]+", text):
+                return None
+            timeframe = "spot"
 
         # Detect direction
         direction = None
