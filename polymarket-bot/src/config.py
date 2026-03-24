@@ -136,6 +136,32 @@ class Settings(BaseSettings):
     crypto_mean_reversion_enabled: bool = Field(default=True, description="Enable mean reversion strategy")
     crypto_momentum_enabled: bool = Field(default=False, description="Enable momentum strategy (Phase 2)")
 
+    # --- Avellaneda-Stoikov Market Maker ---
+    crypto_avellaneda_enabled: bool = Field(default=True, description="Enable Avellaneda-Stoikov market maker")
+    avellaneda_pairs: list[str] = Field(
+        default_factory=lambda: ["XRP/USDT"],
+        description="Pairs for Avellaneda MM to quote",
+    )
+    avellaneda_risk_aversion: float = Field(default=0.1, description="Risk aversion parameter (γ)")
+    avellaneda_session_horizon_seconds: float = Field(default=3600, description="Rolling session horizon (T)")
+    avellaneda_volatility_window: int = Field(default=100, description="Mid-price observations for volatility estimate")
+    avellaneda_max_inventory: float = Field(default=10.0, description="Max position in base units per pair")
+    avellaneda_min_spread_bps: float = Field(default=5.0, description="Minimum spread in basis points")
+    avellaneda_max_spread_bps: float = Field(default=200.0, description="Maximum spread in basis points")
+    avellaneda_order_size_usdt: float = Field(default=25.0, description="Order size per quote in USDT")
+    avellaneda_tick_interval: float = Field(default=5.0, description="Seconds between quoting ticks")
+    avellaneda_hawkes_mu: float = Field(default=1.0, description="Hawkes baseline arrival rate")
+    avellaneda_hawkes_alpha: float = Field(default=0.5, description="Hawkes excitation parameter")
+    avellaneda_hawkes_beta: float = Field(default=2.0, description="Hawkes decay parameter")
+    avellaneda_hawkes_window: float = Field(default=300.0, description="Hawkes lookback window (seconds)")
+    avellaneda_hawkes_sensitivity: float = Field(default=0.5, description="Hawkes imbalance sensitivity (η)")
+    avellaneda_vpin_bucket_volume: float = Field(default=1000.0, description="VPIN bucket volume (USDT)")
+    avellaneda_vpin_num_buckets: int = Field(default=50, description="VPIN rolling bucket count")
+    avellaneda_vpin_warning: float = Field(default=0.4, description="VPIN warning threshold")
+    avellaneda_vpin_danger: float = Field(default=0.6, description="VPIN danger threshold")
+    avellaneda_vpin_critical: float = Field(default=0.8, description="VPIN critical threshold (stop quoting)")
+    avellaneda_vpin_cooldown: float = Field(default=60.0, description="VPIN cooldown seconds after recovery")
+
     @field_validator("poly_log_level")
     @classmethod
     def _normalise_log_level(cls, v: str) -> str:

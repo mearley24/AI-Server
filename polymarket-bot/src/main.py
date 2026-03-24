@@ -320,6 +320,39 @@ async def lifespan(app: FastAPI):
                 )
                 platform_strategies.append(("mean_reversion", mean_rev))
 
+            # Avellaneda-Stoikov Market Maker
+            if settings.crypto_avellaneda_enabled:
+                from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
+                avellaneda_mm = AvellanedaMarketMaker(
+                    crypto_client=crypto_client,
+                    signal_bus=signal_bus,
+                    pairs=settings.avellaneda_pairs,
+                    risk_aversion=settings.avellaneda_risk_aversion,
+                    session_horizon_seconds=settings.avellaneda_session_horizon_seconds,
+                    volatility_window=settings.avellaneda_volatility_window,
+                    max_inventory=settings.avellaneda_max_inventory,
+                    min_spread_bps=settings.avellaneda_min_spread_bps,
+                    max_spread_bps=settings.avellaneda_max_spread_bps,
+                    order_size_usdt=settings.avellaneda_order_size_usdt,
+                    tick_interval=settings.avellaneda_tick_interval,
+                    hawkes_config={
+                        "mu": settings.avellaneda_hawkes_mu,
+                        "alpha": settings.avellaneda_hawkes_alpha,
+                        "beta": settings.avellaneda_hawkes_beta,
+                        "window_seconds": settings.avellaneda_hawkes_window,
+                        "sensitivity": settings.avellaneda_hawkes_sensitivity,
+                    },
+                    vpin_config={
+                        "bucket_volume": settings.avellaneda_vpin_bucket_volume,
+                        "num_buckets": settings.avellaneda_vpin_num_buckets,
+                        "warning_threshold": settings.avellaneda_vpin_warning,
+                        "danger_threshold": settings.avellaneda_vpin_danger,
+                        "critical_threshold": settings.avellaneda_vpin_critical,
+                        "cooldown_seconds": settings.avellaneda_vpin_cooldown,
+                    },
+                )
+                platform_strategies.append(("avellaneda_mm", avellaneda_mm))
+
             # Momentum strategy
             if settings.crypto_momentum_enabled:
                 from strategies.crypto.momentum import MomentumStrategy
