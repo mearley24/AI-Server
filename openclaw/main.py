@@ -12,6 +12,7 @@ import logging
 import json
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -47,6 +48,52 @@ CONDUCTOR_MODEL = os.getenv("CONDUCTOR_MODEL", "claude-sonnet-4-5")
 
 # Redis (optional — graceful fallback if unavailable)
 REDIS_URL = os.getenv("REDIS_URL", "")
+
+# ---------------------------------------------------------------------------
+# Daily token budget tracking
+# ---------------------------------------------------------------------------
+DAILY_TOKEN_BUDGET = int(os.getenv("DAILY_TOKEN_BUDGET", "500000"))  # default 500k
+
+
+class TokenTracker:
+    """Simple daily token counter. Resets at midnight. Logs warning on budget exceed."""
+
+    def __init__(self, budget: int = DAILY_TOKEN_BUDGET):
+        self.budget = budget
+        self.tokens_used = 0
+        self._current_date = datetime.now().strftime("%Y-%m-%d")
+
+    def _maybe_reset(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today != self._current_date:
+            logger.info("token_tracker_reset previous_day=%s tokens=%d", self._current_date, self.tokens_used)
+            self.tokens_used = 0
+            self._current_date = today
+
+    def record(self, usage: dict):
+        """Record token usage from an API response's 'usage' block."""
+        self._maybe_reset()
+        input_t = usage.get("input_tokens", 0)
+        output_t = usage.get("output_tokens", 0)
+        self.tokens_used += input_t + output_t
+        if self.tokens_used > self.budget:
+            logger.warning(
+                "DAILY TOKEN BUDGET EXCEEDED: %d / %d",
+                self.tokens_used,
+                self.budget,
+            )
+
+    def summary(self) -> dict:
+        self._maybe_reset()
+        return {
+            "date": self._current_date,
+            "tokens_used": self.tokens_used,
+            "budget": self.budget,
+            "remaining": max(0, self.budget - self.tokens_used),
+        }
+
+
+token_tracker = TokenTracker()
 
 
 # ---------------------------------------------------------------------------
@@ -221,11 +268,19 @@ class LLMRouter:
                 merged.append(dict(msg))
         conv_messages = merged
 
+        # Use structured system block with cache_control for prompt caching.
+        # This saves ~90% on input tokens for repeated calls with the same agent system prompt.
         payload = {
             "model": agent.model_id,
             "max_tokens": kwargs.get("max_tokens", agent.max_output_tokens),
             "temperature": kwargs.get("temperature", agent.temperature),
-            "system": system_text,
+            "system": [
+                {
+                    "type": "text",
+                    "text": system_text,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             "messages": conv_messages,
         }
 
@@ -244,6 +299,10 @@ class LLMRouter:
             raise HTTPException(status_code=502, detail=f"Anthropic API error: {resp.status_code}")
 
         data = resp.json()
+        # Track token usage for daily budget
+        usage = data.get("usage", {})
+        if usage:
+            token_tracker.record(usage)
         # Extract text from content blocks
         content_blocks = data.get("content", [])
         text_parts = [b.get("text", "") for b in content_blocks if b.get("type") == "text"]
@@ -553,6 +612,12 @@ async def list_agents_detail():
             for a in registry.agents.values()
         ]
     }
+
+
+@app.get("/api/token-usage")
+async def token_usage():
+    """Current daily token usage stats."""
+    return token_tracker.summary()
 
 
 @app.get("/")

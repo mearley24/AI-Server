@@ -238,10 +238,18 @@ class DebateEngine:
             "content-type": "application/json",
         }
 
+        # Use structured system block with cache_control for prompt caching.
+        # Bull/Bear/Judge system prompts are reused constantly — saves ~90% on input tokens.
         payload = {
             "model": self._model,
             "max_tokens": 300,
-            "system": system_prompt,
+            "system": [
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             "messages": [{"role": "user", "content": user_message}],
         }
 

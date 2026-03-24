@@ -54,9 +54,17 @@ async def process_results(raw_results: list[dict], api_key: str) -> list[dict]:
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-5-20250514",
+                    # Use Haiku for knowledge extraction — it's just categorization,
+                    # not creative reasoning. Saves ~90% vs Sonnet.
+                    "model": "claude-haiku-3-5-20241022",
                     "max_tokens": 2000,
-                    "system": PROCESS_SYSTEM_PROMPT,
+                    "system": [
+                        {
+                            "type": "text",
+                            "text": PROCESS_SYSTEM_PROMPT,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
                     "messages": [
                         {
                             "role": "user",
