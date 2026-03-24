@@ -165,6 +165,11 @@ class AvellanedaMarketMaker:
             return
         self._running = True
         self._started_at = time.time()
+
+        # Sync inventory with actual exchange balances so manually
+        # deposited or externally acquired assets are visible.
+        await self._sync_exchange_inventory()
+
         self._task = asyncio.create_task(self._run_loop())
         logger.info(
             "avellaneda_mm_started",
@@ -173,6 +178,46 @@ class AvellanedaMarketMaker:
             max_inventory=self._inventory.max_inventory,
             order_size_usdt=self._order_size_usdt,
         )
+
+    async def _sync_exchange_inventory(self) -> None:
+        """Fetch actual balances from the exchange and seed the inventory manager.
+
+        This ensures manually deposited or transferred assets are recognized
+        so the bot can quote both buy and sell sides immediately.
+        """
+        if self._client.exchange is None or self._client.is_dry_run:
+            return
+        try:
+            balance = await asyncio.get_event_loop().run_in_executor(
+                None, self._client.exchange.fetch_balance
+            )
+            total = balance.get("total", {})
+            for pair in self._pairs:
+                base = pair.split("/")[0]  # e.g. "XRP" from "XRP/USDT"
+                held = float(total.get(base, 0))
+                if held > 0:
+                    # Fetch current mid price for avg_entry estimate
+                    try:
+                        book = await self._client.get_orderbook(pair)
+                        best_bid = float(book["bids"][0][0]) if book.get("bids") else 0
+                        best_ask = float(book["asks"][0][0]) if book.get("asks") else 0
+                        mid = (best_bid + best_ask) / 2.0 if best_bid and best_ask else 0
+                    except Exception:
+                        mid = 0
+
+                    pos = self._inventory.get_position(pair)
+                    if pos.quantity == 0 and held > 0:
+                        pos.quantity = held
+                        pos.avg_entry_price = mid if mid > 0 else 0
+                        pos.total_bought = held
+                        logger.info(
+                            "avellaneda_inventory_synced",
+                            pair=pair,
+                            coins=round(held, 6),
+                            avg_price=round(mid, 6),
+                        )
+        except Exception as exc:
+            logger.warning("avellaneda_inventory_sync_failed", error=str(exc))
 
     async def stop(self) -> None:
         """Stop the market making loop."""
