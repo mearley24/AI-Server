@@ -336,6 +336,40 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  openclaw:
+    build:
+      context: ./openclaw
+    container_name: openclaw
+    restart: unless-stopped
+    environment:
+      - PORT=3000
+      - LOG_LEVEL=info
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+      - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
+      - REDIS_URL=redis://redis:6379
+      - AGENTS_DIR=/app/agents
+      - DATA_DIR=/app/data
+    ports:
+      - "127.0.0.1:8099:3000"
+    volumes:
+      - ./agents:/app/agents:ro
+      - ./data/openclaw:/app/data
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   mission-control:
     build:
       context: ./mission_control

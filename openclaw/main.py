@@ -6,6 +6,7 @@ Exposes an OpenAI-compatible POST /api/chat/completions endpoint.
 Loads agent YAML configs from agents/ and routes requests by model name.
 """
 
+import asyncio
 import os
 import logging
 import json
@@ -401,11 +402,12 @@ app = FastAPI(
 
 registry: AgentRegistry = None  # type: ignore
 llm: LLMRouter = None  # type: ignore
+orchestrator = None  # type: ignore
 
 
 @app.on_event("startup")
 async def startup():
-    global registry, llm
+    global registry, llm, orchestrator
     logger.info("OpenClaw starting up...")
     registry = AgentRegistry(AGENTS_DIR)
     llm = LLMRouter()
@@ -415,11 +417,19 @@ async def startup():
     (DATA_DIR / "conversations").mkdir(exist_ok=True)
     (DATA_DIR / "logs").mkdir(exist_ok=True)
 
+    # Start autonomous orchestration loop
+    from orchestrator import Orchestrator
+    orchestrator = Orchestrator()
+    asyncio.create_task(orchestrator.run_loop())
+    logger.info("Autonomous orchestrator started")
+
     logger.info("OpenClaw ready on port %d — %d agents loaded", PORT, len(registry.agents))
 
 
 @app.on_event("shutdown")
 async def shutdown():
+    if orchestrator:
+        await orchestrator.close()
     if llm:
         await llm.close()
     logger.info("OpenClaw shut down.")

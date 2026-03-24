@@ -31,6 +31,7 @@ SERVICES = [
     {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096},
     {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097},
     {"name": "Polymarket Bot", "host": "polymarket-bot", "port": 8430, "ext_port": 8430},
+    {"name": "OpenClaw", "host": "openclaw", "port": 3000, "ext_port": 8099},
 ]
 
 
