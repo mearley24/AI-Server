@@ -147,11 +147,31 @@ class KalshiWeatherStrategy:
 
                     # Step 3: Compare forecast vs market price for each contract
                     for market in markets:
-                        temp_range = self._parse_temp_range(market.get("title", ""))
-                        if temp_range is None:
+                        # Filter: only active markets with volume
+                        if market.get("status") != "active":
+                            continue
+                        volume = float(market.get("volume_24h_fp", 0) or 0)
+                        if volume <= 0:
                             continue
 
-                        low, high = temp_range
+                        # Parse strike info from structured fields
+                        strike_type = market.get("strike_type", "")
+                        floor_strike = market.get("floor_strike")
+                        cap_strike = market.get("cap_strike")
+
+                        if strike_type == "between" and floor_strike is not None and cap_strike is not None:
+                            low, high = float(floor_strike), float(cap_strike)
+                        elif strike_type == "greater" and floor_strike is not None:
+                            low, high = float(floor_strike), float(floor_strike) + 10
+                        elif strike_type == "less" and cap_strike is not None:
+                            low, high = float(cap_strike) - 10, float(cap_strike)
+                        else:
+                            # Fallback: try regex on title
+                            temp_range = self._parse_temp_range(market.get("title", ""))
+                            if temp_range is None:
+                                continue
+                            low, high = temp_range
+
                         forecast_prob = self._calc_probability(
                             noaa_forecast.get("temperature"),
                             low,
@@ -162,9 +182,8 @@ class KalshiWeatherStrategy:
                         if forecast_prob is None:
                             continue
 
-                        yes_price = float(market.get("yes_bid_dollars", market.get("yes_bid", 0)) or 0)
-                        if yes_price > 1.0:
-                            yes_price /= 100
+                        # Price fields are dollar strings like "0.0400"
+                        yes_price = float(market.get("yes_ask_dollars", 0) or 0)
 
                         if yes_price <= 0:
                             continue

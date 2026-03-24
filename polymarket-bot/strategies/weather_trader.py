@@ -301,10 +301,17 @@ class WeatherTraderStrategy(BaseStrategy):
 
                     markets = await self._kalshi_client.get_event_markets(event_ticker)
                     for m in markets:
+                        # Filter: only active markets with volume
+                        if m.get("status") != "active":
+                            continue
+                        volume = float(m.get("volume_24h_fp", 0) or 0)
+                        if volume <= 0:
+                            continue
+
                         m["_platform"] = "kalshi"
                         m["_series_ticker"] = series_ticker
                         m["_event_ticker"] = event_ticker
-                    all_markets.extend(markets)
+                        all_markets.append(m)
 
             except Exception as exc:
                 logger.warning(
@@ -374,18 +381,59 @@ class WeatherTraderStrategy(BaseStrategy):
         }
 
     def _calc_kalshi_edge(self, mkt: dict[str, Any]) -> dict[str, Any] | None:
-        """Calculate edge for a Kalshi weather market."""
+        """Calculate edge for a Kalshi weather market.
+
+        Uses structured strike fields (strike_type, floor_strike, cap_strike)
+        from the Kalshi API instead of regex-parsing market titles.
+        """
         title = mkt.get("title", "")
         ticker = mkt.get("ticker", "")
+        strike_type = mkt.get("strike_type", "")
+        floor_strike = mkt.get("floor_strike")
+        cap_strike = mkt.get("cap_strike")
 
-        fair_value = self._get_fair_value(title)
+        # Match market to a NOAA station
+        station = self._match_station(title)
+        if station is None or station not in self._station_data:
+            return None
+
+        data = self._station_data[station]
+        forecast = data.get("forecast")
+        if not forecast:
+            return None
+
+        forecast_high = forecast.get("forecast_high_f")
+        forecast_low = forecast.get("forecast_low_f")
+
+        # Determine fair value from strike fields
+        fair_value: float | None = None
+
+        if strike_type == "between" and floor_strike is not None and cap_strike is not None:
+            if forecast_high is not None:
+                fair_value = _bracket_probability(
+                    forecast_high, float(floor_strike), float(cap_strike), NOAA_SIGMA,
+                )
+        elif strike_type == "greater" and floor_strike is not None:
+            if forecast_high is not None:
+                fair_value = _above_probability(
+                    forecast_high, float(floor_strike), NOAA_SIGMA,
+                )
+        elif strike_type == "less" and cap_strike is not None:
+            ref_temp = forecast_low if forecast_low is not None else forecast_high
+            if ref_temp is not None:
+                fair_value = _below_probability(
+                    ref_temp, float(cap_strike), NOAA_SIGMA,
+                )
+
+        # Fallback: try title-based parsing if strike fields are missing
+        if fair_value is None:
+            fair_value = self._get_fair_value(title)
+
         if fair_value is None:
             return None
 
-        # Get Kalshi yes price
-        yes_price = float(mkt.get("yes_bid_dollars", 0) or 0)
-        if yes_price > 1.0:
-            yes_price /= 100  # Kalshi sometimes returns cents
+        # Price fields are dollar strings like "0.0400"
+        yes_price = float(mkt.get("yes_ask_dollars", 0) or 0)
 
         if yes_price <= 0:
             return None
@@ -400,12 +448,16 @@ class WeatherTraderStrategy(BaseStrategy):
             "market_id": ticker,
             "token_id": ticker,
             "question": title,
+            "strike_type": strike_type,
+            "floor_strike": floor_strike,
+            "cap_strike": cap_strike,
             "market_price": round(yes_price, 4),
             "fair_value": round(fair_value, 4),
             "edge": round(edge, 4),
             "abs_edge": round(abs(edge), 4),
             "side": "yes" if edge > 0 else "no",
             "end_date": mkt.get("close_time", ""),
+            "volume": float(mkt.get("volume_24h_fp", 0) or 0),
         }
 
     def _get_fair_value(self, question: str) -> float | None:
@@ -759,8 +811,8 @@ class WeatherTraderStrategy(BaseStrategy):
             elif platform == "kalshi" and self._kalshi_client:
                 markets = await self._kalshi_client.get_markets(ticker=token_id, limit=1)
                 if markets:
-                    price = float(markets[0].get("yes_bid_dollars", 0) or 0)
-                    return price / 100 if price > 1.0 else price
+                    # yes_bid_dollars is a dollar string like "0.0300"
+                    return float(markets[0].get("yes_bid_dollars", 0) or 0)
         except Exception:
             pass
         return None

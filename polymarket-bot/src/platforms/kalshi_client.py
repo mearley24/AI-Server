@@ -180,6 +180,8 @@ class KalshiClient(PlatformClient):
             return []
 
         params: dict[str, Any] = {"status": filters.get("status", "open")}
+        if "ticker" in filters:
+            params["ticker"] = filters["ticker"]
         if "series_ticker" in filters:
             params["series_ticker"] = filters["series_ticker"]
         if "limit" in filters:
@@ -189,14 +191,7 @@ class KalshiClient(PlatformClient):
 
         try:
             result = await self._request("GET", "/markets", params=params)
-            markets = result.get("markets", [])
-            # Convert cents to dollars for display
-            for m in markets:
-                for key in ("yes_bid", "yes_ask", "no_bid", "no_ask"):
-                    cents_key = key + "_dollars"
-                    if cents_key not in m and key in m:
-                        m[cents_key] = m[key] / 100 if isinstance(m[key], (int, float)) else m[key]
-            return markets
+            return result.get("markets", [])
         except Exception as exc:
             logger.error("kalshi_get_markets_error", error=str(exc))
             return []
@@ -412,13 +407,7 @@ class KalshiClient(PlatformClient):
             result = await self._request(
                 "GET", "/markets", params={"event_ticker": event_ticker}
             )
-            markets = result.get("markets", [])
-            for m in markets:
-                for key in ("yes_bid", "yes_ask", "no_bid", "no_ask"):
-                    cents_key = key + "_dollars"
-                    if cents_key not in m and key in m:
-                        m[cents_key] = m[key] / 100 if isinstance(m[key], (int, float)) else m[key]
-            return markets
+            return result.get("markets", [])
         except Exception as exc:
             logger.error(
                 "kalshi_event_markets_error",
