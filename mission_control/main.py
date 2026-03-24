@@ -119,14 +119,22 @@ def _calculate_pnl(trades):
     """Calculate P&L by matching BUY/SELL pairs within 1 second per pair."""
     pair_data = defaultdict(lambda: {"buys": [], "sells": []})
     for t in trades:
-        pair = t.get("pair") or t.get("symbol", "UNKNOWN")
+        # Extract pair from market_id or market_question (strip " spot trade" suffix)
+        pair = t.get("market_id") or ""
+        if not pair:
+            mq = t.get("market_question", "")
+            pair = mq.replace(" spot trade", "") if mq else "UNKNOWN"
+        pair = pair or "UNKNOWN"
         side = (t.get("side") or "").upper()
         price = float(t.get("price", 0))
         size = float(t.get("size") or t.get("quantity") or t.get("amount", 0))
         ts_raw = t.get("timestamp") or t.get("time", "")
         try:
-            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
-        except (ValueError, AttributeError):
+            if isinstance(ts_raw, (int, float)):
+                ts = datetime.fromtimestamp(ts_raw)
+            else:
+                ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+        except (ValueError, AttributeError, OSError):
             ts = None
         entry = {"price": price, "size": size, "ts": ts, "raw": t}
         if side == "BUY":
