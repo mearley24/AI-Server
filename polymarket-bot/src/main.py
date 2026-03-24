@@ -335,6 +335,8 @@ async def lifespan(app: FastAPI):
                     max_spread_bps=settings.avellaneda_max_spread_bps,
                     order_size_usdt=settings.avellaneda_order_size_usdt,
                     tick_interval=settings.avellaneda_tick_interval,
+                    fee_bps=settings.avellaneda_fee_bps,
+                    pair_configs=settings.avellaneda_pair_configs,
                     hawkes_config={
                         "mu": settings.avellaneda_hawkes_mu,
                         "alpha": settings.avellaneda_hawkes_alpha,

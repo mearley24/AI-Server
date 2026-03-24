@@ -41,7 +41,7 @@ from strategies.crypto.vpin import VPINCalculator
 logger = structlog.get_logger(__name__)
 
 # Default parameters matching the spec
-DEFAULT_PAIRS = ["XRP/USDT", "HBAR/USD", "SOL/USDT"]
+DEFAULT_PAIRS = ["BTC/USDT", "XRP/USDT", "SOL/USDT"]
 DEFAULT_RISK_AVERSION = 0.1
 DEFAULT_SESSION_HORIZON = 3600  # 1 hour rolling window for 24/7 crypto
 DEFAULT_VOLATILITY_WINDOW = 100  # last 100 mid-price changes
@@ -49,7 +49,8 @@ DEFAULT_MAX_INVENTORY = 10
 DEFAULT_MIN_SPREAD_BPS = 5
 DEFAULT_MAX_SPREAD_BPS = 200
 DEFAULT_ORDER_SIZE_USDT = 25.0
-DEFAULT_TICK_INTERVAL = 5.0
+DEFAULT_TICK_INTERVAL = 15.0
+DEFAULT_FEE_BPS = 16.0  # Kraken maker fee per side
 
 
 class AvellanedaMarketMaker:
@@ -79,6 +80,8 @@ class AvellanedaMarketMaker:
         max_spread_bps: float = DEFAULT_MAX_SPREAD_BPS,
         order_size_usdt: float = DEFAULT_ORDER_SIZE_USDT,
         tick_interval: float = DEFAULT_TICK_INTERVAL,
+        fee_bps: float = DEFAULT_FEE_BPS,
+        pair_configs: dict[str, dict[str, float]] | None = None,
         hawkes_config: dict[str, Any] | None = None,
         vpin_config: dict[str, Any] | None = None,
     ) -> None:
@@ -92,6 +95,8 @@ class AvellanedaMarketMaker:
         self._max_spread_bps = max_spread_bps
         self._order_size_usdt = order_size_usdt
         self._tick_interval = tick_interval
+        self._fee_bps = fee_bps
+        self._pair_configs = pair_configs or {}
 
         # Per-pair state
         self._mid_prices: dict[str, deque[float]] = {
@@ -127,7 +132,16 @@ class AvellanedaMarketMaker:
             for pair in self._pairs
         }
 
-        self._inventory = InventoryManager(max_inventory=max_inventory)
+        # Build per-pair USDT inventory limits from pair_configs
+        pair_max_inventory_usdt: dict[str, float] = {}
+        for pair, pcfg in self._pair_configs.items():
+            if "max_inventory_usdt" in pcfg:
+                pair_max_inventory_usdt[pair] = pcfg["max_inventory_usdt"]
+
+        self._inventory = InventoryManager(
+            max_inventory=max_inventory,
+            pair_max_inventory_usdt=pair_max_inventory_usdt,
+        )
 
         # Lifecycle
         self._task: Optional[asyncio.Task] = None
@@ -232,9 +246,15 @@ class AvellanedaMarketMaker:
         if self._gamma > 0 and kappa > 0:
             delta += (2.0 / self._gamma) * math.log(1.0 + self._gamma / kappa)
 
-        # 6. Apply spread bounds (in price units, converted from bps)
-        min_spread = mid * (self._min_spread_bps / 10000.0)
-        max_spread = mid * (self._max_spread_bps / 10000.0)
+        # 6. Apply spread bounds (per-pair overrides or global fallback)
+        pcfg = self._pair_configs.get(pair, {})
+        pair_min_bps = pcfg.get("min_spread_bps", self._min_spread_bps)
+        pair_max_bps = pcfg.get("max_spread_bps", self._max_spread_bps)
+
+        # Fee-aware floor: spread must exceed round-trip fees to be profitable
+        min_profitable_spread = mid * (2.0 * self._fee_bps / 10000.0)
+        min_spread = max(mid * (pair_min_bps / 10000.0), min_profitable_spread)
+        max_spread = mid * (pair_max_bps / 10000.0)
         delta = max(min_spread, min(delta, max_spread))
 
         # 7. Apply VPIN circuit breaker
@@ -264,18 +284,19 @@ class AvellanedaMarketMaker:
             )
             return
 
-        # 9. Compute order sizes
-        base_size = self._order_size_usdt / mid
+        # 9. Compute order sizes (per-pair USDT amount or global fallback)
+        pair_order_usdt = pcfg.get("order_size_usdt", self._order_size_usdt)
+        base_size = pair_order_usdt / mid
         base_size *= vpin_action.size_multiplier
 
-        bid_size = self._inventory.bid_size_limit(pair, base_size)
-        ask_size = self._inventory.ask_size_limit(pair, base_size)
+        bid_size = self._inventory.bid_size_limit(pair, base_size, mid)
+        ask_size = self._inventory.ask_size_limit(pair, base_size, mid)
 
         # 10. Place orders
-        if bid_size > 0 and self._inventory.can_quote_bid(pair):
+        if bid_size > 0 and self._inventory.can_quote_bid(pair, mid):
             await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
 
-        if ask_size > 0 and self._inventory.can_quote_ask(pair):
+        if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
             await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
 
         # 11. Publish signal for debate engine / monitoring
@@ -330,6 +351,7 @@ class AvellanedaMarketMaker:
             if self._client.is_dry_run:
                 self._inventory.record_fill(pair, side, size, price)
 
+            estimated_fee = price * size * (self._fee_bps / 10000.0)
             logger.info(
                 "avellaneda_quote",
                 pair=pair,
@@ -339,6 +361,7 @@ class AvellanedaMarketMaker:
                 mid=round(mid, 8),
                 spread_bps=round(spread / mid * 10000, 2),
                 sigma=round(sigma, 8),
+                estimated_fee=round(estimated_fee, 6),
             )
         except Exception as exc:
             logger.error("avellaneda_quote_error", pair=pair, side=side, error=str(exc))

@@ -42,19 +42,36 @@ class InventoryManager:
     Provides skew signals to the market maker:
     - At soft limit (default 70% of max): aggressive skewing
     - At hard limit (100% of max): cancel quotes on overloaded side
+
+    Supports per-pair USDT-denominated inventory limits. When a pair has a
+    USDT limit, the effective max_inventory in base units is dynamically
+    computed as max_inventory_usdt / current_price each tick.
     """
 
     def __init__(
         self,
         max_inventory: float = 10.0,
         soft_limit_pct: float = 0.7,
+        pair_max_inventory_usdt: dict[str, float] | None = None,
     ) -> None:
         self._max_inventory = max_inventory
         self._soft_limit = max_inventory * soft_limit_pct
+        self._soft_limit_pct = soft_limit_pct
+        self._pair_max_inventory_usdt = pair_max_inventory_usdt or {}
         self._positions: dict[str, InventoryPosition] = {}
 
     @property
     def max_inventory(self) -> float:
+        return self._max_inventory
+
+    def _effective_max(self, pair: str, current_price: float = 0.0) -> float:
+        """Return effective max inventory in base units for a pair.
+
+        If the pair has a USDT limit and current_price is provided,
+        convert USDT limit to base units. Otherwise fall back to global.
+        """
+        if pair in self._pair_max_inventory_usdt and current_price > 0:
+            return self._pair_max_inventory_usdt[pair] / current_price
         return self._max_inventory
 
     def get_position(self, pair: str) -> InventoryPosition:
@@ -132,39 +149,41 @@ class InventoryManager:
             realized_pnl=round(pos.realized_pnl, 4),
         )
 
-    def can_quote_bid(self, pair: str) -> bool:
+    def can_quote_bid(self, pair: str, current_price: float = 0.0) -> bool:
         """Check if we can place a bid (would increase long / reduce short)."""
         qty = self.inventory(pair)
-        return qty < self._max_inventory
+        return qty < self._effective_max(pair, current_price)
 
-    def can_quote_ask(self, pair: str) -> bool:
+    def can_quote_ask(self, pair: str, current_price: float = 0.0) -> bool:
         """Check if we can place an ask (would increase short / reduce long)."""
         qty = self.inventory(pair)
-        return qty > -self._max_inventory
+        return qty > -self._effective_max(pair, current_price)
 
-    def bid_size_limit(self, pair: str, desired_size: float) -> float:
+    def bid_size_limit(self, pair: str, desired_size: float, current_price: float = 0.0) -> float:
         """Clip bid size to respect inventory limits.
 
         Returns the maximum allowable bid size (could be 0 at hard limit).
         """
         qty = self.inventory(pair)
-        room = self._max_inventory - qty
+        max_inv = self._effective_max(pair, current_price)
+        room = max_inv - qty
         if room <= 0:
             return 0.0
         return min(desired_size, room)
 
-    def ask_size_limit(self, pair: str, desired_size: float) -> float:
+    def ask_size_limit(self, pair: str, desired_size: float, current_price: float = 0.0) -> float:
         """Clip ask size to respect inventory limits.
 
         Returns the maximum allowable ask size (could be 0 at hard limit).
         """
         qty = self.inventory(pair)
-        room = self._max_inventory + qty  # qty is negative when short
+        max_inv = self._effective_max(pair, current_price)
+        room = max_inv + qty  # qty is negative when short
         if room <= 0:
             return 0.0
         return min(desired_size, room)
 
-    def skew_factor(self, pair: str) -> float:
+    def skew_factor(self, pair: str, current_price: float = 0.0) -> float:
         """Compute inventory skew factor in [-1, 1].
 
         0 = neutral (no skewing needed)
@@ -174,13 +193,14 @@ class InventoryManager:
         Beyond soft limit, the factor scales aggressively.
         """
         qty = self.inventory(pair)
-        if self._max_inventory == 0:
+        max_inv = self._effective_max(pair, current_price)
+        if max_inv == 0:
             return 0.0
 
-        ratio = qty / self._max_inventory  # in [-1, 1]
+        ratio = qty / max_inv  # in [-1, 1]
 
         # Below soft limit: linear skew
-        soft_ratio = self._soft_limit / self._max_inventory
+        soft_ratio = self._soft_limit_pct
         if abs(ratio) <= soft_ratio:
             return ratio
 
