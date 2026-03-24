@@ -1,10 +1,8 @@
 """Mission Control — entrypoint that wraps event_server with health monitoring and dashboard."""
 
 import asyncio
-import json
 import logging
 import os
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 PORT = int(os.getenv("PORT", "8098"))
 STATIC_DIR = Path(__file__).parent / "static"
-TRADING_DATA_FILE = Path("/trading-data/paper_trades.jsonl")
 TRADING_BOT_URL = "http://vpn:8430"
 
 # Service map: name -> (container_hostname, internal_port, external_port)
@@ -95,174 +92,40 @@ async def dashboard_page():
     return HTMLResponse("<h1>Dashboard not found</h1>")
 
 
-def _format_kalshi_ticker(ticker: str, title: str = "") -> str:
-    """Convert raw Kalshi ticker like KXHIGHNY-26MAR25-B51.5 to human-readable name."""
-    if title:
-        return title.replace("**", "").replace("Will the ", "").replace("?", "").strip()
-
-    parts = ticker.split("-")
-    if len(parts) >= 3:
-        series = parts[0]
-        date_part = parts[1]
-        strike_part = parts[2]
-
-        cities = {"NY": "NYC", "CH": "Chicago", "LA": "LA", "DN": "Denver", "AT": "Atlanta", "MI": "Miami"}
-        city = "Unknown"
-        for code, name in cities.items():
-            if series.endswith(code):
-                city = name
-                break
-
-        date_str = date_part
-
-        if strike_part.startswith("B"):
-            temp = float(strike_part[1:])
-            strike = f"{int(temp)}-{int(temp)+1}\u00b0F"
-        elif strike_part.startswith("T"):
-            temp = float(strike_part[1:])
-            if "LOW" in series.upper():
-                strike = f"<{int(temp)}\u00b0F"
-            else:
-                strike = f"{int(temp)}\u00b0F"
-        else:
-            strike = strike_part
-
-        metric = "Low" if "LOW" in series.upper() else "High"
-        return f"{city} {metric} {strike} ({date_str})"
-
-    return ticker
-
-
-def _get_display_name(pair: str, trades_for_pair: list) -> str:
-    """Get a human-readable display name for a trading pair."""
-    # Already readable crypto pairs
-    if "/" in pair and not pair.startswith("KX"):
-        return pair
-
-    # Kalshi weather ticker
-    if pair.startswith("KX"):
-        # Try to get title from one of the trades
-        title = ""
-        for t in trades_for_pair:
-            mq = t.get("market_question", "")
-            if mq and "spot trade" not in mq.lower():
-                title = mq
-                break
-        return _format_kalshi_ticker(pair, title)
-
-    # Crypto with " spot trade" suffix already stripped via market_question
-    # These are already readable (e.g., "XRP/USDT")
-    return pair
-
-
-def _parse_trades():
-    """Read paper_trades.jsonl and return list of trade dicts."""
-    trades = []
-    if not TRADING_DATA_FILE.exists():
-        return trades
-    try:
-        with open(TRADING_DATA_FILE) as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        trades.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-    except OSError:
-        pass
-    return trades
-
-
-def _calculate_pnl(trades):
-    """Calculate P&L by matching BUY/SELL pairs within 1 second per pair."""
-    pair_data = defaultdict(lambda: {"buys": [], "sells": [], "raw_trades": []})
-    for t in trades:
-        # Extract pair from market_id or market_question (strip " spot trade" suffix)
-        pair = t.get("market_id") or ""
-        if not pair:
-            mq = t.get("market_question", "")
-            pair = mq.replace(" spot trade", "") if mq else "UNKNOWN"
-        pair = pair or "UNKNOWN"
-        side = (t.get("side") or "").upper()
-        price = float(t.get("price", 0))
-        size = float(t.get("size") or t.get("quantity") or t.get("amount", 0))
-        ts_raw = t.get("timestamp") or t.get("time", "")
-        try:
-            if isinstance(ts_raw, (int, float)):
-                ts = datetime.fromtimestamp(ts_raw)
-            else:
-                ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
-        except (ValueError, AttributeError, OSError):
-            ts = None
-        entry = {"price": price, "size": size, "ts": ts, "raw": t}
-        pair_data[pair]["raw_trades"].append(t)
-        if side == "BUY":
-            pair_data[pair]["buys"].append(entry)
-        elif side == "SELL":
-            pair_data[pair]["sells"].append(entry)
-
-    pairs_result = {}
-    total_pnl = 0.0
-    for pair, data in pair_data.items():
-        buys = sorted(data["buys"], key=lambda x: x["ts"] or datetime.min)
-        sells = sorted(data["sells"], key=lambda x: x["ts"] or datetime.min)
-        buy_prices = [b["price"] for b in buys]
-        sell_prices = [s["price"] for s in sells]
-        avg_buy = sum(buy_prices) / len(buy_prices) if buy_prices else 0
-        avg_sell = sum(sell_prices) / len(sell_prices) if sell_prices else 0
-
-        # Match BUY/SELL pairs by timestamp proximity (within 1 second)
-        matched_pnl = 0.0
-        matched_count = 0
-        used_sells = set()
-        for b in buys:
-            if b["ts"] is None:
-                continue
-            for j, s in enumerate(sells):
-                if j in used_sells or s["ts"] is None:
-                    continue
-                delta = abs((s["ts"] - b["ts"]).total_seconds())
-                if delta <= 1.0:
-                    spread = s["price"] - b["price"]
-                    size = min(b["size"], s["size"])
-                    matched_pnl += spread * size
-                    matched_count += 1
-                    used_sells.add(j)
-                    break
-
-        spread_capture = avg_sell - avg_buy if avg_buy > 0 else 0
-        display_name = _get_display_name(pair, data["raw_trades"])
-        pairs_result[pair] = {
-            "display_name": display_name,
-            "buys": len(buys),
-            "sells": len(sells),
-            "avg_buy": round(avg_buy, 6),
-            "avg_sell": round(avg_sell, 6),
-            "spread_capture": round(spread_capture, 6),
-            "estimated_pnl": round(matched_pnl, 4),
-            "matched_rounds": matched_count,
-        }
-        total_pnl += matched_pnl
-
-    return pairs_result, round(total_pnl, 4)
-
-
 @app.get("/api/trading")
 async def api_trading():
-    """Trading dashboard data — reads paper_trades.jsonl, calculates P&L."""
-    trades = _parse_trades()
-    if not trades:
-        return {
-            "total_trades": 0,
-            "buy_trades": 0,
-            "sell_trades": 0,
-            "first_trade_at": None,
-            "last_trade_at": None,
-            "pairs": {},
-            "recent_trades": [],
-            "total_pnl": 0,
-        }
+    """Trading dashboard data — proxies to polymarket-bot live endpoints."""
+    empty = {
+        "total_trades": 0,
+        "buy_trades": 0,
+        "sell_trades": 0,
+        "first_trade_at": None,
+        "last_trade_at": None,
+        "pairs": {},
+        "recent_trades": [],
+        "total_pnl": 0,
+    }
+
+    trades = []
+    pnl_data = None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{TRADING_BOT_URL}/paper-trades", params={"limit": 50})
+            if resp.status_code == 200:
+                trades = resp.json().get("trades", [])
+    except Exception:
+        pass
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{TRADING_BOT_URL}/pnl")
+            if resp.status_code == 200:
+                pnl_data = resp.json()
+    except Exception:
+        pass
+
+    if not trades and not pnl_data:
+        return empty
 
     buy_count = sum(1 for t in trades if (t.get("side") or "").upper() == "BUY")
     sell_count = sum(1 for t in trades if (t.get("side") or "").upper() == "SELL")
@@ -271,59 +134,71 @@ async def api_trading():
     for t in trades:
         ts_raw = t.get("timestamp") or t.get("time", "")
         if ts_raw:
-            timestamps.append(ts_raw)
+            timestamps.append(str(ts_raw))
     timestamps.sort()
 
-    pairs_result, total_pnl = _calculate_pnl(trades)
+    # Build pairs breakdown from pnl_data if available
+    pairs = {}
+    total_pnl = 0.0
+    if pnl_data:
+        total_pnl = float(pnl_data.get("total_pnl", 0))
+        # Expose per-pair stats if the bot provides them
+        for pair_key, info in pnl_data.get("pairs", {}).items():
+            pairs[pair_key] = {
+                "display_name": info.get("display_name", pair_key),
+                "buys": info.get("buys", 0),
+                "sells": info.get("sells", 0),
+                "avg_buy": info.get("avg_buy", 0),
+                "avg_sell": info.get("avg_sell", 0),
+                "spread_capture": info.get("spread_capture", 0),
+                "estimated_pnl": info.get("estimated_pnl", info.get("pnl", 0)),
+                "matched_rounds": info.get("matched_rounds", 0),
+            }
 
-    # Build display name lookup: raw pair key -> display_name
-    display_names = {k: v["display_name"] for k, v in pairs_result.items()}
+    # If pnl_data didn't have per-pair breakdown, build a simple one from trades
+    if not pairs and trades:
+        from collections import defaultdict as _dd
+        pair_buckets = _dd(lambda: {"buys": 0, "sells": 0})
+        for t in trades:
+            pair = (t.get("market_question") or t.get("market_id") or "UNKNOWN").replace(" spot trade", "")
+            side = (t.get("side") or "").upper()
+            if side == "BUY":
+                pair_buckets[pair]["buys"] += 1
+            elif side == "SELL":
+                pair_buckets[pair]["sells"] += 1
+        for pair, counts in pair_buckets.items():
+            pairs[pair] = {
+                "display_name": pair,
+                "buys": counts["buys"],
+                "sells": counts["sells"],
+                "avg_buy": 0,
+                "avg_sell": 0,
+                "spread_capture": 0,
+                "estimated_pnl": 0,
+                "matched_rounds": 0,
+            }
+
+    # Build display name lookup
+    display_names = {k: v["display_name"] for k, v in pairs.items()}
 
     # Enrich recent trades with display_name
     recent = []
-    for t in trades[-50:][::-1]:
+    for t in trades[:50]:
         entry = dict(t)
-        pair = t.get("market_id") or ""
-        if not pair:
-            mq = t.get("market_question", "")
-            pair = mq.replace(" spot trade", "") if mq else "UNKNOWN"
-        pair = pair or "UNKNOWN"
+        pair = (t.get("market_question") or t.get("market_id") or "UNKNOWN").replace(" spot trade", "")
         entry["display_name"] = display_names.get(pair, pair)
         recent.append(entry)
 
     return {
-        "total_trades": len(trades),
+        "total_trades": pnl_data.get("trade_count", len(trades)) if pnl_data else len(trades),
         "buy_trades": buy_count,
         "sell_trades": sell_count,
         "first_trade_at": timestamps[0] if timestamps else None,
         "last_trade_at": timestamps[-1] if timestamps else None,
-        "pairs": pairs_result,
+        "pairs": pairs,
         "recent_trades": recent,
         "total_pnl": total_pnl,
     }
-
-
-@app.get("/api/trading/live-trades")
-async def api_trading_live_trades():
-    """Proxy to the polymarket-bot /pnl and /paper-trades endpoints for Kraken live trade data."""
-    result = {"trades": [], "pnl": None}
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{TRADING_BOT_URL}/paper-trades", params={"limit": 20, "platform": "crypto"})
-            if resp.status_code == 200:
-                data = resp.json()
-                result["trades"] = data.get("trades", [])
-                result["mode"] = data.get("mode", "unknown")
-    except Exception:
-        pass
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{TRADING_BOT_URL}/pnl", params={"strategy": "avellaneda"})
-            if resp.status_code == 200:
-                result["pnl"] = resp.json()
-    except Exception:
-        pass
-    return result
 
 
 @app.get("/api/trading/bot-status")
