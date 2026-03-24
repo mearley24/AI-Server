@@ -17,6 +17,7 @@ import httpx
 import structlog
 
 from src.config import Settings
+from src.market_intel import MarketIntel
 
 logger = structlog.get_logger(__name__)
 
@@ -79,6 +80,7 @@ class DebateEngine:
         self._max_time = settings.debate_max_debate_time_seconds
         self._api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         self._http = httpx.AsyncClient(timeout=self._max_time + 5)
+        self._market_intel = MarketIntel()
 
         # Fall back to CONDUCTOR_MODEL if debate model not explicitly set
         if not self._model or self._model == "claude-3-5-sonnet-20241022":
@@ -135,7 +137,20 @@ class DebateEngine:
         """Run the full bull/bear/judge debate cycle."""
         start = time.time()
 
+        # Gather live market intelligence before debate
+        try:
+            market_ctx = await asyncio.wait_for(
+                self._market_intel.gather(market, context),
+                timeout=5.0,
+            )
+            market_block = market_ctx.format()
+        except Exception as exc:
+            logger.debug("market_intel_skipped", error=str(exc))
+            market_block = ""
+
         trade_context = self._build_context(strategy_name, market, side, price, size, context)
+        if market_block:
+            trade_context = f"{market_block}\n\n{trade_context}"
 
         try:
             # Run bull and bear in parallel
@@ -292,5 +307,6 @@ class DebateEngine:
             }
 
     async def close(self) -> None:
-        """Close the HTTP client."""
+        """Close the HTTP client and market intel."""
+        await self._market_intel.close()
         await self._http.aclose()
