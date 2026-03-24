@@ -79,8 +79,12 @@ function maybeImportClients() {
   console.log(`[client_lookup] Imported ${records.length} clients from JSON.`);
 }
 
-// Seed on module load
-maybeImportClients();
+// Seed on module load — wrapped so a DB error doesn't crash the server
+try {
+  maybeImportClients();
+} catch (err) {
+  console.error('[client_lookup] Failed to seed clients:', err.message);
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 

@@ -11,17 +11,26 @@
 'use strict';
 
 require('dotenv').config();
-const { google } = require('googleapis');
 const path = require('path');
 
 const KEY_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
   path.join(__dirname, 'config', 'google-service-account.json');
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
 
+// Lazy-load googleapis (112 MB / ~90 MB RSS) — only pull it in on first call
+let _google;
+function getGoogle() {
+  if (!_google) {
+    _google = require('googleapis').google;
+  }
+  return _google;
+}
+
 // Lazy-init auth client
 let authClient;
 async function getAuthClient() {
   if (!authClient) {
+    const google = getGoogle();
     const auth = new google.auth.GoogleAuth({
       keyFile: KEY_PATH,
       scopes: ['https://www.googleapis.com/auth/calendar'],
@@ -65,8 +74,9 @@ async function scheduleServiceCall(details) {
     'Scheduled by Bob the Conductor (AI receptionist)',
   ].filter(Boolean).join('\n');
 
-  const auth  = await getAuthClient();
-  const cal   = google.calendar({ version: 'v3', auth });
+  const google = getGoogle();
+  const auth   = await getAuthClient();
+  const cal    = google.calendar({ version: 'v3', auth });
 
   const event = await cal.events.insert({
     calendarId: CALENDAR_ID,
