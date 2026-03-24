@@ -402,26 +402,23 @@ class AvellanedaMarketMaker:
         await self._process_recent_trades(pair)
 
         # 4. Compute reservation price
-        q = self._inventory.inventory(pair)
         inventory_coins = self._inventory.get_position(pair).quantity
         tau = self._T  # rolling horizon for 24/7 crypto
-        r = mid - q * self._gamma * (sigma ** 2) * tau
 
-        # Apply additional inventory skew independent of sigma
-        # When long (positive inventory), push price down to encourage selling
-        # When short (negative inventory), push price up to encourage buying
-        inventory_skew = 0.0
-        if inventory_coins != 0:
-            max_inv = self._inventory._effective_max(pair, mid)
-            if max_inv > 0:
-                # Skew as fraction of max inventory: at 100% full, skew = 0.1% of mid
-                inventory_ratio = inventory_coins / max_inv  # in [-1, 1]
-                inventory_skew = inventory_ratio * mid * 0.001
-            r -= inventory_skew
+        # Compute inventory ratio for proportional skewing
+        max_inv = self._inventory._effective_max(pair, mid)
+        inventory_ratio = (inventory_coins / max_inv) if max_inv > 0 else 0.0
 
-        # Apply Hawkes order flow adjustment
+        # Reservation price: skew proportionally to inventory, capped to ±0.2% of mid
+        # This prevents extreme offsets with large inventory positions
+        skew_amount = inventory_ratio * mid * 0.002  # max ±0.2% at full inventory
+        r = mid - skew_amount
+
+        # Apply Hawkes order flow adjustment (small, additive)
         hawkes_adj = self._hawkes[pair].reservation_price_adjustment()
         r_adjusted = r + hawkes_adj * mid  # scale by mid-price
+
+        inventory_skew = skew_amount  # for logging
 
         # Log inventory status each tick
         logger.info(
