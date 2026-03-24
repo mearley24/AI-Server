@@ -352,6 +352,7 @@ async def lifespan(app: FastAPI):
                         "critical_threshold": settings.avellaneda_vpin_critical,
                         "cooldown_seconds": settings.avellaneda_vpin_cooldown,
                     },
+                    pnl_tracker=pnl_tracker,
                 )
                 platform_strategies.append(("avellaneda_mm", avellaneda_mm))
 

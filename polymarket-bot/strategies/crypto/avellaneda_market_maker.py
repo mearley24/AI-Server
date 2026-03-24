@@ -33,6 +33,7 @@ import structlog
 
 from src.platforms.base import Order
 from src.platforms.crypto_client import CryptoClient
+from src.pnl_tracker import PnLTracker, Trade
 from src.signal_bus import Signal, SignalBus, SignalType
 from strategies.crypto.hawkes_process import HawkesOrderFlow
 from strategies.crypto.inventory_manager import InventoryManager
@@ -86,6 +87,7 @@ class AvellanedaMarketMaker:
         pair_configs: dict[str, dict[str, float]] | None = None,
         hawkes_config: dict[str, Any] | None = None,
         vpin_config: dict[str, Any] | None = None,
+        pnl_tracker: PnLTracker | None = None,
     ) -> None:
         self._client = crypto_client
         self._bus = signal_bus
@@ -101,11 +103,16 @@ class AvellanedaMarketMaker:
         self._max_total_exposure = max_total_exposure
         self._pair_configs = pair_configs or {}
 
+        # PnL tracker (optional — when provided, fills are recorded for dashboard)
+        self._pnl = pnl_tracker
+
         # Per-pair state
         self._mid_prices: dict[str, deque[float]] = {
             pair: deque(maxlen=volatility_window) for pair in self._pairs
         }
         self._last_trade_fetch: dict[str, float] = {}
+        self._last_fill_fetch: dict[str, float] = {}
+        self._seen_fill_ids: set[str] = set()
         self._active_orders: dict[str, list[str]] = {pair: [] for pair in self._pairs}
 
         # Shared components (one per pair)
@@ -203,6 +210,78 @@ class AvellanedaMarketMaker:
                 logger.error("avellaneda_mm_error", error=str(exc))
             await asyncio.sleep(self._tick_interval)
 
+    async def _fetch_my_fills(self, pair: str) -> None:
+        """Fetch our own recent fills from Kraken and record them.
+
+        Called each tick BEFORE cancelling stale orders so that any fills
+        from the previous tick's limit orders are captured in the PnL
+        tracker and inventory manager.
+        """
+        if self._client.exchange is None or self._client.is_dry_run:
+            return  # dry_run fills are recorded immediately in _place_quote
+
+        try:
+            now_ms = int(time.time() * 1000)
+            since_ms = int(self._last_fill_fetch.get(pair, self._started_at) * 1000)
+
+            fills = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self._client.exchange.fetch_my_trades(pair, since=since_ms, limit=50),
+            )
+
+            if not fills:
+                self._last_fill_fetch[pair] = time.time()
+                return
+
+            new_count = 0
+            for fill in fills:
+                fill_id = str(fill.get("id", ""))
+                if not fill_id or fill_id in self._seen_fill_ids:
+                    continue
+
+                self._seen_fill_ids.add(fill_id)
+                side = fill.get("side", "")
+                price = float(fill.get("price", 0))
+                amount = float(fill.get("amount", 0))
+                fee_info = fill.get("fee", {})
+                fee_cost = float(fee_info.get("cost", 0)) if isinstance(fee_info, dict) else 0.0
+                fill_ts = fill.get("timestamp", now_ms) / 1000.0
+
+                if not side or price <= 0 or amount <= 0:
+                    continue
+
+                # Record to inventory manager (live fills with actual price)
+                self._inventory.record_fill(pair, side, amount, price)
+
+                # Record to PnL tracker
+                if self._pnl is not None:
+                    trade = Trade(
+                        trade_id=fill_id,
+                        timestamp=fill_ts,
+                        market=pair,
+                        token_id=pair,
+                        side=side.upper(),
+                        price=price,
+                        size=amount,
+                        fee=fee_cost,
+                        strategy="avellaneda",
+                    )
+                    self._pnl.record_trade(trade)
+
+                new_count += 1
+
+            if new_count > 0:
+                logger.info(
+                    "avellaneda_fills_recorded",
+                    pair=pair,
+                    count=new_count,
+                )
+
+            self._last_fill_fetch[pair] = time.time()
+
+        except Exception as exc:
+            logger.warning("avellaneda_fetch_fills_error", pair=pair, error=str(exc))
+
     async def _cancel_stale_orders(self, pair: str) -> None:
         """Cancel all open orders for this pair before placing new quotes.
 
@@ -242,7 +321,10 @@ class AvellanedaMarketMaker:
 
     async def _tick(self, pair: str) -> None:
         """Execute one quoting cycle for a pair."""
-        # 0. Cancel all existing orders for this pair before placing new ones
+        # 0a. Fetch fills from previous tick's orders before cancelling them
+        await self._fetch_my_fills(pair)
+
+        # 0b. Cancel all existing orders for this pair before placing new ones
         await self._cancel_stale_orders(pair)
 
         # 1. Fetch orderbook → mid-price
@@ -474,10 +556,23 @@ class AvellanedaMarketMaker:
             # Track for potential cancellation on next tick
             self._active_orders[pair].append(order_id)
 
-            # Record fill in inventory (for paper trading, market orders fill immediately;
-            # for limit orders in dry-run mode, simulate immediate fill)
+            # In dry-run mode, simulate immediate fill for both inventory and PnL.
+            # In live mode, actual fills are recorded via _fetch_my_fills() each tick.
             if self._client.is_dry_run:
                 self._inventory.record_fill(pair, side, size, price)
+                if self._pnl is not None:
+                    dry_trade = Trade(
+                        trade_id=f"dry_{order_id}",
+                        timestamp=time.time(),
+                        market=pair,
+                        token_id=pair,
+                        side=side.upper(),
+                        price=price,
+                        size=size,
+                        fee=price * size * (self._fee_bps / 10000.0),
+                        strategy="avellaneda",
+                    )
+                    self._pnl.record_trade(dry_trade)
 
             estimated_fee = price * size * (self._fee_bps / 10000.0)
             logger.info(
