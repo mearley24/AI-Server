@@ -96,6 +96,66 @@ async def dashboard_page():
     return HTMLResponse("<h1>Dashboard not found</h1>")
 
 
+def _format_kalshi_ticker(ticker: str, title: str = "") -> str:
+    """Convert raw Kalshi ticker like KXHIGHNY-26MAR25-B51.5 to human-readable name."""
+    if title:
+        return title.replace("**", "").replace("Will the ", "").replace("?", "").strip()
+
+    parts = ticker.split("-")
+    if len(parts) >= 3:
+        series = parts[0]
+        date_part = parts[1]
+        strike_part = parts[2]
+
+        cities = {"NY": "NYC", "CH": "Chicago", "LA": "LA", "DN": "Denver", "AT": "Atlanta", "MI": "Miami"}
+        city = "Unknown"
+        for code, name in cities.items():
+            if series.endswith(code):
+                city = name
+                break
+
+        date_str = date_part
+
+        if strike_part.startswith("B"):
+            temp = float(strike_part[1:])
+            strike = f"{int(temp)}-{int(temp)+1}\u00b0F"
+        elif strike_part.startswith("T"):
+            temp = float(strike_part[1:])
+            if "LOW" in series.upper():
+                strike = f"<{int(temp)}\u00b0F"
+            else:
+                strike = f"{int(temp)}\u00b0F"
+        else:
+            strike = strike_part
+
+        metric = "Low" if "LOW" in series.upper() else "High"
+        return f"{city} {metric} {strike} ({date_str})"
+
+    return ticker
+
+
+def _get_display_name(pair: str, trades_for_pair: list) -> str:
+    """Get a human-readable display name for a trading pair."""
+    # Already readable crypto pairs
+    if "/" in pair and not pair.startswith("KX"):
+        return pair
+
+    # Kalshi weather ticker
+    if pair.startswith("KX"):
+        # Try to get title from one of the trades
+        title = ""
+        for t in trades_for_pair:
+            mq = t.get("market_question", "")
+            if mq and "spot trade" not in mq.lower():
+                title = mq
+                break
+        return _format_kalshi_ticker(pair, title)
+
+    # Crypto with " spot trade" suffix already stripped via market_question
+    # These are already readable (e.g., "XRP/USDT")
+    return pair
+
+
 def _parse_trades():
     """Read paper_trades.jsonl and return list of trade dicts."""
     trades = []
@@ -117,7 +177,7 @@ def _parse_trades():
 
 def _calculate_pnl(trades):
     """Calculate P&L by matching BUY/SELL pairs within 1 second per pair."""
-    pair_data = defaultdict(lambda: {"buys": [], "sells": []})
+    pair_data = defaultdict(lambda: {"buys": [], "sells": [], "raw_trades": []})
     for t in trades:
         # Extract pair from market_id or market_question (strip " spot trade" suffix)
         pair = t.get("market_id") or ""
@@ -137,6 +197,7 @@ def _calculate_pnl(trades):
         except (ValueError, AttributeError, OSError):
             ts = None
         entry = {"price": price, "size": size, "ts": ts, "raw": t}
+        pair_data[pair]["raw_trades"].append(t)
         if side == "BUY":
             pair_data[pair]["buys"].append(entry)
         elif side == "SELL":
@@ -172,7 +233,9 @@ def _calculate_pnl(trades):
                     break
 
         spread_capture = avg_sell - avg_buy if avg_buy > 0 else 0
+        display_name = _get_display_name(pair, data["raw_trades"])
         pairs_result[pair] = {
+            "display_name": display_name,
             "buys": len(buys),
             "sells": len(sells),
             "avg_buy": round(avg_buy, 6),
@@ -214,6 +277,21 @@ async def api_trading():
 
     pairs_result, total_pnl = _calculate_pnl(trades)
 
+    # Build display name lookup: raw pair key -> display_name
+    display_names = {k: v["display_name"] for k, v in pairs_result.items()}
+
+    # Enrich recent trades with display_name
+    recent = []
+    for t in trades[-50:][::-1]:
+        entry = dict(t)
+        pair = t.get("market_id") or ""
+        if not pair:
+            mq = t.get("market_question", "")
+            pair = mq.replace(" spot trade", "") if mq else "UNKNOWN"
+        pair = pair or "UNKNOWN"
+        entry["display_name"] = display_names.get(pair, pair)
+        recent.append(entry)
+
     return {
         "total_trades": len(trades),
         "buy_trades": buy_count,
@@ -221,7 +299,7 @@ async def api_trading():
         "first_trade_at": timestamps[0] if timestamps else None,
         "last_trade_at": timestamps[-1] if timestamps else None,
         "pairs": pairs_result,
-        "recent_trades": trades[-50:][::-1],
+        "recent_trades": recent,
         "total_pnl": total_pnl,
     }
 

@@ -564,8 +564,9 @@
     for (const [pair, info] of Object.entries(pairs)) {
       const pnlClass = info.estimated_pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
       const spreadBps = info.avg_buy > 0 ? ((info.spread_capture / info.avg_buy) * 10000).toFixed(1) : '0.0';
+      const displayName = info.display_name || pair;
       html += `<div class="pair-row">
-        <span class="pair-name">${escapeHtml(pair)}</span>
+        <span class="pair-name">${escapeHtml(displayName)}</span>
         <span class="pair-stat">${info.buys}B / ${info.sells}S</span>
         <span class="pair-stat">spread: ${formatPrice(info.spread_capture)} <span class="bps-label">(${spreadBps} bps)</span></span>
         <span class="pair-pnl ${pnlClass}">${info.estimated_pnl >= 0 ? '+' : ''}$${info.estimated_pnl.toFixed(2)}</span>
@@ -585,7 +586,7 @@
     for (const t of shown) {
       const tsRaw = t.timestamp || t.time || '';
       const ts = tsRaw ? new Date(tsRaw).toLocaleTimeString() : '';
-      const pair = t.pair || t.symbol || '???';
+      const pair = t.display_name || t.pair || t.symbol || '???';
       const side = (t.side || '').toUpperCase();
       const sideClass = side === 'BUY' ? 'buy' : 'sell';
       const price = formatPrice(t.price);
