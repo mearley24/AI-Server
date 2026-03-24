@@ -163,18 +163,18 @@ class Settings(BaseSettings):
     avellaneda_max_inventory: float = Field(default=10.0, description="Max position in base units per pair")
     avellaneda_min_spread_bps: float = Field(default=5.0, description="Global minimum spread in basis points (fallback)")
     avellaneda_max_spread_bps: float = Field(default=200.0, description="Global maximum spread in basis points (fallback)")
-    avellaneda_order_size_usdt: float = Field(default=10.0, description="Global order size per quote in USDT (fallback)")
+    avellaneda_order_size_usdt: float = Field(default=50.0, description="Global order size per quote in USDT (fallback)")
     avellaneda_tick_interval: float = Field(default=15.0, description="Seconds between quoting ticks")
     avellaneda_fee_bps: float = Field(default=16.0, description="Per-side exchange fee in basis points (Kraken maker: 16)")
     avellaneda_pair_configs: dict[str, dict[str, float]] = Field(
         default_factory=lambda: {
-            "BTC/USDT": {"min_spread_bps": 10, "max_spread_bps": 100, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
-            "XRP/USDT": {"min_spread_bps": 30, "max_spread_bps": 100, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
-            "SOL/USDT": {"min_spread_bps": 20, "max_spread_bps": 150, "order_size_usdt": 10.0, "max_inventory_usdt": 50.0},
+            "BTC/USDT": {"min_spread_bps": 10, "max_spread_bps": 100, "order_size_usdt": 50.0, "max_inventory_usdt": 250.0},
+            "XRP/USDT": {"min_spread_bps": 30, "max_spread_bps": 100, "order_size_usdt": 50.0, "max_inventory_usdt": 250.0},
+            "SOL/USDT": {"min_spread_bps": 20, "max_spread_bps": 150, "order_size_usdt": 50.0, "max_inventory_usdt": 250.0},
         },
         description="Per-pair overrides for spread bounds, order size, and inventory limits",
     )
-    avellaneda_max_total_exposure: float = Field(default=50.0, description="Max total open order value in USDT before skipping new orders")
+    avellaneda_max_total_exposure: float = Field(default=250.0, description="Max total open order value in USDT before skipping new orders")
     avellaneda_hawkes_mu: float = Field(default=1.0, description="Hawkes baseline arrival rate")
     avellaneda_hawkes_alpha: float = Field(default=0.5, description="Hawkes excitation parameter")
     avellaneda_hawkes_beta: float = Field(default=2.0, description="Hawkes decay parameter")
