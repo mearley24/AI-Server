@@ -542,8 +542,13 @@ async def test_notification(req: TestNotificationRequest) -> dict[str, Any]:
     try:
         from notifications.manager import NotificationManager
         nm = NotificationManager()
+        channel = type(nm.notifier).__name__
+        # Use detailed send if available (IMessageNotifier)
+        if hasattr(nm.notifier, "send_message_with_detail"):
+            success, detail = await nm.notifier.send_message_with_detail(text=req.message)
+            return {"status": "sent" if success else "failed", "channel": channel, "detail": detail}
         success = await nm.notifier.send_message(text=req.message)
-        return {"status": "sent" if success else "failed", "channel": type(nm.notifier).__name__}
+        return {"status": "sent" if success else "failed", "channel": channel}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Notification error: {exc}")
 

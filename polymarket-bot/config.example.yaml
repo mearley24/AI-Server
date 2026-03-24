@@ -165,7 +165,6 @@ crypto:
 notifications:
   channel: console             # "imessage" or "console"
   linq:
-    api_url: https://api.linqapp.com/v1
-    api_key_env: LINQ_API_KEY
-    phone_number_env: LINQ_PHONE_NUMBER
-    owner_phone_env: OWNER_PHONE_NUMBER
+    api_url: https://api.linqapp.com/api/partner/v2/chats
+    api_key_env: LINQ_API_KEY   # Integration token (X-LINQ-INTEGRATION-TOKEN header)
+    owner_phone_env: OWNER_PHONE_NUMBER  # Recipient phone number
