@@ -305,8 +305,7 @@ services:
     restart: unless-stopped
     environment:
       - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-console}
-      - LINQ_API_KEY=${LINQ_API_KEY:-}
-      - LINQ_PHONE_NUMBER=${LINQ_PHONE_NUMBER:-}
+      - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OWNER_PHONE_NUMBER=${OWNER_PHONE_NUMBER:-}
       - REDIS_URL=redis://redis:6379
     ports:

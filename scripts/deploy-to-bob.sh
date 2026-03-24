@@ -158,7 +158,7 @@ do_env_check() {
     "calendar-agent:ZOHO_REFRESH_TOKEN"
     "dtools-bridge:DTOOLS_API_KEY"
     "notification-hub:NOTIFICATION_CHANNEL"
-    "notification-hub:LINQ_API_KEY"
+    "notification-hub:IMESSAGE_BRIDGE_URL"
     "voice-receptionist:OPENAI_API_KEY"
     "voice-receptionist:TWILIO_ACCOUNT_SID"
     "polymarket-bot:ANTHROPIC_API_KEY"

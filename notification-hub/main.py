@@ -1,7 +1,7 @@
 """Notification Hub — Centralized notification dispatcher.
 
 Subscribes to all notifications:* Redis channels and dispatches
-via console or iMessage (Linq API).
+via console or iMessage (host-side AppleScript bridge).
 """
 
 import asyncio
@@ -9,7 +9,6 @@ import json
 import logging
 import os
 import sqlite3
-import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -26,8 +25,7 @@ logger = logging.getLogger(__name__)
 # Config
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 NOTIFICATION_CHANNEL = os.getenv("NOTIFICATION_CHANNEL", "console")
-LINQ_API_KEY = os.getenv("LINQ_API_KEY", "")
-LINQ_PHONE_NUMBER = os.getenv("LINQ_PHONE_NUMBER", "")
+IMESSAGE_BRIDGE_URL = os.getenv("IMESSAGE_BRIDGE_URL", "http://host.docker.internal:8199")
 OWNER_PHONE_NUMBER = os.getenv("OWNER_PHONE_NUMBER", "")
 DB_PATH = Path(os.getenv("DB_PATH", "/data/notifications.db"))
 
@@ -81,29 +79,26 @@ async def send_console(title: str, body: str):
 
 
 async def send_imessage(title: str, body: str):
-    if not all([LINQ_API_KEY, OWNER_PHONE_NUMBER]):
-        logger.warning("Linq not configured — falling back to console")
-        await send_console(title, body)
-        return "console"
+    """Send iMessage via the host-side AppleScript bridge."""
+    message = f"{title}\n{body}" if title else body
     try:
-        message = f"{title}\n{body}" if title else body
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
-                "https://api.linqapp.com/api/partner/v2/chats",
-                headers={"X-LINQ-INTEGRATION-TOKEN": LINQ_API_KEY, "Content-Type": "application/json"},
-                json={"phone_number": OWNER_PHONE_NUMBER, "text": message},
+                IMESSAGE_BRIDGE_URL,
+                json={"message": message},
             )
-            resp.raise_for_status()
-            logger.info("iMessage sent: %s", title or body[:60])
-            return "imessage"
+            if resp.status_code == 200:
+                logger.info("iMessage sent: %s", title or body[:60])
+                return "imessage"
+            logger.error("iMessage bridge returned %s: %s", resp.status_code, resp.text)
     except Exception as e:
-        logger.error("Linq send failed: %s — falling back to console", e)
-        await send_console(title, body)
-        return "console"
+        logger.error("iMessage bridge error: %s — falling back to console", e)
+    await send_console(title, body)
+    return "console"
 
 
 async def dispatch(title: str, body: str, priority: str = "normal", source: str = "direct") -> str:
-    if NOTIFICATION_CHANNEL == "imessage" and LINQ_API_KEY:
+    if NOTIFICATION_CHANNEL == "imessage":
         via = await send_imessage(title, body)
     else:
         await send_console(title, body)
