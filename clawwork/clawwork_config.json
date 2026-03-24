@@ -70,10 +70,15 @@
       {"id": "professional_services", "tier": 1, "base_weight": 0.20},
       {"id": "finance_insurance", "tier": 1, "base_weight": 0.10}
     ],
+    "exclusions": {
+      "min_task_value": 100.0,
+      "sectors": []
+    },
     "adaptive_learning": {
       "enabled": true,
       "min_samples_before_adjustment": 5,
-      "adjustment_factor": 0.15
+      "adjustment_factor": 0.15,
+      "auto_exclude_threshold": 0.50
     }
   },
 
@@ -87,6 +92,12 @@
     "database_path": "~/.symphony/data/earnings.db",
     "log_path": "~/.symphony/logs/clawwork.log",
     "export_csv_dir": "~/.symphony/reports/clawwork"
+  },
+
+  "clawwork_tools": {
+    "file_creation": {
+      "output_dir": "~/.symphony/clawwork/deliverables"
+    }
   },
 
   "system_health": {
