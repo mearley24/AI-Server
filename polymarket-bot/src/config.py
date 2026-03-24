@@ -154,7 +154,7 @@ class Settings(BaseSettings):
     # --- Avellaneda-Stoikov Market Maker ---
     crypto_avellaneda_enabled: bool = Field(default=True, description="Enable Avellaneda-Stoikov market maker")
     avellaneda_pairs: list[str] = Field(
-        default_factory=lambda: ["XRP/USDT"],
+        default_factory=lambda: ["XRP/USD"],
         description="Pairs for Avellaneda MM to quote",
     )
     avellaneda_risk_aversion: float = Field(default=0.1, description="Risk aversion parameter (γ)")
@@ -169,7 +169,7 @@ class Settings(BaseSettings):
     avellaneda_pair_configs: dict[str, dict[str, float]] = Field(
         default_factory=lambda: {
             "BTC/USDT": {"min_spread_bps": 10, "max_spread_bps": 100, "order_size_usdt": 50.0, "max_inventory_usdt": 250.0},
-            "XRP/USDT": {"min_spread_bps": 35, "max_spread_bps": 50, "order_size_usdt": 50.0, "max_inventory_usdt": 500.0},
+            "XRP/USD": {"min_spread_bps": 35, "max_spread_bps": 50, "order_size_usdt": 50.0, "max_inventory_usdt": 500.0},
             "SOL/USDT": {"min_spread_bps": 20, "max_spread_bps": 150, "order_size_usdt": 50.0, "max_inventory_usdt": 250.0},
         },
         description="Per-pair overrides for spread bounds, order size, and inventory limits",
