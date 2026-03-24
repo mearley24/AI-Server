@@ -203,8 +203,48 @@ class AvellanedaMarketMaker:
                 logger.error("avellaneda_mm_error", error=str(exc))
             await asyncio.sleep(self._tick_interval)
 
+    async def _cancel_stale_orders(self, pair: str) -> None:
+        """Cancel all open orders for this pair before placing new quotes.
+
+        Uses tracked order IDs first, then falls back to fetching open orders
+        from the exchange to catch any we missed.
+        """
+        # Cancel tracked orders from previous tick
+        tracked = self._active_orders.get(pair, [])
+        for order_id in tracked:
+            try:
+                await self._client.cancel_order(order_id)
+            except Exception:
+                pass  # Order may have already filled or been cancelled
+
+        self._active_orders[pair] = []
+
+        # Also cancel any open orders on the exchange for this pair
+        # (catches orders missed by tracking, e.g. after a restart)
+        if self._client.exchange is not None and not self._client.is_dry_run:
+            try:
+                open_orders = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: self._client.exchange.fetch_open_orders(pair)
+                )
+                for order in open_orders:
+                    try:
+                        await self._client.cancel_order(order["id"])
+                    except Exception:
+                        pass
+                if open_orders:
+                    logger.info(
+                        "cancelled_stale_orders",
+                        pair=pair,
+                        count=len(open_orders),
+                    )
+            except Exception as e:
+                logger.warning("cancel_stale_orders_error", pair=pair, error=str(e))
+
     async def _tick(self, pair: str) -> None:
         """Execute one quoting cycle for a pair."""
+        # 0. Cancel all existing orders for this pair before placing new ones
+        await self._cancel_stale_orders(pair)
+
         # 1. Fetch orderbook → mid-price
         try:
             book = await self._client.get_orderbook(pair)
@@ -301,18 +341,48 @@ class AvellanedaMarketMaker:
             for p in self._pairs
         )
 
-        # 11. Place orders
+        # 11. Fetch balance for pre-order checks
+        balance_data = await self._client.get_balance()
+        free_balance = balance_data.get("free", {})
+
+        # Determine quote currency and base currency from pair (e.g. "XRP/USDT")
+        base_currency, quote_currency = pair.split("/") if "/" in pair else (pair, "USDT")
+
+        # 12. Place at most ONE buy and ONE sell per pair per tick
         if bid_size > 0 and self._inventory.can_quote_bid(pair, mid):
             if total_open_value + (bid_size * bid_price) > self._max_total_exposure:
                 logger.debug("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), max=self._max_total_exposure)
             else:
-                await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
+                # Check free quote currency balance before buying
+                free_quote = float(free_balance.get(quote_currency, 0))
+                order_cost = bid_size * bid_price
+                if free_quote < order_cost:
+                    logger.debug(
+                        "insufficient_free_balance",
+                        pair=pair,
+                        side="buy",
+                        free=round(free_quote, 4),
+                        needed=round(order_cost, 4),
+                    )
+                else:
+                    await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
 
         if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
             if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
                 logger.debug("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), max=self._max_total_exposure)
             else:
-                await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
+                # Check free base currency balance before selling
+                free_base = float(free_balance.get(base_currency, 0))
+                if free_base < ask_size:
+                    logger.debug(
+                        "insufficient_free_balance",
+                        pair=pair,
+                        side="sell",
+                        free=round(free_base, 6),
+                        needed=round(ask_size, 6),
+                    )
+                else:
+                    await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
 
         # 11. Publish signal for debate engine / monitoring
         await self._bus.publish(Signal(
