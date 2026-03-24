@@ -551,21 +551,7 @@
     pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
     pnlEl.className = 'value ' + (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
 
-    // Status: active if last trade within 60 seconds
-    const statusEl = document.getElementById('trading-bot-status');
-    if (data.last_trade_at) {
-      const age = Date.now() - new Date(data.last_trade_at).getTime();
-      if (age < 60000) {
-        statusEl.textContent = 'ACTIVE';
-        statusEl.className = 'value trading-status-active';
-      } else {
-        statusEl.textContent = 'IDLE';
-        statusEl.className = 'value trading-status-idle';
-      }
-    } else {
-      statusEl.textContent = 'NO DATA';
-      statusEl.className = 'value trading-status-idle';
-    }
+    // Status is now updated by pollBotStatus -> updateTradingStatusFromBot
   }
 
   function renderPnlBreakdown(pairs) {
@@ -620,32 +606,79 @@
       const resp = await fetch('/api/trading/bot-status');
       const data = await resp.json();
       renderStrategyStatus(data);
+      updateTradingStatusFromBot(data);
     } catch (e) {
       console.error('Bot status poll failed:', e);
+    }
+  }
+
+  function updateTradingStatusFromBot(data) {
+    const statusEl = document.getElementById('trading-bot-status');
+    // Check strategies from data.status.strategies (the live state)
+    const strategies = (data.status && data.status.strategies) || {};
+    const entries = Object.values(strategies);
+    const runningCount = entries.filter(s => (s.state || '').toLowerCase() === 'running').length;
+    if (runningCount > 0) {
+      statusEl.textContent = 'ACTIVE';
+      statusEl.className = 'value trading-status-active';
+    } else if (entries.length > 0) {
+      statusEl.textContent = 'IDLE';
+      statusEl.className = 'value trading-status-idle';
+    } else {
+      statusEl.textContent = 'NO DATA';
+      statusEl.className = 'value trading-status-idle';
     }
   }
 
   function renderStrategyStatus(data) {
     const el = document.getElementById('strategy-status');
     let html = '';
-    if (data.status) {
-      const s = data.status;
-      if (s.platforms) {
-        html += '<div class="pair-row"><span class="pair-name">Platforms</span><span class="pair-stat" style="color:#e0e0e0">' + escapeHtml(Array.isArray(s.platforms) ? s.platforms.join(', ') : String(s.platforms)) + '</span></div>';
+
+    // Platforms — data.status.platforms is an object like { polymarket: { connected, dry_run }, ... }
+    const platforms = (data.status && data.status.platforms) || {};
+    const platformEntries = Object.entries(platforms);
+    if (platformEntries.length > 0) {
+      let anyDryRun = false;
+      let platformHtml = '';
+      for (const [name, info] of platformEntries) {
+        const connected = info.connected;
+        const dotClass = connected ? 'status-healthy' : 'status-down';
+        const label = connected ? 'connected' : 'disconnected';
+        if (info.dry_run) anyDryRun = true;
+        platformHtml += `<div class="strategy-row">
+          <span style="display:flex;align-items:center;gap:8px">
+            <span class="status-dot ${dotClass}"></span>
+            <span class="strategy-name">${escapeHtml(name)}</span>
+          </span>
+          <span style="color:#888;font-size:11px">${label}</span>
+        </div>`;
       }
+      html += '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;padding:4px 12px;margin-bottom:4px">Platforms</div>';
+      html += platformHtml;
+      if (anyDryRun) {
+        html += '<div style="text-align:center;padding:6px 0"><span style="background:#ffc10722;color:#ffc107;font-size:11px;font-weight:600;padding:2px 10px;border-radius:4px;text-transform:uppercase">Paper Trading</span></div>';
+      }
+      html += '<div style="border-bottom:1px solid #1e1e2e;margin:8px 0"></div>';
     }
-    if (data.strategies) {
-      const strats = Array.isArray(data.strategies) ? data.strategies : (data.strategies.strategies || []);
-      for (const st of strats) {
-        const name = st.name || st.strategy || 'Unknown';
-        const state = (st.state || st.status || 'idle').toLowerCase();
-        const stateClass = state === 'active' || state === 'running' ? 'strategy-active' : 'strategy-idle';
+
+    // Strategies — data.status.strategies is an object like { stink_bid: { state, tick_count }, ... }
+    const strategies = (data.status && data.status.strategies) || {};
+    const stratEntries = Object.entries(strategies);
+    const runningCount = stratEntries.filter(([, s]) => (s.state || '').toLowerCase() === 'running').length;
+
+    if (stratEntries.length > 0) {
+      html += `<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;padding:4px 12px;margin-bottom:4px">${runningCount}/${stratEntries.length} strategies running</div>`;
+      for (const [name, info] of stratEntries) {
+        const state = (info.state || 'idle').toLowerCase();
+        const stateClass = state === 'running' ? 'strategy-active' : 'strategy-idle';
+        const stateLabel = state === 'running' ? 'RUNNING' : state.toUpperCase();
         html += `<div class="strategy-row">
           <span class="strategy-name">${escapeHtml(name)}</span>
-          <span class="strategy-state ${stateClass}">${state}</span>
+          <span class="strategy-state ${stateClass}">${stateLabel}</span>
         </div>`;
       }
     }
+
     if (!html) {
       html = '<div class="feed-empty">Bot unreachable or no strategies</div>';
     }
