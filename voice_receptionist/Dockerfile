@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Native build deps for better-sqlite3
+RUN apk add --no-cache python3 make g++
+
 # Install dependencies first (cache-friendly layer)
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev

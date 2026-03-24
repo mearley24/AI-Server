@@ -237,7 +237,7 @@ wss.on('connection', async (twilioWs, req) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[bob] Listening on port ${PORT}`);
   console.log(`[bob] Public URL: ${SERVER_URL}`);
 });

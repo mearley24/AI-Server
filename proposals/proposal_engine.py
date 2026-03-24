@@ -988,8 +988,8 @@ def _demo_run():
     print("\nD-Tools CSV preview (first 10 rows):")
     csv_data = engine.generate_dtools_csv(proposal)
     proposal.dtools_csv = csv_data
-    print("\n".join(csv_data.splitlines()[:min(11, csv_data.count(chr(10)))} rows):"))
-    print(proposal.dtools_csv[:500])
+    print("\n".join(csv_data.splitlines()[:11]))
+    print(f"({min(11, csv_data.count(chr(10)))} rows shown)")
 
 
 if __name__ == "__main__":
