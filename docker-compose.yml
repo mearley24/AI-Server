@@ -102,7 +102,6 @@ services:
       - ./polymarket-bot/vpn:/config/wg_confs
     sysctls:
       - net.ipv4.conf.all.src_valid_mark=1
-      - net.ipv6.conf.all.disable_ipv6=1
     ports:
       - "127.0.0.1:8430:8430"
     restart: unless-stopped
