@@ -536,8 +536,59 @@ async def fetch_url_content(url: str) -> tuple[str, str]:
     return content, status
 
 
-async def analyze_with_llm(url: str, content: str, context_hint: str) -> dict:
-    """Send content to Claude Haiku for analysis."""
+def _parse_llm_json(text: str) -> dict:
+    """Parse JSON from an LLM response, handling markdown fences."""
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        if "```" in text:
+            json_part = text.split("```")[1]
+            if json_part.startswith("json"):
+                json_part = json_part[4:]
+            return json.loads(json_part.strip())
+        logger.warning("Failed to parse LLM JSON: %s", text[:200])
+        return {}
+
+
+async def _analyze_with_ollama(url: str, content: str, context_hint: str) -> dict:
+    """Try Ollama (free) for link analysis. Returns {} on failure."""
+    if not OLLAMA_HOST:
+        return {}
+
+    user_prompt = f"Analyze this content from {url}:\n\n{content[:10000]}"
+    if context_hint:
+        user_prompt += f"\n\nContext hint: focus on relevance to {context_hint}."
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{OLLAMA_HOST.rstrip('/')}/v1/chat/completions",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": "qwen3:8b",
+                    "messages": [
+                        {"role": "system", "content": LINK_ANALYSIS_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.3,
+                    "stream": False,
+                },
+            )
+            if resp.status_code == 200:
+                text = resp.json()["choices"][0]["message"]["content"]
+                result = _parse_llm_json(text)
+                if result:
+                    logger.info("link_analysis_ollama url=%s", url)
+                    return result
+    except Exception as e:
+        logger.warning("ollama_link_analysis_failed url=%s error=%s", url, e)
+
+    return {}
+
+
+async def _analyze_with_haiku(url: str, content: str, context_hint: str) -> dict:
+    """Fallback to Claude Haiku (paid) for link analysis."""
     user_prompt = f"Content from {url}:\n\n{content}"
     if context_hint:
         user_prompt += f"\n\nContext hint: focus on relevance to {context_hint}."
@@ -580,18 +631,18 @@ async def analyze_with_llm(url: str, content: str, context_hint: str) -> dict:
         b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"
     ).strip()
 
-    # Parse JSON from response
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        # Try to extract JSON from markdown fences
-        if "```" in text:
-            json_part = text.split("```")[1]
-            if json_part.startswith("json"):
-                json_part = json_part[4:]
-            return json.loads(json_part.strip())
-        logger.warning("Failed to parse LLM JSON: %s", text[:200])
-        return {}
+    return _parse_llm_json(text)
+
+
+async def analyze_with_llm(url: str, content: str, context_hint: str) -> dict:
+    """Analyze link content. Tries Ollama first (free), falls back to Claude Haiku."""
+    # Try Ollama first (free — runs on Maestro)
+    result = await _analyze_with_ollama(url, content, context_hint)
+    if result:
+        return result
+
+    # Fallback to Claude Haiku (paid)
+    return await _analyze_with_haiku(url, content, context_hint)
 
 
 def save_analysis_results(results: list[dict]) -> str:
@@ -823,7 +874,7 @@ async def token_usage():
 @app.post("/api/analyze-links")
 async def analyze_links(req: LinkAnalysisRequest):
     """
-    Analyze a list of URLs using Claude Haiku.
+    Analyze a list of URLs using Ollama (free) with Claude Haiku fallback.
     Fetches each URL, classifies content, stores results, and notifies on high-relevance items.
     """
     context_hint = req.context or ""
@@ -845,8 +896,8 @@ async def analyze_links(req: LinkAnalysisRequest):
             })
             continue
 
-        # If no API key, return raw text without LLM analysis
-        if not ANTHROPIC_API_KEY:
+        # If no LLM backend available, return raw text without analysis
+        if not ANTHROPIC_API_KEY and not OLLAMA_HOST:
             results.append({
                 "url": url,
                 "summary": content[:200],

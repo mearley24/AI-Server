@@ -15,8 +15,8 @@ enabled: true
 # Model Configuration
 # ---------------------------------------------------------------------------
 model:
-  provider: openai
-  model_id: gpt-4o-mini
+  provider: ollama
+  model_id: qwen3:8b
   max_context_tokens: 128000
   max_output_tokens: 2048
   temperature: 0.2

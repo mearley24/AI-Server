@@ -1,4 +1,7 @@
-"""Uses Claude to process raw search results into structured knowledge entries."""
+"""Uses LLM to process raw search results into structured knowledge entries.
+
+Routes to Ollama (free, on Maestro) first, falls back to Claude Haiku if unavailable.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +14,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "")
 
 # Max insights per scan cycle
 MAX_INSIGHTS_PER_CYCLE = 20
@@ -27,13 +31,114 @@ For each distinct insight, return a JSON object with:
 Return a JSON array of objects. Return ONLY valid JSON, no markdown."""
 
 
-async def process_results(raw_results: list[dict], api_key: str) -> list[dict]:
-    """Process raw scan results through Claude to extract structured insights.
+def _parse_json_response(content: str) -> list[dict]:
+    """Parse JSON from LLM response, handling markdown fences."""
+    content = content.strip()
+    if content.startswith("```"):
+        lines = content.split("\n")
+        lines = [l for l in lines if not l.startswith("```")]
+        content = "\n".join(lines).strip()
 
+    insights = json.loads(content)
+    if not isinstance(insights, list):
+        insights = [insights]
+    return insights[:MAX_INSIGHTS_PER_CYCLE]
+
+
+async def _process_with_ollama(combined: str) -> list[dict] | None:
+    """Try processing with Ollama (free). Returns None on failure."""
+    if not OLLAMA_HOST:
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as http:
+            resp = await http.post(
+                f"{OLLAMA_HOST.rstrip('/')}/v1/chat/completions",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "model": "qwen3:8b",
+                    "messages": [
+                        {"role": "system", "content": PROCESS_SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": f"Extract actionable insights from these research results:\n\n{combined}",
+                        },
+                    ],
+                    "temperature": 0.3,
+                    "stream": False,
+                },
+            )
+            if resp.status_code != 200:
+                logger.warning("ollama_processor_error", status=resp.status_code)
+                return None
+
+            content = resp.json()["choices"][0]["message"]["content"]
+            if not content:
+                return None
+
+            insights = _parse_json_response(content)
+            logger.info("processing_complete_ollama", insights_extracted=len(insights))
+            return insights
+
+    except Exception as exc:
+        logger.warning("ollama_processor_failed", error=str(exc))
+        return None
+
+
+async def _process_with_haiku(combined: str, api_key: str) -> list[dict]:
+    """Fallback to Claude Haiku (paid)."""
+    async with httpx.AsyncClient(timeout=60) as http:
+        resp = await http.post(
+            ANTHROPIC_API_URL,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-3-5-20241022",
+                "max_tokens": 2000,
+                "system": [
+                    {
+                        "type": "text",
+                        "text": PROCESS_SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Extract actionable insights from these research results:\n\n{combined}",
+                    }
+                ],
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    content = ""
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            content = block["text"]
+            break
+
+    if not content:
+        logger.warning("processor_empty_response")
+        return []
+
+    insights = _parse_json_response(content)
+    logger.info("processing_complete_haiku", insights_extracted=len(insights))
+    return insights
+
+
+async def process_results(raw_results: list[dict], api_key: str) -> list[dict]:
+    """Process raw scan results through LLM to extract structured insights.
+
+    Tries Ollama first (free, on Maestro), falls back to Claude Haiku.
     Returns list of knowledge entries ready for storage.
     """
-    if not api_key:
-        logger.warning("processing_disabled", reason="ANTHROPIC_API_KEY not set")
+    if not api_key and not OLLAMA_HOST:
+        logger.warning("processing_disabled", reason="No LLM backend available")
         return []
 
     if not raw_results:
@@ -45,63 +150,17 @@ async def process_results(raw_results: list[dict], api_key: str) -> list[dict]:
     )
 
     try:
-        async with httpx.AsyncClient(timeout=60) as http:
-            resp = await http.post(
-                ANTHROPIC_API_URL,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    # Use Haiku for knowledge extraction — it's just categorization,
-                    # not creative reasoning. Saves ~90% vs Sonnet.
-                    "model": "claude-haiku-3-5-20241022",
-                    "max_tokens": 2000,
-                    "system": [
-                        {
-                            "type": "text",
-                            "text": PROCESS_SYSTEM_PROMPT,
-                            "cache_control": {"type": "ephemeral"},
-                        }
-                    ],
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": f"Extract actionable insights from these research results:\n\n{combined}",
-                        }
-                    ],
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        # Try Ollama first (free — runs on Maestro)
+        result = await _process_with_ollama(combined)
+        if result is not None:
+            return result
 
-        content = ""
-        for block in data.get("content", []):
-            if block.get("type") == "text":
-                content = block["text"]
-                break
+        # Fallback to Claude Haiku (paid)
+        if api_key:
+            return await _process_with_haiku(combined, api_key)
 
-        if not content:
-            logger.warning("processor_empty_response")
-            return []
-
-        # Parse JSON response — handle markdown wrapping
-        content = content.strip()
-        if content.startswith("```"):
-            lines = content.split("\n")
-            lines = [l for l in lines if not l.startswith("```")]
-            content = "\n".join(lines).strip()
-
-        insights = json.loads(content)
-        if not isinstance(insights, list):
-            insights = [insights]
-
-        # Cap at MAX_INSIGHTS_PER_CYCLE
-        insights = insights[:MAX_INSIGHTS_PER_CYCLE]
-
-        logger.info("processing_complete", insights_extracted=len(insights))
-        return insights
+        logger.warning("processing_disabled", reason="Ollama failed and no ANTHROPIC_API_KEY")
+        return []
 
     except json.JSONDecodeError as exc:
         logger.error("processor_json_error", error=str(exc))
