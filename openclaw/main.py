@@ -470,7 +470,8 @@ class LinkAnalysisResult(BaseModel):
 async def fetch_url_content(url: str) -> tuple[str, str]:
     """
     Fetch page content. Returns (text_content, status).
-    For GitHub URLs, tries to fetch README. For Twitter/X, uses browser UA.
+    For GitHub URLs, tries to fetch README. For Twitter/X, falls back to
+    Perplexity search when direct fetch returns empty/login-wall content.
     """
     headers = {"User-Agent": BROWSER_USER_AGENT}
 
@@ -489,15 +490,50 @@ async def fetch_url_content(url: str) -> tuple[str, str]:
             except Exception:
                 pass  # Fall through to normal fetch
 
+    content = ""
+    status = "ok"
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
             resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             content = resp.text[:MAX_CONTENT_LENGTH]
-            return content, "ok"
     except Exception as e:
         logger.warning("fetch_failed url=%s error=%s", url, e)
-        return "", "fetch_failed"
+        status = "fetch_failed"
+
+    # Fallback: Twitter/X links often return empty/login-wall content.
+    # Use Perplexity to retrieve tweet content instead.
+    if len(content) < 100 and ("x.com" in url or "twitter.com" in url):
+        perplexity_key = os.getenv("PERPLEXITY_API_KEY", "")
+        if perplexity_key:
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    resp = await client.post(
+                        "https://api.perplexity.ai/chat/completions",
+                        headers={"Authorization": f"Bearer {perplexity_key}"},
+                        json={
+                            "model": "sonar",
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "What does this tweet say? Summarize the "
+                                        "content, tools, and links shared: " + url
+                                    ),
+                                }
+                            ],
+                        },
+                    )
+                    if resp.status_code == 200:
+                        content = resp.json()["choices"][0]["message"]["content"]
+                        status = "ok_via_perplexity"
+                        logger.info("twitter_perplexity_fallback url=%s len=%d", url, len(content))
+            except Exception as e:
+                logger.warning("perplexity_fallback_failed url=%s error=%s", url, e)
+
+    if not content:
+        return "", status if status != "ok" else "fetch_failed"
+    return content, status
 
 
 async def analyze_with_llm(url: str, content: str, context_hint: str) -> dict:

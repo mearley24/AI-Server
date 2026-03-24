@@ -57,10 +57,48 @@ class ZohoCalendarClient:
             return resp.json()
 
     async def list_events(self, start: str, end: str) -> list:
+        """Fetch events in a date range.
+
+        Zoho Calendar API v1 expects the range as a JSON object with dates in
+        ``yyyyMMdd`` or ``yyyyMMddTHHmmssZ`` format — NOT ISO-8601 with colons
+        and timezone offsets.  We convert the incoming ISO strings accordingly.
+        """
         import json as _json
-        range_param = _json.dumps({"start": start, "end": end})
-        data = await self._request("GET", "/events", params={"range": range_param})
-        return data.get("events", [])
+
+        zoho_start = self._to_zoho_date(start)
+        zoho_end = self._to_zoho_date(end)
+        range_param = _json.dumps({"start": zoho_start, "end": zoho_end})
+
+        try:
+            data = await self._request(
+                "GET", "/events", params={"range": range_param},
+            )
+            return data.get("events", [])
+        except httpx.HTTPStatusError as exc:
+            logger.error(
+                "zoho_events_error status=%d body=%s",
+                exc.response.status_code,
+                exc.response.text[:300],
+            )
+            return []
+        except Exception as exc:
+            logger.error("zoho_events_unexpected_error: %s", exc)
+            return []
+
+    @staticmethod
+    def _to_zoho_date(iso_str: str) -> str:
+        """Convert an ISO-8601 datetime string to Zoho's ``yyyyMMddTHHmmssZ`` format.
+
+        Accepts formats like ``2026-03-24T00:00:00+00:00`` or ``2026-03-24T12:30:00``.
+        Returns ``20260324T000000Z`` style strings that Zoho expects.
+        """
+        # Strip timezone suffix (±HH:MM or Z) — Zoho always uses trailing 'Z'
+        clean = iso_str.replace("+00:00", "").replace("Z", "")
+        # Remove dashes and colons: 2026-03-24T00:00:00 → 20260324T000000
+        clean = clean.replace("-", "").replace(":", "")
+        if "T" not in clean:
+            return clean  # Already yyyyMMdd
+        return clean + "Z"
 
     async def create_event(self, event_data: dict) -> dict:
         return await self._request("POST", "/events", json={"eventdata": event_data})

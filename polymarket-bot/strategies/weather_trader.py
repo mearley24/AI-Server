@@ -312,12 +312,17 @@ class WeatherTraderStrategy(BaseStrategy):
             "KMIA": {"high": "KXHIGHMI", "low": "KXLOWMI"},
         }
 
-        # Collect unique series tickers from configured stations
+        # Collect unique series tickers from configured stations and build
+        # reverse mapping so we can propagate station onto each market.
         series_tickers: set[str] = set()
+        series_to_station: dict[str, str] = {}
         for station in self._noaa_stations:
             mapping = station_to_kalshi.get(station)
             if mapping:
-                series_tickers.update(mapping.values())
+                for ticker in mapping.values():
+                    series_tickers.add(ticker)
+                    # First station wins (KJFK shares tickers with KNYC)
+                    series_to_station.setdefault(ticker, station)
 
         all_markets: list[dict[str, Any]] = []
 
@@ -326,6 +331,12 @@ class WeatherTraderStrategy(BaseStrategy):
                 # Step 1: Fetch events for this series
                 events = await self._kalshi_client.get_events(
                     series_ticker=series_ticker, status="open",
+                )
+                logger.info(
+                    "kalshi_weather_series_scan",
+                    series_ticker=series_ticker,
+                    station=series_to_station.get(series_ticker, "?"),
+                    events_found=len(events) if events else 0,
                 )
                 if not events:
                     continue
@@ -348,6 +359,7 @@ class WeatherTraderStrategy(BaseStrategy):
                         m["_platform"] = "kalshi"
                         m["_series_ticker"] = series_ticker
                         m["_event_ticker"] = event_ticker
+                        m["_station"] = series_to_station.get(series_ticker, "")
                         all_markets.append(m)
 
             except Exception as exc:
@@ -429,8 +441,9 @@ class WeatherTraderStrategy(BaseStrategy):
         floor_strike = mkt.get("floor_strike")
         cap_strike = mkt.get("cap_strike")
 
-        # Match market to a NOAA station
-        station = self._match_station(title)
+        # Match market to a NOAA station — prefer the station attached during
+        # scanning (from series_ticker mapping), fall back to title matching.
+        station = mkt.get("_station") or self._match_station(title)
         if station is None or station not in self._station_data:
             return None
 
@@ -464,7 +477,7 @@ class WeatherTraderStrategy(BaseStrategy):
 
         # Fallback: try title-based parsing if strike fields are missing
         if fair_value is None:
-            fair_value = self._get_fair_value(title)
+            fair_value = self._get_fair_value(title, station_hint=station)
 
         if fair_value is None:
             return None
@@ -485,6 +498,7 @@ class WeatherTraderStrategy(BaseStrategy):
             "market_id": ticker,
             "token_id": ticker,
             "question": title,
+            "station": station,
             "strike_type": strike_type,
             "floor_strike": floor_strike,
             "cap_strike": cap_strike,
@@ -497,7 +511,9 @@ class WeatherTraderStrategy(BaseStrategy):
             "volume": float(mkt.get("volume_24h_fp", 0) or 0),
         }
 
-    def _get_fair_value(self, question: str) -> float | None:
+    def _get_fair_value(
+        self, question: str, station_hint: str | None = None,
+    ) -> float | None:
         """Calculate NOAA-implied fair value for a weather market question.
 
         Handles:
@@ -505,7 +521,7 @@ class WeatherTraderStrategy(BaseStrategy):
         - low_temp_below: "Will low temp be under 32°F?"
         - temp_bracket: "Will it be 80-85°F in Denver?"
         """
-        station = self._match_station(question)
+        station = station_hint or self._match_station(question)
         if station is None or station not in self._station_data:
             return None
 

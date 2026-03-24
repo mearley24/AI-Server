@@ -380,6 +380,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=${OLLAMA_HOST:-}
       - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
       - REDIS_URL=redis://redis:6379
       - AGENTS_DIR=/app/agents
       - DATA_DIR=/app/data
