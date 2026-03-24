@@ -154,7 +154,7 @@ class Settings(BaseSettings):
     # --- Avellaneda-Stoikov Market Maker ---
     crypto_avellaneda_enabled: bool = Field(default=True, description="Enable Avellaneda-Stoikov market maker")
     avellaneda_pairs: list[str] = Field(
-        default_factory=lambda: ["XRP/USDT", "HBAR/USDT", "SOL/USDT"],
+        default_factory=lambda: ["XRP/USDT", "HBAR/USD", "SOL/USDT"],
         description="Pairs for Avellaneda MM to quote",
     )
     avellaneda_risk_aversion: float = Field(default=0.1, description="Risk aversion parameter (γ)")

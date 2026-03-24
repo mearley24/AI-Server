@@ -41,7 +41,7 @@ from strategies.crypto.vpin import VPINCalculator
 logger = structlog.get_logger(__name__)
 
 # Default parameters matching the spec
-DEFAULT_PAIRS = ["XRP/USDT", "HBAR/USDT", "SOL/USDT"]
+DEFAULT_PAIRS = ["XRP/USDT", "HBAR/USD", "SOL/USDT"]
 DEFAULT_RISK_AVERSION = 0.1
 DEFAULT_SESSION_HORIZON = 3600  # 1 hour rolling window for 24/7 crypto
 DEFAULT_VOLATILITY_WINDOW = 100  # last 100 mid-price changes
@@ -170,7 +170,15 @@ class AvellanedaMarketMaker:
         while self._running:
             try:
                 for pair in self._pairs:
-                    await self._tick(pair)
+                    try:
+                        await self._tick(pair)
+                    except Exception as exc:
+                        logger.warning(
+                            "avellaneda_pair_tick_error",
+                            pair=pair,
+                            error=str(exc),
+                            msg=f"Skipping {pair} this tick",
+                        )
                 self._tick_count += 1
             except asyncio.CancelledError:
                 break
@@ -181,7 +189,11 @@ class AvellanedaMarketMaker:
     async def _tick(self, pair: str) -> None:
         """Execute one quoting cycle for a pair."""
         # 1. Fetch orderbook → mid-price
-        book = await self._client.get_orderbook(pair)
+        try:
+            book = await self._client.get_orderbook(pair)
+        except Exception as exc:
+            logger.warning("avellaneda_orderbook_error", pair=pair, error=str(exc))
+            return
         bids = book.get("bids", [])
         asks = book.get("asks", [])
 
