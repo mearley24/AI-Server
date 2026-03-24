@@ -22,11 +22,26 @@ logging.basicConfig(
 logger = logging.getLogger("email-monitor")
 
 
+async def _run_with_restart(coro_fn, name: str) -> None:
+    """Run an async function, restarting on failure to avoid crashing the service."""
+    while True:
+        try:
+            await coro_fn()
+            break  # Normal exit
+        except Exception as e:
+            logger.error("%s crashed: %s — restarting in 10s", name, e)
+            await asyncio.sleep(10)
+
+
 async def main() -> None:
     from monitor import EmailMonitor, init_db
     from notifier import run_subscriber
 
     init_db()
+
+    email_addr = os.getenv("SYMPHONY_EMAIL", "")
+    if not email_addr:
+        logger.warning("Email monitoring disabled — no credentials configured")
 
     monitor = EmailMonitor()
 
@@ -39,10 +54,11 @@ async def main() -> None:
     )
     server = uvicorn.Server(config)
 
-    # Run all three concurrently
+    # Run all three concurrently — monitor and notifier are wrapped
+    # so that a crash in either does not take down the API server
     await asyncio.gather(
-        monitor.run(),
-        run_subscriber(),
+        _run_with_restart(monitor.run, "EmailMonitor"),
+        _run_with_restart(run_subscriber, "Notifier"),
         server.serve(),
     )
 

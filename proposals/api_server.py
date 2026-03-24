@@ -19,9 +19,9 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from proposal_engine import ProposalEngine, ProposalTemplate, ClientTier
+from proposal_engine import ProposalEngine, ProposalTemplate
 from pricing_calculator import PricingCalculator, MarkupTier
-from scope_builder import ScopeBuilder
+from scope_builder import ScopeBuilder, ClientTier
 
 logging.basicConfig(
     level=logging.INFO,

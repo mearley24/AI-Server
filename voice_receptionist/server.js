@@ -31,10 +31,14 @@ const callLogger    = require('./call_logger');
 
 const PORT       = parseInt(process.env.PORT || '3000', 10);
 const SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
-const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'system_prompt.md'), 'utf8');
+const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
+const SYSTEM_PROMPT = fs.existsSync(path.join(__dirname, 'system_prompt.md'))
+  ? fs.readFileSync(path.join(__dirname, 'system_prompt.md'), 'utf8')
+  : 'You are Bob, the AI voice receptionist for Symphony Smart Homes.';
 
-if (!OPENAI_KEY) throw new Error('OPENAI_API_KEY is required');
+if (!OPENAI_KEY) {
+  console.warn('[bob] WARNING: OPENAI_API_KEY not set — voice features disabled, health endpoint still active');
+}
 
 // ─── Express app ─────────────────────────────────────────────────────────────
 
@@ -51,6 +55,15 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOS
 app.post('/incoming-call', (req, res) => {
   const callerNum = req.body.From || 'Unknown';
   console.log(`[bob] Incoming call from ${callerNum}`);
+
+  if (!OPENAI_KEY) {
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Thank you for calling Symphony Smart Homes. Our system is currently being configured. Please call back shortly.</Say>
+  <Hangup/>
+</Response>`;
+    return res.type('text/xml').send(twiml);
+  }
 
   const wsUrl = SERVER_URL.replace(/^http/, 'ws') + '/media-stream';
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -71,6 +84,12 @@ const wss = new WebSocketServer({ server, path: '/media-stream' });
 
 wss.on('connection', async (twilioWs, req) => {
   console.log('[bob] Media stream connected');
+
+  if (!OPENAI_KEY) {
+    console.warn('[bob] No OPENAI_API_KEY — closing media stream');
+    twilioWs.close();
+    return;
+  }
 
   let callSid        = null;
   let callerNumber   = null;

@@ -320,10 +320,14 @@ class EmailMonitor:
     async def run(self) -> None:
         """Main monitoring loop."""
         self._running = True
-        logger.info(
-            "Email monitor starting: %s@%s:%d, poll every %ds",
-            self.email_address, self.imap_server, self.imap_port, self.poll_interval,
-        )
+
+        if not self.email_address or not self.email_password:
+            logger.warning("Email monitoring disabled — no credentials configured")
+        else:
+            logger.info(
+                "Email monitor starting: %s@%s:%d, poll every %ds",
+                self.email_address, self.imap_server, self.imap_port, self.poll_interval,
+            )
 
         init_db()
 

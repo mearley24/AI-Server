@@ -87,17 +87,23 @@ async def run_subscriber() -> None:
     """Subscribe to Redis email:urgent channel and dispatch notifications."""
     logger.info("Notifier subscribing to email:urgent (channel=%s)", NOTIFICATION_CHANNEL)
 
-    redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
-    pubsub = redis_client.pubsub()
-    await pubsub.subscribe("email:urgent")
-
-    async for message in pubsub.listen():
-        if message["type"] != "message":
-            continue
-
+    while True:
         try:
-            data = json.loads(message["data"])
-            notification = format_notification(data)
-            await dispatch(notification)
+            redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
+            pubsub = redis_client.pubsub()
+            await pubsub.subscribe("email:urgent")
+
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+
+                try:
+                    data = json.loads(message["data"])
+                    notification = format_notification(data)
+                    await dispatch(notification)
+                except Exception as e:
+                    logger.error("Notifier error: %s", e)
+
         except Exception as e:
-            logger.error("Notifier error: %s", e)
+            logger.warning("Redis subscriber connection failed: %s — retrying in 10s", e)
+            await asyncio.sleep(10)
