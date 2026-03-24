@@ -24,7 +24,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY main.py .
+COPY . .
 
 # Create data directories
 RUN mkdir -p /app/data/conversations /app/data/logs /app/data/link-analysis /app/agents
