@@ -18,8 +18,9 @@ from typing import Any, Optional
 
 import yaml
 import httpx
+import redis.asyncio as aioredis
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -424,6 +425,168 @@ def make_completion_response(agent_id: str, content: str, model_id: str) -> dict
 
 
 # ---------------------------------------------------------------------------
+# Link analysis models & helpers
+# ---------------------------------------------------------------------------
+LINK_ANALYSIS_DIR = DATA_DIR / "link-analysis"
+
+LINK_ANALYSIS_SYSTEM_PROMPT = (
+    "You are a business intelligence analyst for Symphony Smart Homes, "
+    "a company that runs AI trading bots and smart home service automation. "
+    "Analyze the provided content and return ONLY valid JSON with these fields:\n"
+    '  "tool_or_topic": what tool, technique, or product is discussed,\n'
+    '  "relevance": integer 1-10 how actionable for a smart home business running AI trading bots and service automation,\n'
+    '  "action": specific action if relevant (e.g. "integrate into trading bot", "add to knowledge graph", "bookmark for later"),\n'
+    '  "category": one of trading/smart_home/iot/ai_tools/general,\n'
+    '  "summary": one-line summary\n'
+    "Return ONLY the JSON object, no markdown fences or extra text."
+)
+
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+)
+
+MAX_URLS_PER_REQUEST = 20
+LLM_DELAY_SECONDS = 2
+MAX_CONTENT_LENGTH = 15000  # Truncate fetched content to keep LLM costs low
+
+
+class LinkAnalysisRequest(BaseModel):
+    urls: list[str] = Field(..., min_length=1, max_length=MAX_URLS_PER_REQUEST)
+    context: Optional[str] = None  # hint: trading, smart_home, iot, ai_tools, general
+
+
+class LinkAnalysisResult(BaseModel):
+    url: str
+    summary: str = ""
+    relevance: int = 0
+    action: str = ""
+    category: str = "general"
+    tool_or_topic: str = ""
+    status: str = "ok"  # ok | fetch_failed | analysis_skipped
+    raw_text: str = ""
+
+
+async def fetch_url_content(url: str) -> tuple[str, str]:
+    """
+    Fetch page content. Returns (text_content, status).
+    For GitHub URLs, tries to fetch README. For Twitter/X, uses browser UA.
+    """
+    headers = {"User-Agent": BROWSER_USER_AGENT}
+
+    # GitHub repo → fetch README
+    if "github.com" in url:
+        parts = url.rstrip("/").split("/")
+        # https://github.com/org/repo → need at least 5 parts
+        if len(parts) >= 5:
+            owner, repo = parts[3], parts[4]
+            readme_url = f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md"
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+                    resp = await client.get(readme_url, headers=headers)
+                    if resp.status_code == 200:
+                        return resp.text[:MAX_CONTENT_LENGTH], "ok"
+            except Exception:
+                pass  # Fall through to normal fetch
+
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            content = resp.text[:MAX_CONTENT_LENGTH]
+            return content, "ok"
+    except Exception as e:
+        logger.warning("fetch_failed url=%s error=%s", url, e)
+        return "", "fetch_failed"
+
+
+async def analyze_with_llm(url: str, content: str, context_hint: str) -> dict:
+    """Send content to Claude Haiku for analysis."""
+    user_prompt = f"Content from {url}:\n\n{content}"
+    if context_hint:
+        user_prompt += f"\n\nContext hint: focus on relevance to {context_hint}."
+
+    payload = {
+        "model": "claude-haiku-4-5-20241022",
+        "max_tokens": 512,
+        "temperature": 0.2,
+        "system": [
+            {
+                "type": "text",
+                "text": LINK_ANALYSIS_SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        "messages": [{"role": "user", "content": user_prompt}],
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=payload,
+        )
+
+    if resp.status_code != 200:
+        logger.error("Haiku analysis error %d: %s", resp.status_code, resp.text[:300])
+        return {}
+
+    data = resp.json()
+    usage = data.get("usage", {})
+    if usage:
+        token_tracker.record(usage)
+
+    text = "".join(
+        b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"
+    ).strip()
+
+    # Parse JSON from response
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Try to extract JSON from markdown fences
+        if "```" in text:
+            json_part = text.split("```")[1]
+            if json_part.startswith("json"):
+                json_part = json_part[4:]
+            return json.loads(json_part.strip())
+        logger.warning("Failed to parse LLM JSON: %s", text[:200])
+        return {}
+
+
+def save_analysis_results(results: list[dict]) -> str:
+    """Save analysis results to a timestamped JSON file. Returns filename."""
+    LINK_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"analysis_{ts}.json"
+    filepath = LINK_ANALYSIS_DIR / filename
+    with open(filepath, "w") as f:
+        json.dump({"timestamp": ts, "results": results}, f, indent=2)
+    return filename
+
+
+async def publish_high_relevance(results: list[dict]):
+    """Publish items with relevance >= 7 to Redis notifications:links channel."""
+    if not REDIS_URL:
+        return
+    high = [r for r in results if r.get("relevance", 0) >= 7]
+    if not high:
+        return
+    try:
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        for item in high:
+            await r.publish("notifications:links", json.dumps(item))
+        await r.aclose()
+        logger.info("Published %d high-relevance links to Redis", len(high))
+    except Exception as e:
+        logger.warning("Redis publish failed (non-fatal): %s", e)
+
+
+# ---------------------------------------------------------------------------
 # Delegation detection
 # ---------------------------------------------------------------------------
 def detect_delegation(text: str, registry: AgentRegistry) -> Optional[tuple[str, str]]:
@@ -471,10 +634,11 @@ async def startup():
     registry = AgentRegistry(AGENTS_DIR)
     llm = LLMRouter()
 
-    # Ensure data directory exists
+    # Ensure data directories exist
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     (DATA_DIR / "conversations").mkdir(exist_ok=True)
     (DATA_DIR / "logs").mkdir(exist_ok=True)
+    LINK_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Start autonomous orchestration loop
     from orchestrator import Orchestrator
@@ -618,6 +782,100 @@ async def list_agents_detail():
 async def token_usage():
     """Current daily token usage stats."""
     return token_tracker.summary()
+
+
+@app.post("/api/analyze-links")
+async def analyze_links(req: LinkAnalysisRequest):
+    """
+    Analyze a list of URLs using Claude Haiku.
+    Fetches each URL, classifies content, stores results, and notifies on high-relevance items.
+    """
+    context_hint = req.context or ""
+    results = []
+
+    for i, url in enumerate(req.urls):
+        # Fetch content
+        content, status = await fetch_url_content(url)
+
+        if status == "fetch_failed":
+            results.append({
+                "url": url,
+                "summary": "",
+                "relevance": 0,
+                "action": "",
+                "category": "general",
+                "tool_or_topic": "",
+                "status": "fetch_failed",
+            })
+            continue
+
+        # If no API key, return raw text without LLM analysis
+        if not ANTHROPIC_API_KEY:
+            results.append({
+                "url": url,
+                "summary": content[:200],
+                "relevance": 0,
+                "action": "",
+                "category": "general",
+                "tool_or_topic": "",
+                "status": "analysis_skipped",
+                "raw_text": content[:500],
+            })
+            continue
+
+        # Call Claude Haiku for analysis
+        try:
+            analysis = await analyze_with_llm(url, content, context_hint)
+        except Exception as e:
+            logger.error("LLM analysis failed for %s: %s", url, e)
+            analysis = {}
+
+        results.append({
+            "url": url,
+            "summary": analysis.get("summary", ""),
+            "relevance": analysis.get("relevance", 0),
+            "action": analysis.get("action", ""),
+            "category": analysis.get("category", "general"),
+            "tool_or_topic": analysis.get("tool_or_topic", ""),
+            "status": "ok",
+        })
+
+        # Rate limit: 2s delay between LLM calls (skip after last URL)
+        if i < len(req.urls) - 1:
+            await asyncio.sleep(LLM_DELAY_SECONDS)
+
+    # Save results to JSON file
+    save_analysis_results(results)
+
+    # Publish high-relevance items to Redis
+    await publish_high_relevance(results)
+
+    logger.info("link_analysis completed=%d urls", len(results))
+
+    return JSONResponse(content={
+        "analyzed": len(results),
+        "results": results,
+    })
+
+
+@app.get("/api/analyzed-links")
+async def get_analyzed_links(limit: int = Query(default=50, ge=1, le=500)):
+    """Return recent link analyses from stored JSON files, sorted by timestamp descending."""
+    if not LINK_ANALYSIS_DIR.exists():
+        return {"analyses": []}
+
+    # List all analysis JSON files, sorted newest first
+    files = sorted(LINK_ANALYSIS_DIR.glob("analysis_*.json"), reverse=True)
+    analyses = []
+    for fp in files[:limit]:
+        try:
+            with open(fp) as f:
+                data = json.load(f)
+            analyses.append(data)
+        except Exception as e:
+            logger.warning("Failed to read analysis file %s: %s", fp.name, e)
+
+    return {"analyses": analyses}
 
 
 @app.get("/")

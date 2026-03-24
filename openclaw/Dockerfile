@@ -27,7 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 
 # Create data directories
-RUN mkdir -p /app/data/conversations /app/data/logs /app/agents
+RUN mkdir -p /app/data/conversations /app/data/logs /app/data/link-analysis /app/agents
 
 # Default port
 ENV PORT=3000
