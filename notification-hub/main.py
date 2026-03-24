@@ -81,7 +81,7 @@ async def send_console(title: str, body: str):
 
 
 async def send_imessage(title: str, body: str):
-    if not all([LINQ_API_KEY, LINQ_PHONE_NUMBER, OWNER_PHONE_NUMBER]):
+    if not all([LINQ_API_KEY, OWNER_PHONE_NUMBER]):
         logger.warning("Linq not configured — falling back to console")
         await send_console(title, body)
         return "console"
@@ -89,9 +89,9 @@ async def send_imessage(title: str, body: str):
         message = f"{title}\n{body}" if title else body
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
-                "https://api.getlinq.com/v1/messages/send",
-                headers={"Authorization": f"Bearer {LINQ_API_KEY}", "Content-Type": "application/json"},
-                json={"from": LINQ_PHONE_NUMBER, "to": OWNER_PHONE_NUMBER, "body": message},
+                "https://api.linqapp.com/api/partner/v2/chats",
+                headers={"X-LINQ-INTEGRATION-TOKEN": LINQ_API_KEY, "Content-Type": "application/json"},
+                json={"phone_number": OWNER_PHONE_NUMBER, "text": message},
             )
             resp.raise_for_status()
             logger.info("iMessage sent: %s", title or body[:60])

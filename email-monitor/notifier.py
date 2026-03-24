@@ -49,7 +49,7 @@ async def send_console(message: str) -> None:
 
 async def send_linq(message: str) -> None:
     """Send notification via Linq iMessage API."""
-    if not all([LINQ_API_KEY, LINQ_PHONE_NUMBER, OWNER_PHONE_NUMBER]):
+    if not all([LINQ_API_KEY, OWNER_PHONE_NUMBER]):
         logger.warning("Linq not configured — falling back to console")
         await send_console(message)
         return
@@ -57,15 +57,14 @@ async def send_linq(message: str) -> None:
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
-                "https://api.getlinq.com/v1/messages/send",
+                "https://api.linqapp.com/api/partner/v2/chats",
                 headers={
-                    "Authorization": f"Bearer {LINQ_API_KEY}",
+                    "X-LINQ-INTEGRATION-TOKEN": LINQ_API_KEY,
                     "Content-Type": "application/json",
                 },
                 json={
-                    "from": LINQ_PHONE_NUMBER,
-                    "to": OWNER_PHONE_NUMBER,
-                    "body": message,
+                    "phone_number": OWNER_PHONE_NUMBER,
+                    "text": message,
                 },
             )
             resp.raise_for_status()
