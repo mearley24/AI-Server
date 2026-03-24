@@ -393,7 +393,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - TZ=America/Denver
     ports:
-      - "127.0.0.1:8098:8098"
+      - "0.0.0.0:8098:8098"
     volumes:
       - ./data/mission-control:/data
       - ./data/polymarket:/trading-data:ro
