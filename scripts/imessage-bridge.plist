@@ -13,6 +13,8 @@
     <dict>
         <key>OWNER_PHONE_NUMBER</key>
         <string>+19705193013</string>
+        <key>REPLY_TO</key>
+        <string>mearley24@me.com</string>
         <key>OPENCLAW_URL</key>
         <string>http://127.0.0.1:8099</string>
     </dict>

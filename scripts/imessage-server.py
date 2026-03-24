@@ -24,6 +24,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 OWNER_PHONE = os.environ.get("OWNER_PHONE_NUMBER", "+19705193013")
+REPLY_TO = os.environ.get("REPLY_TO", OWNER_PHONE)
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
@@ -242,7 +243,7 @@ def monitor_loop():
 
                 # Send response via iMessage
                 print(f"[monitor] Responding: {response[:100]}...")
-                send_imessage(OWNER_PHONE, response)
+                send_imessage(REPLY_TO, response)
         except Exception as e:
             print(f"[monitor] Error: {e}")
 
@@ -256,7 +257,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length)) if length else {}
         message = body.get("body", body.get("text", body.get("message", "")))
         title = body.get("title", "")
-        phone = body.get("phone", OWNER_PHONE)
+        phone = body.get("phone", REPLY_TO)
 
         full_msg = f"{title}: {message}" if title else message
         if full_msg:
@@ -288,6 +289,7 @@ if __name__ == "__main__":
 
     # Start HTTP server for outbound notifications
     print(f"[bridge] iMessage bridge listening on port {PORT} (two-way)")
-    print(f"[bridge] Owner: {OWNER_PHONE}")
+    print(f"[bridge] Listening for: {OWNER_PHONE}")
+    print(f"[bridge] Replying to: {REPLY_TO}")
     print(f"[bridge] OpenClaw: {OPENCLAW_URL}")
     HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
