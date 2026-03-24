@@ -253,35 +253,73 @@ class WeatherTraderStrategy(BaseStrategy):
         return unique
 
     async def _scan_kalshi_weather(self) -> list[dict[str, Any]]:
-        """Scan Kalshi for active weather markets."""
+        """Scan Kalshi for active weather markets using the events→markets flow.
+
+        Kalshi weather markets are organized as:
+          series (e.g. KXHIGHNY) → events (e.g. KXHIGHNY-26MAR25) → markets/contracts
+
+        We fetch events for each series ticker, then fetch individual contracts
+        within each event to get prices.
+        """
         if not self._kalshi_client:
             return []
 
-        try:
-            # Try specific weather series first
-            markets = await self._kalshi_client.get_markets(
-                status="open", series_ticker="HIGHTEMP", limit=100,
-            )
+        # NOAA station → Kalshi series tickers
+        station_to_kalshi: dict[str, dict[str, str]] = {
+            "KNYC": {"high": "KXHIGHNY", "low": "KXLOWNY"},
+            "KORD": {"high": "KXHIGHCH", "low": "KXLOWCH"},
+            "KLAX": {"high": "KXHIGHLA", "low": "KXLOWLA"},
+            "KDEN": {"high": "KXHIGHDN", "low": "KXLOWDN"},
+            "KJFK": {"high": "KXHIGHNY", "low": "KXLOWNY"},  # JFK uses NYC markets
+            "KATL": {"high": "KXHIGHAT", "low": "KXLOWAT"},
+            "KMIA": {"high": "KXHIGHMI", "low": "KXLOWMI"},
+        }
 
-            # Also try low temp and precipitation
-            for series in ["LOWTEMP", "PRECIP"]:
-                try:
-                    more = await self._kalshi_client.get_markets(
-                        status="open", series_ticker=series, limit=100,
-                    )
-                    markets.extend(more)
-                except Exception:
-                    pass
+        # Collect unique series tickers from configured stations
+        series_tickers: set[str] = set()
+        for station in self._noaa_stations:
+            mapping = station_to_kalshi.get(station)
+            if mapping:
+                series_tickers.update(mapping.values())
 
-            # Tag as kalshi for downstream processing
-            for m in markets:
-                m["_platform"] = "kalshi"
+        all_markets: list[dict[str, Any]] = []
 
-            return markets
+        for series_ticker in sorted(series_tickers):
+            try:
+                # Step 1: Fetch events for this series
+                events = await self._kalshi_client.get_events(
+                    series_ticker=series_ticker, status="open",
+                )
+                if not events:
+                    continue
 
-        except Exception as exc:
-            logger.error("kalshi_weather_scan_error", error=str(exc))
-            return []
+                # Step 2: For each event, fetch individual contracts
+                for event in events:
+                    event_ticker = event.get("event_ticker", "")
+                    if not event_ticker:
+                        continue
+
+                    markets = await self._kalshi_client.get_event_markets(event_ticker)
+                    for m in markets:
+                        m["_platform"] = "kalshi"
+                        m["_series_ticker"] = series_ticker
+                        m["_event_ticker"] = event_ticker
+                    all_markets.extend(markets)
+
+            except Exception as exc:
+                logger.warning(
+                    "kalshi_weather_series_error",
+                    series_ticker=series_ticker,
+                    error=str(exc),
+                )
+                continue
+
+        logger.info(
+            "kalshi_weather_scan_complete",
+            series_scanned=len(series_tickers),
+            markets_found=len(all_markets),
+        )
+        return all_markets
 
     # ── Edge Calculation ──────────────────────────────────────────────────
 

@@ -22,13 +22,15 @@ from src.signal_bus import Signal, SignalBus, SignalType
 
 logger = structlog.get_logger(__name__)
 
-# NOAA station → Kalshi series mapping
-STATION_SERIES = {
-    "KDEN": "HIGHTEMP-DEN",
-    "KJFK": "HIGHTEMP-NYC",
-    "KLAX": "HIGHTEMP-LAX",
-    "KORD": "HIGHTEMP-CHI",
-    "KHOU": "HIGHTEMP-HOU",
+# NOAA station → Kalshi series tickers (high and low temp)
+STATION_TO_KALSHI: dict[str, dict[str, str]] = {
+    "KNYC": {"high": "KXHIGHNY", "low": "KXLOWNY"},
+    "KORD": {"high": "KXHIGHCH", "low": "KXLOWCH"},
+    "KLAX": {"high": "KXHIGHLA", "low": "KXLOWLA"},
+    "KDEN": {"high": "KXHIGHDN", "low": "KXLOWDN"},
+    "KJFK": {"high": "KXHIGHNY", "low": "KXLOWNY"},  # JFK uses NYC markets
+    "KATL": {"high": "KXHIGHAT", "low": "KXLOWAT"},
+    "KMIA": {"high": "KXHIGHMI", "low": "KXLOWMI"},
 }
 
 
@@ -55,7 +57,7 @@ class KalshiWeatherStrategy:
     ) -> None:
         self._client = kalshi_client
         self._bus = signal_bus
-        self._stations = noaa_stations or ["KDEN", "KJFK", "KLAX"]
+        self._stations = noaa_stations or list(STATION_TO_KALSHI.keys())
         self._edge_threshold = edge_threshold
         self._max_size = max_position_size
         self._interval = check_interval
@@ -93,87 +95,118 @@ class KalshiWeatherStrategy:
             await asyncio.sleep(self._interval)
 
     async def _check_weather_markets(self) -> None:
-        """Core weather strategy loop."""
-        # Fetch weather markets from Kalshi
-        markets = await self._client.get_markets(
-            status="open",
-            series_ticker="HIGHTEMP",
-            limit=100,
-        )
-        if not markets:
-            # Try broader weather search
-            markets = await self._client.get_markets(status="open", limit=200)
-            markets = [m for m in markets if self._is_weather_market(m)]
+        """Core weather strategy loop using events→markets API flow.
 
-        if not markets:
-            return
-
-        # For each station, fetch forecasts and compare
+        1. For each station, determine the Kalshi series tickers
+        2. Fetch events for each series (GET /events?series_ticker=KXHIGHNY)
+        3. Fetch contracts within each event (GET /markets?event_ticker=...)
+        4. Compare forecast probabilities vs market prices
+        """
         for station in self._stations:
             noaa_forecast = await self._fetch_noaa_forecast(station)
             if not noaa_forecast:
                 continue
 
-            # Find matching Kalshi markets
-            for market in markets:
-                temp_range = self._parse_temp_range(market.get("title", ""))
-                if temp_range is None:
-                    continue
+            # Get Kalshi series tickers for this station
+            kalshi_mapping = STATION_TO_KALSHI.get(station)
+            if not kalshi_mapping:
+                continue
 
-                low, high = temp_range
-                forecast_prob = self._calc_probability(
-                    noaa_forecast.get("temperature"),
-                    low,
-                    high,
-                    sigma=3.5,
-                )
-
-                if forecast_prob is None:
-                    continue
-
-                yes_price = float(market.get("yes_bid_dollars", 0) or 0)
-                if yes_price > 1.0:
-                    yes_price /= 100
-
-                if yes_price <= 0:
-                    continue
-
-                edge = forecast_prob - yes_price
-
-                if edge >= self._edge_threshold:
-                    logger.info(
-                        "kalshi_weather_edge_found",
-                        ticker=market.get("ticker"),
-                        station=station,
-                        forecast_prob=round(forecast_prob, 3),
-                        market_price=round(yes_price, 3),
-                        edge=round(edge, 3),
+            for temp_type, series_ticker in kalshi_mapping.items():
+                # Step 1: Fetch events for this series
+                try:
+                    events = await self._client.get_events(
+                        series_ticker=series_ticker, status="open",
                     )
-
-                    # Place order via Kalshi client
-                    order = Order(
-                        platform="kalshi",
-                        market_id=market.get("ticker", ""),
-                        side="yes",
-                        size=min(self._max_size, 10),
-                        price=yes_price + 0.01,  # bid 1 cent above current
-                        order_type="limit",
+                except Exception as exc:
+                    logger.warning(
+                        "kalshi_weather_events_error",
+                        series_ticker=series_ticker,
+                        error=str(exc),
                     )
-                    await self._client.place_order(order)
+                    continue
 
-                    # Emit signal
-                    await self._bus.publish(Signal(
-                        signal_type=SignalType.TRADE_PROPOSAL,
-                        source="kalshi_weather",
-                        data={
-                            "platform": "kalshi",
-                            "ticker": market.get("ticker"),
-                            "station": station,
-                            "edge": round(edge, 4),
-                            "forecast_prob": round(forecast_prob, 4),
-                            "market_price": round(yes_price, 4),
-                        },
-                    ))
+                if not events:
+                    continue
+
+                # Step 2: For each event, fetch individual contracts
+                for event in events:
+                    event_ticker = event.get("event_ticker", "")
+                    if not event_ticker:
+                        continue
+
+                    try:
+                        markets = await self._client.get_event_markets(event_ticker)
+                    except Exception as exc:
+                        logger.warning(
+                            "kalshi_weather_markets_error",
+                            event_ticker=event_ticker,
+                            error=str(exc),
+                        )
+                        continue
+
+                    # Step 3: Compare forecast vs market price for each contract
+                    for market in markets:
+                        temp_range = self._parse_temp_range(market.get("title", ""))
+                        if temp_range is None:
+                            continue
+
+                        low, high = temp_range
+                        forecast_prob = self._calc_probability(
+                            noaa_forecast.get("temperature"),
+                            low,
+                            high,
+                            sigma=3.5,
+                        )
+
+                        if forecast_prob is None:
+                            continue
+
+                        yes_price = float(market.get("yes_bid_dollars", market.get("yes_bid", 0)) or 0)
+                        if yes_price > 1.0:
+                            yes_price /= 100
+
+                        if yes_price <= 0:
+                            continue
+
+                        edge = forecast_prob - yes_price
+
+                        if edge >= self._edge_threshold:
+                            logger.info(
+                                "kalshi_weather_edge_found",
+                                ticker=market.get("ticker"),
+                                station=station,
+                                series=series_ticker,
+                                event=event_ticker,
+                                forecast_prob=round(forecast_prob, 3),
+                                market_price=round(yes_price, 3),
+                                edge=round(edge, 3),
+                            )
+
+                            order = Order(
+                                platform="kalshi",
+                                market_id=market.get("ticker", ""),
+                                side="yes",
+                                size=min(self._max_size, 10),
+                                price=yes_price + 0.01,
+                                order_type="limit",
+                            )
+                            await self._client.place_order(order)
+
+                            await self._bus.publish(Signal(
+                                signal_type=SignalType.TRADE_PROPOSAL,
+                                source="kalshi_weather",
+                                data={
+                                    "platform": "kalshi",
+                                    "ticker": market.get("ticker"),
+                                    "station": station,
+                                    "series": series_ticker,
+                                    "event": event_ticker,
+                                    "edge": round(edge, 4),
+                                    "forecast_prob": round(forecast_prob, 4),
+                                    "market_price": round(yes_price, 4),
+                                },
+                            ))
 
     def _is_weather_market(self, market: dict) -> bool:
         """Check if a market is weather-related."""
@@ -217,11 +250,13 @@ class KalshiWeatherStrategy:
         """Fetch forecast from NOAA NWS API."""
         # NOAA station grid mapping (simplified — real impl would resolve gridpoints)
         grid_map = {
+            "KNYC": ("OKX", 33, 37),  # NYC (Central Park)
             "KDEN": ("BOU", 62, 60),  # Denver
-            "KJFK": ("OKX", 33, 37),  # NYC
+            "KJFK": ("OKX", 33, 37),  # NYC/JFK
             "KLAX": ("LOX", 154, 44),  # LA
             "KORD": ("LOT", 65, 76),  # Chicago
-            "KHOU": ("HGX", 65, 97),  # Houston
+            "KATL": ("FFC", 52, 88),  # Atlanta
+            "KMIA": ("MFL", 75, 54),  # Miami
         }
 
         grid = grid_map.get(station)

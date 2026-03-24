@@ -372,6 +372,61 @@ class KalshiClient(PlatformClient):
 
         self._ws_task = asyncio.create_task(_ws_loop())
 
+    async def get_events(self, **filters: Any) -> list[dict]:
+        """Fetch events from Kalshi (e.g. weather event groups).
+
+        Use series_ticker to find events within a series (e.g. KXHIGHNY).
+        Each event contains multiple child markets/contracts.
+        """
+        if self._dry_run and self._private_key is None:
+            return []
+
+        params: dict[str, Any] = {}
+        if "series_ticker" in filters:
+            params["series_ticker"] = filters["series_ticker"]
+        if "status" in filters:
+            params["status"] = filters["status"]
+        if "limit" in filters:
+            params["limit"] = filters["limit"]
+        if "cursor" in filters:
+            params["cursor"] = filters["cursor"]
+
+        try:
+            result = await self._request("GET", "/events", params=params)
+            return result.get("events", [])
+        except Exception as exc:
+            logger.error("kalshi_get_events_error", error=str(exc), params=params)
+            return []
+
+    async def get_event_markets(self, event_ticker: str) -> list[dict]:
+        """Fetch individual market contracts within an event.
+
+        This is step 2 of the Kalshi weather flow:
+        1. get_events(series_ticker=...) -> list of events
+        2. get_event_markets(event_ticker) -> list of contracts with prices
+        """
+        if self._dry_run and self._private_key is None:
+            return []
+
+        try:
+            result = await self._request(
+                "GET", "/markets", params={"event_ticker": event_ticker}
+            )
+            markets = result.get("markets", [])
+            for m in markets:
+                for key in ("yes_bid", "yes_ask", "no_bid", "no_ask"):
+                    cents_key = key + "_dollars"
+                    if cents_key not in m and key in m:
+                        m[cents_key] = m[key] / 100 if isinstance(m[key], (int, float)) else m[key]
+            return markets
+        except Exception as exc:
+            logger.error(
+                "kalshi_event_markets_error",
+                event_ticker=event_ticker,
+                error=str(exc),
+            )
+            return []
+
     async def get_event(self, event_ticker: str) -> dict:
         """Fetch event details with child markets."""
         try:
