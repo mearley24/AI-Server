@@ -177,6 +177,96 @@
     font-size: 11px;
     color: #444;
   }
+  /* ── Trading Dashboard ── */
+  .section-divider {
+    text-align: center;
+    padding: 24px 16px 8px;
+    border-top: 1px solid #1e1e2e;
+    margin-top: 8px;
+  }
+  .section-divider h2 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #ffc107;
+    text-transform: uppercase;
+  }
+  .section-divider .section-sub {
+    font-size: 12px;
+    color: #666;
+    margin-top: 2px;
+  }
+  .trading-summary {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #1e1e2e;
+  }
+  .trading-summary .summary-stat .value {
+    font-size: 24px;
+  }
+  .trading-status-active { color: #00e676; }
+  .trading-status-idle { color: #888; }
+  .pnl-positive { color: #00e676; }
+  .pnl-negative { color: #ff5252; }
+  .pair-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a1a24;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+  .pair-row:hover { background: #1a1a24; }
+  .pair-name { font-weight: 600; color: #e0e0e0; min-width: 100px; }
+  .pair-stat { color: #888; text-align: right; min-width: 70px; }
+  .pair-pnl { font-weight: 600; min-width: 80px; text-align: right; }
+  .trade-entry {
+    display: flex;
+    gap: 12px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #1a1a24;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    align-items: center;
+  }
+  .trade-entry:hover { background: #1a1a24; }
+  .trade-ts { color: #555; white-space: nowrap; min-width: 75px; }
+  .trade-pair { color: #e0e0e0; font-weight: 600; min-width: 85px; }
+  .trade-side { font-weight: 700; min-width: 36px; text-align: center; }
+  .trade-side.buy { color: #00e676; }
+  .trade-side.sell { color: #ff5252; }
+  .trade-price { color: #bbb; min-width: 80px; text-align: right; }
+  .trade-size { color: #888; min-width: 65px; text-align: right; }
+  .trade-feed {
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .trade-feed::-webkit-scrollbar { width: 6px; }
+  .trade-feed::-webkit-scrollbar-track { background: transparent; }
+  .trade-feed::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .strategy-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a1a24;
+    font-size: 13px;
+  }
+  .strategy-row:hover { background: #1a1a24; }
+  .strategy-name { font-weight: 600; }
+  .strategy-state {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .strategy-active { background: #00e67622; color: #00e676; }
+  .strategy-idle { background: #88888822; color: #888; }
+  .bps-label { font-size: 10px; color: #888; }
 </style>
 </head>
 <body>
@@ -231,6 +321,52 @@
 </div>
 
 <div class="refresh-info">Auto-refresh every 30s &bull; <span id="last-refresh">-</span></div>
+
+<!-- ── Trading Dashboard Section ── -->
+<div class="section-divider">
+  <h2>Trading</h2>
+  <div class="section-sub">Polymarket Bot — Live Paper Trading</div>
+</div>
+
+<div class="trading-summary" id="trading-summary">
+  <div class="summary-stat">
+    <div class="value" id="trading-total" style="color:#448aff">-</div>
+    <div class="label">Total Trades</div>
+  </div>
+  <div class="summary-stat">
+    <div class="value" id="trading-runtime" style="color:#e0e0e0">-</div>
+    <div class="label">Running Time</div>
+  </div>
+  <div class="summary-stat">
+    <div class="value" id="trading-pnl">-</div>
+    <div class="label">Est. P&amp;L (USD)</div>
+  </div>
+  <div class="summary-stat">
+    <div class="value" id="trading-bot-status" class="trading-status-idle">-</div>
+    <div class="label">Status</div>
+  </div>
+</div>
+
+<div class="main-grid">
+  <div class="card">
+    <div class="card-title">P&amp;L Breakdown</div>
+    <div id="pnl-breakdown"><div class="feed-empty">Loading...</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Strategy Status</div>
+    <div id="strategy-status"><div class="feed-empty">Loading...</div></div>
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-title">Live Trade Feed <span style="font-size:10px;color:#555;font-weight:400;letter-spacing:0">(auto-refresh 5s)</span></div>
+    <div class="trade-feed" id="trade-feed">
+      <div class="feed-empty">Loading trades...</div>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-info">Trading data refreshes every 5s</div>
 
 <script>
 (function() {
@@ -368,12 +504,164 @@
     return d.innerHTML;
   }
 
+  // ── Trading Dashboard ──
+  const TRADING_POLL = 5000;
+
+  function formatDuration(ms) {
+    if (!ms || ms <= 0) return '-';
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm ' + (s % 60) + 's';
+  }
+
+  function formatPrice(p) {
+    if (p === undefined || p === null) return '-';
+    return Number(p).toFixed(4);
+  }
+
+  async function pollTrading() {
+    try {
+      const resp = await fetch('/api/trading');
+      const data = await resp.json();
+      renderTradingSummary(data);
+      renderPnlBreakdown(data.pairs);
+      renderTradeFeed(data.recent_trades);
+    } catch (e) {
+      console.error('Trading poll failed:', e);
+    }
+  }
+
+  function renderTradingSummary(data) {
+    document.getElementById('trading-total').textContent = data.total_trades || 0;
+
+    // Running time
+    if (data.first_trade_at && data.last_trade_at) {
+      const first = new Date(data.first_trade_at);
+      const last = new Date(data.last_trade_at);
+      document.getElementById('trading-runtime').textContent = formatDuration(last - first);
+    } else {
+      document.getElementById('trading-runtime').textContent = '-';
+    }
+
+    // P&L
+    const pnlEl = document.getElementById('trading-pnl');
+    const pnl = data.total_pnl || 0;
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+    pnlEl.className = 'value ' + (pnl >= 0 ? 'pnl-positive' : 'pnl-negative');
+
+    // Status: active if last trade within 60 seconds
+    const statusEl = document.getElementById('trading-bot-status');
+    if (data.last_trade_at) {
+      const age = Date.now() - new Date(data.last_trade_at).getTime();
+      if (age < 60000) {
+        statusEl.textContent = 'ACTIVE';
+        statusEl.className = 'value trading-status-active';
+      } else {
+        statusEl.textContent = 'IDLE';
+        statusEl.className = 'value trading-status-idle';
+      }
+    } else {
+      statusEl.textContent = 'NO DATA';
+      statusEl.className = 'value trading-status-idle';
+    }
+  }
+
+  function renderPnlBreakdown(pairs) {
+    const el = document.getElementById('pnl-breakdown');
+    if (!pairs || Object.keys(pairs).length === 0) {
+      el.innerHTML = '<div class="feed-empty">No trading pairs</div>';
+      return;
+    }
+    let html = '';
+    for (const [pair, info] of Object.entries(pairs)) {
+      const pnlClass = info.estimated_pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+      const spreadBps = info.avg_buy > 0 ? ((info.spread_capture / info.avg_buy) * 10000).toFixed(1) : '0.0';
+      html += `<div class="pair-row">
+        <span class="pair-name">${escapeHtml(pair)}</span>
+        <span class="pair-stat">${info.buys}B / ${info.sells}S</span>
+        <span class="pair-stat">spread: ${formatPrice(info.spread_capture)} <span class="bps-label">(${spreadBps} bps)</span></span>
+        <span class="pair-pnl ${pnlClass}">${info.estimated_pnl >= 0 ? '+' : ''}$${info.estimated_pnl.toFixed(2)}</span>
+      </div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  function renderTradeFeed(trades) {
+    const el = document.getElementById('trade-feed');
+    if (!trades || trades.length === 0) {
+      el.innerHTML = '<div class="feed-empty">No trades yet</div>';
+      return;
+    }
+    let html = '';
+    const shown = trades.slice(0, 30);
+    for (const t of shown) {
+      const tsRaw = t.timestamp || t.time || '';
+      const ts = tsRaw ? new Date(tsRaw).toLocaleTimeString() : '';
+      const pair = t.pair || t.symbol || '???';
+      const side = (t.side || '').toUpperCase();
+      const sideClass = side === 'BUY' ? 'buy' : 'sell';
+      const price = formatPrice(t.price);
+      const size = t.size || t.quantity || t.amount || '-';
+      html += `<div class="trade-entry">
+        <span class="trade-ts">${ts}</span>
+        <span class="trade-pair">${escapeHtml(pair)}</span>
+        <span class="trade-side ${sideClass}">${side}</span>
+        <span class="trade-price">${price}</span>
+        <span class="trade-size">${size}</span>
+      </div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  async function pollBotStatus() {
+    try {
+      const resp = await fetch('/api/trading/bot-status');
+      const data = await resp.json();
+      renderStrategyStatus(data);
+    } catch (e) {
+      console.error('Bot status poll failed:', e);
+    }
+  }
+
+  function renderStrategyStatus(data) {
+    const el = document.getElementById('strategy-status');
+    let html = '';
+    if (data.status) {
+      const s = data.status;
+      if (s.platforms) {
+        html += '<div class="pair-row"><span class="pair-name">Platforms</span><span class="pair-stat" style="color:#e0e0e0">' + escapeHtml(Array.isArray(s.platforms) ? s.platforms.join(', ') : String(s.platforms)) + '</span></div>';
+      }
+    }
+    if (data.strategies) {
+      const strats = Array.isArray(data.strategies) ? data.strategies : (data.strategies.strategies || []);
+      for (const st of strats) {
+        const name = st.name || st.strategy || 'Unknown';
+        const state = (st.state || st.status || 'idle').toLowerCase();
+        const stateClass = state === 'active' || state === 'running' ? 'strategy-active' : 'strategy-idle';
+        html += `<div class="strategy-row">
+          <span class="strategy-name">${escapeHtml(name)}</span>
+          <span class="strategy-state ${stateClass}">${state}</span>
+        </div>`;
+      }
+    }
+    if (!html) {
+      html = '<div class="feed-empty">Bot unreachable or no strategies</div>';
+    }
+    el.innerHTML = html;
+  }
+
   // ── Init ──
   pollServices();
   pollStatus();
   connectWS();
+  pollTrading();
+  pollBotStatus();
   setInterval(pollServices, POLL_INTERVAL);
   setInterval(pollStatus, POLL_INTERVAL);
+  setInterval(pollTrading, TRADING_POLL);
+  setInterval(pollBotStatus, 30000);
 })();
 </script>
 </body>

@@ -444,6 +444,7 @@ services:
       - "127.0.0.1:8098:8098"
     volumes:
       - ./data/mission-control:/data
+      - ./data/polymarket:/trading-data:ro
     depends_on:
       - redis
     healthcheck:
