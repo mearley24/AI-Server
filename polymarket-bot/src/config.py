@@ -71,12 +71,20 @@ class Settings(BaseSettings):
     # --- Weather Trader ---
     weather_trader_enabled: bool = Field(default=False, description="Enable weather trader strategy")
     weather_noaa_stations: list[str] = Field(
-        default_factory=lambda: ["KDEN", "KJFK", "KLAX"],
+        default_factory=lambda: ["KNYC", "KORD", "KLAX", "KDEN", "KJFK", "KATL", "KMIA"],
         description="NOAA station IDs to track",
     )
-    weather_edge_threshold: float = Field(default=0.05, description="Minimum edge (5%) to enter")
-    weather_max_position_size: float = Field(default=10.0, description="Max per-position in USDC")
-    weather_check_interval_seconds: float = Field(default=300.0, description="Seconds between checks")
+    weather_edge_threshold: float = Field(default=0.05, description="Minimum edge (5 cents) to enter")
+    weather_max_position_size: float = Field(default=25.0, description="Max per-position in USDC")
+    weather_check_interval_seconds: float = Field(default=300.0, description="Seconds between checks (5 min)")
+    weather_scan_interval_seconds: float = Field(default=300.0, description="NOAA data scan interval (5 min)")
+    weather_min_edge_cents: int = Field(default=5, description="Minimum edge in cents to consider")
+    weather_strong_edge_cents: int = Field(default=10, description="Strong edge for half-size position")
+    weather_very_strong_edge_cents: int = Field(default=15, description="Very strong edge for full-size position")
+    weather_take_profit_edge_cents: int = Field(default=2, description="Exit when edge narrows to this")
+    weather_stop_loss_pct: float = Field(default=0.15, description="Stop loss at 15% of position value")
+    weather_exit_before_resolution_minutes: int = Field(default=30, description="Exit N minutes before settlement")
+    visual_crossing_api_key: str = Field(default="", description="Optional Visual Crossing API key for faster data")
 
     # --- Sports Arb ---
     sports_arb_arb_threshold: float = Field(default=0.995, description="Max combined price for arbitrage")

@@ -536,6 +536,53 @@ class TestNotificationRequest(BaseModel):
     message: str = "Test notification from Bob"
 
 
+# ── Weather Intelligence endpoints ────────────────────────────────────
+
+@router.get("/weather/current")
+async def weather_current() -> dict[str, Any]:
+    """Get latest NOAA data for all tracked weather stations."""
+    weather_strat = deps.strategies.get("weather_trader")
+    if not weather_strat:
+        raise HTTPException(status_code=503, detail="Weather trader strategy not initialized")
+
+    station_data = weather_strat.station_data
+    stations = {}
+    for station_id, data in station_data.items():
+        current = data.get("current")
+        forecast = data.get("forecast")
+        stations[station_id] = {
+            "city": data.get("city", ""),
+            "current_temp_f": current.get("temp_f") if current else None,
+            "observed_at": current.get("observed_at", "") if current else "",
+            "source": current.get("source", "") if current else "",
+            "forecast_high_f": forecast.get("forecast_high_f") if forecast else None,
+            "forecast_low_f": forecast.get("forecast_low_f") if forecast else None,
+            "forecast_updated": forecast.get("updated_at", "") if forecast else "",
+            "hourly_count": len(data.get("hourly", [])),
+            "fetched_at": data.get("fetched_at"),
+        }
+
+    return {
+        "stations": stations,
+        "count": len(stations),
+    }
+
+
+@router.get("/weather/edges")
+async def weather_edges() -> dict[str, Any]:
+    """Get current calculated edges vs market prices for weather markets."""
+    weather_strat = deps.strategies.get("weather_trader")
+    if not weather_strat:
+        raise HTTPException(status_code=503, detail="Weather trader strategy not initialized")
+
+    edges = weather_strat.current_edges
+    return {
+        "edges": edges,
+        "count": len(edges),
+        "positions": len(weather_strat._positions),
+    }
+
+
 @router.post("/notifications/test")
 async def test_notification(req: TestNotificationRequest) -> dict[str, Any]:
     """Send a test notification to verify iMessage/console is working."""

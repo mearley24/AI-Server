@@ -1,30 +1,37 @@
-"""Weather market strategy — NOAA + AccuWeather forecasts vs Polymarket pricing.
+"""Weather market strategy — NOAA data edge vs market price comparison.
 
-Enhanced 4-stage pipeline (from hanakoxbt's Weather Arb Terminal):
-    1. SCAN  — Monitor 247+ active weather contracts (temperature, frost, precip, wind)
-    2. DISCREPANCY — Cross-reference NOAA + AccuWeather against Polymarket pricing
-    3. FILTER — Only trade when edge >= threshold, sources agree, sufficient liquidity,
-                and contract not expiring within 30 minutes
-    4. EXECUTE — Place order with take-profit at fair value and stop-loss at entry - 5%
+Enhanced strategy using dedicated NOAA client for fast, parallel data pulls
+every 5 minutes across 7 cities. Compares NOAA-implied fair prices against
+Kalshi and Polymarket weather markets. Position sizing based on edge magnitude
+(5c/10c/15c tiers). Exit logic: take profit when edge narrows, stop loss,
+exit before resolution.
 
-Also includes a rare event scanner targeting ultra-low-probability contracts
-(< 10%) where forecast data suggests higher probability — asymmetric 20x payoffs.
+Key insight: NOAA forecasts update every 5-10 minutes but weather markets
+lag by 6-12 hours. The edge is in speed.
+
+Pipeline:
+    1. SCAN  — Pull NOAA data + fetch active weather markets (both platforms)
+    2. PRICE — Calculate NOAA-implied fair price for each market
+    3. EDGE  — Compare fair price vs market price, filter by thresholds
+    4. SIZE  — Position sizing based on edge magnitude (5c/10c/15c tiers)
+    5. EXECUTE — Place order with exit logic (take-profit, stop-loss, time)
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
+import math
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
-import httpx
 import structlog
 
 from src.client import PolymarketClient
 from src.config import Settings
 from src.market_scanner import MarketScanner
+from src.noaa_client import KALSHI_STATIONS, NOAAClient
 from src.pnl_tracker import PnLTracker
 from src.signer import SIDE_BUY, SIDE_SELL
 from src.websocket_client import OrderbookFeed
@@ -32,38 +39,36 @@ from strategies.base import BaseStrategy
 
 logger = structlog.get_logger(__name__)
 
-# NOAA NWS API base URL — free, no key needed
-NOAA_API_BASE = "https://api.weather.gov"
-
-# AccuWeather API base URL — free tier: 50 calls/day
-ACCUWEATHER_API_BASE = "http://dataservice.accuweather.com"
-
-NOAA_HEADERS = {"User-Agent": "(polymarket-weather-bot, contact@example.com)", "Accept": "application/geo+json"}
-
 # Temperature bracket pattern: "Will it be 80-85°F in Denver on March 25?"
 TEMP_BRACKET_PATTERN = re.compile(
     r"(\d+)\s*[-–to]+\s*(\d+)\s*°?\s*F",
     re.IGNORECASE,
 )
 
-# Broader weather patterns for non-temperature markets
-WEATHER_PATTERNS = {
-    "frost": re.compile(r"frost|freeze|below\s+32", re.IGNORECASE),
-    "precipitation": re.compile(r"rain|snow|precip|inches?\s+of", re.IGNORECASE),
-    "wind": re.compile(r"wind|mph\s+gust|sustained\s+wind", re.IGNORECASE),
-}
+# "above X°F" pattern for threshold markets
+TEMP_ABOVE_PATTERN = re.compile(
+    r"(?:above|over|exceed|higher\s+than|greater\s+than)\s+(\d+)\s*°?\s*F",
+    re.IGNORECASE,
+)
+
+# "below X°F" pattern
+TEMP_BELOW_PATTERN = re.compile(
+    r"(?:below|under|lower\s+than|less\s+than)\s+(\d+)\s*°?\s*F",
+    re.IGNORECASE,
+)
 
 # City/location patterns for matching weather markets to stations
 CITY_PATTERNS: dict[str, list[str]] = {
-    "KDEN": ["denver", "den", "colorado"],
-    "KJFK": ["new york", "nyc", "jfk", "manhattan"],
-    "KLAX": ["los angeles", "la", "lax"],
+    "KNYC": ["new york", "nyc", "manhattan", "central park"],
     "KORD": ["chicago", "ord", "o'hare"],
+    "KLAX": ["los angeles", "la", "lax"],
+    "KDEN": ["denver", "den", "colorado"],
+    "KJFK": ["jfk", "kennedy"],
     "KATL": ["atlanta", "atl"],
     "KMIA": ["miami", "mia"],
 }
 
-# AccuWeather location keys for common cities (resolved at startup)
+# AccuWeather location keys for cross-validation
 ACCUWEATHER_CITY_KEYS: dict[str, str] = {
     "denver": "347810",
     "new york": "349727",
@@ -71,26 +76,25 @@ ACCUWEATHER_CITY_KEYS: dict[str, str] = {
     "chicago": "348308",
     "atlanta": "348181",
     "miami": "347936",
-    "tokyo": "226396",
-    "wellington": "250938",
-    "ankara": "316938",
 }
 
-# Rare event target cities (ColdMath wallet strategy)
-RARE_EVENT_CITIES = ["tokyo", "wellington", "ankara", "denver", "chicago", "miami"]
+# NOAA forecast uncertainty (standard deviation in °F)
+NOAA_SIGMA = 3.5
 
 
 class WeatherTraderStrategy(BaseStrategy):
-    """Trades weather markets using multi-source forecast edge.
+    """Trades weather markets using NOAA data edge vs market prices.
 
-    4-stage pipeline:
-        SCAN → DISCREPANCY → FILTER → EXECUTE
-
-    Sources: NOAA National Weather Service + AccuWeather (confirmation)
+    Core logic (every 5 minutes):
+    1. Pull NOAA current temp + forecast for all stations
+    2. Fetch active Kalshi weather markets
+    3. Fetch active Polymarket weather markets
+    4. For each market: calculate NOAA-implied fair price, compare to market
+    5. If edge > 5c → signal. Edge > 10c → trade. Edge > 15c → larger position.
     """
 
     name = "weather_trader"
-    description = "Weather market arbitrage with NOAA + AccuWeather multi-source confirmation"
+    description = "Weather market edge trading — NOAA data vs market price comparison"
 
     def __init__(
         self,
@@ -103,78 +107,130 @@ class WeatherTraderStrategy(BaseStrategy):
         super().__init__(client, settings, scanner, orderbook, pnl_tracker)
         self._tick_interval = settings.weather_check_interval_seconds
 
+        # Edge thresholds (in dollars, converted from cents)
+        self._min_edge = settings.weather_min_edge_cents / 100.0
+        self._strong_edge = settings.weather_strong_edge_cents / 100.0
+        self._very_strong_edge = settings.weather_very_strong_edge_cents / 100.0
+        self._take_profit_edge = settings.weather_take_profit_edge_cents / 100.0
+        self._stop_loss_pct = settings.weather_stop_loss_pct
+        self._exit_before_resolution_min = settings.weather_exit_before_resolution_minutes
+        self._max_position_size = settings.weather_max_position_size
+
         self._params = {
             "stations": settings.weather_noaa_stations,
-            "edge_threshold": settings.weather_edge_threshold,
-            "max_position_size": settings.weather_max_position_size,
-            "use_multi_source_confirmation": getattr(settings, "weather_trader_use_multi_source_confirmation", True),
-            "min_sources_agree": getattr(settings, "weather_trader_min_sources_agree", 2),
-            "scan_all_weather_types": getattr(settings, "weather_trader_scan_all_weather_types", True),
-            "min_time_to_expiry_minutes": getattr(settings, "weather_trader_min_time_to_expiry_minutes", 30),
-            "take_profit_at_fair_value": getattr(settings, "weather_trader_take_profit_at_fair_value", True),
-            "stop_loss_pct": getattr(settings, "weather_trader_stop_loss_pct", 0.05),
-            # Rare event scanner
-            "rare_event_enabled": getattr(settings, "weather_trader_rare_event_scanner_enabled", True),
-            "rare_event_max_probability": getattr(settings, "weather_trader_rare_event_scanner_max_probability", 0.10),
-            "rare_event_min_forecast_edge": getattr(settings, "weather_trader_rare_event_scanner_min_forecast_edge", 0.15),
-            "rare_event_max_position_size": getattr(settings, "weather_trader_rare_event_scanner_max_position_size", 25.0),
+            "min_edge": self._min_edge,
+            "strong_edge": self._strong_edge,
+            "very_strong_edge": self._very_strong_edge,
+            "max_position_size": self._max_position_size,
+            "take_profit_edge": self._take_profit_edge,
+            "stop_loss_pct": self._stop_loss_pct,
+            "exit_before_resolution_min": self._exit_before_resolution_min,
         }
 
-        self._http = httpx.AsyncClient(timeout=30.0, headers=NOAA_HEADERS)
-        self._accuweather_key = os.environ.get("ACCUWEATHER_API_KEY", "")
-        self._station_grids: dict[str, dict[str, Any]] = {}  # station -> grid info
-        self._positions: dict[str, dict[str, Any]] = {}  # token_id -> position
-        self._forecasts: dict[str, list[dict[str, Any]]] = {}  # station -> forecast periods
-        self._accuweather_forecasts: dict[str, dict[str, Any]] = {}  # city -> forecast
-        self._last_forecast_fetch: float = 0.0
-        self._forecast_cache_ttl: float = 600.0  # Re-fetch forecasts every 10 minutes
-        self._accuweather_calls_today: int = 0
-        self._accuweather_day: str = ""
+        # NOAA client — will be initialized in start()
+        self._noaa: NOAAClient | None = None
+        self._noaa_stations = settings.weather_noaa_stations
+        self._vc_key = settings.visual_crossing_api_key
+
+        # Kalshi client (injected from main.py if available)
+        self._kalshi_client: Any = None
+
+        # Position tracking: token_id -> position info
+        self._positions: dict[str, dict[str, Any]] = {}
+
+        # Station data cache (populated each tick from NOAA client)
+        self._station_data: dict[str, dict[str, Any]] = {}
+
+        # Edge tracking for API endpoint
+        self._current_edges: list[dict[str, Any]] = []
+
+    def set_kalshi_client(self, client: Any) -> None:
+        """Attach Kalshi platform client for dual-platform execution."""
+        self._kalshi_client = client
+
+    @property
+    def current_edges(self) -> list[dict[str, Any]]:
+        """Current calculated edges (exposed for /weather/edges endpoint)."""
+        return list(self._current_edges)
+
+    @property
+    def station_data(self) -> dict[str, dict[str, Any]]:
+        """Current NOAA station data (exposed for /weather/current endpoint)."""
+        return dict(self._station_data)
 
     async def start(self, params: dict[str, Any] | None = None) -> None:
-        """Start strategy and resolve NOAA station grid points."""
+        """Start strategy: initialize NOAA client and resolve grid points."""
+        self._noaa = NOAAClient(
+            stations=self._noaa_stations,
+            visual_crossing_key=self._vc_key,
+        )
+        await self._noaa.initialize()
         await super().start(params)
-        await self._resolve_stations()
 
     async def stop(self) -> None:
-        """Stop strategy and close HTTP client."""
+        """Stop strategy: exit positions and close NOAA client."""
         for token_id in list(self._positions.keys()):
             await self._exit_position(token_id, "strategy_stop")
-        await self._http.aclose()
+        if self._noaa:
+            await self._noaa.close()
         await super().stop()
 
     async def on_tick(self) -> None:
-        """Execute the 4-stage pipeline: SCAN → DISCREPANCY → FILTER → EXECUTE."""
-        now = time.time()
+        """Execute the weather edge pipeline each tick."""
+        # Step 1: Pull fresh NOAA data for all stations
+        if not self._noaa:
+            return
 
-        # Refresh forecasts periodically
-        if now - self._last_forecast_fetch > self._forecast_cache_ttl:
-            await self._fetch_all_forecasts()
-            await self._fetch_accuweather_forecasts()
-            self._last_forecast_fetch = now
+        self._station_data = await self._noaa.get_all_stations()
+        if not self._station_data:
+            logger.warning("weather_no_station_data")
+            return
 
-        # Stage 1: SCAN for weather markets
-        markets = await self._scan_weather_markets()
+        # Step 2: Scan for weather markets on both platforms
+        edges: list[dict[str, Any]] = []
 
-        # Stage 2 & 3: DISCREPANCY + FILTER → EXECUTE
-        for mkt in markets:
-            await self._evaluate_and_trade(mkt)
+        # Polymarket weather markets
+        poly_markets = await self._scan_polymarket_weather()
+        for mkt in poly_markets:
+            edge_info = self._calculate_edge(mkt, platform="polymarket")
+            if edge_info:
+                edges.append(edge_info)
 
-        # Rare event scanner
-        if self._params["rare_event_enabled"]:
-            await self._scan_rare_events(markets)
+        # Kalshi weather markets (if client available)
+        if self._kalshi_client:
+            kalshi_markets = await self._scan_kalshi_weather()
+            for mkt in kalshi_markets:
+                edge_info = self._calculate_edge(mkt, platform="kalshi")
+                if edge_info:
+                    edges.append(edge_info)
 
-        # Manage existing positions
+        # Store edges for API endpoint
+        self._current_edges = edges
+
+        # Step 3: Execute on edges that meet thresholds
+        for edge_info in edges:
+            await self._execute_on_edge(edge_info)
+
+        # Step 4: Manage existing positions (take-profit, stop-loss, time exit)
         await self._manage_positions()
 
-    # ── Stage 1: SCAN ──────────────────────────────────────────────────────
+        logger.info(
+            "weather_tick_complete",
+            stations=len(self._station_data),
+            poly_markets=len(poly_markets),
+            kalshi_markets=len(kalshi_markets) if self._kalshi_client else 0,
+            edges_found=len(edges),
+            positions=len(self._positions),
+        )
 
-    async def _scan_weather_markets(self) -> list[dict[str, Any]]:
-        """Scan Polymarket for all active weather contracts."""
-        search_terms = ["temperature", "weather forecast", "degrees fahrenheit", "high temperature"]
+    # ── Market Scanning ───────────────────────────────────────────────────
 
-        if self._params["scan_all_weather_types"]:
-            search_terms.extend(["frost", "freeze", "precipitation", "rain", "snow", "wind", "inches"])
+    async def _scan_polymarket_weather(self) -> list[dict[str, Any]]:
+        """Scan Polymarket for active weather contracts."""
+        search_terms = [
+            "temperature", "weather forecast", "degrees fahrenheit",
+            "high temperature", "low temperature", "frost", "precipitation",
+        ]
 
         all_markets: list[dict[str, Any]] = []
         for query in search_terms:
@@ -193,377 +249,190 @@ class WeatherTraderStrategy(BaseStrategy):
                 seen.add(cid)
                 unique.append(mkt)
 
-        logger.debug("weather_scan_complete", total=len(unique))
+        logger.debug("weather_poly_scan", markets_found=len(unique))
         return unique
 
-    # ── Stage 2 & 3: DISCREPANCY + FILTER ──────────────────────────────────
+    async def _scan_kalshi_weather(self) -> list[dict[str, Any]]:
+        """Scan Kalshi for active weather markets."""
+        if not self._kalshi_client:
+            return []
 
-    async def _evaluate_and_trade(self, mkt: dict[str, Any]) -> None:
-        """Evaluate a weather market for edge and place trades if criteria met."""
+        try:
+            # Try specific weather series first
+            markets = await self._kalshi_client.get_markets(
+                status="open", series_ticker="HIGHTEMP", limit=100,
+            )
+
+            # Also try low temp and precipitation
+            for series in ["LOWTEMP", "PRECIP"]:
+                try:
+                    more = await self._kalshi_client.get_markets(
+                        status="open", series_ticker=series, limit=100,
+                    )
+                    markets.extend(more)
+                except Exception:
+                    pass
+
+            # Tag as kalshi for downstream processing
+            for m in markets:
+                m["_platform"] = "kalshi"
+
+            return markets
+
+        except Exception as exc:
+            logger.error("kalshi_weather_scan_error", error=str(exc))
+            return []
+
+    # ── Edge Calculation ──────────────────────────────────────────────────
+
+    def _calculate_edge(
+        self, market: dict[str, Any], platform: str
+    ) -> dict[str, Any] | None:
+        """Calculate the edge between NOAA-implied fair price and market price.
+
+        Returns edge info dict or None if no edge found.
+        """
+        if platform == "polymarket":
+            return self._calc_polymarket_edge(market)
+        elif platform == "kalshi":
+            return self._calc_kalshi_edge(market)
+        return None
+
+    def _calc_polymarket_edge(self, mkt: dict[str, Any]) -> dict[str, Any] | None:
+        """Calculate edge for a Polymarket weather market."""
         question = mkt.get("question", "")
         tokens = mkt.get("tokens", [])
         if len(tokens) < 2:
-            return
+            return None
 
-        # Parse temperature bracket
-        bracket = self._parse_temperature_bracket(question)
-        if bracket is None:
-            return
+        # Parse market type and get fair value
+        fair_value = self._get_fair_value(question)
+        if fair_value is None:
+            return None
 
-        low_f, high_f = bracket
-
-        # Match to a station
-        station = self._match_station(question)
-        if station is None or station not in self._forecasts:
-            return
-
-        # NOAA probability
-        noaa_prob = self._estimate_bracket_probability(station, low_f, high_f)
-        if noaa_prob is None:
-            return
-
-        # AccuWeather probability (if available)
-        accuweather_prob = self._get_accuweather_probability(question, low_f, high_f)
-
-        # Multi-source confirmation filter
-        if self._params["use_multi_source_confirmation"] and accuweather_prob is not None:
-            min_sources = self._params["min_sources_agree"]
-            sources_agree = 0
-            if noaa_prob > 0:
-                sources_agree += 1
-            if accuweather_prob > 0:
-                sources_agree += 1
-            if sources_agree < min_sources:
-                return
-
-            # Use average of both sources
-            fair_value = (noaa_prob + accuweather_prob) / 2
-        else:
-            fair_value = noaa_prob
-
-        # Get Polymarket YES price
+        # Get market price
         token_id_yes = tokens[0].get("token_id", "")
-        poly_price = float(tokens[0].get("price", 0))
-        if poly_price <= 0:
-            try:
-                poly_price = await self._client.get_midpoint(token_id_yes)
-            except Exception:
-                return
+        market_price = float(tokens[0].get("price", 0))
+        if market_price <= 0:
+            return None
 
-        if poly_price <= 0:
-            return
+        edge = fair_value - market_price
 
-        # Stage 2: Calculate discrepancy
-        edge = fair_value - poly_price
+        if abs(edge) < self._min_edge:
+            return None
 
-        # Stage 3: Apply filters
-        edge_threshold = self._params["edge_threshold"]
-        if edge < edge_threshold:
-            return
+        return {
+            "platform": "polymarket",
+            "market_id": mkt.get("condition_id", ""),
+            "token_id": token_id_yes,
+            "question": question,
+            "market_price": round(market_price, 4),
+            "fair_value": round(fair_value, 4),
+            "edge": round(edge, 4),
+            "abs_edge": round(abs(edge), 4),
+            "side": "BUY" if edge > 0 else "SELL",
+            "end_date": mkt.get("end_date_iso", ""),
+            "tokens": tokens,
+        }
 
-        # Filter: already holding this position
-        if token_id_yes in self._positions:
-            return
+    def _calc_kalshi_edge(self, mkt: dict[str, Any]) -> dict[str, Any] | None:
+        """Calculate edge for a Kalshi weather market."""
+        title = mkt.get("title", "")
+        ticker = mkt.get("ticker", "")
 
-        # Filter: check time to expiry (skip contracts expiring within 30 min)
-        end_date = mkt.get("end_date_iso", "")
-        if end_date:
-            try:
-                from datetime import datetime, timezone
-                expiry = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                minutes_to_expiry = (expiry - datetime.now(timezone.utc)).total_seconds() / 60
-                if minutes_to_expiry < self._params["min_time_to_expiry_minutes"]:
-                    logger.debug("weather_skip_expiring", market=question, minutes=round(minutes_to_expiry))
-                    return
-            except (ValueError, TypeError):
-                pass
+        fair_value = self._get_fair_value(title)
+        if fair_value is None:
+            return None
 
-        # Filter: check liquidity
-        try:
-            book = await self._client.get_orderbook(token_id_yes)
-            asks = book.get("asks", [])
-            total_ask_depth = sum(float(a.get("size", 0)) for a in asks)
-            if total_ask_depth < 10:  # minimal liquidity check
-                return
-        except Exception:
-            pass
+        # Get Kalshi yes price
+        yes_price = float(mkt.get("yes_bid_dollars", 0) or 0)
+        if yes_price > 1.0:
+            yes_price /= 100  # Kalshi sometimes returns cents
 
-        logger.info(
-            "weather_edge_found",
-            market=question,
-            bracket=f"{low_f}-{high_f}°F",
-            noaa_prob=round(noaa_prob, 3),
-            accuweather_prob=round(accuweather_prob, 3) if accuweather_prob is not None else None,
-            fair_value=round(fair_value, 3),
-            poly_price=round(poly_price, 3),
-            edge=round(edge, 3),
-            station=station,
-        )
+        if yes_price <= 0:
+            return None
 
-        # Stage 4: EXECUTE
-        max_size = self._params["max_position_size"]
-        size = min(max_size, round(edge * max_size * 2, 2))
-        size = max(size, 5.0)
+        edge = fair_value - yes_price
 
-        order = await self._place_limit_order(
-            token_id=token_id_yes,
-            market=question,
-            price=round(poly_price + 0.01, 2),
-            size=size,
-            side=SIDE_BUY,
-        )
+        if abs(edge) < self._min_edge:
+            return None
 
-        if order:
-            self._positions[token_id_yes] = {
-                "market": question,
-                "entry_price": poly_price,
-                "size": size,
-                "noaa_prob": noaa_prob,
-                "accuweather_prob": accuweather_prob,
-                "fair_value": fair_value,
-                "edge_at_entry": edge,
-                "station": station,
-                "bracket": (low_f, high_f),
-                "bought_at": time.time(),
-            }
+        return {
+            "platform": "kalshi",
+            "market_id": ticker,
+            "token_id": ticker,
+            "question": title,
+            "market_price": round(yes_price, 4),
+            "fair_value": round(fair_value, 4),
+            "edge": round(edge, 4),
+            "abs_edge": round(abs(edge), 4),
+            "side": "yes" if edge > 0 else "no",
+            "end_date": mkt.get("close_time", ""),
+        }
 
-    # ── Rare Event Scanner ──────────────────────────────────────────────────
+    def _get_fair_value(self, question: str) -> float | None:
+        """Calculate NOAA-implied fair value for a weather market question.
 
-    async def _scan_rare_events(self, markets: list[dict[str, Any]]) -> None:
-        """Scan for ultra-low-probability contracts where forecast suggests higher odds.
-
-        Targets the ColdMath strategy: buy contracts priced at $0.01-$0.10 where
-        forecasts indicate probability should be higher. Asymmetric payoff: $0.05 → $1.00 = 20x.
+        Handles:
+        - high_temp_above: "Will NYC high temp be above 75°F?"
+        - low_temp_below: "Will low temp be under 32°F?"
+        - temp_bracket: "Will it be 80-85°F in Denver?"
         """
-        max_prob = self._params["rare_event_max_probability"]
-        min_edge = self._params["rare_event_min_forecast_edge"]
-        max_size = self._params["rare_event_max_position_size"]
+        station = self._match_station(question)
+        if station is None or station not in self._station_data:
+            return None
 
-        for mkt in markets:
-            tokens = mkt.get("tokens", [])
-            if len(tokens) < 2:
-                continue
+        data = self._station_data[station]
+        forecast = data.get("forecast")
+        if not forecast:
+            return None
 
-            question = mkt.get("question", "")
-            token_id_yes = tokens[0].get("token_id", "")
-            poly_price = float(tokens[0].get("price", 0))
+        forecast_high = forecast.get("forecast_high_f")
+        forecast_low = forecast.get("forecast_low_f")
 
-            # Only look at very low probability contracts
-            if poly_price <= 0 or poly_price > max_prob:
-                continue
-
-            if token_id_yes in self._positions:
-                continue
-
-            # Check if any forecast suggests higher probability
-            bracket = self._parse_temperature_bracket(question)
-            if bracket is None:
-                continue
-
+        # Try bracket pattern first: "80-85°F"
+        bracket = self._parse_bracket(question)
+        if bracket:
             low_f, high_f = bracket
-            station = self._match_station(question)
-            if station is None or station not in self._forecasts:
-                continue
+            if forecast_high is not None:
+                return _bracket_probability(forecast_high, low_f, high_f, NOAA_SIGMA)
 
-            noaa_prob = self._estimate_bracket_probability(station, low_f, high_f)
-            if noaa_prob is None:
-                continue
+        # Try "above X°F" pattern
+        above_match = TEMP_ABOVE_PATTERN.search(question)
+        if above_match and forecast_high is not None:
+            threshold = float(above_match.group(1))
+            return _above_probability(forecast_high, threshold, NOAA_SIGMA)
 
-            forecast_edge = noaa_prob - poly_price
-            if forecast_edge < min_edge:
-                continue
+        # Try "below X°F" pattern
+        below_match = TEMP_BELOW_PATTERN.search(question)
+        if below_match:
+            threshold = float(below_match.group(1))
+            # Use low forecast for "below" questions if available
+            ref_temp = forecast_low if forecast_low is not None else forecast_high
+            if ref_temp is not None:
+                return _below_probability(ref_temp, threshold, NOAA_SIGMA)
 
-            logger.info(
-                "rare_event_found",
-                market=question,
-                poly_price=round(poly_price, 4),
-                noaa_prob=round(noaa_prob, 4),
-                edge=round(forecast_edge, 4),
-                potential_return=f"{1.0 / poly_price:.0f}x",
-            )
+        return None
 
-            # Small position for rare events
-            size = min(max_size, 25.0)
-
-            order = await self._place_limit_order(
-                token_id=token_id_yes,
-                market=question,
-                price=round(poly_price + 0.005, 4),
-                size=size,
-                side=SIDE_BUY,
-            )
-
-            if order:
-                self._positions[token_id_yes] = {
-                    "market": question,
-                    "entry_price": poly_price,
-                    "size": size,
-                    "noaa_prob": noaa_prob,
-                    "accuweather_prob": None,
-                    "fair_value": noaa_prob,
-                    "edge_at_entry": forecast_edge,
-                    "station": station,
-                    "bracket": (low_f, high_f),
-                    "bought_at": time.time(),
-                    "is_rare_event": True,
-                }
-
-    # ── NOAA Forecast Methods ──────────────────────────────────────────────
-
-    async def _resolve_stations(self) -> None:
-        """Resolve NOAA station IDs to grid points for forecast lookup."""
-        for station in self._params["stations"]:
-            try:
-                resp = await self._http.get(f"{NOAA_API_BASE}/stations/{station}")
-                if resp.status_code != 200:
-                    logger.warning("noaa_station_not_found", station=station, status=resp.status_code)
-                    continue
-
-                data = resp.json()
-                coords = data.get("geometry", {}).get("coordinates", [])
-                if len(coords) < 2:
-                    continue
-
-                lon, lat = coords[0], coords[1]
-
-                points_resp = await self._http.get(f"{NOAA_API_BASE}/points/{lat},{lon}")
-                if points_resp.status_code != 200:
-                    logger.warning("noaa_points_failed", station=station)
-                    continue
-
-                points_data = points_resp.json()
-                props = points_data.get("properties", {})
-
-                self._station_grids[station] = {
-                    "office": props.get("gridId", ""),
-                    "gridX": props.get("gridX", 0),
-                    "gridY": props.get("gridY", 0),
-                    "city": props.get("relativeLocation", {}).get("properties", {}).get("city", ""),
-                    "state": props.get("relativeLocation", {}).get("properties", {}).get("state", ""),
-                    "lat": lat,
-                    "lon": lon,
-                }
-                logger.info(
-                    "noaa_station_resolved",
-                    station=station,
-                    office=self._station_grids[station]["office"],
-                    city=self._station_grids[station]["city"],
-                )
-
-            except Exception as exc:
-                logger.error("noaa_station_resolve_error", station=station, error=str(exc))
-
-    async def _fetch_all_forecasts(self) -> None:
-        """Fetch temperature forecasts for all resolved stations."""
-        for station, grid in self._station_grids.items():
-            try:
-                office = grid["office"]
-                gx = grid["gridX"]
-                gy = grid["gridY"]
-                url = f"{NOAA_API_BASE}/gridpoints/{office}/{gx},{gy}/forecast"
-
-                resp = await self._http.get(url)
-                if resp.status_code != 200:
-                    logger.warning("noaa_forecast_failed", station=station, status=resp.status_code)
-                    continue
-
-                data = resp.json()
-                periods = data.get("properties", {}).get("periods", [])
-                self._forecasts[station] = periods
-
-                logger.debug("noaa_forecast_fetched", station=station, periods=len(periods))
-
-            except Exception as exc:
-                logger.error("noaa_forecast_error", station=station, error=str(exc))
-
-    # ── AccuWeather Methods ────────────────────────────────────────────────
-
-    async def _fetch_accuweather_forecasts(self) -> None:
-        """Fetch forecasts from AccuWeather as secondary confirmation source."""
-        if not self._accuweather_key:
-            return
-
-        # Track daily API calls (free tier: 50/day)
-        today = time.strftime("%Y-%m-%d")
-        if today != self._accuweather_day:
-            self._accuweather_calls_today = 0
-            self._accuweather_day = today
-
-        for city, location_key in ACCUWEATHER_CITY_KEYS.items():
-            if self._accuweather_calls_today >= 45:  # Leave buffer
-                logger.warning("accuweather_daily_limit_approaching")
-                break
-
-            try:
-                url = (
-                    f"{ACCUWEATHER_API_BASE}/forecasts/v1/daily/5day/{location_key}"
-                    f"?apikey={self._accuweather_key}&details=true"
-                )
-                resp = await self._http.get(url)
-                self._accuweather_calls_today += 1
-
-                if resp.status_code != 200:
-                    logger.warning("accuweather_fetch_failed", city=city, status=resp.status_code)
-                    continue
-
-                data = resp.json()
-                forecasts = data.get("DailyForecasts", [])
-                if forecasts:
-                    self._accuweather_forecasts[city] = {
-                        "forecasts": forecasts,
-                        "fetched_at": time.time(),
-                    }
-                    logger.debug("accuweather_fetched", city=city, days=len(forecasts))
-
-            except Exception as exc:
-                logger.error("accuweather_error", city=city, error=str(exc))
-
-    def _get_accuweather_probability(
-        self, question: str, low_f: int, high_f: int
-    ) -> float | None:
-        """Estimate bracket probability from AccuWeather forecast data."""
-        if not self._accuweather_forecasts:
-            return None
-
-        # Find the matching city
+    def _match_station(self, question: str) -> str | None:
+        """Match a market question to a NOAA station based on city references."""
         question_lower = question.lower()
-        matched_city = None
-        for city in self._accuweather_forecasts:
-            if city in question_lower:
-                matched_city = city
-                break
 
-        if matched_city is None:
-            return None
+        for station, patterns in CITY_PATTERNS.items():
+            if station in self._station_data:
+                for pattern in patterns:
+                    if pattern in question_lower:
+                        return station
 
-        data = self._accuweather_forecasts[matched_city]
-        forecasts = data.get("forecasts", [])
-        if not forecasts:
-            return None
+        # Also check NOAA client's station metadata
+        for station, data in self._station_data.items():
+            city = data.get("city", "").lower()
+            if city and city in question_lower:
+                return station
 
-        # Use the nearest forecast day's high temperature
-        forecast = forecasts[0]
-        temp_data = forecast.get("Temperature", {})
-        high_temp = temp_data.get("Maximum", {}).get("Value")
-        low_temp = temp_data.get("Minimum", {}).get("Value")
+        return None
 
-        if high_temp is None:
-            return None
-
-        # Use the high temp as the central estimate
-        forecast_temp = float(high_temp)
-
-        # Same normal distribution model as NOAA
-        sigma = 4.0  # AccuWeather slightly wider uncertainty
-        z_low = (low_f - forecast_temp) / sigma
-        z_high = (high_f - forecast_temp) / sigma
-
-        prob = _normal_cdf(z_high) - _normal_cdf(z_low)
-        return max(0.0, min(1.0, prob))
-
-    # ── Shared Helpers ─────────────────────────────────────────────────────
-
-    def _parse_temperature_bracket(self, question: str) -> tuple[int, int] | None:
+    def _parse_bracket(self, question: str) -> tuple[int, int] | None:
         """Extract temperature bracket (low, high) from a market question."""
         match = TEMP_BRACKET_PATTERN.search(question)
         if not match:
@@ -574,152 +443,305 @@ class WeatherTraderStrategy(BaseStrategy):
             return None
         return (low, high)
 
-    def _match_station(self, question: str) -> str | None:
-        """Match a market question to a NOAA station based on city references."""
-        question_lower = question.lower()
-        for station, patterns in CITY_PATTERNS.items():
-            if station in self._station_grids:
-                for pattern in patterns:
-                    if pattern in question_lower:
-                        return station
+    # ── Position Sizing ───────────────────────────────────────────────────
 
-        for station, grid in self._station_grids.items():
-            city = grid.get("city", "").lower()
-            if city and city in question_lower:
-                return station
+    def _calculate_position_size(self, edge: float) -> float:
+        """Position sizing based on edge magnitude (tiered).
 
-        return None
-
-    def _estimate_bracket_probability(
-        self, station: str, low_f: int, high_f: int
-    ) -> float | None:
-        """Estimate the probability that temperature falls within a bracket.
-
-        Uses NOAA forecast high/low temperatures with a normal distribution
-        assumption. NOAA forecasts are typically accurate to ±3-5°F, so we
-        model uncertainty as a gaussian with σ=3.5°F around the point forecast.
+        >= 15 cents: full position
+        >= 10 cents: half position
+        >= 5 cents: quarter position
         """
-        periods = self._forecasts.get(station, [])
-        if not periods:
-            return None
+        abs_edge = abs(edge)
 
-        forecast_temp = None
-        for period in periods:
-            if period.get("isDaytime", False):
-                forecast_temp = period.get("temperature")
-                break
+        if abs_edge >= self._very_strong_edge:
+            size = self._max_position_size
+        elif abs_edge >= self._strong_edge:
+            size = self._max_position_size * 0.5
+        elif abs_edge >= self._min_edge:
+            size = self._max_position_size * 0.25
+        else:
+            return 0.0
 
-        if forecast_temp is None and periods:
-            forecast_temp = periods[0].get("temperature")
+        return round(max(size, 5.0), 2)  # Minimum $5 position
 
-        if forecast_temp is None:
-            return None
+    # ── Trade Execution ───────────────────────────────────────────────────
 
-        forecast_temp = float(forecast_temp)
+    async def _execute_on_edge(self, edge_info: dict[str, Any]) -> None:
+        """Execute a trade based on edge calculation."""
+        token_id = edge_info["token_id"]
+        edge = edge_info["edge"]
+        platform = edge_info["platform"]
 
-        sigma = 3.5
-        z_low = (low_f - forecast_temp) / sigma
-        z_high = (high_f - forecast_temp) / sigma
+        # Don't re-enter existing positions
+        if token_id in self._positions:
+            return
 
-        prob = _normal_cdf(z_high) - _normal_cdf(z_low)
-        return max(0.0, min(1.0, prob))
+        # Filter: check time to expiry
+        end_date = edge_info.get("end_date", "")
+        if end_date and not self._check_time_to_expiry(end_date):
+            return
 
-    # ── Position Management ────────────────────────────────────────────────
+        # Calculate position size
+        size = self._calculate_position_size(edge)
+        if size <= 0:
+            return
+
+        market_price = edge_info["market_price"]
+        question = edge_info["question"]
+
+        logger.info(
+            "weather_edge_signal",
+            platform=platform,
+            market=question[:80],
+            market_price=market_price,
+            fair_value=edge_info["fair_value"],
+            edge=edge,
+            size=size,
+            tier="very_strong" if abs(edge) >= self._very_strong_edge
+                 else "strong" if abs(edge) >= self._strong_edge
+                 else "standard",
+        )
+
+        if platform == "polymarket":
+            await self._execute_polymarket(edge_info, size)
+        elif platform == "kalshi":
+            await self._execute_kalshi(edge_info, size)
+
+    async def _execute_polymarket(self, edge_info: dict[str, Any], size: float) -> None:
+        """Place order on Polymarket."""
+        token_id = edge_info["token_id"]
+        market_price = edge_info["market_price"]
+        question = edge_info["question"]
+        edge = edge_info["edge"]
+
+        side = SIDE_BUY if edge > 0 else SIDE_SELL
+        price = round(market_price + (0.01 if edge > 0 else -0.01), 2)
+
+        order = await self._place_limit_order(
+            token_id=token_id,
+            market=question,
+            price=price,
+            size=size,
+            side=side,
+        )
+
+        if order:
+            self._positions[token_id] = {
+                "platform": "polymarket",
+                "market": question,
+                "entry_price": market_price,
+                "size": size,
+                "fair_value": edge_info["fair_value"],
+                "edge_at_entry": edge,
+                "side": "BUY" if side == SIDE_BUY else "SELL",
+                "entered_at": time.time(),
+                "end_date": edge_info.get("end_date", ""),
+            }
+
+    async def _execute_kalshi(self, edge_info: dict[str, Any], size: float) -> None:
+        """Place order on Kalshi."""
+        if not self._kalshi_client:
+            return
+
+        from src.platforms.base import Order
+
+        ticker = edge_info["market_id"]
+        market_price = edge_info["market_price"]
+        edge = edge_info["edge"]
+        side_str = edge_info["side"]  # "yes" or "no"
+
+        order = Order(
+            platform="kalshi",
+            market_id=ticker,
+            side=side_str,
+            size=min(size, self._max_position_size),
+            price=round(market_price + (0.01 if edge > 0 else -0.01), 2),
+            order_type="limit",
+        )
+
+        try:
+            result = await self._kalshi_client.place_order(order)
+            logger.info(
+                "kalshi_weather_order_placed",
+                ticker=ticker,
+                side=side_str,
+                price=order.price,
+                size=order.size,
+            )
+
+            self._positions[ticker] = {
+                "platform": "kalshi",
+                "market": edge_info["question"],
+                "entry_price": market_price,
+                "size": size,
+                "fair_value": edge_info["fair_value"],
+                "edge_at_entry": edge,
+                "side": side_str,
+                "entered_at": time.time(),
+                "end_date": edge_info.get("end_date", ""),
+            }
+
+        except Exception as exc:
+            logger.error("kalshi_weather_order_error", ticker=ticker, error=str(exc))
+
+    # ── Position Management ───────────────────────────────────────────────
 
     async def _manage_positions(self) -> None:
-        """Monitor positions: take-profit at fair value, stop-loss at entry - 5%."""
+        """Monitor positions for exit conditions: take-profit, stop-loss, time-based."""
         for token_id, pos in list(self._positions.items()):
-            try:
-                current_price = await self._client.get_midpoint(token_id)
-            except Exception:
+            # Get current market price
+            current_price = await self._get_current_price(token_id, pos["platform"])
+            if current_price is None:
                 continue
 
             entry_price = pos["entry_price"]
             fair_value = pos["fair_value"]
-            stop_loss_pct = self._params["stop_loss_pct"]
 
-            # Take profit: price reached fair value
-            if self._params["take_profit_at_fair_value"] and current_price >= fair_value - 0.02:
+            # Recalculate fair value from latest NOAA data
+            new_fair = self._get_fair_value(pos["market"])
+            if new_fair is not None:
+                fair_value = new_fair
+
+            current_edge = abs(fair_value - current_price)
+
+            # Exit 1: Take profit — edge narrowed to < take_profit_edge
+            if current_edge < self._take_profit_edge:
                 logger.info(
                     "weather_take_profit",
-                    market=pos["market"],
+                    market=pos["market"][:60],
                     entry=entry_price,
                     current=current_price,
-                    target=fair_value,
-                    is_rare=pos.get("is_rare_event", False),
+                    edge_remaining=round(current_edge, 4),
+                    platform=pos["platform"],
                 )
                 await self._exit_position(token_id, "take_profit")
                 continue
 
-            # Stop loss: price dropped below entry - stop_loss_pct
-            if current_price <= entry_price * (1.0 - stop_loss_pct):
+            # Exit 2: Stop loss — price moved against us by stop_loss_pct
+            if pos["side"] in ("BUY", "yes"):
+                loss_pct = (entry_price - current_price) / entry_price if entry_price > 0 else 0
+            else:
+                loss_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0
+
+            if loss_pct >= self._stop_loss_pct:
                 logger.info(
                     "weather_stop_loss",
-                    market=pos["market"],
+                    market=pos["market"][:60],
                     entry=entry_price,
                     current=current_price,
-                    stop_level=round(entry_price * (1.0 - stop_loss_pct), 4),
+                    loss_pct=round(loss_pct, 4),
+                    platform=pos["platform"],
                 )
                 await self._exit_position(token_id, "stop_loss")
                 continue
 
-            # Time exit: 6 hours max for regular, 24 hours for rare events
-            max_hold = 24 * 3600 if pos.get("is_rare_event") else 6 * 3600
-            if time.time() - pos["bought_at"] > max_hold:
-                logger.info(
-                    "weather_time_exit",
-                    market=pos["market"],
-                    entry=entry_price,
-                    current=current_price,
-                    hold_hours=round((time.time() - pos["bought_at"]) / 3600, 1),
-                )
-                await self._exit_position(token_id, "time_limit")
-                continue
+            # Exit 3: Time-based — exit before resolution
+            end_date = pos.get("end_date", "")
+            if end_date:
+                try:
+                    expiry = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+                    minutes_to_expiry = (expiry - datetime.now(timezone.utc)).total_seconds() / 60
+                    if 0 < minutes_to_expiry < self._exit_before_resolution_min:
+                        logger.info(
+                            "weather_time_exit",
+                            market=pos["market"][:60],
+                            minutes_to_expiry=round(minutes_to_expiry),
+                            platform=pos["platform"],
+                        )
+                        await self._exit_position(token_id, "pre_resolution")
+                        continue
+                except (ValueError, TypeError):
+                    pass
 
     async def _exit_position(self, token_id: str, reason: str) -> None:
-        """Exit a weather position."""
+        """Exit a weather position on the appropriate platform."""
         pos = self._positions.get(token_id)
         if not pos:
             return
 
         try:
-            current_price = await self._client.get_midpoint(token_id)
-            if self._settings.dry_run:
-                self._record_paper_trade(
-                    token_id=token_id,
-                    market=pos["market"],
-                    price=current_price,
-                    size=pos["size"],
-                    side=SIDE_SELL,
-                )
-            else:
-                await self._client.place_order(
-                    token_id=token_id,
-                    price=current_price,
-                    size=pos["size"],
-                    side=SIDE_SELL,
-                    order_type="FOK",
-                )
+            if pos["platform"] == "polymarket":
+                current_price = await self._get_current_price(token_id, "polymarket")
+                if current_price and current_price > 0:
+                    side = SIDE_SELL if pos["side"] == "BUY" else SIDE_BUY
+                    if self._settings.dry_run:
+                        self._record_paper_trade(
+                            token_id=token_id,
+                            market=pos["market"],
+                            price=current_price,
+                            size=pos["size"],
+                            side=side,
+                        )
+                    else:
+                        await self._client.place_order(
+                            token_id=token_id,
+                            price=current_price,
+                            size=pos["size"],
+                            side=side,
+                            order_type="FOK",
+                        )
+
+            elif pos["platform"] == "kalshi" and self._kalshi_client:
+                from src.platforms.base import Order
+
+                exit_side = "no" if pos["side"] == "yes" else "yes"
+                current_price = await self._get_current_price(token_id, "kalshi")
+                if current_price and current_price > 0:
+                    order = Order(
+                        platform="kalshi",
+                        market_id=token_id,
+                        side=exit_side,
+                        size=pos["size"],
+                        price=current_price,
+                        order_type="limit",
+                    )
+                    await self._kalshi_client.place_order(order)
+
             logger.info(
                 "weather_position_exited",
-                market=pos["market"],
+                market=pos["market"][:60],
                 reason=reason,
-                exit_price=current_price,
+                platform=pos["platform"],
                 entry_price=pos["entry_price"],
-                pnl=round(current_price - pos["entry_price"], 4),
-                dry_run=self._settings.dry_run,
+                edge_at_entry=pos["edge_at_entry"],
+                hold_seconds=round(time.time() - pos["entered_at"]),
             )
+
         except Exception as exc:
             logger.error("weather_exit_error", token_id=token_id, error=str(exc))
 
-        if token_id in self._positions:
-            del self._positions[token_id]
+        self._positions.pop(token_id, None)
+
+    async def _get_current_price(self, token_id: str, platform: str) -> float | None:
+        """Get current price for a token/market on the given platform."""
+        try:
+            if platform == "polymarket":
+                return await self._client.get_midpoint(token_id)
+            elif platform == "kalshi" and self._kalshi_client:
+                markets = await self._kalshi_client.get_markets(ticker=token_id, limit=1)
+                if markets:
+                    price = float(markets[0].get("yes_bid_dollars", 0) or 0)
+                    return price / 100 if price > 1.0 else price
+        except Exception:
+            pass
+        return None
+
+    def _check_time_to_expiry(self, end_date: str) -> bool:
+        """Return True if there's enough time before expiry to enter."""
+        try:
+            expiry = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            minutes = (expiry - datetime.now(timezone.utc)).total_seconds() / 60
+            return minutes > self._exit_before_resolution_min * 2  # Need 2x buffer to enter
+        except (ValueError, TypeError):
+            return True  # If we can't parse, allow the trade
+
+
+# ── Probability Calculation Functions ─────────────────────────────────────
 
 
 def _normal_cdf(x: float) -> float:
-    """Approximate the standard normal CDF using Abramowitz & Stegun formula."""
-    import math
-
+    """Standard normal CDF using Abramowitz & Stegun approximation."""
     if x < -6:
         return 0.0
     if x > 6:
@@ -741,3 +763,25 @@ def _normal_cdf(x: float) -> float:
     y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-x * x)
 
     return 0.5 * (1.0 + sign * y)
+
+
+def _bracket_probability(forecast_temp: float, low: float, high: float, sigma: float) -> float:
+    """Probability that actual temp falls in [low, high] given forecast and uncertainty."""
+    z_low = (low - forecast_temp) / sigma
+    z_high = (high - forecast_temp) / sigma
+    prob = _normal_cdf(z_high) - _normal_cdf(z_low)
+    return max(0.0, min(1.0, prob))
+
+
+def _above_probability(forecast_temp: float, threshold: float, sigma: float) -> float:
+    """Probability that actual temp exceeds threshold."""
+    z = (threshold - forecast_temp) / sigma
+    prob = 1.0 - _normal_cdf(z)
+    return max(0.0, min(1.0, prob))
+
+
+def _below_probability(forecast_temp: float, threshold: float, sigma: float) -> float:
+    """Probability that actual temp is below threshold."""
+    z = (threshold - forecast_temp) / sigma
+    prob = _normal_cdf(z)
+    return max(0.0, min(1.0, prob))

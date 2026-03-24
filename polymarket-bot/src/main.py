@@ -367,6 +367,11 @@ async def lifespan(app: FastAPI):
         else:
             log.warning("crypto_connect_failed", msg="Crypto platform disabled")
 
+    # Attach Kalshi client to weather trader for dual-platform execution
+    if kalshi_client and "kalshi" in platform_clients:
+        weather_trader.set_kalshi_client(kalshi_client)
+        log.info("weather_trader_kalshi_attached", msg="Weather trader will scan both Polymarket and Kalshi")
+
     # Inject dependencies into API routes
     deps.client = client
     deps.scanner = scanner
@@ -606,6 +611,8 @@ def _print_banner(settings) -> None:
 ║    GET  /markets       — Scanned markets         ║
 ║    GET  /audit         — Audit trail             ║
 ║    GET  /security/status — Security sandbox      ║
+║    GET  /weather/current — NOAA station data     ║
+║    GET  /weather/edges  — Weather market edges    ║
 ║    POST /start         — Start a strategy        ║
 ║    POST /stop          — Stop a strategy         ║
 ║    POST /mode          — Switch mode             ║
