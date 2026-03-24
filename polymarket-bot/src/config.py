@@ -160,7 +160,7 @@ class Settings(BaseSettings):
     avellaneda_risk_aversion: float = Field(default=0.1, description="Risk aversion parameter (γ)")
     avellaneda_session_horizon_seconds: float = Field(default=3600, description="Rolling session horizon (T)")
     avellaneda_volatility_window: int = Field(default=100, description="Mid-price observations for volatility estimate")
-    avellaneda_max_inventory: float = Field(default=10.0, description="Max position in base units per pair")
+    avellaneda_max_inventory: float = Field(default=250.0, description="Max position in base units per pair")
     avellaneda_min_spread_bps: float = Field(default=5.0, description="Global minimum spread in basis points (fallback)")
     avellaneda_max_spread_bps: float = Field(default=200.0, description="Global maximum spread in basis points (fallback)")
     avellaneda_order_size_usdt: float = Field(default=50.0, description="Global order size per quote in USDT (fallback)")
