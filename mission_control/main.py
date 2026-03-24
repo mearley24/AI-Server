@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 PORT = int(os.getenv("PORT", "8098"))
 STATIC_DIR = Path(__file__).parent / "static"
 TRADING_BOT_URL = "http://vpn:8430"
+TRADING_DATA_FILE = Path("/trading-data/paper_trades.jsonl")
 
 # Service map: name -> (container_hostname, internal_port, external_port)
 SERVICES = [
@@ -196,6 +197,64 @@ async def api_trading():
         "first_trade_at": timestamps[0] if timestamps else None,
         "last_trade_at": timestamps[-1] if timestamps else None,
         "pairs": pairs,
+        "recent_trades": recent,
+        "total_pnl": total_pnl,
+    }
+
+
+@app.get("/api/trading/paper")
+async def api_trading_paper():
+    """Paper trading data — reads paper_trades.jsonl for Polymarket/Kalshi paper strategies."""
+    trades = []
+    if TRADING_DATA_FILE.exists():
+        try:
+            with open(TRADING_DATA_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            trades.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+        except OSError:
+            pass
+
+    if not trades:
+        return {"total_trades": 0, "strategies": {}, "recent_trades": [], "total_pnl": 0}
+
+    # Group by strategy
+    from collections import defaultdict
+    strats: dict[str, list] = defaultdict(list)
+    for t in trades:
+        s = t.get("strategy", "unknown")
+        strats[s].append(t)
+
+    strategy_summary = {}
+    total_pnl = 0.0
+    for name, strades in strats.items():
+        buys = sum(1 for t in strades if (t.get("side") or "").upper() == "BUY")
+        sells = sum(1 for t in strades if (t.get("side") or "").upper() == "SELL")
+        profitable = sum(1 for t in strades if t.get("would_have_profited"))
+        scored = sum(1 for t in strades if t.get("scored_at") is not None)
+        strategy_summary[name] = {
+            "trades": len(strades),
+            "buys": buys,
+            "sells": sells,
+            "scored": scored,
+            "profitable": profitable,
+            "win_rate": round(profitable / scored, 3) if scored > 0 else None,
+        }
+
+    recent = []
+    for t in trades[-20:][::-1]:
+        entry = dict(t)
+        pair = (t.get("market_question") or t.get("market_id") or "UNKNOWN").replace(" spot trade", "")
+        entry["display_name"] = pair
+        recent.append(entry)
+
+    return {
+        "total_trades": len(trades),
+        "strategies": strategy_summary,
         "recent_trades": recent,
         "total_pnl": total_pnl,
     }

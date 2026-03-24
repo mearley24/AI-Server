@@ -366,7 +366,27 @@
   </div>
 </div>
 
-<div class="refresh-info">Trading data refreshes every 5s</div>
+<!-- ── Paper Trading Section ── -->
+<div class="section-divider">
+  <h2>Paper Trading</h2>
+  <div class="section-sub">Polymarket &bull; Kalshi &bull; Strategy Backtesting</div>
+</div>
+
+<div class="main-grid">
+  <div class="card">
+    <div class="card-title">Paper Strategy Performance</div>
+    <div id="paper-strategies"><div class="feed-empty">Loading...</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Recent Paper Trades</div>
+    <div class="trade-feed" id="paper-feed">
+      <div class="feed-empty">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-info">Live data refreshes every 5s &bull; Paper data refreshes every 30s</div>
 
 <script>
 (function() {
@@ -686,16 +706,90 @@
     el.innerHTML = html;
   }
 
+  // ── Paper Trading ──
+  const PAPER_POLL = 30000;
+
+  async function pollPaper() {
+    try {
+      const resp = await fetch('/api/trading/paper');
+      const data = await resp.json();
+      renderPaperStrategies(data.strategies || {});
+      renderPaperFeed(data.recent_trades || []);
+    } catch (e) {
+      console.error('Paper poll failed:', e);
+    }
+  }
+
+  function renderPaperStrategies(strategies) {
+    const el = document.getElementById('paper-strategies');
+    const names = Object.keys(strategies);
+    if (names.length === 0) {
+      el.innerHTML = '<div class="feed-empty">No paper trades yet</div>';
+      return;
+    }
+    let html = '';
+    for (const name of names) {
+      const s = strategies[name];
+      const winRate = s.win_rate !== null ? (s.win_rate * 100).toFixed(1) + '%' : 'unscored';
+      const scored = s.scored || 0;
+      const profitable = s.profitable || 0;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1a1a24">`;
+      html += `<div><span style="color:#e0e0e0;font-weight:600;font-size:13px">${escapeHtml(name)}</span>`;
+      html += `<span style="color:#555;font-size:11px;margin-left:8px">${s.trades} trades (${s.buys}B / ${s.sells}S)</span></div>`;
+      html += `<div style="font-family:'SF Mono','Fira Code',monospace;font-size:12px">`;
+      if (scored > 0) {
+        const color = s.win_rate >= 0.5 ? '#00e676' : '#ff5252';
+        html += `<span style="color:${color};font-weight:600">${winRate}</span>`;
+        html += `<span style="color:#555;margin-left:6px">(${profitable}/${scored})</span>`;
+      } else {
+        html += `<span style="color:#555">pending</span>`;
+      }
+      html += '</div></div>';
+    }
+    el.innerHTML = html;
+  }
+
+  function renderPaperFeed(trades) {
+    const el = document.getElementById('paper-feed');
+    if (!trades || trades.length === 0) {
+      el.innerHTML = '<div class="feed-empty">No paper trades yet</div>';
+      return;
+    }
+    let html = '';
+    for (const t of trades) {
+      const side = (t.side || '').toUpperCase();
+      const sideClass = side === 'BUY' ? 'feed-buy' : 'feed-sell';
+      const pair = t.display_name || t.market_question || t.market_id || 'UNKNOWN';
+      const strategy = t.strategy || '';
+      const price = t.price !== undefined ? Number(t.price).toFixed(4) : '-';
+      const size = t.size || t.quantity || t.amount || '-';
+      const scored = t.would_have_profited;
+      let badge = '';
+      if (scored === true) badge = ' <span style="color:#00e676;font-size:10px">\u2713 WIN</span>';
+      else if (scored === false) badge = ' <span style="color:#ff5252;font-size:10px">\u2717 LOSS</span>';
+      html += `<div class="feed-entry ${sideClass}">`;
+      html += `<span class="feed-side">${side}</span> `;
+      html += `<span class="feed-msg">${escapeHtml(pair)}</span> `;
+      html += `<span style="color:#888;font-size:11px">${escapeHtml(strategy)}</span> `;
+      html += `<span style="color:#bbb;font-family:'SF Mono',monospace;font-size:11px">${price} x ${size}</span>`;
+      html += badge;
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  }
+
   // ── Init ──
   pollServices();
   pollStatus();
   connectWS();
   pollTrading();
   pollBotStatus();
+  pollPaper();
   setInterval(pollServices, POLL_INTERVAL);
   setInterval(pollStatus, POLL_INTERVAL);
   setInterval(pollTrading, TRADING_POLL);
   setInterval(pollBotStatus, 30000);
+  setInterval(pollPaper, PAPER_POLL);
 })();
 </script>
 </body>
