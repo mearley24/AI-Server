@@ -174,7 +174,7 @@ class Settings(BaseSettings):
         },
         description="Per-pair overrides for spread bounds, order size, and inventory limits",
     )
-    avellaneda_max_total_exposure: float = Field(default=250.0, description="Max total open order value in USDT before skipping new orders")
+    avellaneda_max_total_exposure: float = Field(default=500.0, description="Max total open order value in USDT before skipping new orders")
     avellaneda_hawkes_mu: float = Field(default=1.0, description="Hawkes baseline arrival rate")
     avellaneda_hawkes_alpha: float = Field(default=0.5, description="Hawkes excitation parameter")
     avellaneda_hawkes_beta: float = Field(default=2.0, description="Hawkes decay parameter")
