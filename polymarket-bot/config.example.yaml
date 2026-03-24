@@ -164,7 +164,5 @@ crypto:
 # ── Notifications ─────────────────────────────────────────────────
 notifications:
   channel: console             # "imessage" or "console"
-  linq:
-    api_url: https://api.linqapp.com/api/partner/v2/chats
-    api_key_env: LINQ_API_KEY   # Integration token (X-LINQ-INTEGRATION-TOKEN header)
-    owner_phone_env: OWNER_PHONE_NUMBER  # Recipient phone number
+  # iMessage notifications are routed via Redis pub/sub to notification-hub,
+  # which dispatches via the native AppleScript bridge on the host.

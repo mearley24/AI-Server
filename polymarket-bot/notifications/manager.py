@@ -15,7 +15,7 @@ class NotificationManager:
 
     def _get_notifier(self):
         channel = os.environ.get("NOTIFICATION_CHANNEL", "console")
-        if channel == "imessage" and os.environ.get("LINQ_API_KEY"):
+        if channel == "imessage":
             from .imessage import IMessageNotifier
             return IMessageNotifier()
         else:

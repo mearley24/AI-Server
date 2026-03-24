@@ -39,7 +39,7 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # DISABLED — replaced by notification-hub (iMessage via Linq)
+  # DISABLED — replaced by notification-hub (iMessage via native AppleScript bridge)
   # telegram-interface:
   #   build:
   #     context: ./telegram-interface
