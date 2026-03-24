@@ -225,6 +225,144 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  calendar-agent:
+    build:
+      context: ./calendar-agent
+    container_name: calendar-agent
+    restart: unless-stopped
+    environment:
+      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
+      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
+      - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
+      - ZOHO_CALENDAR_UID=${ZOHO_CALENDAR_UID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - TZ=America/Denver
+    ports:
+      - "127.0.0.1:8094:8094"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8094/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  notification-hub:
+    build:
+      context: ./notification-hub
+    container_name: notification-hub
+    restart: unless-stopped
+    environment:
+      - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-console}
+      - LINQ_API_KEY=${LINQ_API_KEY:-}
+      - LINQ_PHONE_NUMBER=${LINQ_PHONE_NUMBER:-}
+      - OWNER_PHONE_NUMBER=${OWNER_PHONE_NUMBER:-}
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "127.0.0.1:8095:8095"
+    volumes:
+      - ./data/notification-hub:/data
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  dtools-bridge:
+    build:
+      context: ./integrations/dtools
+    container_name: dtools-bridge
+    restart: unless-stopped
+    environment:
+      - DTOOLS_API_KEY=${DTOOLS_API_KEY}
+      - DTOOLS_BASE_URL=${DTOOLS_BASE_URL:-https://api.d-tools.com/v2}
+      - DTOOLS_BRIDGE_PORT=5050
+      - LOG_LEVEL=INFO
+    ports:
+      - "127.0.0.1:8096:5050"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  clawwork:
+    build:
+      context: ./clawwork
+      dockerfile: Dockerfile.clawwork
+    container_name: clawwork
+    restart: unless-stopped
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Denver
+    ports:
+      - "127.0.0.1:8097:8097"
+    volumes:
+      - ./data/clawwork:/root/.symphony
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,pathlib; pathlib.Path('/root/.symphony/data').mkdir(parents=True,exist_ok=True); print('ok')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  mission-control:
+    build:
+      context: ./mission_control
+    container_name: mission-control
+    restart: unless-stopped
+    environment:
+      - PORT=8098
+      - REDIS_URL=redis://redis:6379
+      - TZ=America/Denver
+    ports:
+      - "127.0.0.1:8098:8098"
+    volumes:
+      - ./data/mission-control:/data
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8098/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 volumes:
   kuma:
   openwebui:

@@ -1,0 +1,157 @@
+"""FastAPI routes for Calendar Agent."""
+
+import os
+import logging
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, HTTPException, Query
+
+from calendar_client import ZohoCalendarClient
+from scheduler import find_free_slots
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/calendar")
+
+
+def get_client() -> ZohoCalendarClient:
+    if not hasattr(get_client, "_instance"):
+        get_client._instance = ZohoCalendarClient()
+    return get_client._instance
+
+
+def _require_configured(client: ZohoCalendarClient):
+    if not client.configured:
+        raise HTTPException(status_code=503, detail="Zoho Calendar credentials not configured")
+
+
+@router.get("/today")
+async def today_events():
+    client = get_client()
+    _require_configured(client)
+    now = datetime.now()
+    start = now.strftime("%Y-%m-%dT00:00:00+00:00")
+    end = now.strftime("%Y-%m-%dT23:59:59+00:00")
+    events = await client.list_events(start, end)
+    return {"date": now.strftime("%Y-%m-%d"), "events": events, "count": len(events)}
+
+
+@router.get("/week")
+async def week_events():
+    client = get_client()
+    _require_configured(client)
+    now = datetime.now()
+    week_end = now + timedelta(days=7)
+    events = await client.list_events(
+        now.strftime("%Y-%m-%dT00:00:00+00:00"),
+        week_end.strftime("%Y-%m-%dT23:59:59+00:00"),
+    )
+    return {"start": now.strftime("%Y-%m-%d"), "end": week_end.strftime("%Y-%m-%d"), "events": events, "count": len(events)}
+
+
+@router.get("/free-slots")
+async def free_slots(date: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"), duration: int = Query(60, ge=15, le=480)):
+    client = get_client()
+    _require_configured(client)
+    events = await client.list_events(f"{date}T00:00:00+00:00", f"{date}T23:59:59+00:00")
+    slots = find_free_slots(events, date, duration)
+    return {"date": date, "duration_minutes": duration, "slots": slots}
+
+
+@router.post("/events")
+async def create_event(body: dict):
+    client = get_client()
+    _require_configured(client)
+    required = ["title", "start", "end"]
+    for field in required:
+        if field not in body:
+            raise HTTPException(status_code=400, detail=f"Missing field: {field}")
+    event_data = {
+        "title": body["title"],
+        "dateandtime": {"start": body["start"], "end": body["end"], "timezone": "America/Denver"},
+    }
+    if "attendees" in body:
+        event_data["attendees"] = body["attendees"]
+    if "notes" in body:
+        event_data["description"] = body["notes"]
+    result = await client.create_event(event_data)
+    return result
+
+
+@router.patch("/events/{event_id}")
+async def update_event(event_id: str, body: dict):
+    client = get_client()
+    _require_configured(client)
+    event_data = {}
+    if "title" in body:
+        event_data["title"] = body["title"]
+    if "start" in body or "end" in body:
+        event_data["dateandtime"] = {}
+        if "start" in body:
+            event_data["dateandtime"]["start"] = body["start"]
+        if "end" in body:
+            event_data["dateandtime"]["end"] = body["end"]
+    result = await client.update_event(event_id, event_data)
+    return result
+
+
+@router.delete("/events/{event_id}")
+async def delete_event(event_id: str):
+    client = get_client()
+    _require_configured(client)
+    result = await client.delete_event(event_id)
+    return result
+
+
+@router.get("/upcoming")
+async def upcoming(hours: int = Query(4, ge=1, le=24)):
+    client = get_client()
+    _require_configured(client)
+    now = datetime.now()
+    end = now + timedelta(hours=hours)
+    events = await client.list_events(now.isoformat(), end.isoformat())
+    return {"hours": hours, "events": events, "count": len(events)}
+
+
+@router.post("/meeting-prep/{event_id}")
+async def meeting_prep(event_id: str):
+    """Generate AI meeting prep notes using OpenAI."""
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    if not openai_key:
+        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
+
+    client = get_client()
+    _require_configured(client)
+
+    # Fetch the event — use a broad range since we only have ID
+    now = datetime.now()
+    events = await client.list_events(
+        (now - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00+00:00"),
+        (now + timedelta(days=30)).strftime("%Y-%m-%dT23:59:59+00:00"),
+    )
+    event = next((e for e in events if e.get("uid") == event_id), None)
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    from openai import AsyncOpenAI
+    ai = AsyncOpenAI(api_key=openai_key)
+
+    title = event.get("title", "Meeting")
+    attendees = event.get("attendees", [])
+    description = event.get("description", "")
+
+    prompt = f"""Prepare brief meeting prep notes for: {title}
+Attendees: {attendees}
+Description: {description}
+Include: key talking points, questions to ask, and any prep needed."""
+
+    resp = await ai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=500,
+    )
+
+    return {
+        "event_id": event_id,
+        "title": title,
+        "prep_notes": resp.choices[0].message.content,
+    }
