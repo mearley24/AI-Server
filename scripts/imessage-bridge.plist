@@ -9,6 +9,13 @@
         <string>/usr/bin/python3</string>
         <string>/Users/bob/AI-Server/scripts/imessage-server.py</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OWNER_PHONE_NUMBER</key>
+        <string>+19705193013</string>
+        <key>OPENCLAW_URL</key>
+        <string>http://127.0.0.1:8099</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
