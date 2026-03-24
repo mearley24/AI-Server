@@ -80,7 +80,7 @@ class TestPositionModel:
     def test_position_serialization(self):
         pos = Position(
             platform="kraken",
-            market_id="HBAR/USD",
+            market_id="XRP/USD",
             side="buy",
             size=1000.0,
             avg_entry=0.10,

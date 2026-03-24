@@ -146,7 +146,6 @@ crypto:
   dry_run: true
   symbols:
     - XRP/USD
-    - HBAR/USD
     - XCN/USD
     - PI/USD
   trade_amount_usd: 50.0

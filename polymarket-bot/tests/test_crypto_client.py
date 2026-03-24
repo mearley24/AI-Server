@@ -39,7 +39,7 @@ class TestPaperTrader:
         trader = PaperTrader()
         order = Order(
             platform="kraken",
-            market_id="HBAR/USD",
+            market_id="XRP/USD",
             side="buy",
             size=500.0,
             price=0.10,
@@ -101,7 +101,7 @@ class TestPaperTrader:
         trader = PaperTrader()
         order = Order(
             platform="kraken",
-            market_id="HBAR/USD",
+            market_id="XRP/USD",
             side="buy",
             size=500.0,
             price=0.10,
@@ -186,7 +186,7 @@ class TestCryptoClientDryRun:
         # Place an order first
         order = Order(
             platform="kraken",
-            market_id="HBAR/USD",
+            market_id="XRP/USD",
             side="buy",
             size=500.0,
             price=0.10,

@@ -2,7 +2,7 @@
 
 Implements the PlatformClient interface using CCXT's unified API,
 supporting Kraken, Coinbase, and other exchanges for spot trading
-of XRP, HBAR, XCN, PI and other assets.
+of XRP, XCN, PI and other assets.
 """
 
 from __future__ import annotations
@@ -124,7 +124,7 @@ class CryptoClient(PlatformClient):
         self._api_key = api_key
         self._api_secret = api_secret
         self._dry_run = dry_run
-        self._symbols = symbols or ["XRP/USD", "HBAR/USD", "XCN/USD", "PI/USD"]
+        self._symbols = symbols or ["XRP/USD", "XCN/USD", "PI/USD"]
         self._exchange: Any = None
         self._paper_trader = PaperTrader(paper_ledger) if dry_run else None
         self._paper_ledger = paper_ledger

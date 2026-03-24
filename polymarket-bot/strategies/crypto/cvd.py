@@ -26,7 +26,7 @@ class CVDStrategy:
         self.config = config or {}
         self.name = "cvd"
         self.platform = "crypto"
-        self.symbols = self.config.get("symbols", ["XRP/USD", "HBAR/USD", "XCN/USD"])
+        self.symbols = self.config.get("symbols", ["XRP/USD", "XCN/USD"])
         self.lookback_trades = self.config.get("lookback_trades", 500)  # last 500 trades
         self.divergence_threshold = self.config.get("divergence_threshold", 0.02)  # 2% price vs CVD divergence
         self.poll_interval = self.config.get("poll_interval", 120)  # seconds

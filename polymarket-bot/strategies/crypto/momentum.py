@@ -99,7 +99,7 @@ class MomentumStrategy:
     ) -> None:
         self._client = crypto_client
         self._bus = signal_bus
-        self._symbols = symbols or ["XRP/USD", "HBAR/USD", "XCN/USD"]
+        self._symbols = symbols or ["XRP/USD", "XCN/USD"]
         self._macd_fast = macd_fast
         self._macd_slow = macd_slow
         self._macd_signal = macd_signal

@@ -22,7 +22,7 @@ from src.signal_bus import Signal, SignalBus, SignalType
 logger = structlog.get_logger(__name__)
 
 # Default correlated pairs to trade when BTC signals
-DEFAULT_ALT_SYMBOLS = ["XRP/USD", "HBAR/USD", "XCN/USD"]
+DEFAULT_ALT_SYMBOLS = ["XRP/USD", "XCN/USD"]
 
 # BTC momentum detection parameters
 DEFAULT_MOMENTUM_THRESHOLD_PCT = 0.11  # 0.11% BTC move

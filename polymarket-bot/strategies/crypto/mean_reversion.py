@@ -91,7 +91,7 @@ class MeanReversionStrategy:
     ) -> None:
         self._client = crypto_client
         self._bus = signal_bus
-        self._symbols = symbols or ["XRP/USD", "HBAR/USD", "XCN/USD"]
+        self._symbols = symbols or ["XRP/USD", "XCN/USD"]
         self._bb_period = bb_period
         self._bb_std = bb_std_dev
         self._rsi_period = rsi_period

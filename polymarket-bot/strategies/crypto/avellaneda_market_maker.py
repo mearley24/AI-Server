@@ -41,14 +41,15 @@ from strategies.crypto.vpin import VPINCalculator
 logger = structlog.get_logger(__name__)
 
 # Default parameters matching the spec
-DEFAULT_PAIRS = ["BTC/USDT", "XRP/USDT", "SOL/USDT"]
+DEFAULT_PAIRS = ["XRP/USDT"]
 DEFAULT_RISK_AVERSION = 0.1
 DEFAULT_SESSION_HORIZON = 3600  # 1 hour rolling window for 24/7 crypto
 DEFAULT_VOLATILITY_WINDOW = 100  # last 100 mid-price changes
 DEFAULT_MAX_INVENTORY = 10
 DEFAULT_MIN_SPREAD_BPS = 5
 DEFAULT_MAX_SPREAD_BPS = 200
-DEFAULT_ORDER_SIZE_USDT = 25.0
+DEFAULT_ORDER_SIZE_USDT = 10.0
+DEFAULT_MAX_TOTAL_EXPOSURE = 50.0
 DEFAULT_TICK_INTERVAL = 15.0
 DEFAULT_FEE_BPS = 16.0  # Kraken maker fee per side
 
@@ -81,6 +82,7 @@ class AvellanedaMarketMaker:
         order_size_usdt: float = DEFAULT_ORDER_SIZE_USDT,
         tick_interval: float = DEFAULT_TICK_INTERVAL,
         fee_bps: float = DEFAULT_FEE_BPS,
+        max_total_exposure: float = DEFAULT_MAX_TOTAL_EXPOSURE,
         pair_configs: dict[str, dict[str, float]] | None = None,
         hawkes_config: dict[str, Any] | None = None,
         vpin_config: dict[str, Any] | None = None,
@@ -96,6 +98,7 @@ class AvellanedaMarketMaker:
         self._order_size_usdt = order_size_usdt
         self._tick_interval = tick_interval
         self._fee_bps = fee_bps
+        self._max_total_exposure = max_total_exposure
         self._pair_configs = pair_configs or {}
 
         # Per-pair state
@@ -292,12 +295,24 @@ class AvellanedaMarketMaker:
         bid_size = self._inventory.bid_size_limit(pair, base_size, mid)
         ask_size = self._inventory.ask_size_limit(pair, base_size, mid)
 
-        # 10. Place orders
+        # 10. Exposure limit check — skip if total open value would exceed max
+        total_open_value = sum(
+            abs(self._inventory.inventory(p)) * (self._mid_prices[p][-1] if self._mid_prices[p] else 0)
+            for p in self._pairs
+        )
+
+        # 11. Place orders
         if bid_size > 0 and self._inventory.can_quote_bid(pair, mid):
-            await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
+            if total_open_value + (bid_size * bid_price) > self._max_total_exposure:
+                logger.debug("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), max=self._max_total_exposure)
+            else:
+                await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
 
         if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
-            await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
+            if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
+                logger.debug("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), max=self._max_total_exposure)
+            else:
+                await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
 
         # 11. Publish signal for debate engine / monitoring
         await self._bus.publish(Signal(
