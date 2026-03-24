@@ -425,6 +425,14 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.error("platform_strategy_start_failed", strategy=name, error=str(exc))
 
+    # Auto-start core Polymarket strategies
+    for name, strat in deps.strategies.items():
+        try:
+            await strat.start()
+            log.info("core_strategy_started", strategy=name)
+        except Exception as exc:
+            log.error("core_strategy_start_failed", strategy=name, error=str(exc))
+
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
 
