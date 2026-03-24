@@ -576,10 +576,12 @@ async def weather_edges() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail="Weather trader strategy not initialized")
 
     edges = weather_strat.current_edges
+    open_positions = weather_strat.get_positions_with_pnl()
     return {
         "edges": edges,
         "count": len(edges),
-        "positions": len(weather_strat._positions),
+        "positions": len(open_positions),
+        "open_positions": open_positions,
     }
 
 

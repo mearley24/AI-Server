@@ -23,6 +23,7 @@ import asyncio
 import math
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -82,6 +83,42 @@ ACCUWEATHER_CITY_KEYS: dict[str, str] = {
 NOAA_SIGMA = 3.5
 
 
+@dataclass
+class WeatherPosition:
+    """Tracks a single weather market position (paper or live)."""
+
+    market_ticker: str
+    market_title: str
+    platform: str  # "kalshi" or "polymarket"
+    side: str  # "yes", "no", "BUY", or "SELL"
+    entry_price: float
+    size: float
+    entry_time: float
+    edge_at_entry: float
+    station: str
+    fair_value: float = 0.0
+    end_date: str = ""
+
+
+class WeatherPositionTracker:
+    """In-memory tracker for open weather positions."""
+
+    def __init__(self) -> None:
+        self.positions: dict[str, WeatherPosition] = {}
+
+    def enter(self, pos: WeatherPosition) -> None:
+        self.positions[pos.market_ticker] = pos
+
+    def exit(self, ticker: str) -> WeatherPosition | None:
+        return self.positions.pop(ticker, None)
+
+    def has_position(self, ticker: str) -> bool:
+        return ticker in self.positions
+
+    def all_positions(self) -> list[WeatherPosition]:
+        return list(self.positions.values())
+
+
 class WeatherTraderStrategy(BaseStrategy):
     """Trades weather markets using NOAA data edge vs market prices.
 
@@ -135,8 +172,8 @@ class WeatherTraderStrategy(BaseStrategy):
         # Kalshi client (injected from main.py if available)
         self._kalshi_client: Any = None
 
-        # Position tracking: token_id -> position info
-        self._positions: dict[str, dict[str, Any]] = {}
+        # Position tracking via dedicated tracker
+        self._position_tracker = WeatherPositionTracker()
 
         # Station data cache (populated each tick from NOAA client)
         self._station_data: dict[str, dict[str, Any]] = {}
@@ -169,8 +206,8 @@ class WeatherTraderStrategy(BaseStrategy):
 
     async def stop(self) -> None:
         """Stop strategy: exit positions and close NOAA client."""
-        for token_id in list(self._positions.keys()):
-            await self._exit_position(token_id, "strategy_stop")
+        for pos in list(self._position_tracker.all_positions()):
+            await self._exit_position(pos.market_ticker, "strategy_stop")
         if self._noaa:
             await self._noaa.close()
         await super().stop()
@@ -220,7 +257,7 @@ class WeatherTraderStrategy(BaseStrategy):
             poly_markets=len(poly_markets),
             kalshi_markets=len(kalshi_markets) if self._kalshi_client else 0,
             edges_found=len(edges),
-            positions=len(self._positions),
+            positions=len(self._position_tracker.positions),
         )
 
     # ── Market Scanning ───────────────────────────────────────────────────
@@ -564,7 +601,7 @@ class WeatherTraderStrategy(BaseStrategy):
         platform = edge_info["platform"]
 
         # Don't re-enter existing positions
-        if token_id in self._positions:
+        if self._position_tracker.has_position(token_id):
             return
 
         # Filter: check time to expiry
@@ -617,17 +654,23 @@ class WeatherTraderStrategy(BaseStrategy):
         )
 
         if order:
-            self._positions[token_id] = {
-                "platform": "polymarket",
-                "market": question,
-                "entry_price": market_price,
-                "size": size,
-                "fair_value": edge_info["fair_value"],
-                "edge_at_entry": edge,
-                "side": "BUY" if side == SIDE_BUY else "SELL",
-                "entered_at": time.time(),
-                "end_date": edge_info.get("end_date", ""),
-            }
+            side_str = "BUY" if side == SIDE_BUY else "SELL"
+            station = self._match_station(question) or ""
+            pos = WeatherPosition(
+                market_ticker=token_id,
+                market_title=question,
+                platform="polymarket",
+                side=side_str,
+                entry_price=market_price,
+                size=size,
+                entry_time=time.time(),
+                edge_at_entry=edge,
+                station=station,
+                fair_value=edge_info["fair_value"],
+                end_date=edge_info.get("end_date", ""),
+            )
+            self._position_tracker.enter(pos)
+            self._log_weather_paper_trade(pos)
 
     async def _execute_kalshi(self, edge_info: dict[str, Any], size: float) -> None:
         """Place order on Kalshi."""
@@ -660,17 +703,22 @@ class WeatherTraderStrategy(BaseStrategy):
                 size=order.size,
             )
 
-            self._positions[ticker] = {
-                "platform": "kalshi",
-                "market": edge_info["question"],
-                "entry_price": market_price,
-                "size": size,
-                "fair_value": edge_info["fair_value"],
-                "edge_at_entry": edge,
-                "side": side_str,
-                "entered_at": time.time(),
-                "end_date": edge_info.get("end_date", ""),
-            }
+            station = self._match_station(edge_info["question"]) or ""
+            pos = WeatherPosition(
+                market_ticker=ticker,
+                market_title=edge_info["question"],
+                platform="kalshi",
+                side=side_str,
+                entry_price=market_price,
+                size=size,
+                entry_time=time.time(),
+                edge_at_entry=edge,
+                station=station,
+                fair_value=edge_info["fair_value"],
+                end_date=edge_info.get("end_date", ""),
+            )
+            self._position_tracker.enter(pos)
+            self._log_weather_paper_trade(pos)
 
         except Exception as exc:
             logger.error("kalshi_weather_order_error", ticker=ticker, error=str(exc))
@@ -679,17 +727,27 @@ class WeatherTraderStrategy(BaseStrategy):
 
     async def _manage_positions(self) -> None:
         """Monitor positions for exit conditions: take-profit, stop-loss, time-based."""
-        for token_id, pos in list(self._positions.items()):
-            # Get current market price
-            current_price = await self._get_current_price(token_id, pos["platform"])
-            if current_price is None:
-                continue
+        for pos in list(self._position_tracker.all_positions()):
+            ticker = pos.market_ticker
 
-            entry_price = pos["entry_price"]
-            fair_value = pos["fair_value"]
+            # Re-fetch current market price from the platform API
+            current_price = await self._get_current_price(ticker, pos.platform)
+
+            # If price fetch fails, use entry price as fallback — don't exit on missing data
+            if current_price is None or current_price <= 0:
+                logger.debug(
+                    "weather_price_fetch_failed",
+                    ticker=ticker,
+                    platform=pos.platform,
+                    fallback="entry_price",
+                )
+                current_price = pos.entry_price
+
+            entry_price = pos.entry_price
+            fair_value = pos.fair_value
 
             # Recalculate fair value from latest NOAA data
-            new_fair = self._get_fair_value(pos["market"])
+            new_fair = self._get_fair_value(pos.market_title)
             if new_fair is not None:
                 fair_value = new_fair
 
@@ -699,35 +757,36 @@ class WeatherTraderStrategy(BaseStrategy):
             if current_edge < self._take_profit_edge:
                 logger.info(
                     "weather_take_profit",
-                    market=pos["market"][:60],
+                    market=pos.market_title[:60],
                     entry=entry_price,
                     current=current_price,
                     edge_remaining=round(current_edge, 4),
-                    platform=pos["platform"],
+                    platform=pos.platform,
                 )
-                await self._exit_position(token_id, "take_profit")
+                await self._exit_position(ticker, "take_profit")
                 continue
 
-            # Exit 2: Stop loss — price moved against us by stop_loss_pct
-            if pos["side"] in ("BUY", "yes"):
-                loss_pct = (entry_price - current_price) / entry_price if entry_price > 0 else 0
-            else:
-                loss_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0
+            # Exit 2: Stop loss — only trigger when current_price > 0 AND loss exceeds threshold
+            if current_price > 0 and current_price != entry_price:
+                if pos.side in ("BUY", "yes"):
+                    loss_pct = (entry_price - current_price) / entry_price if entry_price > 0 else 0
+                else:
+                    loss_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0
 
-            if loss_pct >= self._stop_loss_pct:
-                logger.info(
-                    "weather_stop_loss",
-                    market=pos["market"][:60],
-                    entry=entry_price,
-                    current=current_price,
-                    loss_pct=round(loss_pct, 4),
-                    platform=pos["platform"],
-                )
-                await self._exit_position(token_id, "stop_loss")
-                continue
+                if loss_pct >= self._stop_loss_pct:
+                    logger.info(
+                        "weather_stop_loss",
+                        market=pos.market_title[:60],
+                        entry=entry_price,
+                        current=current_price,
+                        loss_pct=round(loss_pct, 4),
+                        platform=pos.platform,
+                    )
+                    await self._exit_position(ticker, "stop_loss")
+                    continue
 
             # Exit 3: Time-based — exit before resolution
-            end_date = pos.get("end_date", "")
+            end_date = pos.end_date
             if end_date:
                 try:
                     expiry = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
@@ -735,54 +794,54 @@ class WeatherTraderStrategy(BaseStrategy):
                     if 0 < minutes_to_expiry < self._exit_before_resolution_min:
                         logger.info(
                             "weather_time_exit",
-                            market=pos["market"][:60],
+                            market=pos.market_title[:60],
                             minutes_to_expiry=round(minutes_to_expiry),
-                            platform=pos["platform"],
+                            platform=pos.platform,
                         )
-                        await self._exit_position(token_id, "pre_resolution")
+                        await self._exit_position(ticker, "pre_resolution")
                         continue
                 except (ValueError, TypeError):
                     pass
 
     async def _exit_position(self, token_id: str, reason: str) -> None:
         """Exit a weather position on the appropriate platform."""
-        pos = self._positions.get(token_id)
+        pos = self._position_tracker.positions.get(token_id)
         if not pos:
             return
 
         try:
-            if pos["platform"] == "polymarket":
+            if pos.platform == "polymarket":
                 current_price = await self._get_current_price(token_id, "polymarket")
                 if current_price and current_price > 0:
-                    side = SIDE_SELL if pos["side"] == "BUY" else SIDE_BUY
+                    side = SIDE_SELL if pos.side == "BUY" else SIDE_BUY
                     if self._settings.dry_run:
                         self._record_paper_trade(
                             token_id=token_id,
-                            market=pos["market"],
+                            market=pos.market_title,
                             price=current_price,
-                            size=pos["size"],
+                            size=pos.size,
                             side=side,
                         )
                     else:
                         await self._client.place_order(
                             token_id=token_id,
                             price=current_price,
-                            size=pos["size"],
+                            size=pos.size,
                             side=side,
                             order_type="FOK",
                         )
 
-            elif pos["platform"] == "kalshi" and self._kalshi_client:
+            elif pos.platform == "kalshi" and self._kalshi_client:
                 from src.platforms.base import Order
 
-                exit_side = "no" if pos["side"] == "yes" else "yes"
+                exit_side = "no" if pos.side == "yes" else "yes"
                 current_price = await self._get_current_price(token_id, "kalshi")
                 if current_price and current_price > 0:
                     order = Order(
                         platform="kalshi",
                         market_id=token_id,
                         side=exit_side,
-                        size=pos["size"],
+                        size=pos.size,
                         price=current_price,
                         order_type="limit",
                     )
@@ -790,32 +849,99 @@ class WeatherTraderStrategy(BaseStrategy):
 
             logger.info(
                 "weather_position_exited",
-                market=pos["market"][:60],
+                market=pos.market_title[:60],
                 reason=reason,
-                platform=pos["platform"],
-                entry_price=pos["entry_price"],
-                edge_at_entry=pos["edge_at_entry"],
-                hold_seconds=round(time.time() - pos["entered_at"]),
+                platform=pos.platform,
+                entry_price=pos.entry_price,
+                edge_at_entry=pos.edge_at_entry,
+                hold_seconds=round(time.time() - pos.entry_time),
             )
 
         except Exception as exc:
             logger.error("weather_exit_error", token_id=token_id, error=str(exc))
 
-        self._positions.pop(token_id, None)
+        self._position_tracker.exit(token_id)
 
     async def _get_current_price(self, token_id: str, platform: str) -> float | None:
-        """Get current price for a token/market on the given platform."""
+        """Get current price for a token/market on the given platform.
+
+        For Kalshi: tries get_markets by ticker first, then falls back to
+        get_event_markets using the event ticker derived from the market ticker.
+        Returns yes_bid_dollars as the current price.
+        """
         try:
             if platform == "polymarket":
                 return await self._client.get_midpoint(token_id)
             elif platform == "kalshi" and self._kalshi_client:
+                # Primary: fetch by ticker directly
                 markets = await self._kalshi_client.get_markets(ticker=token_id, limit=1)
                 if markets:
-                    # yes_bid_dollars is a dollar string like "0.0300"
-                    return float(markets[0].get("yes_bid_dollars", 0) or 0)
-        except Exception:
-            pass
+                    price = float(markets[0].get("yes_bid_dollars", 0) or 0)
+                    if price > 0:
+                        return price
+
+                # Fallback: derive event ticker and fetch via get_event_markets
+                # Kalshi tickers follow pattern: KXHIGHNY-26MAR25-B50-B55 -> event KXHIGHNY-26MAR25
+                parts = token_id.split("-")
+                if len(parts) >= 2:
+                    event_ticker = "-".join(parts[:2])
+                    event_markets = await self._kalshi_client.get_event_markets(event_ticker)
+                    for m in event_markets:
+                        if m.get("ticker") == token_id:
+                            price = float(m.get("yes_bid_dollars", 0) or 0)
+                            if price > 0:
+                                return price
+        except Exception as exc:
+            logger.debug("weather_price_fetch_error", token_id=token_id, platform=platform, error=str(exc))
         return None
+
+    def _log_weather_paper_trade(self, pos: WeatherPosition) -> None:
+        """Log a weather trade entry to the paper ledger."""
+        if not self._paper_ledger:
+            return
+        from src.paper_ledger import PaperTrade
+
+        paper_trade = PaperTrade(
+            timestamp=pos.entry_time,
+            strategy="weather_trader",
+            market_id=pos.market_ticker,
+            market_question=pos.market_title,
+            side="BUY" if pos.side in ("BUY", "yes") else "SELL",
+            size=pos.size,
+            price=pos.entry_price,
+            signals={
+                "platform": pos.platform,
+                "edge": pos.edge_at_entry,
+                "station": pos.station,
+            },
+        )
+        self._paper_ledger.record(paper_trade)
+
+    def get_positions_with_pnl(self) -> list[dict[str, Any]]:
+        """Return all open positions with unrealized P&L for the API."""
+        result: list[dict[str, Any]] = []
+        for pos in self._position_tracker.all_positions():
+            if pos.side in ("BUY", "yes"):
+                # For long positions: unrealized = (fair_value - entry_price) * size
+                unrealized_pnl = (pos.fair_value - pos.entry_price) * pos.size
+            else:
+                unrealized_pnl = (pos.entry_price - pos.fair_value) * pos.size
+
+            result.append({
+                "market_ticker": pos.market_ticker,
+                "market_title": pos.market_title,
+                "platform": pos.platform,
+                "side": pos.side,
+                "entry_price": pos.entry_price,
+                "size": pos.size,
+                "entry_time": pos.entry_time,
+                "edge_at_entry": pos.edge_at_entry,
+                "station": pos.station,
+                "fair_value": pos.fair_value,
+                "unrealized_pnl": round(unrealized_pnl, 4),
+                "hold_seconds": round(time.time() - pos.entry_time),
+            })
+        return result
 
     def _check_time_to_expiry(self, end_date: str) -> bool:
         """Return True if there's enough time before expiry to enter."""
