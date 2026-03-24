@@ -199,14 +199,14 @@ services:
       context: ./voice_receptionist
     container_name: voice-receptionist
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - PORT=3000
+      - NODE_ENV=production
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - SYMPHONY_PHONE=${SYMPHONY_PHONE}
+      - DB_PATH=/app/data/bob.db
     ports:
       - "127.0.0.1:8093:3000"
     volumes:

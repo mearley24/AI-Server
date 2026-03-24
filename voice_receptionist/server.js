@@ -14,7 +14,17 @@
 
 'use strict';
 
-require('dotenv').config();
+// ─── Global crash handlers (MUST be first) ──────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('[bob] FATAL uncaughtException:', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[bob] FATAL unhandledRejection:', err);
+});
+
+try { require('dotenv').config(); } catch (e) {
+  console.warn('[bob] dotenv.config() failed — continuing with process.env:', e.message);
+}
 
 const express    = require('express');
 const http       = require('http');
