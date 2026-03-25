@@ -702,6 +702,18 @@ class PolymarketCopyTrader:
                     lambda: self._clob_client.post_order(market_order, "FOK"),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
+                success = order_resp.get("success", False) if isinstance(order_resp, dict) else False
+                status = order_resp.get("status", "") if isinstance(order_resp, dict) else ""
+
+                if not success and status != "matched" and status != "live":
+                    logger.debug(
+                        "copytrade_fok_not_filled",
+                        token_id=token_id[:16] + "...",
+                        status=status,
+                        resp=str(order_resp)[:100],
+                    )
+                    return
+
                 logger.info(
                     "copytrade_copy_executed",
                     mode="live",
@@ -712,6 +724,7 @@ class PolymarketCopyTrader:
                     size_shares=round(size_shares, 2),
                     order_id=order_id,
                     win_rate=round(wallet.win_rate, 3),
+                    status=status,
                 )
             except Exception as exc:
                 err_str = str(exc)
