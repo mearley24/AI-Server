@@ -677,29 +677,29 @@ class PolymarketCopyTrader:
                     logger.error("copytrade_no_clob_client")
                     return
                 loop = asyncio.get_event_loop()
-                from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
+                from py_clob_client.clob_types import MarketOrderArgs, PartialCreateOrderOptions
+                from py_clob_client.order_builder.constants import BUY as CLOB_BUY
 
-                # Round price to nearest cent, minimum 5 shares (Polymarket minimum)
-                rounded_price = round(round(price / 0.01) * 0.01, 2)
-                rounded_size = round(size_shares, 2)
-                if rounded_size < 5:
-                    rounded_size = 5.0
-
-                order_args = OrderArgs(
+                # Use market order (FOK) for instant fill
+                # amount = USD amount for BUY orders
+                order_args = MarketOrderArgs(
                     token_id=token_id,
-                    price=rounded_price,
-                    size=rounded_size,
+                    amount=self._size_usd,
                     side="BUY",
+                    price=round(min(price * 1.05, 0.99), 2),  # 5% slippage tolerance
                 )
 
-                # Only trade non-neg-risk markets (neg_risk signing is broken)
                 options = PartialCreateOrderOptions(
                     tick_size="0.01",
                     neg_risk=False,
                 )
+                market_order = await loop.run_in_executor(
+                    None,
+                    lambda: self._clob_client.create_market_order(order_args, options),
+                )
                 order_resp = await loop.run_in_executor(
                     None,
-                    lambda: self._clob_client.create_and_post_order(order_args, options),
+                    lambda: self._clob_client.post_order(market_order, "FOK"),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 logger.info(
