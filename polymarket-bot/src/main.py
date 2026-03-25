@@ -368,6 +368,28 @@ async def lifespan(app: FastAPI):
                     check_interval=settings.crypto_poll_interval_seconds,
                 )
                 platform_strategies.append(("momentum", momentum))
+
+            # Momentum/Mean-Reversion Hybrid strategy
+            if settings.crypto_momentum_mr_enabled:
+                from strategies.crypto.momentum_mean_reversion import MomentumMeanReversion
+                mmr = MomentumMeanReversion(
+                    crypto_client=crypto_client,
+                    signal_bus=signal_bus,
+                    pairs=settings.momentum_mr_pairs,
+                    order_size_usd=settings.momentum_mr_order_size_usd,
+                    tick_interval=settings.momentum_mr_tick_interval,
+                    vwap_window_minutes=settings.momentum_mr_vwap_window_minutes,
+                    ema_fast=settings.momentum_mr_ema_fast,
+                    ema_slow=settings.momentum_mr_ema_slow,
+                    buy_dip_pct=settings.momentum_mr_buy_dip_pct,
+                    sell_rip_pct=settings.momentum_mr_sell_rip_pct,
+                    take_profit_pct=settings.momentum_mr_take_profit_pct,
+                    stop_loss_pct=settings.momentum_mr_stop_loss_pct,
+                    max_trades_per_hour=settings.momentum_mr_max_trades_per_hour,
+                    max_inventory_usd=settings.momentum_mr_max_inventory_usd,
+                    pnl_tracker=pnl_tracker,
+                )
+                platform_strategies.append(("momentum_mr", mmr))
         else:
             log.warning("crypto_connect_failed", msg="Crypto platform disabled")
 

@@ -151,8 +151,8 @@ class Settings(BaseSettings):
     crypto_mean_reversion_enabled: bool = Field(default=True, description="Enable mean reversion strategy")
     crypto_momentum_enabled: bool = Field(default=False, description="Enable momentum strategy (Phase 2)")
 
-    # --- Avellaneda-Stoikov Market Maker ---
-    crypto_avellaneda_enabled: bool = Field(default=True, description="Enable Avellaneda-Stoikov market maker")
+    # --- Avellaneda-Stoikov Market Maker (DISABLED — can't profit on Kraken, see momentum_mr) ---
+    crypto_avellaneda_enabled: bool = Field(default=False, description="Enable Avellaneda-Stoikov market maker")
     avellaneda_pairs: list[str] = Field(
         default_factory=lambda: ["XRP/USD"],
         description="Pairs for Avellaneda MM to quote",
@@ -187,6 +187,21 @@ class Settings(BaseSettings):
     avellaneda_vpin_critical: float = Field(default=0.8, description="VPIN critical threshold (stop quoting)")
     avellaneda_vpin_cooldown: float = Field(default=60.0, description="VPIN cooldown seconds after recovery")
 
+    # --- Momentum/Mean-Reversion Hybrid Strategy ---
+    crypto_momentum_mr_enabled: bool = Field(default=True, description="Enable momentum/mean-reversion strategy")
+    momentum_mr_pairs: list[str] = Field(default_factory=lambda: ["XRP/USD"])
+    momentum_mr_order_size_usd: float = Field(default=50.0)
+    momentum_mr_tick_interval: float = Field(default=15.0)
+    momentum_mr_vwap_window_minutes: float = Field(default=15.0)
+    momentum_mr_ema_fast: int = Field(default=5)
+    momentum_mr_ema_slow: int = Field(default=20)
+    momentum_mr_buy_dip_pct: float = Field(default=0.003, description="Buy when price is this % below VWAP")
+    momentum_mr_sell_rip_pct: float = Field(default=0.003, description="Sell when price is this % above VWAP")
+    momentum_mr_take_profit_pct: float = Field(default=0.002, description="Take profit at this % gain")
+    momentum_mr_stop_loss_pct: float = Field(default=0.005, description="Stop loss at this % loss")
+    momentum_mr_max_trades_per_hour: int = Field(default=10)
+    momentum_mr_max_inventory_usd: float = Field(default=500.0)
+
     @field_validator("poly_log_level")
     @classmethod
     def _normalise_log_level(cls, v: str) -> str:
@@ -194,7 +209,6 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_prefix": "",
-        "env_file": ".env",
         "extra": "ignore",
         "populate_by_name": True,
     }
