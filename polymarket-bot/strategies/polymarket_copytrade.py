@@ -608,8 +608,8 @@ class PolymarketCopyTrader:
             )
             return
 
-        # Guard: skip if market price >90% or <10%
-        if price > 0.90 or price < 0.10:
+        # Guard: skip if market price >95% (basically resolved) or <2% (dust)
+        if price > 0.95 or price < 0.02:
             logger.info(
                 "copytrade_skip_extreme_price",
                 price=price,
