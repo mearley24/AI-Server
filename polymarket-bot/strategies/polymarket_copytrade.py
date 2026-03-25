@@ -640,126 +640,121 @@ class PolymarketCopyTrader:
         market: str,
         source_trade_id: str,
     ) -> None:
-        """Copy a BUY trade from a top wallet."""
+        """Copy a BUY trade from a top wallet using order book pricing."""
 
         # Guard: max positions
         if len(self._positions) >= self._max_positions:
-            logger.info(
-                "copytrade_skip_max_positions",
-                current=len(self._positions),
-                max=self._max_positions,
-            )
             return
 
-        # Guard: skip if market price >95% (basically resolved) or <2% (dust)
+        # Guard: skip 5-minute/15-minute crypto markets (no mid-book liquidity)
+        market_question = trade.get("title", trade.get("market_question", trade.get("question", "")))
+        skip_patterns = ["Up or Down", "5:00", "5:05", "5:10", "5:15", "5:20", "5:25", "5:30",
+                         "5:35", "5:40", "5:45", "5:50", "5:55", "5m", "15m", "1h",
+                         "PM-", "AM-", "PM ET", "AM ET"]
+        if any(p in market_question for p in skip_patterns):
+            logger.debug("copytrade_skip_crypto_short", market=market_question[:40])
+            return
+
+        # Guard: skip extreme prices
         if price > 0.95 or price < 0.02:
-            logger.info(
-                "copytrade_skip_extreme_price",
-                price=price,
-                token_id=token_id[:16] + "...",
-            )
             return
 
         # Guard: already have position in this token
         for pos in self._positions.values():
             if pos.token_id == token_id:
-                logger.debug("copytrade_skip_duplicate_position", token_id=token_id[:16])
                 return
 
-        # Calculate position size
-        size_shares = self._size_usd / price if price > 0 else 0
-        if size_shares <= 0:
+        if not market_question:
+            market_question = market
+
+        # Get REAL order book price — don't use the copied wallet's price
+        if self._clob_client is None:
             return
 
-        position_id = f"ct-{uuid.uuid4().hex[:12]}"
-        market_question = trade.get("title", trade.get("market_question", trade.get("question", market)))
+        loop = asyncio.get_event_loop()
+        try:
+            book = await loop.run_in_executor(
+                None, lambda: self._clob_client.get_order_book(token_id)
+            )
+        except Exception:
+            return
 
-        # Place order
+        if not book or not book.asks:
+            logger.debug("copytrade_no_asks", token_id=token_id[:16])
+            return
+
+        best_ask = float(book.asks[0].price)
+
+        # Only trade if best ask is in tradeable range
+        if best_ask > 0.90 or best_ask < 0.05:
+            logger.debug("copytrade_ask_out_of_range", ask=best_ask, token_id=token_id[:16])
+            return
+
+        # Calculate size at the actual ask price
+        size_shares = self._size_usd / best_ask
+        if size_shares < 5:
+            size_shares = 5.0
+        size_shares = round(size_shares, 2)
+
+        position_id = f"ct-{uuid.uuid4().hex[:12]}"
+
+        # Place GTC limit order at the best ask price (should fill immediately)
         order_id = ""
         if self._dry_run:
-            # Paper trade
             order_id = f"paper-{position_id}"
             logger.info(
                 "copytrade_copy_executed",
                 mode="dry_run",
                 wallet=wallet.address[:10] + "...",
-                token_id=token_id[:16] + "...",
-                price=price,
+                market=market_question[:40],
+                best_ask=best_ask,
                 size_usd=self._size_usd,
-                size_shares=round(size_shares, 4),
+                size_shares=size_shares,
                 win_rate=round(wallet.win_rate, 3),
             )
         else:
-            # Live order via the official py-clob-client
             try:
-                if self._clob_client is None:
-                    logger.error("copytrade_no_clob_client")
-                    return
-                loop = asyncio.get_event_loop()
-                from py_clob_client.clob_types import MarketOrderArgs, PartialCreateOrderOptions
-                from py_clob_client.order_builder.constants import BUY as CLOB_BUY
+                from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
 
-                # Use market order (FOK) for instant fill
-                # amount = USD amount for BUY orders
-                order_args = MarketOrderArgs(
+                order_args = OrderArgs(
                     token_id=token_id,
-                    amount=self._size_usd,
+                    price=best_ask,
+                    size=size_shares,
                     side="BUY",
-                    price=round(min(price * 1.05, 0.99), 2),  # 5% slippage tolerance
                 )
-
                 options = PartialCreateOrderOptions(
                     tick_size="0.01",
                     neg_risk=False,
                 )
-                market_order = await loop.run_in_executor(
-                    None,
-                    lambda: self._clob_client.create_market_order(order_args, options),
-                )
                 order_resp = await loop.run_in_executor(
                     None,
-                    lambda: self._clob_client.post_order(market_order, "FOK"),
+                    lambda: self._clob_client.create_and_post_order(order_args, options),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 success = order_resp.get("success", False) if isinstance(order_resp, dict) else False
                 status = order_resp.get("status", "") if isinstance(order_resp, dict) else ""
 
-                if not success and status != "matched" and status != "live":
-                    logger.debug(
-                        "copytrade_fok_not_filled",
-                        token_id=token_id[:16] + "...",
-                        status=status,
-                        resp=str(order_resp)[:100],
-                    )
-                    return
-
                 logger.info(
                     "copytrade_copy_executed",
                     mode="live",
                     wallet=wallet.address[:10] + "...",
-                    token_id=token_id[:16] + "...",
-                    price=price,
+                    market=market_question[:40],
+                    best_ask=best_ask,
+                    wallet_price=price,
                     size_usd=self._size_usd,
-                    size_shares=round(size_shares, 2),
+                    size_shares=size_shares,
                     order_id=order_id,
-                    win_rate=round(wallet.win_rate, 3),
                     status=status,
+                    win_rate=round(wallet.win_rate, 3),
                 )
+
+                # Update last trade time for rate limiting
+                self._last_trade_time = time.time()
+
             except Exception as exc:
                 err_str = str(exc)
-                # Silently skip known non-fatal errors
-                if "does not exist" in err_str or "not enough balance" in err_str or "invalid signature" in err_str:
-                    logger.debug(
-                        "copytrade_order_skipped",
-                        reason=err_str[:80],
-                        token_id=token_id[:16] + "...",
-                    )
-                else:
-                    logger.warning(
-                        "copytrade_order_error",
-                        error=err_str[:120],
-                        token_id=token_id[:16] + "...",
-                    )
+                if "does not exist" not in err_str and "not enough balance" not in err_str and "invalid signature" not in err_str:
+                    logger.warning("copytrade_order_error", error=err_str[:120], token_id=token_id[:16] + "...")
                 return
 
         # Track position
