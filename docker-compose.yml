@@ -90,7 +90,9 @@ services:
       context: ./polymarket-bot
     container_name: polymarket-bot
     restart: unless-stopped
-    network_mode: "service:vpn"
+    # network_mode: "service:vpn"  # disabled — US access doesn't need VPN
+    ports:
+      - "127.0.0.1:8430:8430"
     environment:
       - REDIS_URL=redis://redis:6379
       - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket,kalshi,crypto}
@@ -116,8 +118,6 @@ services:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro
     depends_on:
-      vpn:
-        condition: service_healthy
       redis:
         condition: service_started
     healthcheck:
