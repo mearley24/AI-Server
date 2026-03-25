@@ -714,11 +714,20 @@ class PolymarketCopyTrader:
                     win_rate=round(wallet.win_rate, 3),
                 )
             except Exception as exc:
-                logger.error(
-                    "copytrade_order_error",
-                    error=str(exc),
-                    token_id=token_id[:16] + "...",
-                )
+                err_str = str(exc)
+                # Silently skip known non-fatal errors
+                if "does not exist" in err_str or "not enough balance" in err_str or "invalid signature" in err_str:
+                    logger.debug(
+                        "copytrade_order_skipped",
+                        reason=err_str[:80],
+                        token_id=token_id[:16] + "...",
+                    )
+                else:
+                    logger.warning(
+                        "copytrade_order_error",
+                        error=err_str[:120],
+                        token_id=token_id[:16] + "...",
+                    )
                 return
 
         # Track position
