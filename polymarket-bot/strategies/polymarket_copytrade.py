@@ -679,11 +679,11 @@ class PolymarketCopyTrader:
                 loop = asyncio.get_event_loop()
                 from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
 
-                # Round price to nearest cent and size to 2 decimals
+                # Round price to nearest cent, minimum 5 shares (Polymarket minimum)
                 rounded_price = round(round(price / 0.01) * 0.01, 2)
                 rounded_size = round(size_shares, 2)
-                if rounded_size < 1:
-                    rounded_size = 1.0
+                if rounded_size < 5:
+                    rounded_size = 5.0
 
                 order_args = OrderArgs(
                     token_id=token_id,
@@ -691,15 +691,24 @@ class PolymarketCopyTrader:
                     size=rounded_size,
                     side="BUY",
                 )
-                options = PartialCreateOrderOptions(
-                    tick_size="0.01",
-                    neg_risk=False,
-                )
 
-                order_resp = await loop.run_in_executor(
-                    None,
-                    lambda: self._clob_client.create_and_post_order(order_args, options),
-                )
+                # Try with neg_risk=False first, then True if it fails
+                order_resp = None
+                for neg_risk in [False, True]:
+                    try:
+                        options = PartialCreateOrderOptions(
+                            tick_size="0.01",
+                            neg_risk=neg_risk,
+                        )
+                        order_resp = await loop.run_in_executor(
+                            None,
+                            lambda: self._clob_client.create_and_post_order(order_args, options),
+                        )
+                        break  # success
+                    except Exception as e:
+                        if neg_risk:  # both failed
+                            raise e
+                        continue  # try neg_risk=True
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 logger.info(
                     "copytrade_copy_executed",
