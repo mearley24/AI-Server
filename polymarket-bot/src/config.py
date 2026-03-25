@@ -197,7 +197,7 @@ class Settings(BaseSettings):
     copytrade_check_interval: float = Field(default=30.0, description="Seconds between trade checks")
 
     # --- Momentum/Mean-Reversion Hybrid Strategy ---
-    crypto_momentum_mr_enabled: bool = Field(default=True, description="Enable momentum/mean-reversion strategy")
+    crypto_momentum_mr_enabled: bool = Field(default=False, description="Enable momentum/mean-reversion strategy")
     momentum_mr_pairs: list[str] = Field(default_factory=lambda: ["XRP/USD"])
     momentum_mr_order_size_usd: float = Field(default=50.0)
     momentum_mr_tick_interval: float = Field(default=15.0)
