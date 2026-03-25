@@ -647,16 +647,40 @@ class PolymarketCopyTrader:
                 win_rate=round(wallet.win_rate, 3),
             )
         else:
-            # Live order via the existing Polymarket client
+            # Live order via the official py-clob-client
             try:
-                result = await self._client.place_order(
-                    token_id=token_id,
-                    price=price,
-                    size=size_shares,
-                    side=SIDE_BUY,
-                    order_type=ORDER_TYPE_GTC,
+                if self._clob_client is None:
+                    logger.error("copytrade_no_clob_client")
+                    return
+                loop = asyncio.get_event_loop()
+                from py_clob_client.order_builder.constants import BUY as CLOB_BUY
+
+                # Fetch tick size for this market
+                neg_risk = False  # default
+                tick_size = "0.01"  # default
+                try:
+                    market_info = await loop.run_in_executor(
+                        None, lambda: self._clob_client.get_market(market)
+                    )
+                    if isinstance(market_info, dict):
+                        tick_size = str(market_info.get("minimum_tick_size", "0.01"))
+                        neg_risk = market_info.get("neg_risk", False)
+                except Exception:
+                    pass
+
+                order_resp = await loop.run_in_executor(
+                    None,
+                    lambda: self._clob_client.create_and_post_order(
+                        {
+                            "tokenID": token_id,
+                            "price": price,
+                            "size": round(size_shares, 2),
+                            "side": "BUY",
+                        },
+                        {"tickSize": tick_size, "negRisk": neg_risk},
+                    ),
                 )
-                order_id = result.get("orderID", "")
+                order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 logger.info(
                     "copytrade_copy_executed",
                     mode="live",
@@ -664,7 +688,7 @@ class PolymarketCopyTrader:
                     token_id=token_id[:16] + "...",
                     price=price,
                     size_usd=self._size_usd,
-                    size_shares=round(size_shares, 4),
+                    size_shares=round(size_shares, 2),
                     order_id=order_id,
                     win_rate=round(wallet.win_rate, 3),
                 )
