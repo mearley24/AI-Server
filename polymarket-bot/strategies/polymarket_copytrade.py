@@ -151,9 +151,11 @@ class PolymarketCopyTrader:
         self._last_scan_time: float = 0.0
         self._wallet_cache_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_wallets.json"
 
-        # Trade dedup — set of trade IDs already seen
-        self._seen_trade_ids: set[str] = set()
-        self._initial_seed_done: bool = False  # First pass seeds seen_trade_ids without copying
+        # Trade dedup — set of trade IDs already seen (persisted to disk)
+        self._seen_trades_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_seen_trades.json"
+        self._seen_trade_ids: set[str] = self._load_seen_trades()
+        self._initial_seed_done: bool = len(self._seen_trade_ids) > 0
+        self._consecutive_errors: int = 0  # throttle error spam
 
         # Open copied positions
         self._positions: dict[str, CopiedPosition] = {}  # position_id -> CopiedPosition
@@ -479,6 +481,25 @@ class PolymarketCopyTrader:
         except Exception as exc:
             logger.warning("copytrade_wallet_cache_save_error", error=str(exc))
 
+    def _load_seen_trades(self) -> set[str]:
+        """Load seen trade IDs from disk."""
+        if not hasattr(self, '_seen_trades_path') or not self._seen_trades_path.exists():
+            return set()
+        try:
+            data = json.loads(self._seen_trades_path.read_text())
+            return set(data.get("trade_ids", []))
+        except Exception:
+            return set()
+
+    def _save_seen_trades(self) -> None:
+        """Persist seen trade IDs to disk."""
+        try:
+            self._seen_trades_path.parent.mkdir(parents=True, exist_ok=True)
+            ids = list(self._seen_trade_ids)[-5000:]
+            self._seen_trades_path.write_text(json.dumps({"trade_ids": ids}))
+        except Exception:
+            pass
+
     # ── 2. Trade Monitoring ──────────────────────────────────────────────
 
     async def _monitor_trades(self) -> None:
@@ -501,6 +522,7 @@ class PolymarketCopyTrader:
                 except Exception:
                     pass
             self._initial_seed_done = True
+            self._save_seen_trades()
             logger.info("copytrade_seeded", seen_trades=len(self._seen_trade_ids))
             return
 
@@ -515,6 +537,7 @@ class PolymarketCopyTrader:
                         continue
 
                     self._seen_trade_ids.add(trade_id)
+                    self._save_seen_trades()
                     side = trade.get("side", "").upper()
                     token_id = trade.get("asset", trade.get("asset_id", ""))
                     price = float(trade.get("price", 0))
