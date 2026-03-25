@@ -91,18 +91,24 @@ services:
     container_name: polymarket-bot
     restart: unless-stopped
     network_mode: "service:vpn"
-    env_file:
-      - .env
     environment:
       - REDIS_URL=redis://redis:6379
-      - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-kalshi,crypto}
+      - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket,kalshi,crypto}
+      - POLY_PRIVATE_KEY=${POLY_PRIVATE_KEY:-}
+      - POLY_PROXY_ADDRESS=${POLY_PROXY_ADDRESS:-}
+      - POLY_BUILDER_API_KEY=${POLY_BUILDER_API_KEY:-}
+      - POLY_BUILDER_API_SECRET=${POLY_BUILDER_API_SECRET:-}
+      - POLY_BUILDER_API_PASSPHRASE=${POLY_BUILDER_API_PASSPHRASE:-}
+      - POLY_DRY_RUN=${POLY_DRY_RUN:-false}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - KALSHI_API_KEY_ID=${KALSHI_API_KEY_ID:-}
       - KALSHI_PRIVATE_KEY_PATH=/app/secrets/kalshi.key
       - KALSHI_ENVIRONMENT=${KALSHI_ENVIRONMENT:-demo}
       - KALSHI_DRY_RUN=${KALSHI_DRY_RUN:-true}
       - KRAKEN_API_KEY=${KRAKEN_API_KEY:-}
       - KRAKEN_API_SECRET=${KRAKEN_API_SECRET:-}
-      - KRAKEN_DRY_RUN=${KRAKEN_DRY_RUN:-true}
+      - KRAKEN_DRY_RUN=${KRAKEN_DRY_RUN:-false}
       - CRYPTO_EXCHANGE=${CRYPTO_EXCHANGE:-kraken}
       - FINANCIAL_DATASETS_API_KEY=${FINANCIAL_DATASETS_API_KEY:-}
     volumes:
