@@ -203,6 +203,7 @@ class MomentumMeanReversion:
         # 3. Compute 15-min VWAP
         vwap = _compute_vwap(raw_trades, self._vwap_window_sec)
         if vwap is None or vwap <= 0:
+            logger.debug("momentum_mr_no_vwap", pair=pair)
             return
 
         # 4. Compute fast/slow EMA from 1-min candle closes
@@ -210,19 +211,20 @@ class MomentumMeanReversion:
         ema_fast_vals = _ema(candle_closes, self._ema_fast)
         ema_slow_vals = _ema(candle_closes, self._ema_slow)
 
-        if not ema_fast_vals or not ema_slow_vals:
-            logger.debug(
-                "momentum_mr_tick",
-                pair=pair,
-                msg="not enough candles for EMA",
-                candles=len(candle_closes),
-                need=self._ema_slow,
-            )
-            return
-
-        fast_ema = ema_fast_vals[-1]
-        slow_ema = ema_slow_vals[-1]
         last_price = float(raw_trades[-1]["price"])
+
+        if not ema_fast_vals or not ema_slow_vals:
+            # Not enough candles for EMA — fall back to VWAP-only signals
+            fast_ema = last_price
+            slow_ema = vwap
+            logger.debug(
+                "momentum_mr_ema_fallback",
+                pair=pair,
+                candles=len(candle_closes),
+            )
+        else:
+            fast_ema = ema_fast_vals[-1]
+            slow_ema = ema_slow_vals[-1]
 
         # Deviation from VWAP
         vwap_dev = (last_price - vwap) / vwap  # positive = above VWAP
