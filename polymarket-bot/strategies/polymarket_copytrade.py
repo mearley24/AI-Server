@@ -279,40 +279,46 @@ class PolymarketCopyTrader:
 
             for market in resolved_markets:
                 condition_id = market.get("conditionId", market.get("condition_id", ""))
-                outcome = market.get("outcome", "")
                 question = market.get("question", "")
 
-                # Skip if no clear resolution
-                if not outcome or outcome.lower() not in ("yes", "no"):
+                # Determine resolution from outcomePrices — e.g. ["1", "0"] means first outcome won
+                outcome_prices_raw = market.get("outcomePrices", "")
+                if isinstance(outcome_prices_raw, str):
+                    try:
+                        outcome_prices = json.loads(outcome_prices_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                elif isinstance(outcome_prices_raw, list):
+                    outcome_prices = outcome_prices_raw
+                else:
                     continue
 
-                # Determine winning token_id
-                tokens = market.get("tokens", [])
-                if not tokens or len(tokens) < 2:
-                    clobTokenIds = market.get("clobTokenIds", "")
-                    if isinstance(clobTokenIds, str) and clobTokenIds:
-                        try:
-                            tokens_list = json.loads(clobTokenIds) if clobTokenIds.startswith("[") else clobTokenIds.split(",")
-                        except json.JSONDecodeError:
-                            tokens_list = clobTokenIds.split(",")
-                        if len(tokens_list) >= 2:
-                            tokens = [
-                                {"token_id": tokens_list[0].strip(), "outcome": "Yes"},
-                                {"token_id": tokens_list[1].strip(), "outcome": "No"},
-                            ]
-
-                if len(tokens) < 2:
-                    continue
-
-                winning_token_id = None
-                for tok in tokens:
-                    tok_outcome = tok.get("outcome", "").lower()
-                    if tok_outcome == outcome.lower():
-                        winning_token_id = tok.get("token_id", "")
+                # Find which outcome index resolved to 1 (winner)
+                winning_index = None
+                for i, p in enumerate(outcome_prices):
+                    if str(p) == "1":
+                        winning_index = i
                         break
+                if winning_index is None:
+                    continue  # not cleanly resolved
 
-                if not winning_token_id:
+                # Parse clobTokenIds to get token IDs
+                clob_raw = market.get("clobTokenIds", "")
+                if isinstance(clob_raw, str):
+                    try:
+                        token_ids = json.loads(clob_raw) if clob_raw.startswith("[") else clob_raw.split(",")
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                elif isinstance(clob_raw, list):
+                    token_ids = clob_raw
+                else:
                     continue
+
+                token_ids = [t.strip().strip('"') for t in token_ids]
+                if winning_index >= len(token_ids):
+                    continue
+
+                winning_token_id = token_ids[winning_index]
 
                 # Fetch trades for this market to identify wallets
                 # TODO: CLOB /trades endpoint may require market param as condition_id
@@ -370,12 +376,14 @@ class PolymarketCopyTrader:
     async def _fetch_gamma_markets(
         self, closed: bool = False, active: bool = True, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Fetch markets from the Gamma API."""
+        """Fetch markets from Gamma API, ordered by most recently closed."""
         assert self._http is not None
         params: dict[str, Any] = {
             "limit": limit,
             "closed": closed,
             "active": active,
+            "order": "closedTime",
+            "ascending": False,
         }
         resp = await self._http.get(f"{self._gamma_url}/markets", params=params)
         resp.raise_for_status()
@@ -384,14 +392,8 @@ class PolymarketCopyTrader:
     async def _fetch_market_trades(
         self, market_id: str, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Fetch trades for a market from the CLOB API."""
-        assert self._http is not None
-        # TODO: Verify correct CLOB endpoint and parameter name.
-        # The CLOB API uses /trades with optional market or asset_id filters.
-        params: dict[str, Any] = {"market": market_id, "limit": limit}
-        resp = await self._http.get(f"{self._clob_url}/trades", params=params)
-        resp.raise_for_status()
-        return resp.json()
+        """Fetch trades using the existing PolymarketClient (has auth headers)."""
+        return await self._client.get_trades(market=market_id, limit=limit)
 
     # ── Wallet cache persistence ─────────────────────────────────────────
 
@@ -501,29 +503,19 @@ class PolymarketCopyTrader:
           - GET /trades?taker_address={wallet}
         Adjust based on actual API behavior.
         """
-        assert self._http is not None
-        trades: list[dict[str, Any]] = []
-
-        # Try maker trades
+        # Use the existing PolymarketClient which has auth headers
         try:
-            params = {"maker_address": wallet_address, "limit": 50}
-            resp = await self._http.get(f"{self._clob_url}/trades", params=params)
-            if resp.status_code == 200:
-                result = resp.json()
-                if isinstance(result, list):
-                    trades.extend(result)
-                elif isinstance(result, dict) and "data" in result:
-                    trades.extend(result["data"])
-        except Exception:
-            pass
-
-        # TODO: Also try taker trades if the API supports it
-        # try:
-        #     params = {"taker_address": wallet_address, "limit": 50}
-        #     resp = await self._http.get(f"{self._clob_url}/trades", params=params)
-        #     ...
-
-        return trades
+            all_trades = await self._client.get_trades(limit=200)
+            # Filter for trades involving this wallet
+            trades = [
+                t for t in all_trades
+                if t.get("maker_address", t.get("maker", "")) == wallet_address
+                or t.get("taker_address", t.get("taker", "")) == wallet_address
+            ]
+            return trades
+        except Exception as exc:
+            logger.debug("copytrade_wallet_trades_error", wallet=wallet_address[:10], error=str(exc))
+            return []
 
     # ── 3. Copy Execution ────────────────────────────────────────────────
 
