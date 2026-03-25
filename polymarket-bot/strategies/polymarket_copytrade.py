@@ -528,7 +528,7 @@ class PolymarketCopyTrader:
             return
 
         # Rate limit: only copy one trade per cycle, minimum 5 min between copies
-        if time.time() - self._last_trade_time < 300:
+        if time.time() - self._last_trade_time < 120:  # 2 min cooldown
             return
 
         copied_this_cycle = False
@@ -648,9 +648,10 @@ class PolymarketCopyTrader:
 
         # Guard: skip 5-minute/15-minute crypto markets (no mid-book liquidity)
         market_question = trade.get("title", trade.get("market_question", trade.get("question", "")))
-        skip_patterns = ["Up or Down", "5:00", "5:05", "5:10", "5:15", "5:20", "5:25", "5:30",
-                         "5:35", "5:40", "5:45", "5:50", "5:55", "5m", "15m", "1h",
-                         "PM-", "AM-", "PM ET", "AM ET"]
+        # Skip only 5-min crypto markets (allow hourly + event markets)
+        skip_patterns = ["Up or Down - March", "5:00PM", "5:05PM", "5:10PM", "5:15PM",
+                         "5:20PM", "5:25PM", "5:30PM", "5:35PM", "5:40PM", "5:45PM",
+                         "5:50PM", "5:55PM", "5m", "15m"]
         if any(p in market_question for p in skip_patterns):
             logger.debug("copytrade_skip_crypto_short", market=market_question[:40])
             return

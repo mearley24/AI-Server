@@ -189,7 +189,7 @@ class Settings(BaseSettings):
 
     # --- Polymarket Copy-Trading Strategy ---
     copytrade_enabled: bool = Field(default=True, description="Enable Polymarket copy-trading")
-    copytrade_size_usd: float = Field(default=5.0, description="USD per copied trade")
+    copytrade_size_usd: float = Field(default=10.0, description="USD per copied trade")
     copytrade_max_positions: int = Field(default=50, description="Max concurrent copied positions")
     copytrade_min_win_rate: float = Field(default=0.55, description="Minimum wallet win rate to copy")
     copytrade_min_trades: int = Field(default=20, description="Minimum resolved trades for wallet to qualify")
