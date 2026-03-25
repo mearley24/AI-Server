@@ -503,13 +503,13 @@ class PolymarketCopyTrader:
     # ── 2. Trade Monitoring ──────────────────────────────────────────────
 
     async def _monitor_trades(self) -> None:
-        """Check top-10 scored wallets for new trades."""
+        """Check top wallets for new trades. Only copies ONE trade per cycle."""
         if not self._scored_wallets:
             return
 
         top_wallets = self._scored_wallets[:25]
 
-        # First pass: seed seen_trade_ids with existing trades so we only copy NEW ones
+        # First pass: seed ALL existing trades so we never copy old ones
         if not self._initial_seed_done:
             logger.info("copytrade_seeding_existing_trades", wallets=len(top_wallets))
             for wallet in top_wallets:
@@ -526,46 +526,63 @@ class PolymarketCopyTrader:
             logger.info("copytrade_seeded", seen_trades=len(self._seen_trade_ids))
             return
 
+        # Rate limit: only copy one trade per cycle, minimum 5 min between copies
+        if time.time() - self._last_trade_time < 300:
+            return
+
+        copied_this_cycle = False
+
         for wallet in top_wallets:
+            if copied_this_cycle:
+                break
+
             try:
                 trades = await self._fetch_wallet_trades(wallet.address)
 
                 for trade in trades:
-                    # Data API fields: transactionHash, asset, conditionId, side, price, size
+                    if copied_this_cycle:
+                        break
+
                     trade_id = trade.get("transactionHash", trade.get("id", ""))
                     if not trade_id or trade_id in self._seen_trade_ids:
                         continue
 
+                    # Mark as seen immediately
                     self._seen_trade_ids.add(trade_id)
                     self._save_seen_trades()
+
                     side = trade.get("side", "").upper()
                     token_id = trade.get("asset", trade.get("asset_id", ""))
                     price = float(trade.get("price", 0))
                     size = float(trade.get("usdcSize", trade.get("size", 0)))
                     market = trade.get("conditionId", trade.get("market", ""))
 
+                    # Only log and copy BUY trades
+                    if side != "BUY":
+                        # Track sells for exit signals
+                        if side == "SELL":
+                            if wallet.address not in self._source_sells:
+                                self._source_sells[wallet.address] = set()
+                            self._source_sells[wallet.address].add(token_id)
+                        continue
+
+                    # Only copy trades that happened in the last 10 minutes
+                    trade_ts = trade.get("timestamp", 0)
+                    if isinstance(trade_ts, (int, float)) and trade_ts > 0:
+                        age_seconds = time.time() - trade_ts
+                        if age_seconds > 600:  # older than 10 min, skip
+                            continue
+
                     logger.info(
                         "copytrade_new_trade",
                         wallet=wallet.address[:10] + "...",
                         win_rate=round(wallet.win_rate, 3),
                         side=side,
-                        token_id=token_id[:16] + "..." if len(token_id) > 16 else token_id,
+                        token_id=token_id[:16] + "...",
                         price=price,
                         size=size,
                     )
 
-                    # Track sells for exit signals
-                    if side == "SELL":
-                        if wallet.address not in self._source_sells:
-                            self._source_sells[wallet.address] = set()
-                        self._source_sells[wallet.address].add(token_id)
-                        continue
-
-                    # Only copy BUY trades
-                    if side != "BUY":
-                        continue
-
-                    # Attempt to copy this trade
                     await self._copy_trade(
                         wallet=wallet,
                         trade=trade,
@@ -574,6 +591,7 @@ class PolymarketCopyTrader:
                         market=market,
                         source_trade_id=trade_id,
                     )
+                    copied_this_cycle = True
 
             except Exception as exc:
                 logger.error(
