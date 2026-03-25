@@ -131,11 +131,14 @@ class PolymarketCopyTrader:
                 pk = settings.poly_private_key
                 if not pk.startswith("0x"):
                     pk = f"0x{pk}"
+                funder = settings.poly_safe_address or None
                 self._clob_client = ClobClient(
                     self._clob_url,
                     key=pk,
                     chain_id=settings.chain_id,
                     creds=creds,
+                    signature_type=0,  # EOA mode
+                    funder=funder,
                 )
                 logger.info("copytrade_clob_client_initialized")
         except Exception as exc:
