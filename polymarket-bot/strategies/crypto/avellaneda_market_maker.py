@@ -372,19 +372,38 @@ class AvellanedaMarketMaker:
         # 0b. Cancel all existing orders for this pair before placing new ones
         await self._cancel_stale_orders(pair)
 
-        # 0c. Sync inventory with real exchange balance every tick
+        # 0c. Fetch REAL balances from exchange every tick
+        base_currency, quote_currency = pair.split("/") if "/" in pair else (pair, "USD")
+        free_base = 0.0
+        free_quote = 0.0
+
         if self._client.exchange is not None and not self._client.is_dry_run:
             try:
                 balance = await asyncio.get_event_loop().run_in_executor(
                     None, self._client.exchange.fetch_balance
                 )
-                base = pair.split("/")[0]
-                real_qty = float(balance.get("total", {}).get(base, 0))
+                free_base = float(balance.get("free", {}).get(base_currency, 0))
+                free_quote = float(balance.get("free", {}).get(quote_currency, 0))
+                total_base = float(balance.get("total", {}).get(base_currency, 0))
+
+                # Sync inventory manager with real exchange balance
                 pos = self._inventory.get_position(pair)
-                if abs(pos.quantity - real_qty) > 0.01:
-                    pos.quantity = real_qty
-            except Exception:
-                pass
+                pos.quantity = total_base
+
+                logger.info(
+                    "avellaneda_balance_sync",
+                    pair=pair,
+                    free_base=round(free_base, 6),
+                    free_quote=round(free_quote, 4),
+                    total_base=round(total_base, 6),
+                )
+            except Exception as exc:
+                logger.warning("avellaneda_balance_fetch_error", pair=pair, error=str(exc))
+                return  # Cannot quote without knowing real balances
+        else:
+            # Dry-run mode: use inventory manager values
+            free_base = max(self._inventory.get_position(pair).quantity, 0)
+            free_quote = 10000.0  # unlimited in dry-run
 
         # 1. Fetch orderbook → mid-price
         try:
@@ -415,156 +434,107 @@ class AvellanedaMarketMaker:
         # 3. Feed recent trades into Hawkes + VPIN
         await self._process_recent_trades(pair)
 
-        # 4. Compute reservation price
+        # 4. Compute reservation price — simple and safe
         inventory_coins = self._inventory.get_position(pair).quantity
-        tau = self._T  # rolling horizon for 24/7 crypto
+        pcfg = self._pair_configs.get(pair, {})
+        max_inventory_usdt = pcfg.get("max_inventory_usdt", self._max_total_exposure)
+        max_inventory_coins = max_inventory_usdt / mid if mid > 0 else 1.0
 
-        # Compute inventory ratio for proportional skewing
-        max_inv = self._inventory._effective_max(pair, mid)
-        inventory_ratio = (inventory_coins / max_inv) if max_inv > 0 else 0.0
+        # inventory_ratio capped to [-1, 1]
+        inventory_ratio = inventory_coins / max_inventory_coins if max_inventory_coins > 0 else 0.0
+        inventory_ratio = max(-1.0, min(1.0, inventory_ratio))
 
-        # Reservation price: skew proportionally to inventory, capped to ±0.2% of mid
-        # This prevents extreme offsets with large inventory positions
-        skew_amount = inventory_ratio * mid * 0.002  # max ±0.2% at full inventory
-        r = mid - skew_amount
+        # Reservation price: mid with tiny inventory skew (max ±0.05% at full inventory)
+        r = mid - (inventory_ratio * mid * 0.0005)
 
-        # Hawkes order flow adjustment — disabled for now to stabilize pricing
-        # The raw hawkes_adj * mid scaling was causing ±50% price offsets
-        # TODO: re-enable with proper scaling (e.g. hawkes_adj * spread, not * mid)
+        # No Hawkes adjustment — disabled for stability
         r_adjusted = r
 
-        inventory_skew = skew_amount  # for logging
-
-        # Log inventory status each tick
         logger.info(
             "avellaneda_inventory",
             pair=pair,
             coins=round(inventory_coins, 6),
-            value_usdt=round(inventory_coins * mid, 4),
-            skew=round(inventory_skew, 8),
+            value_usd=round(inventory_coins * mid, 4),
+            inventory_ratio=round(inventory_ratio, 4),
+            r_offset_bps=round((r - mid) / mid * 10000, 2),
         )
 
-        # 5. Compute optimal spread
-        kappa = self._estimate_kappa(pair)
-        delta = self._gamma * (sigma ** 2) * tau
-        if self._gamma > 0 and kappa > 0:
-            delta += (2.0 / self._gamma) * math.log(1.0 + self._gamma / kappa)
-
-        # 6. Apply spread bounds (per-pair overrides or global fallback)
-        pcfg = self._pair_configs.get(pair, {})
-        pair_min_bps = pcfg.get("min_spread_bps", self._min_spread_bps)
+        # 5. Compute spread — simple, bounded
         pair_max_bps = pcfg.get("max_spread_bps", self._max_spread_bps)
+        spread = mid * (pair_max_bps / 10000.0)
 
-        # Fee-aware floor: spread must exceed round-trip fees to be profitable
-        min_profitable_spread = mid * (2.0 * self._fee_bps / 10000.0)
-        min_spread = max(mid * (pair_min_bps / 10000.0), min_profitable_spread)
-        max_spread = mid * (pair_max_bps / 10000.0)
-        delta = max(min_spread, min(delta, max_spread))
-
-        # 7. Apply VPIN circuit breaker
+        # 6. Apply VPIN circuit breaker — only halt at CRITICAL level (0.8+)
+        vpin_val = self._vpin[pair].vpin
         vpin_action = self._vpin[pair]._evaluate()
-        if not vpin_action.should_quote:
+
+        if vpin_val >= 0.8 and not vpin_action.should_quote:
             logger.info(
                 "avellaneda_vpin_halt",
                 pair=pair,
-                vpin=round(self._vpin[pair].vpin, 4),
+                vpin=round(vpin_val, 4),
                 state=vpin_action.state.value,
             )
             return
 
-        delta *= vpin_action.spread_multiplier
+        # Apply VPIN spread multiplier (widens spread under toxic flow)
+        spread *= vpin_action.spread_multiplier
 
-        # 8. Compute quote prices — symmetric spreads around reservation price
-        # The reservation price already incorporates inventory skew, so
-        # symmetric spreads keep quotes predictable and close to mid.
-        sell_spread = delta
-        buy_spread = delta
+        # Cap final spread to 100bps max
+        spread = min(spread, mid * 0.01)
 
-        bid_price = r_adjusted - buy_spread / 2.0
-        ask_price = r_adjusted + sell_spread / 2.0
+        # 7. Compute quote prices
+        bid_price = r_adjusted - spread / 2.0
+        ask_price = r_adjusted + spread / 2.0
 
-        # Sanity: bid must be below ask, both must be positive
-        if bid_price <= 0 or ask_price <= 0 or bid_price >= ask_price:
-            logger.info(
-                "avellaneda_invalid_quotes",
+        # Sanity check: quotes must stay within 1% of mid
+        if bid_price <= mid * 0.99 or ask_price >= mid * 1.01:
+            logger.warning(
+                "avellaneda_quote_sanity_fail",
                 pair=pair,
                 bid=round(bid_price, 8),
                 ask=round(ask_price, 8),
+                mid=round(mid, 8),
+                bid_off_bps=round((mid - bid_price) / mid * 10000, 2),
+                ask_off_bps=round((ask_price - mid) / mid * 10000, 2),
             )
             return
 
-        # 9. Compute order sizes (per-pair USDT amount or global fallback)
+        if bid_price <= 0 or ask_price <= 0 or bid_price >= ask_price:
+            return
+
+        # 8. Compute order sizes from REAL free balances
         pair_order_usdt = pcfg.get("order_size_usdt", self._order_size_usdt)
-        base_size = pair_order_usdt / mid
-        base_size *= vpin_action.size_multiplier
 
-        # Scale order sizes based on inventory direction
-        if inventory_coins > 0:
-            # Long: buy less, sell more aggressively
-            bid_base = base_size * 0.5
-            ask_base = base_size * 1.5
-        elif inventory_coins < 0:
-            # Short: sell less, buy more aggressively
-            bid_base = base_size * 1.5
-            ask_base = base_size * 0.5
-        else:
-            bid_base = base_size
-            ask_base = base_size
+        # Buy side: limited by free quote currency (USD)
+        buy_size_usd = min(pair_order_usdt, free_quote * 0.95)
+        buy_size_coins = buy_size_usd / bid_price if bid_price > 0 else 0
 
-        bid_size = self._inventory.bid_size_limit(pair, bid_base, mid)
-        ask_size = self._inventory.ask_size_limit(pair, ask_base, mid)
+        # Sell side: limited by free base currency (e.g. XRP)
+        sell_size_coins = min(pair_order_usdt / ask_price, free_base * 0.95) if ask_price > 0 else 0
 
-        # 10. Exposure limit check — skip if total open value would exceed max
-        total_open_value = sum(
-            abs(self._inventory.inventory(p)) * (self._mid_prices[p][-1] if self._mid_prices[p] else 0)
-            for p in self._pairs
-        )
-
-        # Determine quote currency and base currency from pair (e.g. "XRP/USD")
-        base_currency, quote_currency = pair.split("/") if "/" in pair else (pair, "USD")
-
-        # 11. Log tick debug
         logger.info(
-            "avellaneda_tick_debug",
+            "avellaneda_tick",
             pair=pair,
-            bid_size=round(bid_size, 6),
-            ask_size=round(ask_size, 6),
-            can_bid=self._inventory.can_quote_bid(pair, mid),
-            can_ask=self._inventory.can_quote_ask(pair, mid),
-            total_open_value=round(total_open_value, 2),
-            max_exposure=self._max_total_exposure,
+            mid=round(mid, 6),
+            r=round(r_adjusted, 6),
+            spread_bps=round(spread / mid * 10000, 2),
+            bid=round(bid_price, 6),
+            ask=round(ask_price, 6),
+            buy_coins=round(buy_size_coins, 4),
+            sell_coins=round(sell_size_coins, 4),
+            free_base=round(free_base, 6),
+            free_quote=round(free_quote, 4),
+            vpin=round(vpin_val, 4),
         )
 
-        # 12. Place at most ONE buy and ONE sell per pair per tick
-        # Place both orders without pre-checking free balance — Kraken will
-        # reject with insufficient funds if needed, which is safer than
-        # our stale balance check blocking valid orders.
-        if bid_size > 0 and self._inventory.can_quote_bid(pair, mid):
-            if total_open_value + (bid_size * bid_price) > self._max_total_exposure:
-                logger.info("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), limit=self._max_total_exposure)
-            else:
-                await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
+        # 9. Place orders — only if size meets Kraken minimum (1 coin for XRP)
+        if buy_size_coins >= 1:
+            await self._place_quote(pair, "buy", bid_price, buy_size_coins, mid, sigma, spread)
 
-        if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
-            if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
-                logger.info("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), limit=self._max_total_exposure)
-            else:
-                # Fetch REAL free balance from exchange to cap sell size
-                try:
-                    balance_data = await self._client.get_balance()
-                    free_base = float(balance_data.get("free", {}).get(base_currency, 0))
-                except Exception:
-                    free_base = 0
-                if free_base > 0:
-                    ask_size = min(ask_size, free_base * 0.98)  # 2% buffer
-                    if ask_size > 0:
-                        await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
-                    else:
-                        logger.info("sell_skip_no_free_balance", pair=pair, free=round(free_base, 6))
-                else:
-                    logger.info("sell_skip_no_free_balance", pair=pair, free=0)
+        if sell_size_coins >= 1:
+            await self._place_quote(pair, "sell", ask_price, sell_size_coins, mid, sigma, spread)
 
-        # 11. Publish signal for debate engine / monitoring
+        # 10. Publish signal for debate engine / monitoring
         await self._bus.publish(Signal(
             signal_type=SignalType.MARKET_DATA,
             source="avellaneda_mm",
@@ -573,12 +543,12 @@ class AvellanedaMarketMaker:
                 "pair": pair,
                 "mid": round(mid, 8),
                 "reservation_price": round(r_adjusted, 8),
-                "optimal_spread": round(delta, 8),
+                "optimal_spread": round(spread, 8),
                 "bid": round(bid_price, 8),
                 "ask": round(ask_price, 8),
-                "inventory": round(q, 6),
+                "inventory": round(inventory_coins, 6),
                 "sigma": round(sigma, 8),
-                "vpin": round(self._vpin[pair].vpin, 4),
+                "vpin": round(vpin_val, 4),
                 "vpin_state": vpin_action.state.value,
                 "hawkes_imbalance": round(self._hawkes[pair].imbalance(), 4),
             },
