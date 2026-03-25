@@ -535,6 +535,10 @@ class AvellanedaMarketMaker:
             if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
                 logger.info("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
+                # Cap sell size to actual inventory to avoid insufficient funds
+                actual_inventory = self._inventory.get_position(pair).quantity
+                if actual_inventory > 0:
+                    ask_size = min(ask_size, actual_inventory * 0.99)  # 1% buffer for rounding
                 await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
 
         # 11. Publish signal for debate engine / monitoring
