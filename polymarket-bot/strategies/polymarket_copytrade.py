@@ -692,23 +692,15 @@ class PolymarketCopyTrader:
                     side="BUY",
                 )
 
-                # Try with neg_risk=False first, then True if it fails
-                order_resp = None
-                for neg_risk in [False, True]:
-                    try:
-                        options = PartialCreateOrderOptions(
-                            tick_size="0.01",
-                            neg_risk=neg_risk,
-                        )
-                        order_resp = await loop.run_in_executor(
-                            None,
-                            lambda: self._clob_client.create_and_post_order(order_args, options),
-                        )
-                        break  # success
-                    except Exception as e:
-                        if neg_risk:  # both failed
-                            raise e
-                        continue  # try neg_risk=True
+                # Only trade non-neg-risk markets (neg_risk signing is broken)
+                options = PartialCreateOrderOptions(
+                    tick_size="0.01",
+                    neg_risk=False,
+                )
+                order_resp = await loop.run_in_executor(
+                    None,
+                    lambda: self._clob_client.create_and_post_order(order_args, options),
+                )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 logger.info(
                     "copytrade_copy_executed",
