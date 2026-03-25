@@ -277,6 +277,12 @@ class PolymarketCopyTrader:
                 closed=True, active=False, limit=200
             )
 
+            logger.info(
+                "copytrade_scan_markets_fetched",
+                count=len(resolved_markets),
+            )
+
+            markets_with_trades = 0
             for market in resolved_markets:
                 condition_id = market.get("conditionId", market.get("condition_id", ""))
                 question = market.get("question", "")
@@ -321,11 +327,14 @@ class PolymarketCopyTrader:
                 winning_token_id = token_ids[winning_index]
 
                 # Fetch trades for this market to identify wallets
-                # TODO: CLOB /trades endpoint may require market param as condition_id
                 try:
                     trades = await self._fetch_market_trades(condition_id, limit=200)
-                except Exception:
+                except Exception as exc:
+                    logger.debug("copytrade_market_trades_error", market=condition_id[:16], error=str(exc))
                     continue
+
+                if trades:
+                    markets_with_trades += 1
 
                 for trade in trades:
                     maker = trade.get("maker_address", trade.get("maker", ""))
@@ -371,6 +380,11 @@ class PolymarketCopyTrader:
         except Exception as exc:
             logger.error("copytrade_collect_activity_error", error=str(exc))
 
+        logger.info(
+            "copytrade_collect_summary",
+            total_wallets=len(wallet_stats),
+            markets_with_trades=markets_with_trades if 'markets_with_trades' in dir() else 0,
+        )
         return wallet_stats
 
     async def _fetch_gamma_markets(

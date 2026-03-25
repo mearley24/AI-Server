@@ -147,8 +147,8 @@ class Settings(BaseSettings):
     crypto_max_position_usd: float = Field(default=500.0, description="Max per-symbol position in USD")
     crypto_max_total_exposure_usd: float = Field(default=2000.0, description="Max total crypto exposure in USD")
     crypto_poll_interval_seconds: float = Field(default=60.0, description="Crypto strategy poll interval")
-    crypto_btc_correlation_enabled: bool = Field(default=True, description="Enable BTC correlation strategy")
-    crypto_mean_reversion_enabled: bool = Field(default=True, description="Enable mean reversion strategy")
+    crypto_btc_correlation_enabled: bool = Field(default=False, description="Enable BTC correlation strategy")
+    crypto_mean_reversion_enabled: bool = Field(default=False, description="Enable mean reversion strategy")
     crypto_momentum_enabled: bool = Field(default=False, description="Enable momentum strategy (Phase 2)")
 
     # --- Avellaneda-Stoikov Market Maker (DISABLED — can't profit on Kraken, see momentum_mr) ---
