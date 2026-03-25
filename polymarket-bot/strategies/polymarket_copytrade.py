@@ -363,45 +363,41 @@ class PolymarketCopyTrader:
                     markets_with_trades += 1
 
                 for trade in trades:
-                    maker = trade.get("maker_address", trade.get("maker", ""))
-                    taker = trade.get("taker_address", trade.get("taker", ""))
-                    trade_token = trade.get("asset_id", trade.get("token_id", ""))
+                    # Data API uses proxyWallet, side, asset, price, size
+                    wallet_addr = trade.get("proxyWallet", trade.get("maker_address", ""))
+                    trade_token = trade.get("asset", trade.get("asset_id", ""))
                     side = trade.get("side", "").upper()
                     price = float(trade.get("price", 0))
-                    size = float(trade.get("size", trade.get("amount", 0)))
-                    ts = trade.get("timestamp", trade.get("created_at", 0))
+                    size = float(trade.get("size", 0))
+                    ts = trade.get("timestamp", 0)
                     if isinstance(ts, str):
                         try:
-                            from datetime import datetime
-                            ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                            ts = float(ts)
                         except (ValueError, TypeError):
                             ts = 0
 
-                    # Process both maker and taker
-                    for wallet_addr in [maker, taker]:
-                        if not wallet_addr:
-                            continue
+                    if not wallet_addr:
+                        continue
 
-                        if wallet_addr not in wallet_stats:
-                            wallet_stats[wallet_addr] = {
-                                "wins": 0,
-                                "losses": 0,
-                                "volume": 0.0,
-                                "last_active": 0.0,
-                            }
+                    if wallet_addr not in wallet_stats:
+                        wallet_stats[wallet_addr] = {
+                            "wins": 0,
+                            "losses": 0,
+                            "volume": 0.0,
+                            "last_active": 0.0,
+                        }
 
-                        stats = wallet_stats[wallet_addr]
-                        stats["volume"] += price * size
-                        if isinstance(ts, (int, float)) and ts > stats["last_active"]:
-                            stats["last_active"] = ts
+                    stats = wallet_stats[wallet_addr]
+                    stats["volume"] += price * size
+                    if isinstance(ts, (int, float)) and ts > stats["last_active"]:
+                        stats["last_active"] = ts
 
-                        # Determine if this wallet's position was a winner
-                        # Wallet bought the winning token → win
-                        # Wallet bought the losing token → loss
-                        if side == "BUY" and trade_token == winning_token_id:
-                            stats["wins"] += 1
-                        elif side == "BUY" and trade_token != winning_token_id:
-                            stats["losses"] += 1
+                    # Wallet bought the winning token → win
+                    # Wallet bought the losing token → loss
+                    if side == "BUY" and trade_token == winning_token_id:
+                        stats["wins"] += 1
+                    elif side == "BUY" and trade_token != winning_token_id:
+                        stats["losses"] += 1
 
         except Exception as exc:
             logger.error("copytrade_collect_activity_error", error=str(exc))
@@ -432,24 +428,17 @@ class PolymarketCopyTrader:
     async def _fetch_market_trades(
         self, market_id: str, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Fetch trades using the official py-clob-client with proper HMAC auth."""
-        if self._clob_client is None:
-            return []
+        """Fetch trades from the public Data API (no auth needed)."""
+        assert self._http is not None
         try:
-            loop = asyncio.get_event_loop()
-            from py_clob_client.clob_types import TradeParams
-            params = TradeParams(market=market_id)
-            result = await loop.run_in_executor(
-                None, lambda: self._clob_client.get_trades(params=params)
+            params = {"market": market_id, "limit": limit}
+            resp = await self._http.get(
+                "https://data-api.polymarket.com/trades", params=params
             )
-            # Result may be a list or a dict with 'data' key
-            if isinstance(result, list):
-                return result
-            elif isinstance(result, dict):
-                return result.get("data", result.get("trades", []))
-            return []
+            resp.raise_for_status()
+            return resp.json()
         except Exception as exc:
-            logger.debug("copytrade_clob_trades_error", error=str(exc))
+            logger.debug("copytrade_data_api_error", error=str(exc))
             return []
 
     # ── Wallet cache persistence ─────────────────────────────────────────
@@ -560,18 +549,23 @@ class PolymarketCopyTrader:
           - GET /trades?taker_address={wallet}
         Adjust based on actual API behavior.
         """
-        # Use the existing PolymarketClient which has auth headers
+        # Use the public Data API activity endpoint
+        assert self._http is not None
         try:
-            all_trades = await self._client.get_trades(limit=200)
-            # Filter for trades involving this wallet
-            trades = [
-                t for t in all_trades
-                if t.get("maker_address", t.get("maker", "")) == wallet_address
-                or t.get("taker_address", t.get("taker", "")) == wallet_address
-            ]
-            return trades
+            resp = await self._http.get(
+                "https://data-api.polymarket.com/activity",
+                params={
+                    "user": wallet_address.lower(),
+                    "type": "TRADE",
+                    "limit": 50,
+                    "sortBy": "TIMESTAMP",
+                    "sortDirection": "DESC",
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
         except Exception as exc:
-            logger.debug("copytrade_wallet_trades_error", wallet=wallet_address[:10], error=str(exc))
+            logger.debug("copytrade_wallet_activity_error", wallet=wallet_address[:10], error=str(exc))
             return []
 
     # ── 3. Copy Execution ────────────────────────────────────────────────
