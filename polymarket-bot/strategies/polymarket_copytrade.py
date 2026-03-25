@@ -653,6 +653,7 @@ class PolymarketCopyTrader:
                     logger.error("copytrade_no_clob_client")
                     return
                 loop = asyncio.get_event_loop()
+                from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
 
                 # Round price to nearest cent and size to 2 decimals
                 rounded_price = round(round(price / 0.01) * 0.01, 2)
@@ -660,17 +661,20 @@ class PolymarketCopyTrader:
                 if rounded_size < 1:
                     rounded_size = 1.0
 
+                order_args = OrderArgs(
+                    token_id=token_id,
+                    price=rounded_price,
+                    size=rounded_size,
+                    side="BUY",
+                )
+                options = PartialCreateOrderOptions(
+                    tick_size="0.01",
+                    neg_risk=False,
+                )
+
                 order_resp = await loop.run_in_executor(
                     None,
-                    lambda: self._clob_client.create_and_post_order(
-                        {
-                            "tokenID": token_id,
-                            "price": rounded_price,
-                            "size": rounded_size,
-                            "side": "BUY",
-                        },
-                        {"tickSize": "0.01", "negRisk": False},
-                    ),
+                    lambda: self._clob_client.create_and_post_order(order_args, options),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 logger.info(
