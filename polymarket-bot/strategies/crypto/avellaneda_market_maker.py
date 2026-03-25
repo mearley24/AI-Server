@@ -372,6 +372,20 @@ class AvellanedaMarketMaker:
         # 0b. Cancel all existing orders for this pair before placing new ones
         await self._cancel_stale_orders(pair)
 
+        # 0c. Sync inventory with real exchange balance every tick
+        if self._client.exchange is not None and not self._client.is_dry_run:
+            try:
+                balance = await asyncio.get_event_loop().run_in_executor(
+                    None, self._client.exchange.fetch_balance
+                )
+                base = pair.split("/")[0]
+                real_qty = float(balance.get("total", {}).get(base, 0))
+                pos = self._inventory.get_position(pair)
+                if abs(pos.quantity - real_qty) > 0.01:
+                    pos.quantity = real_qty
+            except Exception:
+                pass
+
         # 1. Fetch orderbook → mid-price
         try:
             book = await self._client.get_orderbook(pair)
@@ -535,11 +549,20 @@ class AvellanedaMarketMaker:
             if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
                 logger.info("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
-                # Cap sell size to actual inventory to avoid insufficient funds
-                actual_inventory = self._inventory.get_position(pair).quantity
-                if actual_inventory > 0:
-                    ask_size = min(ask_size, actual_inventory * 0.99)  # 1% buffer for rounding
-                await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
+                # Fetch REAL free balance from exchange to cap sell size
+                try:
+                    balance_data = await self._client.get_balance()
+                    free_base = float(balance_data.get("free", {}).get(base_currency, 0))
+                except Exception:
+                    free_base = 0
+                if free_base > 0:
+                    ask_size = min(ask_size, free_base * 0.98)  # 2% buffer
+                    if ask_size > 0:
+                        await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
+                    else:
+                        logger.info("sell_skip_no_free_balance", pair=pair, free=round(free_base, 6))
+                else:
+                    logger.info("sell_skip_no_free_balance", pair=pair, free=0)
 
         # 11. Publish signal for debate engine / monitoring
         await self._bus.publish(Signal(
