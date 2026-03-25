@@ -330,7 +330,9 @@ class PolymarketCopyTrader:
                 try:
                     trades = await self._fetch_market_trades(condition_id, limit=200)
                 except Exception as exc:
-                    logger.debug("copytrade_market_trades_error", market=condition_id[:16], error=str(exc))
+                    # Log first error at info level so we can see it
+                    if markets_with_trades == 0:
+                        logger.info("copytrade_market_trades_error", market=condition_id[:16], error=str(exc))
                     continue
 
                 if trades:
