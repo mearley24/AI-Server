@@ -414,9 +414,10 @@ class AvellanedaMarketMaker:
         skew_amount = inventory_ratio * mid * 0.002  # max ±0.2% at full inventory
         r = mid - skew_amount
 
-        # Apply Hawkes order flow adjustment (small, additive)
-        hawkes_adj = self._hawkes[pair].reservation_price_adjustment()
-        r_adjusted = r + hawkes_adj * mid  # scale by mid-price
+        # Hawkes order flow adjustment — disabled for now to stabilize pricing
+        # The raw hawkes_adj * mid scaling was causing ±50% price offsets
+        # TODO: re-enable with proper scaling (e.g. hawkes_adj * spread, not * mid)
+        r_adjusted = r
 
         inventory_skew = skew_amount  # for logging
 
@@ -459,18 +460,11 @@ class AvellanedaMarketMaker:
 
         delta *= vpin_action.spread_multiplier
 
-        # 8. Compute quote prices — asymmetric spreads based on inventory
-        if inventory_coins > 0:
-            # Holding long: tighten sells, widen buys to unwind
-            sell_spread = delta * 0.5
-            buy_spread = delta * 1.5
-        elif inventory_coins < 0:
-            # Holding short: tighten buys, widen sells to unwind
-            buy_spread = delta * 0.5
-            sell_spread = delta * 1.5
-        else:
-            sell_spread = delta
-            buy_spread = delta
+        # 8. Compute quote prices — symmetric spreads around reservation price
+        # The reservation price already incorporates inventory skew, so
+        # symmetric spreads keep quotes predictable and close to mid.
+        sell_spread = delta
+        buy_spread = delta
 
         bid_price = r_adjusted - buy_spread / 2.0
         ask_price = r_adjusted + sell_spread / 2.0
