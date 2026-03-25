@@ -152,6 +152,7 @@ class PolymarketCopyTrader:
 
         # Trade dedup — set of trade IDs already seen
         self._seen_trade_ids: set[str] = set()
+        self._initial_seed_done: bool = False  # First pass seeds seen_trade_ids without copying
 
         # Open copied positions
         self._positions: dict[str, CopiedPosition] = {}  # position_id -> CopiedPosition
@@ -486,21 +487,38 @@ class PolymarketCopyTrader:
 
         top_wallets = self._scored_wallets[:10]
 
+        # First pass: seed seen_trade_ids with existing trades so we only copy NEW ones
+        if not self._initial_seed_done:
+            logger.info("copytrade_seeding_existing_trades", wallets=len(top_wallets))
+            for wallet in top_wallets:
+                try:
+                    trades = await self._fetch_wallet_trades(wallet.address)
+                    for trade in trades:
+                        trade_id = trade.get("transactionHash", trade.get("id", ""))
+                        if trade_id:
+                            self._seen_trade_ids.add(trade_id)
+                except Exception:
+                    pass
+            self._initial_seed_done = True
+            logger.info("copytrade_seeded", seen_trades=len(self._seen_trade_ids))
+            return
+
         for wallet in top_wallets:
             try:
                 trades = await self._fetch_wallet_trades(wallet.address)
 
                 for trade in trades:
-                    trade_id = trade.get("id", trade.get("trade_id", ""))
+                    # Data API fields: transactionHash, asset, conditionId, side, price, size
+                    trade_id = trade.get("transactionHash", trade.get("id", ""))
                     if not trade_id or trade_id in self._seen_trade_ids:
                         continue
 
                     self._seen_trade_ids.add(trade_id)
                     side = trade.get("side", "").upper()
-                    token_id = trade.get("asset_id", trade.get("token_id", ""))
+                    token_id = trade.get("asset", trade.get("asset_id", ""))
                     price = float(trade.get("price", 0))
-                    size = float(trade.get("size", trade.get("amount", 0)))
-                    market = trade.get("market", trade.get("condition_id", ""))
+                    size = float(trade.get("usdcSize", trade.get("size", 0)))
+                    market = trade.get("conditionId", trade.get("market", ""))
 
                     logger.info(
                         "copytrade_new_trade",
@@ -611,7 +629,7 @@ class PolymarketCopyTrader:
             return
 
         position_id = f"ct-{uuid.uuid4().hex[:12]}"
-        market_question = trade.get("market_question", trade.get("question", market))
+        market_question = trade.get("title", trade.get("market_question", trade.get("question", market)))
 
         # Place order
         order_id = ""
