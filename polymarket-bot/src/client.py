@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac as hmac_mod
 import time
 from typing import Any
 
@@ -30,14 +33,11 @@ class PolymarketClient:
         self._signer: OrderSigner | None = None
         self._http = httpx.AsyncClient(timeout=30.0)
 
-        # Builder (gasless) auth headers
-        self._builder_headers: dict[str, str] = {}
-        if settings.poly_builder_api_key:
-            self._builder_headers = {
-                "POLY-API-KEY": settings.poly_builder_api_key,
-                "POLY-API-SECRET": settings.poly_builder_api_secret,
-                "POLY-API-PASSPHRASE": settings.poly_builder_api_passphrase,
-            }
+        # Builder (gasless) HMAC auth credentials
+        self._api_key = settings.poly_builder_api_key
+        self._api_secret = settings.poly_builder_api_secret
+        self._api_passphrase = settings.poly_builder_api_passphrase
+        self._builder_headers: dict[str, str] = {}  # populated per-request via _l2_headers
 
         if settings.poly_private_key:
             self._signer = OrderSigner(settings.poly_private_key, settings.chain_id)
@@ -52,6 +52,29 @@ class PolymarketClient:
         if self._signer:
             return self._signer.address
         return ""
+
+    def _l2_headers(self, method: str, request_path: str, body: str = "") -> dict[str, str]:
+        """Build Level-2 HMAC-signed headers for authenticated CLOB endpoints."""
+        if not self._api_key or not self._api_secret:
+            return {}
+        timestamp = str(int(time.time()))
+        message = timestamp + method.upper() + request_path
+        if body:
+            message += body
+        try:
+            secret_bytes = base64.urlsafe_b64decode(self._api_secret)
+        except Exception:
+            secret_bytes = self._api_secret.encode("utf-8")
+        sig = hmac_mod.new(secret_bytes, message.encode("utf-8"), hashlib.sha256)
+        signature = base64.urlsafe_b64encode(sig.digest()).decode("utf-8")
+        headers = {
+            "POLY_ADDRESS": self.wallet_address,
+            "POLY_SIGNATURE": signature,
+            "POLY_TIMESTAMP": timestamp,
+            "POLY_API_KEY": self._api_key,
+            "POLY_PASSPHRASE": self._api_passphrase,
+        }
+        return headers
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -172,7 +195,10 @@ class PolymarketClient:
         params: dict[str, Any] = {"limit": limit}
         if market:
             params["market"] = market
-        headers = {**self._builder_headers}
+        # Build request path with query string for HMAC
+        qs = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        request_path = f"/trades?{qs}" if qs else "/trades"
+        headers = self._l2_headers("GET", request_path)
         resp = await self._http.get(f"{self._clob_url}/trades", params=params, headers=headers)
         resp.raise_for_status()
         return resp.json()
