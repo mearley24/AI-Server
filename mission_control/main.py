@@ -19,6 +19,7 @@ PORT = int(os.getenv("PORT", "8098"))
 STATIC_DIR = Path(__file__).parent / "static"
 TRADING_BOT_URL = "http://vpn:8430"
 TRADING_DATA_FILE = Path("/trading-data/paper_trades.jsonl")
+COPYTRADE_WALLET_FILE = Path("/trading-data/copytrade_wallets.json")
 
 # Service map: name -> (container_hostname, internal_port, external_port)
 SERVICES = [
@@ -258,6 +259,62 @@ async def api_trading_paper():
         "recent_trades": recent,
         "total_pnl": total_pnl,
     }
+
+
+@app.get("/api/trading/copytrade")
+async def api_trading_copytrade():
+    """Copy-trade data — reads wallet cache and proxies to polymarket-bot copytrade endpoints."""
+    import json as _json
+
+    result = {
+        "qualifying_wallets": 0,
+        "top_wallets": [],
+        "open_positions": [],
+        "recent_copies": [],
+        "status": "unknown",
+        "last_scan_time": None,
+    }
+
+    # 1. Read the wallet cache file
+    if COPYTRADE_WALLET_FILE.exists():
+        try:
+            with open(COPYTRADE_WALLET_FILE) as f:
+                cache = _json.load(f)
+            wallets = cache.get("wallets", [])
+            result["qualifying_wallets"] = len(wallets)
+            result["last_scan_time"] = cache.get("last_scan_time")
+            # Sort by score descending, take top 10
+            sorted_wallets = sorted(wallets, key=lambda w: w.get("score", 0), reverse=True)[:10]
+            result["top_wallets"] = [
+                {
+                    "address": w.get("address", ""),
+                    "win_rate": w.get("win_rate", 0),
+                    "total_resolved": w.get("total_resolved", 0),
+                    "wins": w.get("wins", 0),
+                    "losses": w.get("losses", 0),
+                    "total_volume": w.get("total_volume", 0),
+                    "score": w.get("score", 0),
+                }
+                for w in sorted_wallets
+            ]
+            result["status"] = "monitoring"
+        except (OSError, _json.JSONDecodeError) as exc:
+            logger.warning("Failed to read copytrade wallet cache: %s", exc)
+
+    # 2. Try to get live copytrade status from the bot
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{TRADING_BOT_URL}/copytrade/status")
+            if resp.status_code == 200:
+                bot_data = resp.json()
+                result["open_positions"] = bot_data.get("open_positions", [])
+                result["recent_copies"] = bot_data.get("recent_copies", [])
+                if bot_data.get("status"):
+                    result["status"] = bot_data["status"]
+    except Exception:
+        pass  # Bot endpoint may not exist yet — that's fine
+
+    return result
 
 
 @app.get("/api/trading/bot-status")

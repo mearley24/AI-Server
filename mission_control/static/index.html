@@ -267,6 +267,48 @@
   .strategy-active { background: #00e67622; color: #00e676; }
   .strategy-idle { background: #88888822; color: #888; }
   .bps-label { font-size: 10px; color: #888; }
+  /* ── Copy-Trader ── */
+  .copytrade-header-color { color: #e040fb; }
+  .wallet-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+  .wallet-table th {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid #1e1e2e;
+    color: #888;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+  }
+  .wallet-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #1a1a24;
+  }
+  .wallet-table tr:hover td { background: #1a1a24; }
+  .wallet-addr { color: #448aff; }
+  .wr-green { color: #00e676; font-weight: 600; }
+  .wr-yellow { color: #ffc107; font-weight: 600; }
+  .wr-default { color: #e0e0e0; font-weight: 600; }
+  .copytrade-activity {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .copytrade-activity::-webkit-scrollbar { width: 6px; }
+  .copytrade-activity::-webkit-scrollbar-track { background: transparent; }
+  .copytrade-activity::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+  .copytrade-stat-bar {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #1e1e2e;
+  }
+  .copytrade-stat-bar .summary-stat .value { font-size: 24px; }
 </style>
 </head>
 <body>
@@ -386,7 +428,46 @@
   </div>
 </div>
 
-<div class="refresh-info">Live data refreshes every 5s &bull; Paper data refreshes every 30s</div>
+<!-- ── Polymarket Copy-Trader Section ── -->
+<div class="section-divider">
+  <h2 class="copytrade-header-color">Polymarket Copy-Trader</h2>
+  <div class="section-sub" id="copytrade-subtitle">Tailing smart wallets</div>
+</div>
+
+<div class="copytrade-stat-bar" id="copytrade-stat-bar">
+  <div class="summary-stat">
+    <div class="value" id="copytrade-wallets" style="color:#e040fb">-</div>
+    <div class="label">Wallets Tracked</div>
+  </div>
+  <div class="summary-stat">
+    <div class="value" id="copytrade-positions" style="color:#448aff">-</div>
+    <div class="label">Open Positions</div>
+  </div>
+  <div class="summary-stat">
+    <div class="value" id="copytrade-copies" style="color:#00e676">-</div>
+    <div class="label">Recent Copies</div>
+  </div>
+  <div class="summary-stat">
+    <div class="value" id="copytrade-status" style="color:#888">-</div>
+    <div class="label">Status</div>
+  </div>
+</div>
+
+<div class="main-grid">
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-title">Top Wallets</div>
+    <div id="copytrade-wallets-table"><div class="feed-empty">Loading...</div></div>
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1;">
+    <div class="card-title">Live Activity</div>
+    <div class="copytrade-activity" id="copytrade-activity">
+      <div class="feed-empty">Monitoring... waiting for new trades from top wallets</div>
+    </div>
+  </div>
+</div>
+
+<div class="refresh-info">Live data refreshes every 5s &bull; Paper &amp; Copy-Trade data refreshes every 30s</div>
 
 <script>
 (function() {
@@ -778,6 +859,113 @@
     el.innerHTML = html;
   }
 
+  // ── Copy-Trader ──
+  const COPYTRADE_POLL = 30000;
+
+  async function pollCopytrade() {
+    try {
+      const resp = await fetch('/api/trading/copytrade');
+      const data = await resp.json();
+      renderCopytradeStats(data);
+      renderCopytradeWallets(data.top_wallets || []);
+      renderCopytradeActivity(data.recent_copies || [], data.open_positions || []);
+    } catch (e) {
+      console.error('Copytrade poll failed:', e);
+    }
+  }
+
+  function renderCopytradeStats(data) {
+    const walletCount = data.qualifying_wallets || 0;
+    document.getElementById('copytrade-wallets').textContent = walletCount;
+    document.getElementById('copytrade-subtitle').textContent =
+      walletCount > 0 ? 'Tailing ' + walletCount + ' winning wallets' : 'Tailing smart wallets';
+
+    const positions = (data.open_positions || []).length;
+    document.getElementById('copytrade-positions').textContent = positions;
+
+    const copies = (data.recent_copies || []).length;
+    document.getElementById('copytrade-copies').textContent = copies;
+
+    const statusEl = document.getElementById('copytrade-status');
+    const st = (data.status || 'unknown').toUpperCase();
+    statusEl.textContent = st;
+    if (st === 'MONITORING') {
+      statusEl.style.color = '#00e676';
+    } else {
+      statusEl.style.color = '#888';
+    }
+  }
+
+  function truncAddr(addr) {
+    if (!addr || addr.length < 11) return addr || '';
+    return addr.slice(0, 6) + '\u2026' + addr.slice(-4);
+  }
+
+  function renderCopytradeWallets(wallets) {
+    const el = document.getElementById('copytrade-wallets-table');
+    if (!wallets || wallets.length === 0) {
+      el.innerHTML = '<div class="feed-empty">No wallet data yet</div>';
+      return;
+    }
+    let html = '<table class="wallet-table"><thead><tr>';
+    html += '<th>#</th><th>Address</th><th>Win Rate</th><th>Resolved</th><th>W/L</th><th>Volume</th><th>Score</th>';
+    html += '</tr></thead><tbody>';
+    wallets.forEach(function(w, i) {
+      const wr = (w.win_rate * 100).toFixed(1);
+      let wrClass = 'wr-default';
+      if (w.win_rate > 0.70) wrClass = 'wr-green';
+      else if (w.win_rate > 0.55) wrClass = 'wr-yellow';
+      const vol = w.total_volume >= 1000 ? '$' + (w.total_volume / 1000).toFixed(1) + 'k' : '$' + (w.total_volume || 0).toFixed(0);
+      html += '<tr>';
+      html += '<td style="color:#555">' + (i + 1) + '</td>';
+      html += '<td class="wallet-addr">' + truncAddr(w.address) + '</td>';
+      html += '<td class="' + wrClass + '">' + wr + '%</td>';
+      html += '<td style="color:#e0e0e0">' + (w.total_resolved || 0) + '</td>';
+      html += '<td style="color:#888">' + (w.wins || 0) + '/' + (w.losses || 0) + '</td>';
+      html += '<td style="color:#888">' + vol + '</td>';
+      html += '<td style="color:#e040fb;font-weight:600">' + (w.score || 0).toFixed(1) + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }
+
+  function renderCopytradeActivity(recentCopies, openPositions) {
+    const el = document.getElementById('copytrade-activity');
+    if ((!recentCopies || recentCopies.length === 0) && (!openPositions || openPositions.length === 0)) {
+      el.innerHTML = '<div class="feed-empty">Monitoring... waiting for new trades from top wallets</div>';
+      return;
+    }
+    let html = '';
+    if (openPositions.length > 0) {
+      html += '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px">Open Positions</div>';
+      for (const p of openPositions) {
+        const side = (p.side || 'BUY').toUpperCase();
+        const sideClass = side === 'BUY' ? 'buy' : 'sell';
+        html += '<div class="trade-entry">';
+        html += '<span class="trade-side ' + sideClass + '">' + side + '</span> ';
+        html += '<span class="trade-pair">' + escapeHtml(p.market || p.question || 'Unknown') + '</span> ';
+        html += '<span style="color:#888;font-size:11px">from ' + truncAddr(p.wallet || '') + '</span>';
+        html += '</div>';
+      }
+    }
+    if (recentCopies.length > 0) {
+      html += '<div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin:8px 0 4px">Recent Copies</div>';
+      for (const c of recentCopies) {
+        const ts = c.timestamp ? new Date(c.timestamp).toLocaleTimeString() : '';
+        const side = (c.side || 'BUY').toUpperCase();
+        const sideClass = side === 'BUY' ? 'buy' : 'sell';
+        html += '<div class="trade-entry">';
+        html += '<span class="trade-ts">' + ts + '</span> ';
+        html += '<span class="trade-side ' + sideClass + '">' + side + '</span> ';
+        html += '<span class="trade-pair">' + escapeHtml(c.market || c.question || 'Unknown') + '</span> ';
+        html += '<span style="color:#888;font-size:11px">copied ' + truncAddr(c.wallet || '') + '</span>';
+        html += '</div>';
+      }
+    }
+    el.innerHTML = html;
+  }
+
   // ── Init ──
   pollServices();
   pollStatus();
@@ -785,11 +973,13 @@
   pollTrading();
   pollBotStatus();
   pollPaper();
+  pollCopytrade();
   setInterval(pollServices, POLL_INTERVAL);
   setInterval(pollStatus, POLL_INTERVAL);
   setInterval(pollTrading, TRADING_POLL);
   setInterval(pollBotStatus, 30000);
   setInterval(pollPaper, PAPER_POLL);
+  setInterval(pollCopytrade, COPYTRADE_POLL);
 })();
 </script>
 </body>
