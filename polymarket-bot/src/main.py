@@ -393,6 +393,16 @@ async def lifespan(app: FastAPI):
         else:
             log.warning("crypto_connect_failed", msg="Crypto platform disabled")
 
+    # Polymarket copy-trading strategy (uses existing Polymarket client)
+    if settings.copytrade_enabled:
+        from strategies.polymarket_copytrade import PolymarketCopyTrader
+        copytrade = PolymarketCopyTrader(
+            client=client,  # existing Polymarket client
+            settings=settings,
+            pnl_tracker=pnl_tracker,
+        )
+        platform_strategies.append(("copytrade", copytrade))
+
     # Attach Kalshi client to weather trader for dual-platform execution
     if kalshi_client and "kalshi" in platform_clients:
         weather_trader.set_kalshi_client(kalshi_client)

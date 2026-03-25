@@ -187,6 +187,15 @@ class Settings(BaseSettings):
     avellaneda_vpin_critical: float = Field(default=0.8, description="VPIN critical threshold (stop quoting)")
     avellaneda_vpin_cooldown: float = Field(default=60.0, description="VPIN cooldown seconds after recovery")
 
+    # --- Polymarket Copy-Trading Strategy ---
+    copytrade_enabled: bool = Field(default=True, description="Enable Polymarket copy-trading")
+    copytrade_size_usd: float = Field(default=5.0, description="USD per copied trade")
+    copytrade_max_positions: int = Field(default=20, description="Max concurrent copied positions")
+    copytrade_min_win_rate: float = Field(default=0.55, description="Minimum wallet win rate to copy")
+    copytrade_min_trades: int = Field(default=20, description="Minimum resolved trades for wallet to qualify")
+    copytrade_scan_interval_hours: float = Field(default=6.0, description="Hours between wallet re-scans")
+    copytrade_check_interval: float = Field(default=30.0, description="Seconds between trade checks")
+
     # --- Momentum/Mean-Reversion Hybrid Strategy ---
     crypto_momentum_mr_enabled: bool = Field(default=True, description="Enable momentum/mean-reversion strategy")
     momentum_mr_pairs: list[str] = Field(default_factory=lambda: ["XRP/USD"])
