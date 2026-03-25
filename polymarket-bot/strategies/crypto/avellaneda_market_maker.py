@@ -428,8 +428,8 @@ class AvellanedaMarketMaker:
         # 2. Update mid-price history and compute volatility
         self._mid_prices[pair].append(mid)
         sigma = self._estimate_volatility(pair)
-        if sigma is None or sigma == 0:
-            return  # not enough data yet
+        if sigma is None:
+            sigma = 0.0001  # default fallback, not used for spread calculation
 
         # 3. Feed recent trades into Hawkes + VPIN
         await self._process_recent_trades(pair)
