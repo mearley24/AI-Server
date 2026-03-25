@@ -507,7 +507,7 @@ class PolymarketCopyTrader:
         if not self._scored_wallets:
             return
 
-        top_wallets = self._scored_wallets[:10]
+        top_wallets = self._scored_wallets[:25]
 
         # First pass: seed seen_trade_ids with existing trades so we only copy NEW ones
         if not self._initial_seed_done:
