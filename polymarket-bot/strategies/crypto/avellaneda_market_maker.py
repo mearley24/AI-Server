@@ -506,14 +506,10 @@ class AvellanedaMarketMaker:
             for p in self._pairs
         )
 
-        # 11. Fetch balance for pre-order checks
-        balance_data = await self._client.get_balance()
-        free_balance = balance_data.get("free", {})
+        # Determine quote currency and base currency from pair (e.g. "XRP/USD")
+        base_currency, quote_currency = pair.split("/") if "/" in pair else (pair, "USD")
 
-        # Determine quote currency and base currency from pair (e.g. "XRP/USDT")
-        base_currency, quote_currency = pair.split("/") if "/" in pair else (pair, "USDT")
-
-        # 12. Place at most ONE buy and ONE sell per pair per tick
+        # 11. Log tick debug
         logger.info(
             "avellaneda_tick_debug",
             pair=pair,
@@ -524,44 +520,22 @@ class AvellanedaMarketMaker:
             total_open_value=round(total_open_value, 2),
             max_exposure=self._max_total_exposure,
         )
+
+        # 12. Place at most ONE buy and ONE sell per pair per tick
+        # Place both orders without pre-checking free balance — Kraken will
+        # reject with insufficient funds if needed, which is safer than
+        # our stale balance check blocking valid orders.
         if bid_size > 0 and self._inventory.can_quote_bid(pair, mid):
             if total_open_value + (bid_size * bid_price) > self._max_total_exposure:
                 logger.info("exposure_limit_skip", pair=pair, side="buy", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
-                # Check free quote currency balance before buying — cap size to available
-                free_quote = float(free_balance.get(quote_currency, 0))
-                order_cost = bid_size * bid_price
-                if free_quote <= 0:
-                    logger.info(
-                        "insufficient_free_balance",
-                        pair=pair,
-                        side="buy",
-                        free=round(free_quote, 4),
-                        needed=round(order_cost, 4),
-                    )
-                else:
-                    if free_quote < order_cost:
-                        # Reduce bid size to fit available balance
-                        bid_size = free_quote / bid_price
-                    await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
+                await self._place_quote(pair, "buy", bid_price, bid_size, mid, sigma, delta)
 
         if ask_size > 0 and self._inventory.can_quote_ask(pair, mid):
             if total_open_value + (ask_size * ask_price) > self._max_total_exposure:
                 logger.info("exposure_limit_skip", pair=pair, side="sell", current=round(total_open_value, 2), limit=self._max_total_exposure)
             else:
-                # Check free base currency balance before selling — cap size to available
-                free_base = float(free_balance.get(base_currency, 0))
-                if free_base <= 0:
-                    logger.info(
-                        "insufficient_free_balance",
-                        pair=pair,
-                        side="sell",
-                        free=round(free_base, 6),
-                        needed=round(ask_size, 6),
-                    )
-                else:
-                    sell_size = min(ask_size, free_base)
-                    await self._place_quote(pair, "sell", ask_price, sell_size, mid, sigma, delta)
+                await self._place_quote(pair, "sell", ask_price, ask_size, mid, sigma, delta)
 
         # 11. Publish signal for debate engine / monitoring
         await self._bus.publish(Signal(
