@@ -156,6 +156,7 @@ class PolymarketCopyTrader:
         self._seen_trade_ids: set[str] = self._load_seen_trades()
         self._initial_seed_done: bool = len(self._seen_trade_ids) > 0
         self._consecutive_errors: int = 0  # throttle error spam
+        self._last_trade_time: float = 0.0  # last time we copied a trade
 
         # Open copied positions
         self._positions: dict[str, CopiedPosition] = {}  # position_id -> CopiedPosition
