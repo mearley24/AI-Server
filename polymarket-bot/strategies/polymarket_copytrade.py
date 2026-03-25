@@ -117,6 +117,30 @@ class PolymarketCopyTrader:
         # HTTP client for public API reads (no auth needed)
         self._http: Optional[httpx.AsyncClient] = None
 
+        # Official py-clob-client for authenticated CLOB requests
+        self._clob_client = None
+        try:
+            from py_clob_client.client import ClobClient
+            from py_clob_client.clob_types import ApiCreds
+            if settings.poly_private_key and settings.poly_builder_api_key:
+                creds = ApiCreds(
+                    api_key=settings.poly_builder_api_key,
+                    api_secret=settings.poly_builder_api_secret,
+                    api_passphrase=settings.poly_builder_api_passphrase,
+                )
+                pk = settings.poly_private_key
+                if not pk.startswith("0x"):
+                    pk = f"0x{pk}"
+                self._clob_client = ClobClient(
+                    self._clob_url,
+                    key=pk,
+                    chain_id=settings.chain_id,
+                    creds=creds,
+                )
+                logger.info("copytrade_clob_client_initialized")
+        except Exception as exc:
+            logger.warning("copytrade_clob_client_init_error", error=str(exc))
+
         # Runtime state
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -408,8 +432,25 @@ class PolymarketCopyTrader:
     async def _fetch_market_trades(
         self, market_id: str, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Fetch trades using the existing PolymarketClient (has auth headers)."""
-        return await self._client.get_trades(market=market_id, limit=limit)
+        """Fetch trades using the official py-clob-client with proper HMAC auth."""
+        if self._clob_client is None:
+            return []
+        try:
+            loop = asyncio.get_event_loop()
+            from py_clob_client.clob_types import TradeParams
+            params = TradeParams(market=market_id)
+            result = await loop.run_in_executor(
+                None, lambda: self._clob_client.get_trades(params=params)
+            )
+            # Result may be a list or a dict with 'data' key
+            if isinstance(result, list):
+                return result
+            elif isinstance(result, dict):
+                return result.get("data", result.get("trades", []))
+            return []
+        except Exception as exc:
+            logger.debug("copytrade_clob_trades_error", error=str(exc))
+            return []
 
     # ── Wallet cache persistence ─────────────────────────────────────────
 
