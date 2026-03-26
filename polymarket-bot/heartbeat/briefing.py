@@ -1,4 +1,4 @@
-"""Generate a daily briefing summarizing Bob's state."""
+"""Generate a concise trading briefing focused on Polymarket copy-trader."""
 
 from __future__ import annotations
 
@@ -10,99 +10,66 @@ logger = structlog.get_logger(__name__)
 
 
 class BriefingGenerator:
-    """Generates human-readable daily briefings from heartbeat review data.
-
-    Uses Claude for AI-powered briefings, with a basic fallback when
-    ANTHROPIC_API_KEY is not available.
-    """
+    """Generates human-readable briefings about copy-trader status."""
 
     async def generate(self, report: dict) -> str:
-        """Generate a human-readable daily briefing from the full review report.
+        """Generate a concise briefing from the heartbeat review."""
+        strategies = report.get("strategies", [])
 
-        Falls back to _generate_basic() if Claude is unavailable.
-        """
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            return self._generate_basic(report)
+        # Find the copytrade review
+        copytrade = None
+        for s in strategies:
+            if s.get("name") == "copytrade":
+                copytrade = s
+                break
 
+        if not copytrade:
+            return "Copy-trader status unavailable."
+
+        lines = []
+
+        # Status line
+        status = copytrade.get("status", "unknown")
+        pnl = copytrade.get("pnl", 0)
+        lines.append(f"Copy-Trader: {status.upper()}")
+        lines.append("")
+
+        # Open positions
+        open_count = copytrade.get("open_positions", 0)
+        open_value = copytrade.get("open_value", 0)
+        if open_count > 0:
+            lines.append(f"Open positions: {open_count} (${open_value:.2f})")
+            details = copytrade.get("position_details", [])
+            for d in details:
+                title = d.get("title", "")
+                outcome = d.get("outcome", "")
+                value = d.get("value", 0)
+                current = d.get("current", 0)
+                entry = d.get("entry", 0)
+                pnl_pct = ((current - entry) / entry * 100) if entry > 0 else 0
+                lines.append(f"  {outcome} {title} ${value:.2f} ({pnl_pct:+.0f}%)")
+        else:
+            lines.append("No open positions.")
+
+        lines.append("")
+
+        # Win/loss record
+        won = copytrade.get("won_count", 0)
+        won_val = copytrade.get("won_value", 0)
+        lost = copytrade.get("lost_count", 0)
+        lost_val = copytrade.get("lost_value", 0)
+        lines.append(f"Results: {won}W/{lost}L")
+        if won > 0:
+            lines.append(f"  Won: ${won_val:.2f}")
+        if lost > 0:
+            lines.append(f"  Lost: ${lost_val:.2f}")
+        lines.append(f"  Net: ${pnl:+.2f}")
+
+        # Health
         health = report.get("health", {})
-        strategies = report.get("strategies", [])
-        proposals = report.get("proposals", [])
-
-        prompt = f"""Generate a brief daily trading briefing for Bob (Mac Mini M4 running trading bots).
-
-Platform health:
-{health}
-
-Strategy performance (last 24h):
-{strategies}
-
-Parameter adjustment proposals:
-{proposals}
-
-Write a 3-5 paragraph briefing covering:
-1. Overall system health (1 sentence)
-2. Top performing and underperforming strategies
-3. Key numbers (total P&L, best trade, worst trade)
-4. Recommended actions for today
-5. Any risks or alerts
-
-Keep it concise and actionable. This is for the human operator."""
-
-        try:
-            import httpx
-        except ImportError:
-            logger.error("httpx_not_available")
-            return self._generate_basic(report)
-
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "content-type": "application/json",
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": "claude-sonnet-4-20250514",
-                        "max_tokens": 1024,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                    timeout=60,
-                )
-                return resp.json()["content"][0]["text"]
-        except Exception as e:
-            logger.error("briefing_generation_error", error=str(e))
-            return self._generate_basic(report)
-
-    def _generate_basic(self, report: dict) -> str:
-        """Fallback briefing without AI — simple stats summary."""
-        strategies = report.get("strategies", [])
-        total_pnl = sum(s.get("pnl", 0) for s in strategies)
-        total_trades = sum(s.get("trades", 0) for s in strategies)
-        active = sum(1 for s in strategies if s.get("status") != "idle")
-
-        platforms = report.get("health", {}).get("platforms", {})
-        connected = sum(1 for p in platforms.values() if p.get("status") == "connected")
-        total_platforms = len(platforms)
-
-        strong = [s["name"] for s in strategies if s.get("status") == "strong"]
-        underperforming = [s["name"] for s in strategies if s.get("status") == "underperforming"]
-
-        lines = [
-            f"**System Status**: {connected}/{total_platforms} platforms connected.\n",
-            f"**Trading Summary**: {total_trades} trades across {active} active strategies. "
-            f"Total P&L: ${total_pnl:.2f}\n",
-        ]
-
-        if strong:
-            lines.append(f"**Strong performers**: {', '.join(strong)}\n")
-        if underperforming:
-            lines.append(f"**Underperforming**: {', '.join(underperforming)} — review parameters.\n")
-
-        proposal_count = len(report.get("proposals", []))
-        if proposal_count:
-            lines.append(f"**Proposals**: {proposal_count} parameter adjustments suggested.\n")
+        platforms = health.get("platforms", {})
+        if platforms:
+            connected = sum(1 for p in platforms.values() if p.get("status") == "connected")
+            lines.append(f"\nPlatforms: {connected}/{len(platforms)} connected")
 
         return "\n".join(lines)

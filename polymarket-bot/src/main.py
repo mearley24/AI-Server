@@ -518,25 +518,16 @@ async def lifespan(app: FastAPI):
         heartbeat_runner = HeartbeatRunner()
         heartbeat_scheduler = AsyncIOScheduler()
 
-        # Full review at 6:00 AM MT (13:00 UTC) daily
+        # Position update every hour — sends open positions + P&L via iMessage
         heartbeat_scheduler.add_job(
             heartbeat_runner.run_full_review,
-            "cron",
-            hour=13,
-            minute=0,
-            id="heartbeat_full_review",
-        )
-
-        # Quick pulse every 4 hours
-        heartbeat_scheduler.add_job(
-            heartbeat_runner.run_quick_pulse,
             "interval",
-            hours=4,
-            id="heartbeat_quick_pulse",
+            hours=1,
+            id="heartbeat_hourly_update",
         )
 
         heartbeat_scheduler.start()
-        log.info("heartbeat_scheduler_started", full_review="13:00 UTC daily", quick_pulse="every 4h")
+        log.info("heartbeat_scheduler_started", update="every 1h")
     except ImportError as exc:
         log.warning("heartbeat_scheduler_unavailable", error=str(exc), msg="pip install apscheduler>=3.10.0")
     except Exception as exc:
