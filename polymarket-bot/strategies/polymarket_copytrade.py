@@ -48,7 +48,7 @@ from src.pnl_tracker import PnLTracker, Trade
 from src.signer import SIDE_BUY, SIDE_SELL
 
 from strategies.exit_engine import ExitEngine, ExitSignal
-from strategies.kelly_sizing import KellySizer, get_bankroll_from_env
+from strategies.kelly_sizing import KellySizer, get_bankroll_from_env, fetch_onchain_bankroll
 from strategies.wallet_scoring import WalletScorer
 from strategies.correlation_tracker import CorrelationTracker
 from strategies.llm_validator import LLMValidator
@@ -225,6 +225,8 @@ class PolymarketCopyTrader:
 
         # ── NEW: Phase 1 — Kelly Criterion Position Sizing ───────────
         self._bankroll = float(os.environ.get("COPYTRADE_BANKROLL", "300"))
+        self._last_bankroll_refresh: float = 0.0
+        self._bankroll_refresh_interval: float = 3600.0
         self._kelly_enabled = os.environ.get("KELLY_SIZING_ENABLED", "true").lower() in ("true", "1", "yes")
         self._kelly_sizer = KellySizer(
             kelly_fraction=float(os.environ.get("KELLY_FRACTION", "0.25")),
@@ -316,6 +318,17 @@ class PolymarketCopyTrader:
 
                 # 0. Reset daily spend at midnight UTC
                 self._maybe_reset_daily_spend(now)
+
+                # 0b. Refresh bankroll from on-chain balance every hour
+                if now - self._last_bankroll_refresh >= self._bankroll_refresh_interval:
+                    try:
+                        wallet_addr = self._client.wallet_address
+                        new_bankroll = await fetch_onchain_bankroll(wallet_addr)
+                        if new_bankroll > 0:
+                            self._bankroll = new_bankroll
+                        self._last_bankroll_refresh = now
+                    except Exception:
+                        pass
 
                 # 1. Wallet scan every N hours (or on first run)
                 hours_since_scan = (now - self._last_scan_time) / 3600
@@ -987,7 +1000,9 @@ class PolymarketCopyTrader:
             return False
 
         # Guard: basically-resolved markets
-        if price > 0.98 or price < 0.02:
+        max_price = float(os.environ.get("COPYTRADE_MAX_PRICE", "0.95"))
+        min_price = float(os.environ.get("COPYTRADE_MIN_PRICE", "0.02"))
+        if price > max_price or price < min_price:
             return False
 
         # Guard: already have position in this market

@@ -89,3 +89,36 @@ class KellySizer:
 def get_bankroll_from_env() -> float:
     """Get bankroll from environment variable, defaulting to a conservative amount."""
     return float(os.environ.get("COPYTRADE_BANKROLL", "300"))
+
+
+async def fetch_onchain_bankroll(wallet_address: str, rpc_url: str = None) -> float:
+    """Fetch USDC.e balance from Polygon to use as real bankroll.
+
+    Falls back to COPYTRADE_BANKROLL env var if on-chain check fails.
+    """
+    if not rpc_url:
+        rpc_url = os.environ.get("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com")
+
+    usdc_e = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+
+    try:
+        import httpx
+        data = {
+            "jsonrpc": "2.0",
+            "method": "eth_call",
+            "params": [{
+                "to": usdc_e,
+                "data": f"0x70a08231000000000000000000000000{wallet_address[2:].lower()}"
+            }, "latest"],
+            "id": 1,
+        }
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(rpc_url, json=data)
+            result = resp.json().get("result", "0x0")
+            balance_raw = int(result, 16)
+            balance = balance_raw / 1e6
+            logger.info("bankroll_onchain_fetched", balance=round(balance, 2), wallet=wallet_address[:12])
+            return balance if balance > 0 else get_bankroll_from_env()
+    except Exception as exc:
+        logger.warning("bankroll_onchain_error", error=str(exc)[:80])
+        return get_bankroll_from_env()
