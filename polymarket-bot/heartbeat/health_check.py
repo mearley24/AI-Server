@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+def _local_now():
+    import time as _time
+    if _time.daylight and _time.localtime().tm_isdst:
+        utc_offset = -_time.altzone
+    else:
+        utc_offset = -_time.timezone
+    tz = timezone(timedelta(seconds=utc_offset))
+    return datetime.now(tz)
 
 import httpx
 import structlog
@@ -17,7 +26,7 @@ class HealthChecker:
     async def check_all(self) -> dict:
         """Check all platform connections."""
         results = {"platforms": {}}
-        now = datetime.now(timezone.utc).isoformat()
+        now = _local_now().isoformat()
 
         # Always check Polymarket (primary platform)
         results["platforms"]["polymarket"] = await self._check_polymarket(now)

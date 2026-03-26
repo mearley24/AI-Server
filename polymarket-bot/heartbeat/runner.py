@@ -12,7 +12,18 @@ Runs on a schedule (cron or internal timer) to:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timezone, timedelta
+
+def _local_now():
+    """Return current time in the local timezone (TZ env var or UTC fallback)."""
+    import time as _time
+    if _time.daylight and _time.localtime().tm_isdst:
+        utc_offset = -_time.altzone
+    else:
+        utc_offset = -_time.timezone
+    tz = timezone(timedelta(seconds=utc_offset))
+    return datetime.now(tz)
 from pathlib import Path
 
 import structlog
@@ -50,7 +61,7 @@ class HeartbeatRunner:
         logger.info("heartbeat_full_review_started")
 
         report = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": _local_now().isoformat(),
             "type": "full_review",
         }
 
@@ -101,7 +112,7 @@ class HeartbeatRunner:
         logger.info("heartbeat_quick_pulse_started")
 
         report = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": _local_now().isoformat(),
             "type": "quick_pulse",
         }
         report["health"] = await self.health_checker.check_all()
@@ -112,7 +123,7 @@ class HeartbeatRunner:
 
     def _update_heartbeat_md(self, report: dict) -> None:
         """Rewrite HEARTBEAT.md with latest status."""
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        now = _local_now().strftime("%Y-%m-%d %I:%M %p MT")
         status = "healthy"
 
         # Determine overall status
@@ -193,7 +204,7 @@ class HeartbeatRunner:
     def _save_report(self, report: dict) -> None:
         """Save full report to heartbeat_reports/."""
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        ts = _local_now().strftime("%Y%m%d_%H%M%S")
         report_file = REPORTS_DIR / f"review_{ts}.json"
         try:
             report_file.write_text(json.dumps(report, indent=2, default=str))

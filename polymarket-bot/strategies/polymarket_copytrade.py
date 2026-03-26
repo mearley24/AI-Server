@@ -861,7 +861,7 @@ class PolymarketCopyTrader:
                 _notify(
                     "🛑 Trading Halted",
                     f"Daily net loss hit ${abs(daily_net):.2f} (limit: ${self._daily_loss_limit:.0f})\n"
-                    f"Trades today: {self._daily_trades} | Resumes at midnight UTC",
+                    f"Trades today: {self._daily_trades} | Resumes at midnight",
                 )
             return
 

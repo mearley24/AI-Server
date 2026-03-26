@@ -96,6 +96,7 @@ services:
     # ports via vpn service (network_mode shares vpn's network stack)
     # redis via host.docker.internal since Docker DNS unavailable in vpn network
     environment:
+      - TZ=America/Denver
       - REDIS_URL=redis://host.docker.internal:6379
       - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket,kalshi,crypto}
       - POLY_PRIVATE_KEY=${POLY_PRIVATE_KEY:-}
