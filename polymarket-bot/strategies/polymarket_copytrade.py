@@ -115,10 +115,13 @@ class PolymarketCopyTrader:
         self._check_interval: float = getattr(settings, "copytrade_check_interval", 30.0)
         self._dry_run: bool = settings.dry_run
 
-        # Daily spend limit
-        self._daily_spend_limit: float = getattr(settings, "copytrade_daily_spend_limit", 25.0)
+        # Daily risk controls — no fixed spend cap, but stop on drawdown
+        self._daily_loss_limit: float = getattr(settings, "copytrade_daily_loss_limit", 50.0)
         self._daily_spend: float = 0.0
+        self._daily_wins: float = 0.0  # USDC returned from resolved winners today
+        self._daily_trades: int = 0
         self._daily_spend_reset_time: float = 0.0
+        self._halted: bool = False  # set True when daily loss limit hit
 
         # API base URLs
         self._gamma_url = settings.gamma_api_url.rstrip("/")
@@ -201,7 +204,7 @@ class PolymarketCopyTrader:
             min_trades=self._min_trades,
             scan_interval_hours=self._scan_interval_hours,
             check_interval=self._check_interval,
-            daily_spend_limit=self._daily_spend_limit,
+            daily_loss_limit=self._daily_loss_limit,
             dry_run=self._dry_run,
         )
 
@@ -260,16 +263,23 @@ class PolymarketCopyTrader:
     # ── Daily spend tracking ─────────────────────────────────────────────
 
     def _maybe_reset_daily_spend(self, now: float) -> None:
-        """Reset daily spend counter at midnight UTC."""
+        """Reset daily counters at midnight UTC."""
         import datetime
         today_midnight = datetime.datetime.now(datetime.timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         ).timestamp()
         if today_midnight > self._daily_spend_reset_time:
-            if self._daily_spend > 0:
-                logger.info("copytrade_daily_spend_reset",
-                            previous_spend=round(self._daily_spend, 2))
+            if self._daily_spend > 0 or self._daily_wins > 0:
+                net = self._daily_wins - self._daily_spend
+                logger.info("copytrade_daily_reset",
+                            spent=round(self._daily_spend, 2),
+                            wins=round(self._daily_wins, 2),
+                            net_pnl=round(net, 2),
+                            trades=self._daily_trades)
             self._daily_spend = 0.0
+            self._daily_wins = 0.0
+            self._daily_trades = 0
+            self._halted = False
             self._daily_spend_reset_time = today_midnight
 
     # ── 1. Wallet Discovery & Scoring ────────────────────────────────────
@@ -600,8 +610,19 @@ class PolymarketCopyTrader:
         if time.time() - self._last_trade_time < 300:
             return
 
-        # Daily spend limit check
-        if self._daily_spend >= self._daily_spend_limit:
+        # Circuit breaker: halt if daily net losses exceed limit
+        if self._halted:
+            return
+        daily_net = self._daily_wins - self._daily_spend
+        if daily_net < -self._daily_loss_limit:
+            if not self._halted:
+                self._halted = True
+                logger.warning(
+                    "copytrade_daily_loss_halt",
+                    daily_net=round(daily_net, 2),
+                    limit=self._daily_loss_limit,
+                    trades=self._daily_trades,
+                )
             return
 
         copied_this_cycle = False
@@ -731,13 +752,9 @@ class PolymarketCopyTrader:
         if len(self._positions) >= self._max_positions:
             return
 
-        # Guard: daily spend limit
-        if self._daily_spend + self._size_usd > self._daily_spend_limit:
-            logger.info(
-                "copytrade_daily_limit_reached",
-                daily_spend=round(self._daily_spend, 2),
-                limit=self._daily_spend_limit,
-            )
+        # Guard: circuit breaker on daily losses
+        daily_net = self._daily_wins - self._daily_spend
+        if daily_net < -self._daily_loss_limit:
             return
 
         # Guard: skip basically-resolved markets
@@ -831,6 +848,7 @@ class PolymarketCopyTrader:
                 # Update spend tracking
                 self._last_trade_time = time.time()
                 self._daily_spend += self._size_usd
+                self._daily_trades += 1
 
             except Exception as exc:
                 err_str = str(exc)
@@ -1004,6 +1022,10 @@ class PolymarketCopyTrader:
         )
         self._pnl_tracker.record_trade(sell_trade)
 
+        # Track daily wins for circuit breaker
+        if pnl_usd > 0:
+            self._daily_wins += pos.size_usd + pnl_usd  # total return, not just profit
+
         # Remove from tracked positions
         del self._positions[position_id]
 
@@ -1125,7 +1147,11 @@ class PolymarketCopyTrader:
             "seen_trades": len(self._seen_trade_ids),
             "last_scan_time": self._last_scan_time,
             "daily_spend": round(self._daily_spend, 2),
-            "daily_spend_limit": self._daily_spend_limit,
+            "daily_wins": round(self._daily_wins, 2),
+            "daily_net": round(self._daily_wins - self._daily_spend, 2),
+            "daily_trades": self._daily_trades,
+            "daily_loss_limit": self._daily_loss_limit,
+            "halted": self._halted,
             "active_markets": len(self._active_condition_ids),
             "config": {
                 "size_usd": self._size_usd,
@@ -1134,6 +1160,6 @@ class PolymarketCopyTrader:
                 "min_trades": self._min_trades,
                 "scan_interval_hours": self._scan_interval_hours,
                 "check_interval": self._check_interval,
-                "daily_spend_limit": self._daily_spend_limit,
+                "daily_loss_limit": self._daily_loss_limit,
             },
         }
