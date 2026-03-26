@@ -13,9 +13,9 @@ Flow
 2. **Trade Monitoring** — every 30 seconds, poll the CLOB API for new trades
    from the top-25 scored wallets.  Track seen trade IDs to avoid duplicates.
 
-3. **Copy Execution** — when a top wallet makes a BUY on an EVENT market,
-   place a matching GTC limit buy.  Skip all crypto Up/Down markets.
-   Position size defaults to $5.  Daily spend capped at $25.
+3. **Copy Execution** — when a top wallet makes a BUY, place a matching
+   GTC limit buy.  Safeguards: condition_id dedup prevents buying both
+   sides, $25/day spend cap, 5-min cooldown between copies.
 
 4. **Position Management** — every 60 seconds, check each copied position.
    Exit when the source wallet sells, the market resolves, PnL > +15 %, or
@@ -280,7 +280,7 @@ class PolymarketCopyTrader:
 
         try:
             # Collect wallets from recent market activity
-            wallet_stats, event_markets_scanned = await self._collect_wallet_activity()
+            wallet_stats, markets_scored = await self._collect_wallet_activity()
 
             # Score and filter
             scored: list[ScoredWallet] = []
@@ -338,7 +338,7 @@ class PolymarketCopyTrader:
                 qualifying_wallets=len(scored),
                 top_win_rate=round(scored[0].win_rate, 3) if scored else 0,
                 top_score=round(scored[0].score, 3) if scored else 0,
-                event_markets_scanned=event_markets_scanned,
+                markets_scored=markets_scored,
             )
 
         except Exception as exc:
@@ -348,7 +348,7 @@ class PolymarketCopyTrader:
         """Gather wallet activity from Gamma API resolved markets.
 
         Returns:
-            Tuple of (wallet_stats dict, count of event markets processed).
+            Tuple of (wallet_stats dict, count of markets scored).
         """
         wallet_stats: dict[str, dict[str, Any]] = {}
         assert self._http is not None
@@ -364,17 +364,13 @@ class PolymarketCopyTrader:
             )
 
             markets_with_trades = 0
-            event_markets_count = 0
+            markets_scored = 0
             for market in resolved_markets:
                 condition_id = market.get("conditionId", market.get("condition_id", ""))
                 question = market.get("question", "")
 
-                # Skip crypto Up/Down markets — wallets market-make these (no copyable edge)
                 slug = market.get("slug", "")
-                if self._is_crypto_updown_market(question) or "updown" in slug:
-                    continue
-
-                event_markets_count += 1
+                markets_scored += 1
 
                 outcome_prices_raw = market.get("outcomePrices", "")
                 if isinstance(outcome_prices_raw, str):
@@ -464,7 +460,7 @@ class PolymarketCopyTrader:
             total_wallets=len(wallet_stats),
             markets_with_trades=markets_with_trades if 'markets_with_trades' in dir() else 0,
         )
-        return wallet_stats, event_markets_count if 'event_markets_count' in dir() else 0
+        return wallet_stats, markets_scored if 'markets_scored' in dir() else 0
 
     async def _fetch_gamma_markets(
         self, closed: bool = False, active: bool = True, limit: int = 100
@@ -645,15 +641,6 @@ class PolymarketCopyTrader:
                             self._source_sells[wallet.address].add(token_id)
                         continue
 
-                    # FILTER: Skip ALL crypto Up/Down markets — no edge
-                    if self._is_crypto_updown_market(market_question):
-                        logger.debug(
-                            "copytrade_skip_crypto_updown",
-                            wallet=wallet.address[:10] + "...",
-                            market=market_question[:40],
-                        )
-                        continue
-
                     # Only copy trades that happened in the last 10 minutes
                     trade_ts = trade.get("timestamp", 0)
                     if isinstance(trade_ts, (int, float)) and trade_ts > 0:
@@ -783,11 +770,6 @@ class PolymarketCopyTrader:
         buy_price = round(round(price / 0.01) * 0.01, 2)  # round to nearest cent
         if buy_price >= 1.0:
             buy_price = 0.99
-
-        # Skip markets priced near 50/50 — no clear edge
-        if 0.40 <= buy_price <= 0.60:
-            logger.debug("copytrade_skip_coinflip", market=market_question[:40], price=buy_price)
-            return
 
         size_shares = self._size_usd / buy_price
         if size_shares < 5:
