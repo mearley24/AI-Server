@@ -15,7 +15,7 @@ Flow
 
 3. **Copy Execution** — when a top wallet makes a BUY, place a matching
    GTC limit buy.  Safeguards: condition_id dedup prevents buying both
-   sides, $25/day spend cap, 5-min cooldown between copies.
+   sides, daily loss circuit breaker, per-market dedup.
 
 4. **Position Management** — every 60 seconds, check each copied position.
    Exit when the source wallet sells, the market resolves, PnL > +15 %, or
@@ -170,6 +170,7 @@ class PolymarketCopyTrader:
         self._initial_seed_done: bool = len(self._seen_trade_ids) > 0
         self._consecutive_errors: int = 0  # throttle error spam
         self._last_trade_time: float = 0.0  # last time we copied a trade
+        self._min_trade_gap: float = 10.0  # seconds between ANY two copies (anti-spam, not throttle)
 
         # Open copied positions
         self._positions: dict[str, CopiedPosition] = {}  # position_id -> CopiedPosition
@@ -606,8 +607,8 @@ class PolymarketCopyTrader:
             logger.info("copytrade_seeded", seen_trades=len(self._seen_trade_ids))
             return
 
-        # Rate limit: minimum 5 min between copies
-        if time.time() - self._last_trade_time < 300:
+        # Anti-spam: brief gap between copies to avoid rapid-fire in a single tick
+        if time.time() - self._last_trade_time < self._min_trade_gap:
             return
 
         # Circuit breaker: halt if daily net losses exceed limit
