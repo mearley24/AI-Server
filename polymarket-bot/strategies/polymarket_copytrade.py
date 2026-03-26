@@ -1006,6 +1006,11 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="circuit_breaker", realized_loss=round(self._daily_realized_losses, 2))
             return False
 
+        # Guard: minimum bankroll
+        if self._bankroll < 10:
+            logger.info("copytrade_skip", reason="low_bankroll", bankroll=round(self._bankroll, 2))
+            return False
+
         # Guard: basically-resolved markets
         max_price = float(os.environ.get("COPYTRADE_MAX_PRICE", "0.95"))
         min_price = float(os.environ.get("COPYTRADE_MIN_PRICE", "0.02"))
@@ -1157,6 +1162,7 @@ class PolymarketCopyTrader:
                 self._last_trade_time = time.time()
                 self._daily_spend += size_usd
                 self._daily_trades += 1
+                self._bankroll = max(0, self._bankroll - size_usd)
 
             except Exception as exc:
                 err_str = str(exc)
@@ -1346,7 +1352,8 @@ class PolymarketCopyTrader:
         )
         self._pnl_tracker.record_trade(sell_trade)
 
-        # Track daily wins and realized losses
+        # Track daily wins and realized losses, update bankroll
+        self._bankroll += sell_usd
         if pnl_usd > 0:
             self._daily_wins += sell_usd + pnl_usd
         elif pnl_usd < 0:
