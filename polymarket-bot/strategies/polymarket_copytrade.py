@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -59,6 +60,7 @@ class ScoredWallet:
     total_volume: float = 0.0
     last_active: float = 0.0  # epoch
     score: float = 0.0  # composite score: win_rate * log(trades)
+    event_trades: int = 0  # number of event market trades scored on
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -278,21 +280,35 @@ class PolymarketCopyTrader:
 
         try:
             # Collect wallets from recent market activity
-            wallet_stats = await self._collect_wallet_activity()
+            wallet_stats, event_markets_scanned = await self._collect_wallet_activity()
 
             # Score and filter
             scored: list[ScoredWallet] = []
             for address, stats in wallet_stats.items():
                 total_resolved = stats.get("wins", 0) + stats.get("losses", 0)
-                if total_resolved < self._min_trades:
+
+                # Require meaningful sample size on event markets
+                if total_resolved < max(self._min_trades, 5):
                     continue
 
                 win_rate = stats["wins"] / total_resolved if total_resolved > 0 else 0.0
                 if win_rate < self._min_win_rate:
                     continue
 
-                import math
-                composite_score = win_rate * math.log(total_resolved + 1)
+                # Composite score: win_rate * log(trades) * recency_boost
+                base_score = win_rate * math.log(total_resolved + 1)
+
+                # Recency boost: 2x if active in last 7 days, 1.5x if last 30 days, 1x otherwise
+                last_active = stats.get("last_active", 0.0)
+                days_since_active = (time.time() - last_active) / 86400 if last_active > 0 else 999
+                if days_since_active < 7:
+                    recency_multiplier = 2.0
+                elif days_since_active < 30:
+                    recency_multiplier = 1.5
+                else:
+                    recency_multiplier = 1.0
+
+                composite_score = base_score * recency_multiplier
 
                 wallet = ScoredWallet(
                     address=address,
@@ -303,6 +319,7 @@ class PolymarketCopyTrader:
                     total_volume=stats.get("volume", 0.0),
                     last_active=stats.get("last_active", 0.0),
                     score=composite_score,
+                    event_trades=total_resolved,
                 )
                 scored.append(wallet)
 
@@ -321,13 +338,18 @@ class PolymarketCopyTrader:
                 qualifying_wallets=len(scored),
                 top_win_rate=round(scored[0].win_rate, 3) if scored else 0,
                 top_score=round(scored[0].score, 3) if scored else 0,
+                event_markets_scanned=event_markets_scanned,
             )
 
         except Exception as exc:
             logger.error("copytrade_wallet_scan", status="error", error=str(exc))
 
-    async def _collect_wallet_activity(self) -> dict[str, dict[str, Any]]:
-        """Gather wallet activity from Gamma API resolved markets."""
+    async def _collect_wallet_activity(self) -> tuple[dict[str, dict[str, Any]], int]:
+        """Gather wallet activity from Gamma API resolved markets.
+
+        Returns:
+            Tuple of (wallet_stats dict, count of event markets processed).
+        """
         wallet_stats: dict[str, dict[str, Any]] = {}
         assert self._http is not None
 
@@ -342,9 +364,17 @@ class PolymarketCopyTrader:
             )
 
             markets_with_trades = 0
+            event_markets_count = 0
             for market in resolved_markets:
                 condition_id = market.get("conditionId", market.get("condition_id", ""))
                 question = market.get("question", "")
+
+                # Skip crypto Up/Down markets — wallets market-make these (no copyable edge)
+                slug = market.get("slug", "")
+                if self._is_crypto_updown_market(question) or "updown" in slug:
+                    continue
+
+                event_markets_count += 1
 
                 outcome_prices_raw = market.get("outcomePrices", "")
                 if isinstance(outcome_prices_raw, str):
@@ -434,7 +464,7 @@ class PolymarketCopyTrader:
             total_wallets=len(wallet_stats),
             markets_with_trades=markets_with_trades if 'markets_with_trades' in dir() else 0,
         )
-        return wallet_stats
+        return wallet_stats, event_markets_count if 'event_markets_count' in dir() else 0
 
     async def _fetch_gamma_markets(
         self, closed: bool = False, active: bool = True, limit: int = 100
@@ -695,12 +725,20 @@ class PolymarketCopyTrader:
         """Copy a BUY trade from a top wallet.
 
         Guards:
+        - Skip tiny source trades (noise/test)
+        - Skip markets priced near 50/50 (no clear edge)
         - Max positions check
         - No crypto Up/Down markets (already filtered in _monitor_trades)
         - No buying both sides of the same market (condition_id dedup)
         - Daily spend limit
         - Skip basically-resolved markets (>0.98 or <0.02)
         """
+
+        # Skip tiny source trades (likely noise/test)
+        source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
+        if source_usdc < 5.0:
+            logger.debug("copytrade_skip_small_trade", market=market_question[:40], usdc=source_usdc)
+            return
 
         # Guard: max positions
         if len(self._positions) >= self._max_positions:
@@ -745,6 +783,11 @@ class PolymarketCopyTrader:
         buy_price = round(round(price / 0.01) * 0.01, 2)  # round to nearest cent
         if buy_price >= 1.0:
             buy_price = 0.99
+
+        # Skip markets priced near 50/50 — no clear edge
+        if 0.40 <= buy_price <= 0.60:
+            logger.debug("copytrade_skip_coinflip", market=market_question[:40], price=buy_price)
+            return
 
         size_shares = self._size_usd / buy_price
         if size_shares < 5:
@@ -1079,6 +1122,7 @@ class PolymarketCopyTrader:
                     "address": w.address[:10] + "..." + w.address[-4:],
                     "win_rate": round(w.win_rate, 3),
                     "resolved_trades": w.total_resolved,
+                    "event_trades": w.event_trades,
                     "score": round(w.score, 3),
                 }
                 for w in self._scored_wallets[:10]
