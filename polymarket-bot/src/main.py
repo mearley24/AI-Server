@@ -6,9 +6,9 @@ import asyncio
 import json
 import logging
 import os
-import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import structlog
 import uvicorn
@@ -18,38 +18,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import deps, router
 from src.client import PolymarketClient
 from src.config import load_settings
-from src.debate_engine import DebateEngine
 from src.latency_detector import LatencyDetector
-from src.market_scanner import MarketScanner
 from src.order_flow_analyzer import OrderFlowAnalyzer
-from src.paper_ledger import PaperLedger
 from src.pnl_tracker import PnLTracker
 from src.security.audit import AuditTrail
 from src.security.sandbox import ExecutionSandbox
 from src.security.vault import CredentialVault
 from src.signal_bus import Signal, SignalBus, SignalType
 from src.websocket_client import OrderbookFeed
-from strategies.flash_crash import FlashCrashStrategy
-from strategies.sports_arb import SportsArbStrategy
-from strategies.stink_bid import StinkBidStrategy
-from strategies.weather_trader import WeatherTraderStrategy
 
-# Platform clients — imported with try/except so one broken dependency
-# doesn't crash the whole bot.  The health checker reports "dependency_missing"
-# instead.
 _PLATFORM_IMPORT_ERRORS: dict[str, str] = {}
-
-try:
-    from src.platforms.kalshi_client import KalshiClient
-except ImportError as _exc:
-    KalshiClient = None  # type: ignore[assignment,misc]
-    _PLATFORM_IMPORT_ERRORS["kalshi"] = str(_exc)
-
-try:
-    from src.platforms.crypto_client import CryptoClient
-except ImportError as _exc:
-    CryptoClient = None  # type: ignore[assignment,misc]
-    _PLATFORM_IMPORT_ERRORS["crypto"] = str(_exc)
 
 try:
     from src.platforms.polymarket_client import PolymarketPlatformClient
@@ -171,7 +149,6 @@ async def lifespan(app: FastAPI):
 
     # Initialise core components
     client = PolymarketClient(settings)
-    scanner = MarketScanner(client, settings)
     orderbook = OrderbookFeed(settings)
     pnl_tracker = PnLTracker(data_dir=settings.data_dir)
 
@@ -182,37 +159,10 @@ async def lifespan(app: FastAPI):
 
     # Initialise new components
     signal_bus = SignalBus()
-    debate_engine = DebateEngine(settings)
     latency_detector = LatencyDetector(settings, signal_bus, orderbook)
     order_flow = OrderFlowAnalyzer(settings, signal_bus, orderbook)
 
-    # Build strategies
-    strategy_args = dict(
-        client=client,
-        settings=settings,
-        scanner=scanner,
-        orderbook=orderbook,
-        pnl_tracker=pnl_tracker,
-    )
-
-    stink_bid = StinkBidStrategy(**strategy_args)
-    flash_crash = FlashCrashStrategy(**strategy_args)
-    weather_trader = WeatherTraderStrategy(**strategy_args)
-    sports_arb = SportsArbStrategy(**strategy_args)
-
-    # Initialise paper ledger for dry-run mode
-    paper_ledger = PaperLedger(
-        ledger_path=settings.paper_ledger_file,
-        gamma_api_url=settings.gamma_api_url,
-    )
-
-    # Attach debate engine and paper ledger to all strategies
-    for strat in (stink_bid, flash_crash, weather_trader, sports_arb):
-        strat.set_debate_engine(debate_engine)
-        strat.set_paper_ledger(paper_ledger)
-
-    # ── Multi-platform initialization ────────────────────────────────────
-    enabled_platforms = [p.strip() for p in settings.platforms_enabled.split(",") if p.strip()]
+    # ── Platform initialization (Polymarket only) ──────────────────────
     platform_clients: dict[str, Any] = {}
     platform_strategies: list[Any] = []  # strategies with start/stop lifecycle
 
@@ -227,172 +177,6 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("polymarket_platform_unavailable", error=_PLATFORM_IMPORT_ERRORS.get("polymarket", "unknown"))
 
-    # Kalshi platform
-    kalshi_client = None
-    kalshi_scanner = None
-    if "kalshi" in enabled_platforms and KalshiClient is None:
-        log.warning("kalshi_dependency_missing", error=_PLATFORM_IMPORT_ERRORS.get("kalshi", "unknown"))
-    elif "kalshi" in enabled_platforms:
-        kalshi_client = KalshiClient(
-            api_key_id=settings.kalshi_api_key_id,
-            private_key_path=settings.kalshi_private_key_path,
-            environment=settings.kalshi_environment,
-            dry_run=settings.kalshi_dry_run,
-            paper_ledger=paper_ledger,
-        )
-        connected = await kalshi_client.connect()
-        if connected:
-            platform_clients["kalshi"] = kalshi_client
-            log.info("kalshi_platform_enabled", environment=settings.kalshi_environment, dry_run=settings.kalshi_dry_run)
-
-            # Kalshi scanner
-            from strategies.kalshi.kalshi_scanner import KalshiScanner
-            kalshi_scanner = KalshiScanner(
-                kalshi_client=kalshi_client,
-                signal_bus=signal_bus,
-                scan_interval_seconds=settings.kalshi_scan_interval,
-            )
-
-            # Kalshi weather strategy
-            if settings.kalshi_weather_enabled:
-                from strategies.kalshi.kalshi_weather import KalshiWeatherStrategy
-                kalshi_weather = KalshiWeatherStrategy(
-                    kalshi_client=kalshi_client,
-                    signal_bus=signal_bus,
-                    noaa_stations=settings.weather_noaa_stations,
-                    edge_threshold=settings.kalshi_edge_threshold,
-                    max_position_size=settings.kalshi_max_position_size,
-                    check_interval=settings.weather_check_interval_seconds,
-                )
-                platform_strategies.append(("kalshi_weather", kalshi_weather))
-
-            # Kalshi Fed strategy
-            if settings.kalshi_fed_enabled:
-                from strategies.kalshi.kalshi_fed import KalshiFedStrategy
-                kalshi_fed = KalshiFedStrategy(
-                    kalshi_client=kalshi_client,
-                    signal_bus=signal_bus,
-                    edge_threshold=settings.kalshi_edge_threshold,
-                    max_position_size=settings.kalshi_max_position_size,
-                )
-                platform_strategies.append(("kalshi_fed", kalshi_fed))
-        else:
-            log.warning("kalshi_connect_failed", msg="Kalshi platform disabled")
-
-    # Crypto platform
-    crypto_client = None
-    if "crypto" in enabled_platforms and CryptoClient is None:
-        log.warning("crypto_dependency_missing", error=_PLATFORM_IMPORT_ERRORS.get("crypto", "unknown"))
-    elif "crypto" in enabled_platforms:
-        crypto_client = CryptoClient(
-            exchange_id=settings.crypto_exchange,
-            api_key=settings.kraken_api_key,
-            api_secret=settings.kraken_api_secret,
-            dry_run=settings.kraken_dry_run,
-            symbols=settings.crypto_symbols,
-            paper_ledger=paper_ledger,
-        )
-        connected = await crypto_client.connect()
-        if connected:
-            platform_clients["crypto"] = crypto_client
-            log.info("crypto_platform_enabled", exchange=settings.crypto_exchange, dry_run=settings.kraken_dry_run)
-
-            # BTC Correlation strategy
-            if settings.crypto_btc_correlation_enabled:
-                from strategies.crypto.btc_correlation import BTCCorrelationStrategy
-                btc_corr = BTCCorrelationStrategy(
-                    crypto_client=crypto_client,
-                    signal_bus=signal_bus,
-                    alt_symbols=settings.crypto_symbols,
-                    trade_amount_usd=settings.crypto_trade_amount_usd,
-                )
-                platform_strategies.append(("btc_correlation", btc_corr))
-
-            # Mean Reversion strategy
-            if settings.crypto_mean_reversion_enabled:
-                from strategies.crypto.mean_reversion import MeanReversionStrategy
-                mean_rev = MeanReversionStrategy(
-                    crypto_client=crypto_client,
-                    signal_bus=signal_bus,
-                    symbols=settings.crypto_symbols,
-                    trade_amount_usd=settings.crypto_trade_amount_usd,
-                    check_interval=settings.crypto_poll_interval_seconds,
-                )
-                platform_strategies.append(("mean_reversion", mean_rev))
-
-            # Avellaneda-Stoikov Market Maker
-            if settings.crypto_avellaneda_enabled:
-                from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
-                avellaneda_mm = AvellanedaMarketMaker(
-                    crypto_client=crypto_client,
-                    signal_bus=signal_bus,
-                    pairs=settings.avellaneda_pairs,
-                    risk_aversion=settings.avellaneda_risk_aversion,
-                    session_horizon_seconds=settings.avellaneda_session_horizon_seconds,
-                    volatility_window=settings.avellaneda_volatility_window,
-                    max_inventory=settings.avellaneda_max_inventory,
-                    min_spread_bps=settings.avellaneda_min_spread_bps,
-                    max_spread_bps=settings.avellaneda_max_spread_bps,
-                    order_size_usdt=settings.avellaneda_order_size_usdt,
-                    tick_interval=settings.avellaneda_tick_interval,
-                    fee_bps=settings.avellaneda_fee_bps,
-                    pair_configs=settings.avellaneda_pair_configs,
-                    max_total_exposure=settings.avellaneda_max_total_exposure,
-                    hawkes_config={
-                        "mu": settings.avellaneda_hawkes_mu,
-                        "alpha": settings.avellaneda_hawkes_alpha,
-                        "beta": settings.avellaneda_hawkes_beta,
-                        "window_seconds": settings.avellaneda_hawkes_window,
-                        "sensitivity": settings.avellaneda_hawkes_sensitivity,
-                    },
-                    vpin_config={
-                        "bucket_volume": settings.avellaneda_vpin_bucket_volume,
-                        "num_buckets": settings.avellaneda_vpin_num_buckets,
-                        "warning_threshold": settings.avellaneda_vpin_warning,
-                        "danger_threshold": settings.avellaneda_vpin_danger,
-                        "critical_threshold": settings.avellaneda_vpin_critical,
-                        "cooldown_seconds": settings.avellaneda_vpin_cooldown,
-                    },
-                    pnl_tracker=pnl_tracker,
-                )
-                platform_strategies.append(("avellaneda_mm", avellaneda_mm))
-
-            # Momentum strategy
-            if settings.crypto_momentum_enabled:
-                from strategies.crypto.momentum import MomentumStrategy
-                momentum = MomentumStrategy(
-                    crypto_client=crypto_client,
-                    signal_bus=signal_bus,
-                    symbols=settings.crypto_symbols,
-                    trade_amount_usd=settings.crypto_trade_amount_usd,
-                    check_interval=settings.crypto_poll_interval_seconds,
-                )
-                platform_strategies.append(("momentum", momentum))
-
-            # Momentum/Mean-Reversion Hybrid strategy
-            if settings.crypto_momentum_mr_enabled:
-                from strategies.crypto.momentum_mean_reversion import MomentumMeanReversion
-                mmr = MomentumMeanReversion(
-                    crypto_client=crypto_client,
-                    signal_bus=signal_bus,
-                    pairs=settings.momentum_mr_pairs,
-                    order_size_usd=settings.momentum_mr_order_size_usd,
-                    tick_interval=settings.momentum_mr_tick_interval,
-                    vwap_window_minutes=settings.momentum_mr_vwap_window_minutes,
-                    ema_fast=settings.momentum_mr_ema_fast,
-                    ema_slow=settings.momentum_mr_ema_slow,
-                    buy_dip_pct=settings.momentum_mr_buy_dip_pct,
-                    sell_rip_pct=settings.momentum_mr_sell_rip_pct,
-                    take_profit_pct=settings.momentum_mr_take_profit_pct,
-                    stop_loss_pct=settings.momentum_mr_stop_loss_pct,
-                    max_trades_per_hour=settings.momentum_mr_max_trades_per_hour,
-                    max_inventory_usd=settings.momentum_mr_max_inventory_usd,
-                    pnl_tracker=pnl_tracker,
-                )
-                platform_strategies.append(("momentum_mr", mmr))
-        else:
-            log.warning("crypto_connect_failed", msg="Crypto platform disabled")
-
     # Polymarket copy-trading strategy (uses existing Polymarket client)
     if settings.copytrade_enabled:
         from strategies.polymarket_copytrade import PolymarketCopyTrader
@@ -402,58 +186,6 @@ async def lifespan(app: FastAPI):
             pnl_tracker=pnl_tracker,
         )
         platform_strategies.append(("copytrade", copytrade))
-
-    # Phase 2: WebSocket manager for real-time price updates
-    ws_manager = None
-    if "polymarket" in enabled_platforms:
-        try:
-            from strategies.ws_manager import WebSocketManager
-            ws_manager = WebSocketManager(
-                api_key=settings.poly_builder_api_key,
-                api_secret=settings.poly_builder_api_secret,
-                api_passphrase=settings.poly_builder_api_passphrase,
-            )
-            platform_strategies.append(("ws_manager", ws_manager))
-            log.info("ws_manager_initialized", msg="WebSocket manager for real-time price updates")
-        except Exception as exc:
-            log.warning("ws_manager_init_failed", error=str(exc))
-
-    # Phase 3: Liquidity provider for passive market-making rewards
-    lp_provider = None
-    lp_enabled = os.environ.get("LP_ENABLED", "false").lower() in ("true", "1", "yes")
-    if lp_enabled and settings.poly_private_key:
-        try:
-            from strategies.liquidity_provider import LiquidityProvider
-            from py_clob_client.client import ClobClient
-            from py_clob_client.clob_types import ApiCreds
-
-            pk = settings.poly_private_key
-            if not pk.startswith("0x"):
-                pk = f"0x{pk}"
-            lp_creds = ApiCreds(
-                api_key=settings.poly_builder_api_key,
-                api_secret=settings.poly_builder_api_secret,
-                api_passphrase=settings.poly_builder_api_passphrase,
-            )
-            lp_clob = ClobClient(
-                settings.clob_api_url,
-                key=pk,
-                chain_id=settings.chain_id,
-                creds=lp_creds,
-                signature_type=0,
-            )
-            lp_provider = LiquidityProvider(
-                clob_client=lp_clob,
-                gamma_api_url=settings.gamma_api_url,
-                max_markets=int(os.environ.get("LP_MAX_MARKETS", "5")),
-                spread_cents=float(os.environ.get("LP_SPREAD_CENTS", "2")),
-                order_size_usd=float(os.environ.get("LP_ORDER_SIZE", "10")),
-                bankroll=float(os.environ.get("COPYTRADE_BANKROLL", "300")),
-            )
-            platform_strategies.append(("liquidity_provider", lp_provider))
-            log.info("liquidity_provider_initialized")
-        except Exception as exc:
-            log.warning("liquidity_provider_init_failed", error=str(exc))
 
     # Polymarket position redeemer — automatically redeems resolved winning positions
     redeemer = None
@@ -469,34 +201,22 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.warning("redeemer_init_failed", error=str(exc))
 
-    # Attach Kalshi client to weather trader for dual-platform execution
-    if kalshi_client and "kalshi" in platform_clients:
-        weather_trader.set_kalshi_client(kalshi_client)
-        log.info("weather_trader_kalshi_attached", msg="Weather trader will scan both Polymarket and Kalshi")
-
     # Inject dependencies into API routes
     deps.client = client
-    deps.scanner = scanner
     deps.orderbook = orderbook
     deps.pnl_tracker = pnl_tracker
     deps.settings = settings
     deps.audit_trail = audit_trail
     deps.sandbox = sandbox
-    deps.paper_ledger = paper_ledger
     deps.platform_clients = platform_clients
     deps.redeemer = redeemer
-    deps.strategies = {
-        "stink_bid": stink_bid,
-        "flash_crash": flash_crash,
-        "weather_trader": weather_trader,
-        "sports_arb": sports_arb,
-    }
+    deps.strategies = {}
 
     # Register kill switch callback to stop all strategies
     async def _on_kill(reason: str) -> None:
         log.critical("kill_switch_stopping_all_strategies", reason=reason)
         audit_trail.log_security_event("kill_switch_activated", {"reason": reason})
-        for strat in deps.strategies.values():
+        for _name, strat in platform_strategies:
             try:
                 await strat.stop()
             except Exception:
@@ -511,21 +231,11 @@ async def lifespan(app: FastAPI):
 
     # Start components
     await signal_bus.start()
-
-    # Only start Polymarket WebSocket feed if polymarket is an enabled platform
-    if "polymarket" in enabled_platforms:
-        await orderbook.start()
-    else:
-        log.info("polymarket_ws_disabled", msg="Polymarket WebSocket disabled — platform not enabled")
-
+    await orderbook.start()
     await latency_detector.start()
     await order_flow.start()
 
-    # Start Kalshi scanner
-    if kalshi_scanner:
-        await kalshi_scanner.start()
-
-    # Start platform-specific strategies
+    # Start platform-specific strategies (copytrade + redeemer)
     for name, strat in platform_strategies:
         try:
             await strat.start()
@@ -533,33 +243,8 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.error("platform_strategy_start_failed", strategy=name, error=str(exc))
 
-    # Auto-start core Polymarket strategies
-    for name, strat in deps.strategies.items():
-        try:
-            await strat.start()
-            log.info("core_strategy_started", strategy=name)
-        except Exception as exc:
-            log.error("core_strategy_start_failed", strategy=name, error=str(exc))
-
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
-
-    # Start paper ledger scoring loop (periodically checks resolved markets)
-    scoring_task: asyncio.Task | None = None
-    if settings.dry_run:
-        async def _scoring_loop() -> None:
-            while True:
-                try:
-                    await asyncio.sleep(settings.paper_ledger_scoring_interval)
-                    result = await paper_ledger.score_resolved_markets()
-                    if result["scored"] > 0:
-                        log.info("paper_ledger_scoring_complete", **result)
-                except asyncio.CancelledError:
-                    break
-                except Exception as exc:
-                    log.error("paper_ledger_scoring_error", error=str(exc))
-
-        scoring_task = asyncio.create_task(_scoring_loop())
 
     # ── Heartbeat scheduler ────────────────────────────────────────────────
     heartbeat_scheduler = None
@@ -590,25 +275,15 @@ async def lifespan(app: FastAPI):
         mode="OBSERVER (dry-run)" if settings.dry_run else "LIVE",
         port=settings.port,
         wallet=client.wallet_address or "(not configured)",
-        strategies=list(deps.strategies.keys()),
-        platform_strategies=[n for n, _ in platform_strategies],
+        strategies=[n for n, _ in platform_strategies],
         platforms=list(platform_clients.keys()),
         max_exposure=settings.poly_max_exposure,
         default_size=settings.poly_default_size,
-        debate_engine=debate_engine.enabled,
         latency_detector=settings.latency_detector_enabled,
         order_flow=order_flow.enabled,
         security_sandbox="active",
         audit_trail="active",
     )
-
-    if settings.dry_run:
-        log.info(
-            "observer_mode_active",
-            msg="OBSERVER MODE — watching markets, logging paper trades, no real orders",
-            paper_ledger=settings.paper_ledger_file,
-            scoring_interval=settings.paper_ledger_scoring_interval,
-        )
 
     _print_banner(settings)
 
@@ -624,12 +299,6 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    if scoring_task and not scoring_task.done():
-        scoring_task.cancel()
-        try:
-            await scoring_task
-        except asyncio.CancelledError:
-            pass
     if redis_task and not redis_task.done():
         redis_task.cancel()
         try:
@@ -637,25 +306,17 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-    # Stop platform-specific strategies
+    # Stop platform-specific strategies (copytrade + redeemer)
     for name, strat in platform_strategies:
         try:
             await strat.stop()
         except Exception:
             pass
 
-    # Stop Kalshi scanner
-    if kalshi_scanner:
-        await kalshi_scanner.stop()
-
-    for strat in deps.strategies.values():
-        await strat.stop()
     await order_flow.stop()
     await latency_detector.stop()
     await signal_bus.stop()
     await orderbook.stop()
-    await debate_engine.close()
-    await paper_ledger.close()
     await client.close()
 
     # Close platform clients
@@ -673,46 +334,26 @@ def _print_banner(settings) -> None:
     """Print startup banner."""
     mode_str = "OBSERVER (dry-run)" if settings.dry_run else "LIVE"
     mode_line = f"  Mode:     {mode_str:<37}"
-    observer_lines = ""
-    if settings.dry_run:
-        observer_lines = """║                                                  ║
-║  OBSERVER MODE — no real orders placed       ║
-║  Paper trades → {ledger:<32}║""".format(
-            ledger=settings.paper_ledger_file[:32]
-        )
 
-    platforms_str = ", ".join(getattr(deps, "platform_clients", {}).keys()) or "polymarket"
+    wallet_addr = (getattr(deps, "client", None) and deps.client.wallet_address) or "NOT SET"
     banner = f"""
 ╔══════════════════════════════════════════════════╗
-║        MULTI-PLATFORM TRADING BOT v3.0           ║
+║      POLYMARKET COPY-TRADER v4.0                 ║
 ║                                                  ║
 ║{mode_line}║
 ║  Port:      {settings.port:<37}║
-║  Platforms: {platforms_str[:37]:<37}║
-║  Wallet:    {(deps.client.wallet_address or 'NOT SET')[:37]:<37}║
+║  Wallet:    {wallet_addr[:37]:<37}║
 ║  Exposure:  ${settings.poly_max_exposure:<36}║
-║  Size:      ${settings.poly_default_size:<36}║
-{observer_lines}║                                                  ║
+║                                                  ║
+║  Strategies: copytrade + redeemer                ║
+║                                                  ║
 ║  Endpoints:                                      ║
 ║    GET  /health        — Health check            ║
 ║    GET  /status        — Bot status              ║
-║    GET  /mode          — Current mode            ║
 ║    GET  /positions     — Open positions          ║
-║    GET  /strategies    — Available strategies    ║
 ║    GET  /pnl           — Profit & Loss           ║
-║    GET  /paper-trades  — Paper trade ledger      ║
-║    GET  /paper-pnl     — Paper P&L               ║
-║    GET  /markets       — Scanned markets         ║
-║    GET  /audit         — Audit trail             ║
-║    GET  /security/status — Security sandbox      ║
-║    GET  /weather/current — NOAA station data     ║
-║    GET  /weather/edges  — Weather market edges    ║
-║    POST /start         — Start a strategy        ║
-║    POST /stop          — Stop a strategy         ║
-║    POST /mode          — Switch mode             ║
 ║    POST /heartbeat/run — Trigger heartbeat       ║
 ║    GET  /heartbeat/status — HEARTBEAT.md         ║
-║    GET  /heartbeat/reports — Recent reports      ║
 ╚══════════════════════════════════════════════════╝
 """
     print(banner, flush=True)

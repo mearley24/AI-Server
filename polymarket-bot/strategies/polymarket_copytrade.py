@@ -201,6 +201,17 @@ class PolymarketCopyTrader:
         self._last_trade_time: float = 0.0
         self._min_trade_gap: float = 10.0
 
+        # ── Trade pacing — rolling hourly cap ─────────────────────────
+        self._max_trades_per_hour: int = int(os.environ.get("MAX_TRADES_PER_HOUR", "10"))
+        self._hourly_trade_times: list[float] = []  # epoch timestamps of recent trades
+
+        # ── Per-wallet daily trade limit ──────────────────────────────
+        self._max_trades_per_wallet_per_day: int = int(os.environ.get("MAX_TRADES_PER_WALLET_PER_DAY", "3"))
+        self._wallet_daily_trades: dict[str, int] = {}  # wallet_address -> trade count today
+
+        # ── Per-category absolute position cap ────────────────────────
+        self._max_positions_per_category: int = int(os.environ.get("MAX_POSITIONS_PER_CATEGORY", "5"))
+
         # Open copied positions
         self._positions: dict[str, CopiedPosition] = {}
 
@@ -282,6 +293,7 @@ class PolymarketCopyTrader:
             scan_interval_hours=self._scan_interval_hours,
             check_interval=self._check_interval,
             daily_loss_limit=self._daily_loss_limit,
+            max_trades_per_hour=self._max_trades_per_hour,
             dry_run=self._dry_run,
             kelly_enabled=self._kelly_enabled,
             bankroll=self._bankroll,
@@ -360,6 +372,23 @@ class PolymarketCopyTrader:
             except asyncio.CancelledError:
                 break
 
+    # ── Trade pacing ──────────────────────────────────────────────────────
+
+    def _prune_hourly_trades(self, now: float) -> None:
+        """Remove trade timestamps older than 1 hour."""
+        cutoff = now - 3600
+        self._hourly_trade_times = [t for t in self._hourly_trade_times if t > cutoff]
+
+    def _hourly_limit_reached(self) -> bool:
+        """Check if the rolling hourly trade cap has been hit."""
+        now = time.time()
+        self._prune_hourly_trades(now)
+        return len(self._hourly_trade_times) >= self._max_trades_per_hour
+
+    def _record_hourly_trade(self) -> None:
+        """Record a trade for hourly pacing."""
+        self._hourly_trade_times.append(time.time())
+
     # ── Daily spend tracking ─────────────────────────────────────────────
 
     def _maybe_reset_daily_spend(self, now: float) -> None:
@@ -381,6 +410,7 @@ class PolymarketCopyTrader:
             self._daily_realized_losses = 0.0
             self._daily_trades = 0
             self._halted = False
+            self._wallet_daily_trades = {}
             self._daily_spend_reset_time = today_midnight
 
     # ── 1. Wallet Discovery & Scoring ────────────────────────────────────
@@ -836,7 +866,7 @@ class PolymarketCopyTrader:
     # ── 2. Trade Monitoring ──────────────────────────────────────────────
 
     async def _monitor_trades(self) -> None:
-        """Check top wallets for new trades. Only copies ONE trade per cycle."""
+        """Check top wallets for new trades, with hourly pacing."""
         if not self._scored_wallets:
             return
 
@@ -859,7 +889,7 @@ class PolymarketCopyTrader:
             logger.info("copytrade_seeded", seen_trades=len(self._seen_trade_ids))
             return
 
-        # Anti-spam gap
+        # Anti-spam gap (per-trade minimum spacing)
         if time.time() - self._last_trade_time < self._min_trade_gap:
             return
 
@@ -883,17 +913,25 @@ class PolymarketCopyTrader:
                 )
             return
 
-        copied_this_cycle = False
+        # Hourly trade pacing — stop copying if hourly cap reached
+        if self._hourly_limit_reached():
+            logger.debug(
+                "copytrade_hourly_limit",
+                trades_this_hour=len(self._hourly_trade_times),
+                limit=self._max_trades_per_hour,
+            )
+            return
 
         for wallet in top_wallets:
-            if copied_this_cycle:
+            # Re-check pacing after each wallet (may have copied trades)
+            if self._hourly_limit_reached():
                 break
 
             try:
                 trades = await self._fetch_wallet_trades(wallet.address)
 
                 for trade in trades:
-                    if copied_this_cycle:
+                    if self._hourly_limit_reached():
                         break
 
                     trade_id = trade.get("transactionHash", trade.get("id", ""))
@@ -945,7 +983,7 @@ class PolymarketCopyTrader:
                         source_trade_id=trade_id,
                     )
                     if was_placed:
-                        copied_this_cycle = True
+                        self._record_hourly_trade()
 
             except Exception as exc:
                 logger.error(
@@ -999,6 +1037,17 @@ class PolymarketCopyTrader:
         # Guard: max positions
         if len(self._positions) >= self._max_positions:
             logger.info("copytrade_skip", reason="max_positions", current=len(self._positions), limit=self._max_positions)
+            return False
+
+        # Guard: per-wallet daily trade limit
+        wallet_trades_today = self._wallet_daily_trades.get(wallet.address, 0)
+        if wallet_trades_today >= self._max_trades_per_wallet_per_day:
+            logger.info(
+                "copytrade_skip", reason="wallet_daily_limit",
+                wallet=wallet.address[:10] + "...",
+                trades_today=wallet_trades_today,
+                limit=self._max_trades_per_wallet_per_day,
+            )
             return False
 
         # Guard: circuit breaker (realized losses only)
@@ -1062,6 +1111,20 @@ class PolymarketCopyTrader:
                 category=category,
                 current_exposure=round(current_exposure, 2),
                 limit=round(self._correlation_tracker.get_category_limit(), 2),
+                market=market_question[:40],
+            )
+            return False
+
+        # Guard: absolute per-category position count cap
+        category_position_count = sum(
+            1 for p in self._positions.values() if p.category == category
+        )
+        if category_position_count >= self._max_positions_per_category:
+            logger.info(
+                "copytrade_skip", reason="category_cap",
+                category=category,
+                count=category_position_count,
+                limit=self._max_positions_per_category,
                 market=market_question[:40],
             )
             return False
@@ -1163,6 +1226,7 @@ class PolymarketCopyTrader:
                 self._daily_spend += size_usd
                 self._daily_trades += 1
                 self._bankroll = max(0, self._bankroll - size_usd)
+                self._wallet_daily_trades[wallet.address] = self._wallet_daily_trades.get(wallet.address, 0) + 1
 
             except Exception as exc:
                 err_str = str(exc)

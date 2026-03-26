@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import os
-import time
-from typing import Any
 
 import httpx
 import structlog
@@ -78,17 +76,21 @@ class StrategyReviewer:
 
         # Build strategy-level metrics
         avg_trade_size = 0.0
-        avg_hold_time = 0.0
         if open_positions:
             avg_trade_size = total_open_value / len(open_positions)
+
+        total_resolved = len(won_today) + len(lost_today)
+        realized_win_rate = len(won_today) / total_resolved if total_resolved > 0 else None
 
         reviews.append({
             "name": "copytrade",
             "platform": "polymarket",
             "signals": len(positions),
-            "trades": len(open_positions),
-            "win_rate": f"{len(won_today)}W/{len(lost_today)}L",
+            "trades": total_resolved,
+            "win_rate": f"{len(won_today)}W/{len(lost_today)}L" if total_resolved > 0 else "no resolved",
             "pnl": total_won - total_lost,
+            "realized_pnl": round(total_won - total_lost, 2),
+            "realized_win_rate": realized_win_rate,
             "status": "active" if open_positions else "idle",
             "open_positions": len(open_positions),
             "open_value": round(total_open_value, 2),
@@ -97,7 +99,6 @@ class StrategyReviewer:
             "lost_count": len(lost_today),
             "lost_value": round(total_lost, 2),
             "avg_trade_size": round(avg_trade_size, 2),
-            "avg_hold_time_min": round(avg_hold_time, 0),
             "position_details": [
                 {
                     "title": p.get("title", "")[:50],
@@ -122,10 +123,17 @@ class StrategyReviewer:
                 "platform": "polymarket",
                 "signals": 0,
                 "trades": 0,
-                "win_rate": "N/A",
+                "win_rate": "no resolved",
                 "pnl": 0.0,
+                "realized_pnl": 0.0,
+                "realized_win_rate": None,
                 "status": "idle",
+                "open_positions": 0,
+                "open_value": 0.0,
+                "won_count": 0,
+                "won_value": 0.0,
+                "lost_count": 0,
+                "lost_value": 0.0,
                 "avg_trade_size": 0.0,
-                "avg_hold_time_min": 0.0,
             }
         ]

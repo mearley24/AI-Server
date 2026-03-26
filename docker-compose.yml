@@ -98,7 +98,7 @@ services:
     environment:
       - TZ=America/Denver
       - REDIS_URL=redis://host.docker.internal:6379
-      - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket,kalshi,crypto}
+      - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket}
       - POLY_PRIVATE_KEY=${POLY_PRIVATE_KEY:-}
       - POLY_PROXY_ADDRESS=${POLY_PROXY_ADDRESS:-}
       - POLY_BUILDER_API_KEY=${POLY_BUILDER_API_KEY:-}
@@ -108,14 +108,6 @@ services:
       - POLY_SAFE_ADDRESS=${POLY_SAFE_ADDRESS:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - KALSHI_API_KEY_ID=${KALSHI_API_KEY_ID:-}
-      - KALSHI_PRIVATE_KEY_PATH=/app/secrets/kalshi.key
-      - KALSHI_ENVIRONMENT=${KALSHI_ENVIRONMENT:-demo}
-      - KALSHI_DRY_RUN=${KALSHI_DRY_RUN:-true}
-      - KRAKEN_API_KEY=${KRAKEN_API_KEY:-}
-      - KRAKEN_API_SECRET=${KRAKEN_API_SECRET:-}
-      - KRAKEN_DRY_RUN=${KRAKEN_DRY_RUN:-false}
-      - CRYPTO_EXCHANGE=${CRYPTO_EXCHANGE:-kraken}
       - FINANCIAL_DATASETS_API_KEY=${FINANCIAL_DATASETS_API_KEY:-}
       # Notification pipeline — must be "imessage" to send via iMessage
       - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
@@ -134,15 +126,14 @@ services:
       - CORRELATION_MAX_PCT=${CORRELATION_MAX_PCT:-0.15}
       # Phase 3: LLM trade validation
       - LLM_VALIDATION_ENABLED=${LLM_VALIDATION_ENABLED:-true}
-      # Phase 3: Liquidity provision
-      - LP_ENABLED=${LP_ENABLED:-false}
-      - LP_MAX_MARKETS=${LP_MAX_MARKETS:-5}
-      - LP_SPREAD_CENTS=${LP_SPREAD_CENTS:-2}
-      - LP_ORDER_SIZE=${LP_ORDER_SIZE:-10}
       # Expanded scan configuration
       - COPYTRADE_SCAN_MARKETS=${COPYTRADE_SCAN_MARKETS:-500}
       - COPYTRADE_SCAN_CATEGORIES=${COPYTRADE_SCAN_CATEGORIES:-politics,sports,crypto,science}
       - COPYTRADE_LEADERBOARD_ENABLED=${COPYTRADE_LEADERBOARD_ENABLED:-true}
+      - COPYTRADE_MAX_POSITIONS=${COPYTRADE_MAX_POSITIONS:-20}
+      - MAX_TRADES_PER_HOUR=${MAX_TRADES_PER_HOUR:-10}
+      - MAX_TRADES_PER_WALLET_PER_DAY=${MAX_TRADES_PER_WALLET_PER_DAY:-3}
+      - MAX_POSITIONS_PER_CATEGORY=${MAX_POSITIONS_PER_CATEGORY:-5}
     volumes:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro

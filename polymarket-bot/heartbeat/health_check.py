@@ -34,15 +34,6 @@ class HealthChecker:
         # Check notification-hub
         results["platforms"]["notification-hub"] = await self._check_notification_hub(now)
 
-        # Check optional platforms from PLATFORMS_ENABLED
-        enabled = self._get_enabled_platforms()
-
-        if "kalshi" in enabled:
-            results["platforms"]["kalshi"] = await self._check_kalshi(now)
-
-        if "crypto" in enabled:
-            results["platforms"]["crypto"] = await self._check_crypto(now)
-
         return results
 
     async def _check_polymarket(self, now: str) -> dict:
@@ -115,62 +106,6 @@ class HealthChecker:
                 "notes": f"Cannot reach notification-hub: {str(exc)[:60]}",
             }
 
-    async def _check_kalshi(self, now: str) -> dict:
-        """Check Kalshi connectivity."""
-        try:
-            from src.platforms.kalshi_client import KalshiClient
-            api_key = os.environ.get("KALSHI_API_KEY_ID", "")
-            if not api_key:
-                return {"status": "not_configured", "last_check": now, "notes": "No API key"}
-
-            client = KalshiClient(
-                api_key_id=api_key,
-                private_key_path=os.environ.get("KALSHI_PRIVATE_KEY_PATH", ""),
-                environment=os.environ.get("KALSHI_ENVIRONMENT", "demo"),
-                dry_run=True,
-            )
-            connected = await client.connect()
-            result = {
-                "status": "connected" if connected else "disconnected",
-                "last_check": now,
-                "notes": "Connected" if connected else "Connection failed",
-            }
-            try:
-                await client.close()
-            except Exception:
-                pass
-            return result
-        except ImportError:
-            return {"status": "dependency_missing", "last_check": now, "notes": "KalshiClient not available"}
-        except Exception as exc:
-            return {"status": "error", "last_check": now, "notes": str(exc)[:80]}
-
-    async def _check_crypto(self, now: str) -> dict:
-        """Check crypto exchange connectivity."""
-        try:
-            from src.platforms.crypto_client import CryptoClient
-            client = CryptoClient(
-                exchange_id=os.environ.get("CRYPTO_EXCHANGE", "kraken"),
-                api_key=os.environ.get("KRAKEN_API_KEY", ""),
-                api_secret=os.environ.get("KRAKEN_API_SECRET", ""),
-                dry_run=True,
-            )
-            connected = await client.connect()
-            result = {
-                "status": "connected" if connected else "disconnected",
-                "last_check": now,
-                "notes": "Connected" if connected else "Connection failed",
-            }
-            try:
-                await client.close()
-            except Exception:
-                pass
-            return result
-        except ImportError:
-            return {"status": "dependency_missing", "last_check": now, "notes": "CryptoClient not available"}
-        except Exception as exc:
-            return {"status": "error", "last_check": now, "notes": str(exc)[:80]}
-
     def _get_wallet_address(self) -> str:
         """Derive wallet address from private key."""
         pk = os.environ.get("POLY_PRIVATE_KEY", "")
@@ -184,7 +119,3 @@ class HealthChecker:
         except Exception:
             return ""
 
-    def _get_enabled_platforms(self) -> list[str]:
-        """Read PLATFORMS_ENABLED env var."""
-        platforms = os.environ.get("PLATFORMS_ENABLED", "polymarket")
-        return [p.strip() for p in platforms.split(",") if p.strip()]
