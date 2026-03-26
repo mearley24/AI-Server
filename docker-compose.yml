@@ -136,6 +136,10 @@ services:
       - LP_MAX_MARKETS=${LP_MAX_MARKETS:-5}
       - LP_SPREAD_CENTS=${LP_SPREAD_CENTS:-2}
       - LP_ORDER_SIZE=${LP_ORDER_SIZE:-10}
+      # Expanded scan configuration
+      - COPYTRADE_SCAN_MARKETS=${COPYTRADE_SCAN_MARKETS:-500}
+      - COPYTRADE_SCAN_CATEGORIES=${COPYTRADE_SCAN_CATEGORIES:-politics,sports,crypto,science}
+      - COPYTRADE_LEADERBOARD_ENABLED=${COPYTRADE_LEADERBOARD_ENABLED:-true}
     volumes:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro

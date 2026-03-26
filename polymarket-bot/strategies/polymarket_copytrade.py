@@ -238,6 +238,17 @@ class PolymarketCopyTrader:
             min_closed_positions=int(os.environ.get("WALLET_MIN_CLOSED", "50")),
         )
 
+        # ── NEW: Expanded scan configuration ─────────────────────────
+        self._scan_markets_limit = int(os.environ.get("COPYTRADE_SCAN_MARKETS", "500"))
+        self._scan_categories = [
+            c.strip() for c in
+            os.environ.get("COPYTRADE_SCAN_CATEGORIES", "politics,sports,crypto,science").split(",")
+            if c.strip()
+        ]
+        self._leaderboard_enabled = os.environ.get(
+            "COPYTRADE_LEADERBOARD_ENABLED", "true"
+        ).lower() in ("true", "1", "yes")
+
         # ── NEW: Phase 2 — Correlation Exposure Tracker ──────────────
         self._correlation_tracker = CorrelationTracker(
             max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.15")),
@@ -436,136 +447,236 @@ class PolymarketCopyTrader:
             logger.error("copytrade_wallet_scan", status="error", error=str(exc))
 
     async def _collect_wallet_activity(self) -> tuple[dict[str, dict[str, Any]], int]:
-        """Gather wallet activity from Gamma API resolved markets."""
+        """Gather wallet activity from multiple Gamma API scan passes.
+
+        Runs several queries to maximise wallet diversity:
+        1. Recently closed markets  (proven winners/losers)
+        2. High-volume active markets  (liquid markets attract skilled traders)
+        3. Category-specific scans  (politics, sports, crypto, science)
+        4. Leaderboard / recent-activity wallets  (top performers)
+        """
         wallet_stats: dict[str, dict[str, Any]] = {}
         assert self._http is not None
 
+        # Track per-pass diversity metrics
+        pass_wallet_counts: dict[str, int] = {}
+        seen_condition_ids: set[str] = set()
+        all_markets: list[tuple[dict[str, Any], str]] = []  # (market, pass_name)
+
+        # ── Pass 1: Recently closed markets (existing behaviour) ─────
         try:
-            resolved_markets = await self._fetch_gamma_markets(
-                closed=True, active=False, limit=200
+            closed_markets = await self._fetch_gamma_markets(
+                closed=True, active=False, limit=200,
+                order="closedTime", ascending=False,
             )
+            for m in closed_markets:
+                cid = m.get("conditionId", m.get("condition_id", ""))
+                if cid and cid not in seen_condition_ids:
+                    seen_condition_ids.add(cid)
+                    all_markets.append((m, "recently_closed"))
+            logger.info("copytrade_pass_recently_closed", fetched=len(closed_markets), unique=len(all_markets))
+        except Exception as exc:
+            logger.warning("copytrade_pass_recently_closed_error", error=str(exc))
 
-            logger.info("copytrade_scan_markets_fetched", count=len(resolved_markets))
+        # ── Pass 2: High-volume active markets (NEW) ─────────────────
+        try:
+            active_markets = await self._fetch_gamma_markets(
+                closed=False, active=True, limit=200,
+                order="volume", ascending=False,
+            )
+            added = 0
+            for m in active_markets:
+                cid = m.get("conditionId", m.get("condition_id", ""))
+                if cid and cid not in seen_condition_ids:
+                    seen_condition_ids.add(cid)
+                    all_markets.append((m, "high_volume_active"))
+                    added += 1
+            logger.info("copytrade_pass_high_volume", fetched=len(active_markets), new_unique=added)
+        except Exception as exc:
+            logger.warning("copytrade_pass_high_volume_error", error=str(exc))
 
-            markets_with_trades = 0
-            markets_scored = 0
-            for market in resolved_markets:
-                condition_id = market.get("conditionId", market.get("condition_id", ""))
-                markets_scored += 1
+        # ── Pass 3: Category-specific scans (NEW) ────────────────────
+        for tag in self._scan_categories:
+            try:
+                cat_markets = await self._fetch_gamma_markets(
+                    closed=True, active=False, limit=50,
+                    order="closedTime", ascending=False,
+                    tag=tag,
+                )
+                added = 0
+                for m in cat_markets:
+                    cid = m.get("conditionId", m.get("condition_id", ""))
+                    if cid and cid not in seen_condition_ids:
+                        seen_condition_ids.add(cid)
+                        all_markets.append((m, f"category_{tag}"))
+                        added += 1
+                logger.info("copytrade_pass_category", tag=tag, fetched=len(cat_markets), new_unique=added)
+            except Exception as exc:
+                logger.warning("copytrade_pass_category_error", tag=tag, error=str(exc))
 
-                outcome_prices_raw = market.get("outcomePrices", "")
-                if isinstance(outcome_prices_raw, str):
-                    try:
-                        outcome_prices = json.loads(outcome_prices_raw)
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-                elif isinstance(outcome_prices_raw, list):
-                    outcome_prices = outcome_prices_raw
-                else:
-                    continue
+        logger.info(
+            "copytrade_scan_markets_fetched",
+            total_unique_markets=len(all_markets),
+            passes_completed=3 + len(self._scan_categories),
+        )
 
-                winning_index = None
-                for i, p in enumerate(outcome_prices):
-                    if str(p) == "1":
-                        winning_index = i
-                        break
-                if winning_index is None:
-                    continue
+        # ── Process trades from all collected markets ─────────────────
+        markets_with_trades = 0
+        markets_scored = 0
 
-                clob_raw = market.get("clobTokenIds", "")
-                if isinstance(clob_raw, str):
-                    try:
-                        token_ids = json.loads(clob_raw) if clob_raw.startswith("[") else clob_raw.split(",")
-                    except (json.JSONDecodeError, TypeError):
-                        continue
-                elif isinstance(clob_raw, list):
-                    token_ids = clob_raw
-                else:
-                    continue
+        for market, pass_name in all_markets:
+            condition_id = market.get("conditionId", market.get("condition_id", ""))
+            markets_scored += 1
 
-                token_ids = [t.strip().strip('"') for t in token_ids]
-                if winning_index >= len(token_ids):
-                    continue
-
-                winning_token_id = token_ids[winning_index]
-
+            outcome_prices_raw = market.get("outcomePrices", "")
+            if isinstance(outcome_prices_raw, str):
                 try:
-                    trades = await self._fetch_market_trades(condition_id, limit=200)
-                except Exception as exc:
-                    if markets_with_trades == 0:
-                        logger.info("copytrade_market_trades_error", market=condition_id[:16], error=str(exc))
+                    outcome_prices = json.loads(outcome_prices_raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            elif isinstance(outcome_prices_raw, list):
+                outcome_prices = outcome_prices_raw
+            else:
+                continue
+
+            winning_index = None
+            for i, p in enumerate(outcome_prices):
+                if str(p) == "1":
+                    winning_index = i
+                    break
+            if winning_index is None:
+                continue
+
+            clob_raw = market.get("clobTokenIds", "")
+            if isinstance(clob_raw, str):
+                try:
+                    token_ids = json.loads(clob_raw) if clob_raw.startswith("[") else clob_raw.split(",")
+                except (json.JSONDecodeError, TypeError):
+                    continue
+            elif isinstance(clob_raw, list):
+                token_ids = clob_raw
+            else:
+                continue
+
+            token_ids = [t.strip().strip('"') for t in token_ids]
+            if winning_index >= len(token_ids):
+                continue
+
+            winning_token_id = token_ids[winning_index]
+
+            try:
+                trades = await self._fetch_market_trades(condition_id, limit=200)
+            except Exception as exc:
+                if markets_with_trades == 0:
+                    logger.info("copytrade_market_trades_error", market=condition_id[:16], error=str(exc))
+                continue
+
+            if trades:
+                markets_with_trades += 1
+
+            wallets_before = set(wallet_stats.keys())
+
+            for trade in trades:
+                wallet_addr = trade.get("proxyWallet", trade.get("maker_address", ""))
+                trade_token = trade.get("asset", trade.get("asset_id", ""))
+                side = trade.get("side", "").upper()
+                price = float(trade.get("price", 0))
+                size = float(trade.get("size", 0))
+                ts = trade.get("timestamp", 0)
+                if isinstance(ts, str):
+                    try:
+                        ts = float(ts)
+                    except (ValueError, TypeError):
+                        ts = 0
+
+                if not wallet_addr:
                     continue
 
-                if trades:
-                    markets_with_trades += 1
+                if wallet_addr not in wallet_stats:
+                    wallet_stats[wallet_addr] = {
+                        "wins": 0,
+                        "losses": 0,
+                        "volume": 0.0,
+                        "last_active": 0.0,
+                        "win_pnls": [],
+                        "loss_pnls": [],
+                    }
 
-                for trade in trades:
-                    wallet_addr = trade.get("proxyWallet", trade.get("maker_address", ""))
-                    trade_token = trade.get("asset", trade.get("asset_id", ""))
-                    side = trade.get("side", "").upper()
-                    price = float(trade.get("price", 0))
-                    size = float(trade.get("size", 0))
-                    ts = trade.get("timestamp", 0)
-                    if isinstance(ts, str):
-                        try:
-                            ts = float(ts)
-                        except (ValueError, TypeError):
-                            ts = 0
+                stats = wallet_stats[wallet_addr]
+                trade_value = price * size
+                stats["volume"] += trade_value
+                if isinstance(ts, (int, float)) and ts > stats["last_active"]:
+                    stats["last_active"] = ts
 
-                    if not wallet_addr:
-                        continue
+                if side == "BUY" and trade_token == winning_token_id:
+                    stats["wins"] += 1
+                    stats["win_pnls"].append(trade_value)
+                elif side == "BUY" and trade_token != winning_token_id:
+                    stats["losses"] += 1
+                    stats["loss_pnls"].append(trade_value)
 
-                    if wallet_addr not in wallet_stats:
-                        wallet_stats[wallet_addr] = {
+            # Count new wallets discovered in this pass
+            new_wallets = set(wallet_stats.keys()) - wallets_before
+            pass_wallet_counts[pass_name] = pass_wallet_counts.get(pass_name, 0) + len(new_wallets)
+
+        # ── Pass 4: Leaderboard / activity-based wallet discovery (NEW) ──
+        leaderboard_wallets = 0
+        if self._leaderboard_enabled:
+            try:
+                lb_addrs = await self._fetch_leaderboard_wallets()
+                for addr in lb_addrs:
+                    if addr and addr not in wallet_stats:
+                        wallet_stats[addr] = {
                             "wins": 0,
                             "losses": 0,
                             "volume": 0.0,
-                            "last_active": 0.0,
+                            "last_active": time.time(),
                             "win_pnls": [],
                             "loss_pnls": [],
                         }
+                        leaderboard_wallets += 1
+                pass_wallet_counts["leaderboard"] = leaderboard_wallets
+                logger.info("copytrade_pass_leaderboard", new_wallets=leaderboard_wallets)
+            except Exception as exc:
+                logger.warning("copytrade_pass_leaderboard_error", error=str(exc))
 
-                    stats = wallet_stats[wallet_addr]
-                    trade_value = price * size
-                    stats["volume"] += trade_value
-                    if isinstance(ts, (int, float)) and ts > stats["last_active"]:
-                        stats["last_active"] = ts
+        # Calculate avg P/L for each wallet
+        for addr, stats in wallet_stats.items():
+            win_pnls = stats.pop("win_pnls", [])
+            loss_pnls = stats.pop("loss_pnls", [])
+            stats["avg_win_pnl"] = sum(win_pnls) / len(win_pnls) if win_pnls else 0
+            stats["avg_loss_pnl"] = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
 
-                    if side == "BUY" and trade_token == winning_token_id:
-                        stats["wins"] += 1
-                        stats["win_pnls"].append(trade_value)
-                    elif side == "BUY" and trade_token != winning_token_id:
-                        stats["losses"] += 1
-                        stats["loss_pnls"].append(trade_value)
-
-            # Calculate avg P/L for each wallet
-            for addr, stats in wallet_stats.items():
-                win_pnls = stats.pop("win_pnls", [])
-                loss_pnls = stats.pop("loss_pnls", [])
-                stats["avg_win_pnl"] = sum(win_pnls) / len(win_pnls) if win_pnls else 0
-                stats["avg_loss_pnl"] = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
-
-        except Exception as exc:
-            logger.error("copytrade_collect_activity_error", error=str(exc))
-
+        # ── Log scan diversity metrics ────────────────────────────────
         logger.info(
-            "copytrade_collect_summary",
+            "copytrade_scan_diversity",
             total_wallets=len(wallet_stats),
-            markets_with_trades=markets_with_trades if 'markets_with_trades' in dir() else 0,
+            markets_with_trades=markets_with_trades,
+            markets_scored=markets_scored,
+            wallets_per_pass=pass_wallet_counts,
         )
-        return wallet_stats, markets_scored if 'markets_scored' in dir() else 0
+
+        return wallet_stats, markets_scored
 
     async def _fetch_gamma_markets(
-        self, closed: bool = False, active: bool = True, limit: int = 100
+        self,
+        closed: bool = False,
+        active: bool = True,
+        limit: int = 500,
+        order: str = "closedTime",
+        ascending: bool = False,
+        tag: str | None = None,
     ) -> list[dict[str, Any]]:
         assert self._http is not None
         params: dict[str, Any] = {
-            "limit": limit,
+            "limit": min(limit, self._scan_markets_limit),
             "closed": closed,
             "active": active,
-            "order": "closedTime",
-            "ascending": False,
+            "order": order,
+            "ascending": ascending,
         }
+        if tag:
+            params["tag"] = tag
         resp = await self._http.get(f"{self._gamma_url}/markets", params=params)
         resp.raise_for_status()
         return resp.json()
@@ -584,6 +695,66 @@ class PolymarketCopyTrader:
         except Exception as exc:
             logger.debug("copytrade_data_api_error", error=str(exc))
             return []
+
+    async def _fetch_leaderboard_wallets(self) -> list[str]:
+        """Discover high-performing wallets from leaderboard / activity APIs.
+
+        Tries multiple sources in order:
+        1. Gamma API leaderboard endpoint
+        2. Polymarket Data API recent high-volume activity
+        """
+        assert self._http is not None
+        discovered: list[str] = []
+
+        # Attempt 1: Gamma leaderboard (may not exist — best effort)
+        try:
+            resp = await self._http.get(
+                f"{self._gamma_url}/leaderboard",
+                params={"limit": 100},
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                entries = data if isinstance(data, list) else data.get("results", data.get("leaderboard", []))
+                for entry in entries:
+                    addr = entry.get("address", entry.get("proxyWallet", entry.get("wallet", "")))
+                    if addr:
+                        discovered.append(addr.lower())
+                logger.info("copytrade_leaderboard_gamma", wallets=len(discovered))
+        except Exception as exc:
+            logger.debug("copytrade_leaderboard_gamma_unavailable", error=str(exc))
+
+        # Attempt 2: Data API recent activity — find wallets with high volume
+        try:
+            resp = await self._http.get(
+                "https://data-api.polymarket.com/activity",
+                params={
+                    "limit": 500,
+                    "sortBy": "TIMESTAMP",
+                    "sortDirection": "DESC",
+                },
+                timeout=15.0,
+            )
+            if resp.status_code == 200:
+                activities = resp.json()
+                # Tally volume per wallet and pick the top performers
+                wallet_volumes: dict[str, float] = {}
+                for act in activities:
+                    addr = act.get("proxyWallet", act.get("user", ""))
+                    vol = float(act.get("usdcSize", act.get("size", 0)))
+                    if addr:
+                        addr = addr.lower()
+                        wallet_volumes[addr] = wallet_volumes.get(addr, 0.0) + vol
+                # Take top 100 by volume
+                sorted_wallets = sorted(wallet_volumes.items(), key=lambda x: x[1], reverse=True)
+                for addr, vol in sorted_wallets[:100]:
+                    if addr not in discovered:
+                        discovered.append(addr)
+                logger.info("copytrade_leaderboard_activity", wallets_from_activity=len(sorted_wallets))
+        except Exception as exc:
+            logger.debug("copytrade_leaderboard_activity_error", error=str(exc))
+
+        return discovered
 
     # ── Wallet cache persistence ─────────────────────────────────────────
 
