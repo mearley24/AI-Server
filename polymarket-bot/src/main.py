@@ -403,6 +403,20 @@ async def lifespan(app: FastAPI):
         )
         platform_strategies.append(("copytrade", copytrade))
 
+    # Polymarket position redeemer — automatically redeems resolved winning positions
+    redeemer = None
+    if settings.poly_private_key:
+        try:
+            from src.redeemer import PolymarketRedeemer
+            redeemer = PolymarketRedeemer(
+                private_key=settings.poly_private_key,
+                check_interval=300.0,  # every 5 minutes
+            )
+            platform_strategies.append(("redeemer", redeemer))
+            log.info("redeemer_enabled", msg="Will auto-redeem resolved winning positions")
+        except Exception as exc:
+            log.warning("redeemer_init_failed", error=str(exc))
+
     # Attach Kalshi client to weather trader for dual-platform execution
     if kalshi_client and "kalshi" in platform_clients:
         weather_trader.set_kalshi_client(kalshi_client)
@@ -418,6 +432,7 @@ async def lifespan(app: FastAPI):
     deps.sandbox = sandbox
     deps.paper_ledger = paper_ledger
     deps.platform_clients = platform_clients
+    deps.redeemer = redeemer
     deps.strategies = {
         "stink_bid": stink_bid,
         "flash_crash": flash_crash,

@@ -78,6 +78,7 @@ class _Deps:
     sandbox: Any = None
     paper_ledger: Any = None
     platform_clients: dict[str, Any] = {}  # {"polymarket": ..., "kalshi": ..., "crypto": ...}
+    redeemer: Any = None  # PolymarketRedeemer instance
 
 
 deps = _Deps()
@@ -600,6 +601,26 @@ async def test_notification(req: TestNotificationRequest) -> dict[str, Any]:
         return {"status": "sent" if success else "failed", "channel": channel}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Notification error: {exc}")
+
+
+@router.post("/redeem")
+async def trigger_redeem() -> dict[str, Any]:
+    """Manually trigger redemption of all resolved winning positions."""
+    if deps.redeemer is None:
+        raise HTTPException(status_code=503, detail="Redeemer not initialized")
+    try:
+        result = await deps.redeemer.redeem_all_winning()
+        return {"status": "ok", **result}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Redeem error: {exc}")
+
+
+@router.get("/redeem/status")
+async def redeem_status() -> dict[str, Any]:
+    """Get redeemer status including USDC.e balance."""
+    if deps.redeemer is None:
+        return {"status": "not_initialized"}
+    return deps.redeemer.get_status()
 
 
 @router.get("/heartbeat/reports")
