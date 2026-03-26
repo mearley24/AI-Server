@@ -90,11 +90,11 @@ services:
       context: ./polymarket-bot
     container_name: polymarket-bot
     restart: unless-stopped
-    # network_mode: "service:vpn"  # disabled — US access doesn't need VPN
-    ports:
-      - "127.0.0.1:8430:8430"
+    network_mode: "service:vpn"
+    # ports via vpn service (network_mode shares vpn's network stack)
+    # redis via host.docker.internal since Docker DNS unavailable in vpn network
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://host.docker.internal:6379
       - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket,kalshi,crypto}
       - POLY_PRIVATE_KEY=${POLY_PRIVATE_KEY:-}
       - POLY_PROXY_ADDRESS=${POLY_PROXY_ADDRESS:-}
@@ -118,14 +118,14 @@ services:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro
     depends_on:
-      redis:
-        condition: service_started
+      vpn:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8430/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     logging:
       driver: "json-file"
       options:
