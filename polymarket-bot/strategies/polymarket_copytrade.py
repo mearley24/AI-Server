@@ -982,47 +982,54 @@ class PolymarketCopyTrader:
     ) -> bool:
         """Copy a BUY trade with Kelly sizing, LLM validation, and correlation checks.
         Returns True if trade was actually placed, False if skipped."""
+        logger.info("copytrade_copy_attempt", market=market_question[:40], price=price, token=token_id[:16])
 
         # Skip tiny source trades (noise/test)
         source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
         min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "1.0"))
         if source_usdc < min_source_trade:
-            logger.debug("copytrade_skip_small_trade", market=market_question[:40], usdc=source_usdc)
+            logger.info("copytrade_skip", reason="small_trade", usdc=source_usdc, min=min_source_trade, market=market_question[:40])
             return False
 
         # Guard: max positions
         if len(self._positions) >= self._max_positions:
+            logger.info("copytrade_skip", reason="max_positions", current=len(self._positions), limit=self._max_positions)
             return False
 
         # Guard: circuit breaker
         daily_net = self._daily_wins - self._daily_spend
         if daily_net < -self._daily_loss_limit:
+            logger.info("copytrade_skip", reason="circuit_breaker", daily_net=round(daily_net, 2))
             return False
 
         # Guard: basically-resolved markets
         max_price = float(os.environ.get("COPYTRADE_MAX_PRICE", "0.95"))
         min_price = float(os.environ.get("COPYTRADE_MIN_PRICE", "0.02"))
         if price > max_price or price < min_price:
+            logger.info("copytrade_skip", reason="extreme_price", price=price, max=max_price, min=min_price)
             return False
 
         # Guard: already have position in this market
         if market and market in self._active_condition_ids:
-            logger.debug("copytrade_skip_same_market", market=market_question[:40] if market_question else market[:16])
+            logger.info("copytrade_skip", reason="same_market", market=market_question[:40] if market_question else market[:16])
             return False
 
         # Guard: already have position in this exact token
         for pos in self._positions.values():
             if pos.token_id == token_id:
+                logger.info("copytrade_skip", reason="same_token", token=token_id[:16])
                 return False
 
         # Skip crypto Up/Down markets
         if self._is_crypto_updown_market(market_question):
+            logger.info("copytrade_skip", reason="crypto_updown", market=market_question[:40])
             return False
 
         if not market_question:
             market_question = market
 
         if self._clob_client is None:
+            logger.info("copytrade_skip", reason="no_clob_client")
             return False
 
         # ── NEW: Correlation exposure check ──────────────────────────
