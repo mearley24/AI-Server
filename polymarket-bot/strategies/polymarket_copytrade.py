@@ -1097,6 +1097,7 @@ class PolymarketCopyTrader:
         position_id = f"ct-{uuid.uuid4().hex[:12]}"
 
         # Place order
+        logger.info("copytrade_placing_order", market=market_question[:40], buy_price=buy_price, size_usd=round(size_usd, 2), size_shares=size_shares, kelly=self._kelly_enabled, bankroll=round(self._bankroll, 2))
         order_id = ""
         if self._dry_run:
             order_id = f"paper-{position_id}"
@@ -1155,8 +1156,7 @@ class PolymarketCopyTrader:
 
             except Exception as exc:
                 err_str = str(exc)
-                if "does not exist" not in err_str and "not enough balance" not in err_str and "invalid signature" not in err_str:
-                    logger.warning("copytrade_order_error", error=err_str[:120], token_id=token_id[:16] + "...")
+                logger.info("copytrade_order_error", error=err_str[:200], token_id=token_id[:16] + "...", market=market_question[:40])
                 return False
 
         # Track position
