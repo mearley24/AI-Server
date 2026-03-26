@@ -46,6 +46,19 @@ from src.signer import SIDE_BUY, SIDE_SELL
 
 logger = structlog.get_logger(__name__)
 
+
+def _notify(title: str, body: str) -> None:
+    """Best-effort push notification via Redis → notification-hub → iMessage."""
+    try:
+        import json as _json
+        import os
+        import redis
+        url = os.environ.get("REDIS_URL", "redis://redis:6379")
+        r = redis.from_url(url, decode_responses=True, socket_timeout=2)
+        r.publish("notifications:trading", _json.dumps({"title": title, "body": body}))
+    except Exception:
+        pass  # never block trading on notification failure
+
 # ── Data models ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -624,6 +637,11 @@ class PolymarketCopyTrader:
                     limit=self._daily_loss_limit,
                     trades=self._daily_trades,
                 )
+                _notify(
+                    "\U0001f6d1 Trading Halted",
+                    f"Daily net loss hit ${abs(daily_net):.2f} (limit: ${self._daily_loss_limit:.0f})\n"
+                    f"Trades today: {self._daily_trades} | Resumes at midnight UTC",
+                )
             return
 
         copied_this_cycle = False
@@ -1026,6 +1044,16 @@ class PolymarketCopyTrader:
         # Track daily wins for circuit breaker
         if pnl_usd > 0:
             self._daily_wins += pos.size_usd + pnl_usd  # total return, not just profit
+
+        # Notify on exit
+        emoji = "\u2705" if pnl_usd >= 0 else "\u274c"
+        _notify(
+            f"{emoji} Position Exit",
+            f"{pos.market_question[:45]}\n"
+            f"Entry: {pos.entry_price:.2f} > Exit: {current_price:.2f} | "
+            f"P&L: ${pnl_usd:+.2f} ({pnl_pct*100:+.1f}%)\n"
+            f"Reason: {reason} | Hold: {(time.time() - pos.copied_at)/60:.0f}min",
+        )
 
         # Remove from tracked positions
         del self._positions[position_id]
