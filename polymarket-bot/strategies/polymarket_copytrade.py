@@ -656,8 +656,8 @@ class PolymarketCopyTrader:
             logger.debug("copytrade_skip_crypto_short", market=market_question[:40])
             return
 
-        # Guard: skip extreme prices
-        if price > 0.95 or price < 0.02:
+        # Guard: skip only basically-resolved markets
+        if price > 0.98 or price < 0.02:
             return
 
         # Guard: already have position in this token
@@ -687,7 +687,7 @@ class PolymarketCopyTrader:
         best_ask = float(book.asks[0].price)
 
         # Only trade if best ask is in tradeable range
-        if best_ask > 0.90 or best_ask < 0.05:
+        if best_ask > 0.98 or best_ask < 0.03:
             logger.debug("copytrade_ask_out_of_range", ask=best_ask, token_id=token_id[:16])
             return
 
