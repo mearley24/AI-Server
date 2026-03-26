@@ -147,6 +147,7 @@ class PolymarketCopyTrader:
         self._daily_loss_limit: float = getattr(settings, "copytrade_daily_loss_limit", 50.0)
         self._daily_spend: float = 0.0
         self._daily_wins: float = 0.0
+        self._daily_realized_losses: float = 0.0
         self._daily_trades: int = 0
         self._daily_spend_reset_time: float = 0.0
         self._halted: bool = False
@@ -374,6 +375,7 @@ class PolymarketCopyTrader:
                             trades=self._daily_trades)
             self._daily_spend = 0.0
             self._daily_wins = 0.0
+            self._daily_realized_losses = 0.0
             self._daily_trades = 0
             self._halted = False
             self._daily_spend_reset_time = today_midnight
@@ -858,22 +860,22 @@ class PolymarketCopyTrader:
         if time.time() - self._last_trade_time < self._min_trade_gap:
             return
 
-        # Circuit breaker
+        # Circuit breaker — based on REALIZED losses only (not open positions)
         if self._halted:
             return
-        daily_net = self._daily_wins - self._daily_spend
-        if daily_net < -self._daily_loss_limit:
+        daily_realized_loss = self._daily_realized_losses
+        if daily_realized_loss > self._daily_loss_limit:
             if not self._halted:
                 self._halted = True
                 logger.warning(
                     "copytrade_daily_loss_halt",
-                    daily_net=round(daily_net, 2),
+                    realized_loss=round(daily_realized_loss, 2),
                     limit=self._daily_loss_limit,
                     trades=self._daily_trades,
                 )
                 _notify(
                     "🛑 Trading Halted",
-                    f"Daily net loss hit ${abs(daily_net):.2f} (limit: ${self._daily_loss_limit:.0f})\n"
+                    f"Daily realized losses hit ${daily_realized_loss:.2f} (limit: ${self._daily_loss_limit:.0f})\n"
                     f"Trades today: {self._daily_trades} | Resumes at midnight",
                 )
             return
@@ -996,10 +998,9 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="max_positions", current=len(self._positions), limit=self._max_positions)
             return False
 
-        # Guard: circuit breaker
-        daily_net = self._daily_wins - self._daily_spend
-        if daily_net < -self._daily_loss_limit:
-            logger.info("copytrade_skip", reason="circuit_breaker", daily_net=round(daily_net, 2))
+        # Guard: circuit breaker (realized losses only)
+        if self._daily_realized_losses > self._daily_loss_limit:
+            logger.info("copytrade_skip", reason="circuit_breaker", realized_loss=round(self._daily_realized_losses, 2))
             return False
 
         # Guard: basically-resolved markets
@@ -1342,9 +1343,11 @@ class PolymarketCopyTrader:
         )
         self._pnl_tracker.record_trade(sell_trade)
 
-        # Track daily wins
+        # Track daily wins and realized losses
         if pnl_usd > 0:
             self._daily_wins += sell_usd + pnl_usd
+        elif pnl_usd < 0:
+            self._daily_realized_losses += abs(pnl_usd)
 
         # Send iMessage notification with full exit details
         emoji = "✅" if pnl_usd >= 0 else "❌"
