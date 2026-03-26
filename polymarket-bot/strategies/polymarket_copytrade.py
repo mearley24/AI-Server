@@ -324,12 +324,15 @@ class PolymarketCopyTrader:
                 if now - self._last_bankroll_refresh >= self._bankroll_refresh_interval:
                     try:
                         wallet_addr = self._client.wallet_address
-                        new_bankroll = await fetch_onchain_bankroll(wallet_addr)
-                        if new_bankroll > 0:
-                            self._bankroll = new_bankroll
+                        if wallet_addr:
+                            new_bankroll = await fetch_onchain_bankroll(wallet_addr)
+                            if new_bankroll > 0:
+                                self._bankroll = new_bankroll
+                                logger.info("bankroll_updated", bankroll=round(self._bankroll, 2), source="onchain")
                         self._last_bankroll_refresh = now
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning("bankroll_refresh_error", error=str(exc)[:100])
+                        self._last_bankroll_refresh = now
 
                 # 1. Wallet scan every N hours (or on first run)
                 hours_since_scan = (now - self._last_scan_time) / 3600

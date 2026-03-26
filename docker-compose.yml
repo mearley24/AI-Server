@@ -133,7 +133,7 @@ services:
       # Phase 2: Correlation exposure limits
       - CORRELATION_MAX_PCT=${CORRELATION_MAX_PCT:-0.15}
       # Phase 3: LLM trade validation
-      - LLM_VALIDATION_ENABLED=${LLM_VALIDATION_ENABLED:-false}
+      - LLM_VALIDATION_ENABLED=${LLM_VALIDATION_ENABLED:-true}
       # Phase 3: Liquidity provision
       - LP_ENABLED=${LP_ENABLED:-false}
       - LP_MAX_MARKETS=${LP_MAX_MARKETS:-5}
