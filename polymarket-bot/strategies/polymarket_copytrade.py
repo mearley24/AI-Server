@@ -241,10 +241,7 @@ class PolymarketCopyTrader:
                 if tick_count % 2 == 0:
                     await self._manage_positions()
 
-                # 4. Check for redeemable positions (every ~5 min)
-                if now - self._last_redemption_check >= self._redemption_interval:
-                    await self._check_and_redeem_positions()
-                    self._last_redemption_check = now
+                # 4. Redemption handled by standalone PolymarketRedeemer module
 
                 tick_count += 1
 
