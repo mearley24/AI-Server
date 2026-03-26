@@ -59,14 +59,11 @@ class StrategyReviewer:
         open_positions = []
         won_today = []
         lost_today = []
-        cutoff_24h = time.time() - 86400
 
         for p in positions:
             cur_price = float(p.get("curPrice", 0))
             current_value = float(p.get("currentValue", 0))
             initial_value = float(p.get("initialValue", 0))
-            title = p.get("title", "")
-            outcome = p.get("outcome", "")
 
             if cur_price == 1.0 and current_value > 0:
                 won_today.append(p)
@@ -79,7 +76,12 @@ class StrategyReviewer:
         total_won = sum(float(p.get("currentValue", 0)) for p in won_today)
         total_lost = sum(float(p.get("initialValue", 0)) for p in lost_today)
 
-        # Build copy-trader review
+        # Build strategy-level metrics
+        avg_trade_size = 0.0
+        avg_hold_time = 0.0
+        if open_positions:
+            avg_trade_size = total_open_value / len(open_positions)
+
         reviews.append({
             "name": "copytrade",
             "platform": "polymarket",
@@ -94,6 +96,8 @@ class StrategyReviewer:
             "won_value": round(total_won, 2),
             "lost_count": len(lost_today),
             "lost_value": round(total_lost, 2),
+            "avg_trade_size": round(avg_trade_size, 2),
+            "avg_hold_time_min": round(avg_hold_time, 0),
             "position_details": [
                 {
                     "title": p.get("title", "")[:50],
@@ -121,5 +125,7 @@ class StrategyReviewer:
                 "win_rate": "N/A",
                 "pnl": 0.0,
                 "status": "idle",
+                "avg_trade_size": 0.0,
+                "avg_hold_time_min": 0.0,
             }
         ]

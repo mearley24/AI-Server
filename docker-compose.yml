@@ -114,6 +114,28 @@ services:
       - KRAKEN_DRY_RUN=${KRAKEN_DRY_RUN:-false}
       - CRYPTO_EXCHANGE=${CRYPTO_EXCHANGE:-kraken}
       - FINANCIAL_DATASETS_API_KEY=${FINANCIAL_DATASETS_API_KEY:-}
+      # Notification pipeline — must be "imessage" to send via iMessage
+      - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
+      - NOTIFICATION_HUB_URL=http://host.docker.internal:8095
+      # Phase 1: Kelly Criterion position sizing
+      - KELLY_SIZING_ENABLED=${KELLY_SIZING_ENABLED:-true}
+      - KELLY_FRACTION=${KELLY_FRACTION:-0.25}
+      - COPYTRADE_BANKROLL=${COPYTRADE_BANKROLL:-300}
+      # Phase 1: Smart exit parameters
+      - EXIT_TP1_PCT=${EXIT_TP1_PCT:-0.15}
+      - EXIT_TP2_PCT=${EXIT_TP2_PCT:-0.30}
+      - EXIT_SL_PCT=${EXIT_SL_PCT:-0.25}
+      - EXIT_TRAILING_PCT=${EXIT_TRAILING_PCT:-0.10}
+      - EXIT_TIME_HOURS=${EXIT_TIME_HOURS:-48}
+      # Phase 2: Correlation exposure limits
+      - CORRELATION_MAX_PCT=${CORRELATION_MAX_PCT:-0.15}
+      # Phase 3: LLM trade validation
+      - LLM_VALIDATION_ENABLED=${LLM_VALIDATION_ENABLED:-false}
+      # Phase 3: Liquidity provision
+      - LP_ENABLED=${LP_ENABLED:-false}
+      - LP_MAX_MARKETS=${LP_MAX_MARKETS:-5}
+      - LP_SPREAD_CENTS=${LP_SPREAD_CENTS:-2}
+      - LP_ORDER_SIZE=${LP_ORDER_SIZE:-10}
     volumes:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro
@@ -250,7 +272,7 @@ services:
     container_name: notification-hub
     restart: unless-stopped
     environment:
-      - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-console}
+      - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OWNER_PHONE_NUMBER=${OWNER_PHONE_NUMBER:-}
       - REDIS_URL=redis://redis:6379

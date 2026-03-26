@@ -1,27 +1,29 @@
-"""Polymarket Copy-Trading Strategy.
+"""Polymarket Copy-Trading Strategy — Enhanced with all Phase 1-3 upgrades.
 
 Discovers profitable wallets on Polymarket's public blockchain, scores them
-by win rate, monitors their trades, and copies BUY entries within 30 seconds.
+by composite metrics (win rate, P/L ratio, recency, consistency), monitors
+their trades, and copies BUY entries with dynamic Kelly sizing.
 
 Flow
 ────
 1. **Wallet Discovery** — every 6 hours, query the Gamma API for active
-   markets, collect wallets with significant activity, and score by win rate.
-   Wallets with ≥55 % win rate and ≥20 resolved trades are cached to
-   ``/data/copytrade_wallets.json``.
+   markets, collect wallets with significant activity, and score using
+   enhanced wallet scoring (zombie detection, P/L ratio, red flags).
 
 2. **Trade Monitoring** — every 30 seconds, poll the CLOB API for new trades
-   from the top-25 scored wallets.  Track seen trade IDs to avoid duplicates.
+   from the top-25 scored wallets. Track seen trade IDs to avoid duplicates.
 
-3. **Copy Execution** — when a top wallet makes a BUY, place a matching
-   GTC limit buy.  Safeguards: condition_id dedup prevents buying both
-   sides, daily loss circuit breaker, per-market dedup.
+3. **Pre-Trade Validation** — optionally screen trades through LLM for EV
+   assessment, check correlation limits, calculate Kelly sizing.
 
-4. **Position Management** — every 60 seconds, check each copied position.
-   Exit when the source wallet sells, the market resolves, PnL > +15 %, or
-   PnL < −20 % (stop loss).
+4. **Copy Execution** — when a top wallet makes a BUY, place a matching
+   order sized by Kelly Criterion. Guards: condition_id dedup, daily loss
+   circuit breaker, per-market dedup, category exposure limits.
 
-5. **Redemption** — every 5 minutes, check for resolved winning positions
+5. **Position Management** — Smart exit engine: tiered take-profit (15%/30%),
+   stop-loss (25%), trailing stop (10% below peak), time-based exit (48h stale).
+
+6. **Redemption** — every 5 minutes, check for resolved winning positions
    and redeem them via the ConditionalTokens contract to recover USDC.e.
 """
 
@@ -30,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -44,6 +47,12 @@ from src.config import Settings
 from src.pnl_tracker import PnLTracker, Trade
 from src.signer import SIDE_BUY, SIDE_SELL
 
+from strategies.exit_engine import ExitEngine, ExitSignal
+from strategies.kelly_sizing import KellySizer, get_bankroll_from_env
+from strategies.wallet_scoring import WalletScorer
+from strategies.correlation_tracker import CorrelationTracker
+from strategies.llm_validator import LLMValidator
+
 logger = structlog.get_logger(__name__)
 
 
@@ -51,13 +60,13 @@ def _notify(title: str, body: str) -> None:
     """Best-effort push notification via Redis → notification-hub → iMessage."""
     try:
         import json as _json
-        import os
         import redis
         url = os.environ.get("REDIS_URL", "redis://redis:6379")
         r = redis.from_url(url, decode_responses=True, socket_timeout=2)
         r.publish("notifications:trading", _json.dumps({"title": title, "body": body}))
     except Exception:
         pass  # never block trading on notification failure
+
 
 # ── Data models ──────────────────────────────────────────────────────────────
 
@@ -72,8 +81,12 @@ class ScoredWallet:
     losses: int
     total_volume: float = 0.0
     last_active: float = 0.0  # epoch
-    score: float = 0.0  # composite score: win_rate * log(trades)
+    score: float = 0.0  # composite score
     event_trades: int = 0  # number of event market trades scored on
+    # Enhanced scoring fields
+    adjusted_win_rate: float = 0.0
+    pl_ratio: float = 0.0
+    open_losing: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -99,6 +112,8 @@ class CopiedPosition:
     copied_at: float  # epoch
     source_trade_id: str
     order_id: str = ""
+    category: str = ""  # market category for correlation tracking
+    wallet_win_rate: float = 0.0  # source wallet's win rate at time of copy
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -107,7 +122,7 @@ class CopiedPosition:
 # ── Strategy ─────────────────────────────────────────────────────────────────
 
 class PolymarketCopyTrader:
-    """Copy-trades top-performing Polymarket wallets."""
+    """Copy-trades top-performing Polymarket wallets with smart exits and Kelly sizing."""
 
     def __init__(
         self,
@@ -131,16 +146,16 @@ class PolymarketCopyTrader:
         # Daily risk controls — no fixed spend cap, but stop on drawdown
         self._daily_loss_limit: float = getattr(settings, "copytrade_daily_loss_limit", 50.0)
         self._daily_spend: float = 0.0
-        self._daily_wins: float = 0.0  # USDC returned from resolved winners today
+        self._daily_wins: float = 0.0
         self._daily_trades: int = 0
         self._daily_spend_reset_time: float = 0.0
-        self._halted: bool = False  # set True when daily loss limit hit
+        self._halted: bool = False
 
         # API base URLs
         self._gamma_url = settings.gamma_api_url.rstrip("/")
         self._clob_url = settings.clob_api_url.rstrip("/")
 
-        # HTTP client for public API reads (no auth needed)
+        # HTTP client for public API reads
         self._http: Optional[httpx.AsyncClient] = None
 
         # Official py-clob-client for authenticated CLOB requests
@@ -162,7 +177,7 @@ class PolymarketCopyTrader:
                     key=pk,
                     chain_id=settings.chain_id,
                     creds=creds,
-                    signature_type=0,  # EOA mode — funds in EOA wallet
+                    signature_type=0,
                 )
                 logger.info("copytrade_clob_client_initialized")
         except Exception as exc:
@@ -177,26 +192,60 @@ class PolymarketCopyTrader:
         self._last_scan_time: float = 0.0
         self._wallet_cache_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_wallets.json"
 
-        # Trade dedup — set of trade IDs already seen (persisted to disk)
+        # Trade dedup
         self._seen_trades_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_seen_trades.json"
         self._seen_trade_ids: set[str] = self._load_seen_trades()
         self._initial_seed_done: bool = len(self._seen_trade_ids) > 0
-        self._consecutive_errors: int = 0  # throttle error spam
-        self._last_trade_time: float = 0.0  # last time we copied a trade
-        self._min_trade_gap: float = 10.0  # seconds between ANY two copies (anti-spam, not throttle)
+        self._consecutive_errors: int = 0
+        self._last_trade_time: float = 0.0
+        self._min_trade_gap: float = 10.0
 
         # Open copied positions
-        self._positions: dict[str, CopiedPosition] = {}  # position_id -> CopiedPosition
+        self._positions: dict[str, CopiedPosition] = {}
 
-        # Track condition_ids we already have positions in (prevent buying both sides)
+        # Track condition_ids we already have positions in
         self._active_condition_ids: set[str] = set()
 
         # Track source-wallet sells for exit signals
-        self._source_sells: dict[str, set[str]] = {}  # wallet -> set of token_ids sold
+        self._source_sells: dict[str, set[str]] = {}
 
         # Redemption tracking
         self._last_redemption_check: float = 0.0
-        self._redemption_interval: float = 300.0  # 5 minutes
+        self._redemption_interval: float = 300.0
+
+        # ── NEW: Phase 1 — Smart Exit Engine ─────────────────────────
+        self._exit_engine = ExitEngine(
+            take_profit_1_pct=float(os.environ.get("EXIT_TP1_PCT", "0.15")),
+            take_profit_2_pct=float(os.environ.get("EXIT_TP2_PCT", "0.30")),
+            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.25")),
+            trailing_stop_pct=float(os.environ.get("EXIT_TRAILING_PCT", "0.10")),
+            time_exit_hours=float(os.environ.get("EXIT_TIME_HOURS", "48")),
+            time_exit_min_move_pct=float(os.environ.get("EXIT_TIME_MIN_MOVE", "0.05")),
+        )
+
+        # ── NEW: Phase 1 — Kelly Criterion Position Sizing ───────────
+        self._bankroll = float(os.environ.get("COPYTRADE_BANKROLL", "300"))
+        self._kelly_enabled = os.environ.get("KELLY_SIZING_ENABLED", "true").lower() in ("true", "1", "yes")
+        self._kelly_sizer = KellySizer(
+            kelly_fraction=float(os.environ.get("KELLY_FRACTION", "0.25")),
+            min_size_usd=float(os.environ.get("KELLY_MIN_SIZE", "2.0")),
+            max_bankroll_pct=float(os.environ.get("KELLY_MAX_PCT", "0.05")),
+            default_size_usd=self._size_usd,
+        )
+
+        # ── NEW: Phase 1 — Enhanced Wallet Scoring ───────────────────
+        self._wallet_scorer = WalletScorer(
+            min_closed_positions=int(os.environ.get("WALLET_MIN_CLOSED", "50")),
+        )
+
+        # ── NEW: Phase 2 — Correlation Exposure Tracker ──────────────
+        self._correlation_tracker = CorrelationTracker(
+            max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.15")),
+            bankroll=self._bankroll,
+        )
+
+        # ── NEW: Phase 3 — LLM Trade Validation ─────────────────────
+        self._llm_validator = LLMValidator()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -220,6 +269,15 @@ class PolymarketCopyTrader:
             check_interval=self._check_interval,
             daily_loss_limit=self._daily_loss_limit,
             dry_run=self._dry_run,
+            kelly_enabled=self._kelly_enabled,
+            bankroll=self._bankroll,
+            llm_validation=self._llm_validator.enabled,
+        )
+        _notify(
+            "🟢 Copy-Trader Started",
+            f"Mode: {'DRY RUN' if self._dry_run else 'LIVE'}\n"
+            f"Kelly: {'ON' if self._kelly_enabled else 'OFF'} | Bankroll: ${self._bankroll:.0f}\n"
+            f"LLM Validation: {'ON' if self._llm_validator.enabled else 'OFF'}",
         )
 
     async def stop(self) -> None:
@@ -256,7 +314,7 @@ class PolymarketCopyTrader:
                 # 2. Monitor top wallets for new trades (every tick)
                 await self._monitor_trades()
 
-                # 3. Manage positions (every other tick ≈ 60s at 30s interval)
+                # 3. Manage positions with smart exit engine (every other tick ≈ 60s)
                 if tick_count % 2 == 0:
                     await self._manage_positions()
 
@@ -299,59 +357,68 @@ class PolymarketCopyTrader:
     # ── 1. Wallet Discovery & Scoring ────────────────────────────────────
 
     async def _scan_and_score_wallets(self) -> None:
-        """Discover active wallets and score by win rate."""
+        """Discover active wallets and score by composite metrics."""
         logger.info("copytrade_wallet_scan", status="starting")
 
         try:
-            # Collect wallets from recent market activity
             wallet_stats, markets_scored = await self._collect_wallet_activity()
 
-            # Score and filter
             scored: list[ScoredWallet] = []
             for address, stats in wallet_stats.items():
                 total_resolved = stats.get("wins", 0) + stats.get("losses", 0)
 
-                # Require meaningful sample size on event markets
                 if total_resolved < max(self._min_trades, 5):
                     continue
 
-                win_rate = stats["wins"] / total_resolved if total_resolved > 0 else 0.0
+                wins = stats["wins"]
+                losses = stats["losses"]
+                win_rate = wins / total_resolved if total_resolved > 0 else 0.0
+
                 if win_rate < self._min_win_rate:
                     continue
 
-                # Composite score: win_rate * log(trades) * recency_boost
-                base_score = win_rate * math.log(total_resolved + 1)
+                # Use enhanced wallet scorer for composite score
+                analysis = self._wallet_scorer.score_from_basic_stats(
+                    address=address,
+                    wins=wins,
+                    losses=losses,
+                    volume=stats.get("volume", 0.0),
+                    last_active=stats.get("last_active", 0.0),
+                    avg_win_pnl=stats.get("avg_win_pnl", 0.0),
+                    avg_loss_pnl=stats.get("avg_loss_pnl", 0.0),
+                )
 
-                # Recency boost: 2x if active in last 7 days, 1.5x if last 30 days, 1x otherwise
-                last_active = stats.get("last_active", 0.0)
-                days_since_active = (time.time() - last_active) / 86400 if last_active > 0 else 999
-                if days_since_active < 7:
-                    recency_multiplier = 2.0
-                elif days_since_active < 30:
-                    recency_multiplier = 1.5
-                else:
-                    recency_multiplier = 1.0
+                # Skip wallets flagged by red flag filters
+                if analysis.is_filtered and total_resolved < 50:
+                    continue
 
-                composite_score = base_score * recency_multiplier
+                composite_score = analysis.composite_score
+                if composite_score <= 0:
+                    # Fallback to legacy scoring if composite is zero
+                    base_score = win_rate * math.log(total_resolved + 1)
+                    last_active = stats.get("last_active", 0.0)
+                    days_since = (time.time() - last_active) / 86400 if last_active > 0 else 999
+                    recency = 2.0 if days_since < 7 else (1.5 if days_since < 30 else 1.0)
+                    composite_score = base_score * recency
 
                 wallet = ScoredWallet(
                     address=address,
                     win_rate=win_rate,
                     total_resolved=total_resolved,
-                    wins=stats["wins"],
-                    losses=stats["losses"],
+                    wins=wins,
+                    losses=losses,
                     total_volume=stats.get("volume", 0.0),
                     last_active=stats.get("last_active", 0.0),
                     score=composite_score,
                     event_trades=total_resolved,
+                    adjusted_win_rate=analysis.adjusted_win_rate,
+                    pl_ratio=analysis.pl_ratio,
                 )
                 scored.append(wallet)
 
-            # Sort by composite score descending
             scored.sort(key=lambda w: w.score, reverse=True)
             self._scored_wallets = scored
 
-            # Persist to cache
             self._save_wallet_cache()
             self._last_scan_time = time.time()
 
@@ -369,11 +436,7 @@ class PolymarketCopyTrader:
             logger.error("copytrade_wallet_scan", status="error", error=str(exc))
 
     async def _collect_wallet_activity(self) -> tuple[dict[str, dict[str, Any]], int]:
-        """Gather wallet activity from Gamma API resolved markets.
-
-        Returns:
-            Tuple of (wallet_stats dict, count of markets scored).
-        """
+        """Gather wallet activity from Gamma API resolved markets."""
         wallet_stats: dict[str, dict[str, Any]] = {}
         assert self._http is not None
 
@@ -382,18 +445,12 @@ class PolymarketCopyTrader:
                 closed=True, active=False, limit=200
             )
 
-            logger.info(
-                "copytrade_scan_markets_fetched",
-                count=len(resolved_markets),
-            )
+            logger.info("copytrade_scan_markets_fetched", count=len(resolved_markets))
 
             markets_with_trades = 0
             markets_scored = 0
             for market in resolved_markets:
                 condition_id = market.get("conditionId", market.get("condition_id", ""))
-                question = market.get("question", "")
-
-                slug = market.get("slug", "")
                 markets_scored += 1
 
                 outcome_prices_raw = market.get("outcomePrices", "")
@@ -464,17 +521,29 @@ class PolymarketCopyTrader:
                             "losses": 0,
                             "volume": 0.0,
                             "last_active": 0.0,
+                            "win_pnls": [],
+                            "loss_pnls": [],
                         }
 
                     stats = wallet_stats[wallet_addr]
-                    stats["volume"] += price * size
+                    trade_value = price * size
+                    stats["volume"] += trade_value
                     if isinstance(ts, (int, float)) and ts > stats["last_active"]:
                         stats["last_active"] = ts
 
                     if side == "BUY" and trade_token == winning_token_id:
                         stats["wins"] += 1
+                        stats["win_pnls"].append(trade_value)
                     elif side == "BUY" and trade_token != winning_token_id:
                         stats["losses"] += 1
+                        stats["loss_pnls"].append(trade_value)
+
+            # Calculate avg P/L for each wallet
+            for addr, stats in wallet_stats.items():
+                win_pnls = stats.pop("win_pnls", [])
+                loss_pnls = stats.pop("loss_pnls", [])
+                stats["avg_win_pnl"] = sum(win_pnls) / len(win_pnls) if win_pnls else 0
+                stats["avg_loss_pnl"] = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
 
         except Exception as exc:
             logger.error("copytrade_collect_activity_error", error=str(exc))
@@ -489,7 +558,6 @@ class PolymarketCopyTrader:
     async def _fetch_gamma_markets(
         self, closed: bool = False, active: bool = True, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Fetch markets from Gamma API, ordered by most recently closed."""
         assert self._http is not None
         params: dict[str, Any] = {
             "limit": limit,
@@ -505,7 +573,6 @@ class PolymarketCopyTrader:
     async def _fetch_market_trades(
         self, market_id: str, limit: int = 100
     ) -> list[dict[str, Any]]:
-        """Fetch trades from the public Data API (no auth needed)."""
         assert self._http is not None
         try:
             params = {"market": market_id, "limit": limit}
@@ -521,7 +588,6 @@ class PolymarketCopyTrader:
     # ── Wallet cache persistence ─────────────────────────────────────────
 
     def _load_wallet_cache(self) -> None:
-        """Load scored wallets from disk cache."""
         if not self._wallet_cache_path.exists():
             return
         try:
@@ -537,7 +603,6 @@ class PolymarketCopyTrader:
             logger.warning("copytrade_wallet_cache_load_error", error=str(exc))
 
     def _save_wallet_cache(self) -> None:
-        """Persist scored wallets to disk cache."""
         try:
             self._wallet_cache_path.parent.mkdir(parents=True, exist_ok=True)
             data = {
@@ -546,16 +611,10 @@ class PolymarketCopyTrader:
                 "count": len(self._scored_wallets),
             }
             self._wallet_cache_path.write_text(json.dumps(data, indent=2))
-            logger.info(
-                "copytrade_wallet_cache_saved",
-                wallets=len(self._scored_wallets),
-                path=str(self._wallet_cache_path),
-            )
         except Exception as exc:
             logger.warning("copytrade_wallet_cache_save_error", error=str(exc))
 
     def _load_seen_trades(self) -> set[str]:
-        """Load seen trade IDs from disk."""
         if not hasattr(self, '_seen_trades_path') or not self._seen_trades_path.exists():
             return set()
         try:
@@ -565,7 +624,6 @@ class PolymarketCopyTrader:
             return set()
 
     def _save_seen_trades(self) -> None:
-        """Persist seen trade IDs to disk."""
         try:
             self._seen_trades_path.parent.mkdir(parents=True, exist_ok=True)
             ids = list(self._seen_trade_ids)[-5000:]
@@ -577,19 +635,11 @@ class PolymarketCopyTrader:
 
     @staticmethod
     def _is_crypto_updown_market(title: str) -> bool:
-        """Return True if this is a crypto Up/Down market (5m, 15m, hourly, 4h).
-
-        These are essentially coin flips with no copyable edge.
-        The wallets we track often buy BOTH sides (market making),
-        so copying them means we get only one side = random outcome.
-        """
         if not title:
             return False
         title_lower = title.lower()
-        # All crypto up/down markets contain "up or down" in the title
         if "up or down" in title_lower:
             return True
-        # Also catch slug-based patterns
         if "updown" in title_lower:
             return True
         return False
@@ -620,11 +670,11 @@ class PolymarketCopyTrader:
             logger.info("copytrade_seeded", seen_trades=len(self._seen_trade_ids))
             return
 
-        # Anti-spam: brief gap between copies to avoid rapid-fire in a single tick
+        # Anti-spam gap
         if time.time() - self._last_trade_time < self._min_trade_gap:
             return
 
-        # Circuit breaker: halt if daily net losses exceed limit
+        # Circuit breaker
         if self._halted:
             return
         daily_net = self._daily_wins - self._daily_spend
@@ -638,7 +688,7 @@ class PolymarketCopyTrader:
                     trades=self._daily_trades,
                 )
                 _notify(
-                    "\U0001f6d1 Trading Halted",
+                    "🛑 Trading Halted",
                     f"Daily net loss hit ${abs(daily_net):.2f} (limit: ${self._daily_loss_limit:.0f})\n"
                     f"Trades today: {self._daily_trades} | Resumes at midnight UTC",
                 )
@@ -661,7 +711,6 @@ class PolymarketCopyTrader:
                     if not trade_id or trade_id in self._seen_trade_ids:
                         continue
 
-                    # Mark as seen immediately
                     self._seen_trade_ids.add(trade_id)
                     self._save_seen_trades()
 
@@ -672,20 +721,18 @@ class PolymarketCopyTrader:
                     market = trade.get("conditionId", trade.get("market", ""))
                     market_question = trade.get("title", trade.get("market_question", trade.get("question", "")))
 
-                    # Only copy BUY trades
                     if side != "BUY":
-                        # Track sells for exit signals
                         if side == "SELL":
                             if wallet.address not in self._source_sells:
                                 self._source_sells[wallet.address] = set()
                             self._source_sells[wallet.address].add(token_id)
                         continue
 
-                    # Only copy trades that happened in the last 10 minutes
+                    # Only copy trades from last 10 minutes
                     trade_ts = trade.get("timestamp", 0)
                     if isinstance(trade_ts, (int, float)) and trade_ts > 0:
                         age_seconds = time.time() - trade_ts
-                        if age_seconds > 600:  # older than 10 min, skip
+                        if age_seconds > 600:
                             continue
 
                     logger.info(
@@ -718,7 +765,6 @@ class PolymarketCopyTrader:
                 )
 
     async def _fetch_wallet_trades(self, wallet_address: str) -> list[dict[str, Any]]:
-        """Fetch recent trades for a specific wallet from the Data API."""
         assert self._http is not None
         try:
             resp = await self._http.get(
@@ -749,19 +795,9 @@ class PolymarketCopyTrader:
         market_question: str,
         source_trade_id: str,
     ) -> None:
-        """Copy a BUY trade from a top wallet.
+        """Copy a BUY trade with Kelly sizing, LLM validation, and correlation checks."""
 
-        Guards:
-        - Skip tiny source trades (noise/test)
-        - Skip markets priced near 50/50 (no clear edge)
-        - Max positions check
-        - No crypto Up/Down markets (already filtered in _monitor_trades)
-        - No buying both sides of the same market (condition_id dedup)
-        - Daily spend limit
-        - Skip basically-resolved markets (>0.98 or <0.02)
-        """
-
-        # Skip tiny source trades (likely noise/test)
+        # Skip tiny source trades (noise/test)
         source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
         if source_usdc < 5.0:
             logger.debug("copytrade_skip_small_trade", market=market_question[:40], usdc=source_usdc)
@@ -771,22 +807,18 @@ class PolymarketCopyTrader:
         if len(self._positions) >= self._max_positions:
             return
 
-        # Guard: circuit breaker on daily losses
+        # Guard: circuit breaker
         daily_net = self._daily_wins - self._daily_spend
         if daily_net < -self._daily_loss_limit:
             return
 
-        # Guard: skip basically-resolved markets
+        # Guard: basically-resolved markets
         if price > 0.98 or price < 0.02:
             return
 
-        # Guard: already have position in this MARKET (either side)
-        # This prevents buying both Up and Down on the same event
+        # Guard: already have position in this market
         if market and market in self._active_condition_ids:
-            logger.debug(
-                "copytrade_skip_same_market",
-                market=market_question[:40] if market_question else market[:16],
-            )
+            logger.debug("copytrade_skip_same_market", market=market_question[:40] if market_question else market[:16])
             return
 
         # Guard: already have position in this exact token
@@ -794,27 +826,81 @@ class PolymarketCopyTrader:
             if pos.token_id == token_id:
                 return
 
+        # Skip crypto Up/Down markets
+        if self._is_crypto_updown_market(market_question):
+            return
+
         if not market_question:
             market_question = market
 
         if self._clob_client is None:
             return
 
+        # ── NEW: Correlation exposure check ──────────────────────────
+        # Calculate size first (needed for correlation check)
+        if self._kelly_enabled:
+            size_usd = self._kelly_sizer.calculate_position_size(
+                wallet_win_rate=wallet.win_rate,
+                market_price=price,
+                bankroll=self._bankroll,
+            )
+        else:
+            size_usd = self._size_usd
+
+        would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
+            market_question=market_question,
+            size_usd=size_usd,
+        )
+        if would_exceed:
+            logger.info(
+                "copytrade_skip_correlation_limit",
+                category=category,
+                current_exposure=round(current_exposure, 2),
+                limit=round(self._correlation_tracker.get_category_limit(), 2),
+                market=market_question[:40],
+            )
+            return
+
+        # ── NEW: LLM Trade Validation ────────────────────────────────
+        if self._llm_validator.enabled:
+            validation = await self._llm_validator.validate_trade(
+                market_question=market_question,
+                current_price=price,
+                trade_direction="BUY",
+                wallet_win_rate=wallet.win_rate,
+            )
+            if not validation.approved:
+                logger.info(
+                    "copytrade_llm_rejected",
+                    market=market_question[:40],
+                    price=price,
+                    llm_prob=validation.llm_probability,
+                    ev=round(validation.expected_value, 3),
+                    reasoning=validation.reasoning[:80],
+                )
+                _notify(
+                    "🤖 LLM Rejected Trade",
+                    f"{market_question[:45]}\n"
+                    f"Price: {price:.2f} | LLM prob: {validation.llm_probability:.2f}\n"
+                    f"Reason: {validation.reasoning[:60]}",
+                )
+                return
+
         loop = asyncio.get_event_loop()
 
         # Use the wallet's trade price directly
-        buy_price = round(round(price / 0.01) * 0.01, 2)  # round to nearest cent
+        buy_price = round(round(price / 0.01) * 0.01, 2)
         if buy_price >= 1.0:
             buy_price = 0.99
 
-        size_shares = self._size_usd / buy_price
+        size_shares = size_usd / buy_price
         if size_shares < 5:
             size_shares = 5.0
         size_shares = round(size_shares, 2)
 
         position_id = f"ct-{uuid.uuid4().hex[:12]}"
 
-        # Place GTC limit order
+        # Place order
         order_id = ""
         if self._dry_run:
             order_id = f"paper-{position_id}"
@@ -824,9 +910,11 @@ class PolymarketCopyTrader:
                 wallet=wallet.address[:10] + "...",
                 market=market_question[:40],
                 buy_price=buy_price,
-                size_usd=self._size_usd,
+                size_usd=round(size_usd, 2),
                 size_shares=size_shares,
                 win_rate=round(wallet.win_rate, 3),
+                category=category,
+                kelly=self._kelly_enabled,
             )
         else:
             try:
@@ -847,7 +935,6 @@ class PolymarketCopyTrader:
                     lambda: self._clob_client.create_and_post_order(order_args, options),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
-                success = order_resp.get("success", False) if isinstance(order_resp, dict) else False
                 status = order_resp.get("status", "") if isinstance(order_resp, dict) else ""
 
                 logger.info(
@@ -857,16 +944,17 @@ class PolymarketCopyTrader:
                     market=market_question[:40],
                     buy_price=buy_price,
                     wallet_price=price,
-                    size_usd=self._size_usd,
+                    size_usd=round(size_usd, 2),
                     size_shares=size_shares,
                     order_id=order_id,
                     status=status,
                     win_rate=round(wallet.win_rate, 3),
+                    category=category,
+                    kelly=self._kelly_enabled,
                 )
 
-                # Update spend tracking
                 self._last_trade_time = time.time()
-                self._daily_spend += self._size_usd
+                self._daily_spend += size_usd
                 self._daily_trades += 1
 
             except Exception as exc:
@@ -884,15 +972,23 @@ class PolymarketCopyTrader:
             condition_id=market,
             side="BUY",
             entry_price=price,
-            size_usd=self._size_usd,
+            size_usd=size_usd,
             size_shares=size_shares,
             copied_at=time.time(),
             source_trade_id=source_trade_id,
             order_id=order_id,
+            category=category,
+            wallet_win_rate=wallet.win_rate,
         )
         self._positions[position_id] = position
 
-        # Track condition_id to prevent buying the other side
+        # Register with exit engine
+        self._exit_engine.register_position(position_id, price, time.time())
+
+        # Register with correlation tracker
+        self._correlation_tracker.add_position(position_id, market_question, size_usd)
+
+        # Track condition_id
         if market:
             self._active_condition_ids.add(market)
 
@@ -910,14 +1006,23 @@ class PolymarketCopyTrader:
         )
         self._pnl_tracker.record_trade(pnl_trade)
 
-    # ── 4. Position Management ───────────────────────────────────────────
+        # Send notification
+        _notify(
+            "📈 Copy Trade",
+            f"{market_question[:45]}\n"
+            f"Price: {price:.2f} | Size: ${size_usd:.2f}\n"
+            f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
+            f"Category: {category}",
+        )
+
+    # ── 4. Position Management — Smart Exit Engine ───────────────────────
 
     async def _manage_positions(self) -> None:
-        """Check all open copied positions for exit conditions."""
+        """Check all positions using the smart exit engine."""
         if not self._positions:
             return
 
-        positions_to_close: list[tuple[str, str]] = []  # (position_id, reason)
+        exits_to_execute: list[tuple[str, ExitSignal]] = []
 
         for pos_id, pos in self._positions.items():
             try:
@@ -933,75 +1038,78 @@ class PolymarketCopyTrader:
                 if current_price <= 0:
                     continue
 
-                # Calculate PnL
-                pnl_pct = (current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
-
-                # Exit condition: take profit > +15%
-                if pnl_pct >= 0.15:
-                    positions_to_close.append((pos_id, "take_profit"))
-                    continue
-
-                # Exit condition: stop loss > -20%
-                if pnl_pct <= -0.20:
-                    positions_to_close.append((pos_id, "stop_loss"))
-                    continue
-
-                # Exit condition: market resolved (price → 0 or 1)
+                # Check market resolved (price → 0 or 1)
                 if current_price >= 0.99 or current_price <= 0.01:
-                    positions_to_close.append((pos_id, "market_resolved"))
+                    exits_to_execute.append((pos_id, ExitSignal(
+                        position_id=pos_id,
+                        reason="market_resolved",
+                        sell_fraction=1.0,
+                        current_price=current_price,
+                        entry_price=pos.entry_price,
+                        pnl_pct=(current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0,
+                        hold_time_hours=(time.time() - pos.copied_at) / 3600,
+                    )))
                     continue
 
-                # Exit condition: source wallet sold this token
+                # Check source wallet sold
                 wallet_sells = self._source_sells.get(pos.source_wallet, set())
                 if pos.token_id in wallet_sells:
-                    positions_to_close.append((pos_id, "source_wallet_exit"))
+                    exits_to_execute.append((pos_id, ExitSignal(
+                        position_id=pos_id,
+                        reason="source_wallet_exit",
+                        sell_fraction=1.0,
+                        current_price=current_price,
+                        entry_price=pos.entry_price,
+                        pnl_pct=(current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0,
+                        hold_time_hours=(time.time() - pos.copied_at) / 3600,
+                    )))
                     continue
 
+                # Smart exit engine evaluation
+                signal = self._exit_engine.evaluate(pos_id, current_price)
+                if signal:
+                    exits_to_execute.append((pos_id, signal))
+
             except Exception as exc:
-                logger.error(
-                    "copytrade_position_check_error",
-                    position_id=pos_id,
-                    error=str(exc),
-                )
+                logger.error("copytrade_position_check_error", position_id=pos_id, error=str(exc))
 
         # Execute exits
-        for pos_id, reason in positions_to_close:
-            await self._exit_position(pos_id, reason)
+        for pos_id, signal in exits_to_execute:
+            await self._exit_position(pos_id, signal)
 
-    async def _exit_position(self, position_id: str, reason: str) -> None:
-        """Close a copied position."""
+    async def _exit_position(self, position_id: str, signal: ExitSignal) -> None:
+        """Close a copied position (full or partial)."""
         pos = self._positions.get(position_id)
         if not pos:
             return
 
-        # Get current price for PnL calculation
-        try:
-            current_price = await self._client.get_midpoint(pos.token_id)
-        except Exception:
-            current_price = pos.entry_price  # fallback
-
-        pnl_pct = (current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0
-        pnl_usd = pnl_pct * pos.size_usd
+        sell_shares = round(pos.size_shares * signal.sell_fraction, 2)
+        sell_usd = pos.size_usd * signal.sell_fraction
+        current_price = signal.current_price
+        pnl_pct = signal.pnl_pct
+        pnl_usd = pnl_pct * sell_usd
+        hold_hours = signal.hold_time_hours
 
         if self._dry_run:
             logger.info(
                 "copytrade_position_exit",
                 mode="dry_run",
                 position_id=position_id,
-                reason=reason,
+                reason=signal.reason,
                 entry_price=pos.entry_price,
                 exit_price=current_price,
                 pnl_pct=round(pnl_pct * 100, 2),
                 pnl_usd=round(pnl_usd, 4),
-                hold_time_minutes=round((time.time() - pos.copied_at) / 60, 1),
+                sell_fraction=signal.sell_fraction,
+                hold_time_hours=round(hold_hours, 1),
+                peak_price=round(signal.peak_price, 3),
             )
         else:
-            # Place sell order
             try:
                 result = await self._client.place_order(
                     token_id=pos.token_id,
                     price=current_price,
-                    size=pos.size_shares,
+                    size=sell_shares,
                     side=SIDE_SELL,
                     order_type=ORDER_TYPE_GTC,
                 )
@@ -1009,21 +1117,17 @@ class PolymarketCopyTrader:
                     "copytrade_position_exit",
                     mode="live",
                     position_id=position_id,
-                    reason=reason,
+                    reason=signal.reason,
                     entry_price=pos.entry_price,
                     exit_price=current_price,
                     pnl_pct=round(pnl_pct * 100, 2),
                     pnl_usd=round(pnl_usd, 4),
-                    hold_time_minutes=round((time.time() - pos.copied_at) / 60, 1),
+                    sell_fraction=signal.sell_fraction,
+                    hold_time_hours=round(hold_hours, 1),
                     order_id=result.get("orderID", ""),
                 )
             except Exception as exc:
-                logger.error(
-                    "copytrade_exit_order_error",
-                    position_id=position_id,
-                    reason=reason,
-                    error=str(exc),
-                )
+                logger.error("copytrade_exit_order_error", position_id=position_id, reason=signal.reason, error=str(exc))
                 return
 
         # Record sell in PnL tracker
@@ -1034,48 +1138,47 @@ class PolymarketCopyTrader:
             token_id=pos.token_id,
             side="SELL",
             price=current_price,
-            size=pos.size_shares,
+            size=sell_shares,
             fee=0.0,
             strategy="copytrade",
             pnl=pnl_usd,
         )
         self._pnl_tracker.record_trade(sell_trade)
 
-        # Track daily wins for circuit breaker
+        # Track daily wins
         if pnl_usd > 0:
-            self._daily_wins += pos.size_usd + pnl_usd  # total return, not just profit
+            self._daily_wins += sell_usd + pnl_usd
 
-        # Notify on exit
-        emoji = "\u2705" if pnl_usd >= 0 else "\u274c"
+        # Send iMessage notification with full exit details
+        emoji = "✅" if pnl_usd >= 0 else "❌"
         _notify(
-            f"{emoji} Position Exit",
+            f"{emoji} Position Exit — {signal.reason}",
             f"{pos.market_question[:45]}\n"
-            f"Entry: {pos.entry_price:.2f} > Exit: {current_price:.2f} | "
+            f"Entry: {pos.entry_price:.2f} → Exit: {current_price:.2f}\n"
             f"P&L: ${pnl_usd:+.2f} ({pnl_pct*100:+.1f}%)\n"
-            f"Reason: {reason} | Hold: {(time.time() - pos.copied_at)/60:.0f}min",
+            f"Hold: {hold_hours:.1f}h | Sold: {signal.sell_fraction*100:.0f}%\n"
+            f"Peak: {signal.peak_price:.2f}" if signal.peak_price else "",
         )
 
-        # Remove from tracked positions
-        del self._positions[position_id]
-
-        # Remove condition_id from active set
-        self._active_condition_ids.discard(pos.condition_id)
-
-        # Clean up source sell tracking for this token
-        wallet_sells = self._source_sells.get(pos.source_wallet, set())
-        wallet_sells.discard(pos.token_id)
+        # Handle full vs partial exit
+        if signal.sell_fraction >= 1.0:
+            # Full exit — remove position entirely
+            del self._positions[position_id]
+            self._active_condition_ids.discard(pos.condition_id)
+            self._exit_engine.unregister_position(position_id)
+            self._correlation_tracker.remove_position(position_id)
+            wallet_sells = self._source_sells.get(pos.source_wallet, set())
+            wallet_sells.discard(pos.token_id)
+        else:
+            # Partial exit — reduce position size
+            pos.size_shares -= sell_shares
+            pos.size_usd -= sell_usd
 
     # ── 5. Position Redemption ───────────────────────────────────────────
 
     async def _check_and_redeem_positions(self) -> None:
-        """Check Polymarket Data API for redeemable positions and redeem them.
-
-        Resolved winning positions hold conditional tokens that can be redeemed
-        for USDC.e. This calls the ConditionalTokens contract's redeemPositions()
-        function to convert winning shares back to USDC.e.
-        """
+        """Check for redeemable positions."""
         assert self._http is not None
-
         try:
             wallet = self._client.wallet_address
             if not wallet:
@@ -1099,15 +1202,9 @@ class PolymarketCopyTrader:
                 return
 
             total_value = sum(float(p.get("currentValue", 0)) for p in redeemable)
-            logger.info(
-                "copytrade_redeemable_found",
-                count=len(redeemable),
-                total_value=round(total_value, 2),
-            )
+            logger.info("copytrade_redeemable_found", count=len(redeemable), total_value=round(total_value, 2))
 
-            # Redeem each position via py-clob-client or direct contract call
             if self._clob_client is None:
-                logger.warning("copytrade_redeem_no_client")
                 return
 
             for pos in redeemable:
@@ -1118,25 +1215,13 @@ class PolymarketCopyTrader:
                 if not condition_id:
                     continue
 
-                try:
-                    # The CLOB client doesn't have a native redeem method.
-                    # Redemption requires calling ConditionalTokens.redeemPositions()
-                    # on Polygon. For now, log what needs redemption so the user
-                    # can redeem via the Polymarket website.
-                    # TODO: Add web3 contract call for automatic redemption
-                    logger.info(
-                        "copytrade_position_redeemable",
-                        title=title[:50],
-                        condition_id=condition_id[:20] + "...",
-                        value=round(value, 2),
-                        action="needs_manual_redemption",
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "copytrade_redeem_error",
-                        title=title[:30],
-                        error=str(exc),
-                    )
+                logger.info(
+                    "copytrade_position_redeemable",
+                    title=title[:50],
+                    condition_id=condition_id[:20] + "...",
+                    value=round(value, 2),
+                    action="needs_manual_redemption",
+                )
 
         except Exception as exc:
             logger.error("copytrade_redemption_check_error", error=str(exc))
@@ -1154,8 +1239,9 @@ class PolymarketCopyTrader:
                 {
                     "address": w.address[:10] + "..." + w.address[-4:],
                     "win_rate": round(w.win_rate, 3),
+                    "adjusted_win_rate": round(w.adjusted_win_rate, 3),
+                    "pl_ratio": round(w.pl_ratio, 2),
                     "resolved_trades": w.total_resolved,
-                    "event_trades": w.event_trades,
                     "score": round(w.score, 3),
                 }
                 for w in self._scored_wallets[:10]
@@ -1167,9 +1253,10 @@ class PolymarketCopyTrader:
                     "token_id": p.token_id[:16] + "...",
                     "market": p.market_question[:50],
                     "entry_price": p.entry_price,
-                    "size_usd": p.size_usd,
+                    "size_usd": round(p.size_usd, 2),
                     "source_wallet": p.source_wallet[:10] + "...",
                     "age_minutes": round((time.time() - p.copied_at) / 60, 1),
+                    "category": p.category,
                 }
                 for p in self._positions.values()
             ],
@@ -1182,6 +1269,11 @@ class PolymarketCopyTrader:
             "daily_loss_limit": self._daily_loss_limit,
             "halted": self._halted,
             "active_markets": len(self._active_condition_ids),
+            "kelly_enabled": self._kelly_enabled,
+            "bankroll": self._bankroll,
+            "llm_validation_enabled": self._llm_validator.enabled,
+            "correlation_exposure": self._correlation_tracker.get_summary(),
+            "exit_engine_tracked": self._exit_engine.active_count(),
             "config": {
                 "size_usd": self._size_usd,
                 "max_positions": self._max_positions,

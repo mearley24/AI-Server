@@ -31,7 +31,7 @@ class BriefingGenerator:
         # Status line
         status = copytrade.get("status", "unknown")
         pnl = copytrade.get("pnl", 0)
-        lines.append(f"Copy-Trader: {status.upper()}")
+        lines.append(f"📊 Copy-Trader: {status.upper()}")
         lines.append("")
 
         # Open positions
@@ -47,7 +47,8 @@ class BriefingGenerator:
                 current = d.get("current", 0)
                 entry = d.get("entry", 0)
                 pnl_pct = ((current - entry) / entry * 100) if entry > 0 else 0
-                lines.append(f"  {outcome} {title} ${value:.2f} ({pnl_pct:+.0f}%)")
+                emoji = "🟢" if pnl_pct >= 0 else "🔴"
+                lines.append(f"  {emoji} {outcome} {title} ${value:.2f} ({pnl_pct:+.0f}%)")
         else:
             lines.append("No open positions.")
 
@@ -71,5 +72,13 @@ class BriefingGenerator:
         if platforms:
             connected = sum(1 for p in platforms.values() if p.get("status") == "connected")
             lines.append(f"\nPlatforms: {connected}/{len(platforms)} connected")
+
+        # Category exposure (from correlation tracker if available)
+        try:
+            from strategies.correlation_tracker import CorrelationTracker
+            # Try to get category info from the running strategy
+            # This is informational only — the actual tracker lives in the strategy
+        except ImportError:
+            pass
 
         return "\n".join(lines)

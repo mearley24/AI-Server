@@ -403,6 +403,58 @@ async def lifespan(app: FastAPI):
         )
         platform_strategies.append(("copytrade", copytrade))
 
+    # Phase 2: WebSocket manager for real-time price updates
+    ws_manager = None
+    if "polymarket" in enabled_platforms:
+        try:
+            from strategies.ws_manager import WebSocketManager
+            ws_manager = WebSocketManager(
+                api_key=settings.poly_builder_api_key,
+                api_secret=settings.poly_builder_api_secret,
+                api_passphrase=settings.poly_builder_api_passphrase,
+            )
+            platform_strategies.append(("ws_manager", ws_manager))
+            log.info("ws_manager_initialized", msg="WebSocket manager for real-time price updates")
+        except Exception as exc:
+            log.warning("ws_manager_init_failed", error=str(exc))
+
+    # Phase 3: Liquidity provider for passive market-making rewards
+    lp_provider = None
+    lp_enabled = os.environ.get("LP_ENABLED", "false").lower() in ("true", "1", "yes")
+    if lp_enabled and settings.poly_private_key:
+        try:
+            from strategies.liquidity_provider import LiquidityProvider
+            from py_clob_client.client import ClobClient
+            from py_clob_client.clob_types import ApiCreds
+
+            pk = settings.poly_private_key
+            if not pk.startswith("0x"):
+                pk = f"0x{pk}"
+            lp_creds = ApiCreds(
+                api_key=settings.poly_builder_api_key,
+                api_secret=settings.poly_builder_api_secret,
+                api_passphrase=settings.poly_builder_api_passphrase,
+            )
+            lp_clob = ClobClient(
+                settings.clob_api_url,
+                key=pk,
+                chain_id=settings.chain_id,
+                creds=lp_creds,
+                signature_type=0,
+            )
+            lp_provider = LiquidityProvider(
+                clob_client=lp_clob,
+                gamma_api_url=settings.gamma_api_url,
+                max_markets=int(os.environ.get("LP_MAX_MARKETS", "5")),
+                spread_cents=float(os.environ.get("LP_SPREAD_CENTS", "2")),
+                order_size_usd=float(os.environ.get("LP_ORDER_SIZE", "10")),
+                bankroll=float(os.environ.get("COPYTRADE_BANKROLL", "300")),
+            )
+            platform_strategies.append(("liquidity_provider", lp_provider))
+            log.info("liquidity_provider_initialized")
+        except Exception as exc:
+            log.warning("liquidity_provider_init_failed", error=str(exc))
+
     # Polymarket position redeemer — automatically redeems resolved winning positions
     redeemer = None
     if settings.poly_private_key:
