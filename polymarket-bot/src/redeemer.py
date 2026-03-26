@@ -7,6 +7,11 @@ Sends individual redeemPositions transactions directly from the EOA wallet.
 (Multicall3 doesn't work because CTF redeems for msg.sender, and Multicall3
 changes msg.sender to its own address.)
 
+Performs on-chain verification of:
+  1. CTF token balance (ERC1155)
+  2. Condition resolution status (payoutDenominator > 0)
+  3. Whether user holds the winning outcome
+
 Works with EOA wallets (signature_type=0).
 """
 
@@ -57,6 +62,47 @@ ERC20_BALANCE_ABI = [
     }
 ]
 
+# ERC1155 balanceOf for CTF tokens
+ERC1155_BALANCE_ABI = [
+    {
+        "constant": True,
+        "inputs": [
+            {"name": "account", "type": "address"},
+            {"name": "id", "type": "uint256"},
+        ],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+# On-chain resolution status ABIs
+PAYOUT_NUMERATORS_ABI = [
+    {
+        "constant": True,
+        "inputs": [
+            {"name": "", "type": "bytes32"},
+            {"name": "", "type": "uint256"},
+        ],
+        "name": "payoutNumerators",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+PAYOUT_DENOMINATOR_ABI = [
+    {
+        "constant": True,
+        "inputs": [{"name": "", "type": "bytes32"}],
+        "name": "payoutDenominator",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
 # Zero bytes32 — always used as parentCollectionId for Polymarket top-level positions
 ZERO_BYTES32 = b"\x00" * 32
 
@@ -75,7 +121,9 @@ class PolymarketRedeemer:
     """Redeems resolved winning Polymarket positions for USDC.e.
 
     Sends individual redeemPositions calls directly from the wallet.
-    Monitors gas price and MATIC balance to ensure transactions succeed.
+    Monitors gas price and POL balance to ensure transactions succeed.
+    Uses on-chain verification (payoutDenominator, payoutNumerators, ERC1155 balance)
+    instead of relying solely on Data API fields.
     """
 
     def __init__(
@@ -96,10 +144,11 @@ class PolymarketRedeemer:
         self._account = self._w3.eth.account.from_key(self._private_key)
         self._wallet_address = self._account.address
 
-        # Contracts
+        # Contracts - include all needed ABIs
+        ctf_abi = REDEEM_ABI + ERC1155_BALANCE_ABI + PAYOUT_NUMERATORS_ABI + PAYOUT_DENOMINATOR_ABI
         self._ctf = self._w3.eth.contract(
             address=Web3.to_checksum_address(CTF_ADDRESS),
-            abi=REDEEM_ABI,
+            abi=ctf_abi,
         )
         self._usdc = self._w3.eth.contract(
             address=Web3.to_checksum_address(USDC_E_ADDRESS),
@@ -169,8 +218,46 @@ class PolymarketRedeemer:
             except asyncio.CancelledError:
                 break
 
+    def _get_onchain_resolution(self, condition_id_hex: str) -> dict:
+        """Check on-chain resolution status for a condition.
+
+        Returns dict with:
+            resolved: bool - whether the condition has been resolved
+            payout_numerators: list[int] - payout for each outcome slot
+            payout_denominator: int - denominator for payout fractions
+        """
+        cid_bytes = (
+            bytes.fromhex(condition_id_hex[2:])
+            if condition_id_hex.startswith("0x")
+            else bytes.fromhex(condition_id_hex)
+        )
+        try:
+            denom = self._ctf.functions.payoutDenominator(cid_bytes).call()
+            p0 = self._ctf.functions.payoutNumerators(cid_bytes, 0).call()
+            p1 = self._ctf.functions.payoutNumerators(cid_bytes, 1).call()
+            return {
+                "resolved": denom > 0,
+                "payout_numerators": [p0, p1],
+                "payout_denominator": denom,
+            }
+        except Exception as e:
+            logger.warning("redeemer_resolution_check_error", condition_id=condition_id_hex[:20], error=str(e)[:80])
+            return {"resolved": False, "payout_numerators": [0, 0], "payout_denominator": 0}
+
+    def _get_ctf_token_balance(self, token_id: str) -> int:
+        """Get on-chain ERC1155 balance for a CTF token."""
+        try:
+            return self._ctf.functions.balanceOf(
+                Web3.to_checksum_address(self._wallet_address),
+                int(token_id),
+            ).call()
+        except Exception:
+            return 0
+
     async def redeem_all_winning(self) -> dict[str, Any]:
         """Find and redeem all resolved winning positions one by one.
+
+        Uses on-chain verification instead of relying solely on Data API fields.
 
         Returns summary of redemption attempt.
         """
@@ -199,25 +286,75 @@ class PolymarketRedeemer:
             logger.error("redeemer_fetch_positions_error", error=str(exc))
             return {"error": str(exc)}
 
-        # 4. Filter to redeemable winning positions
+        logger.info("redeemer_fetched_positions", count=len(positions))
+
+        # 4. Verify each position on-chain and find redeemable winners
         redeemable = []
+        pending_count = 0
+        loser_count = 0
+
         for pos in positions:
             condition_id = pos.get("conditionId", "")
-            if not condition_id:
+            asset = pos.get("asset", "")
+            outcome_index = pos.get("outcomeIndex", -1)
+
+            if not condition_id or not asset:
                 continue
             if condition_id in self._redeemed_conditions:
                 continue
-            if not pos.get("redeemable", False):
+
+            # On-chain token balance check
+            token_balance_raw = await asyncio.get_event_loop().run_in_executor(
+                None, self._get_ctf_token_balance, asset
+            )
+            if token_balance_raw == 0:
                 continue
-            cur_price = float(pos.get("curPrice", 0))
-            current_value = float(pos.get("currentValue", 0))
-            if cur_price != 1.0 or current_value <= 0:
+
+            # On-chain resolution check
+            resolution = await asyncio.get_event_loop().run_in_executor(
+                None, self._get_onchain_resolution, condition_id
+            )
+
+            if not resolution["resolved"]:
+                pending_count += 1
+                logger.debug(
+                    "redeemer_position_pending",
+                    title=pos.get("title", "")[:50],
+                    balance=token_balance_raw / 1e6,
+                )
                 continue
-            redeemable.append(pos)
+
+            # Check if user holds the winning outcome
+            payout_nums = resolution["payout_numerators"]
+            payout_denom = resolution["payout_denominator"]
+            user_payout = payout_nums[outcome_index] if 0 <= outcome_index < len(payout_nums) else 0
+
+            if user_payout == 0:
+                loser_count += 1
+                logger.debug(
+                    "redeemer_position_loser",
+                    title=pos.get("title", "")[:50],
+                    outcome_index=outcome_index,
+                    payouts=payout_nums,
+                )
+                continue
+
+            # This is a winning position with on-chain balance
+            expected_usdc = (token_balance_raw * user_payout) / (payout_denom * 1e6) if payout_denom > 0 else 0
+            redeemable.append({
+                **pos,
+                "_expected_usdc": expected_usdc,
+                "_token_balance": token_balance_raw / 1e6,
+            })
 
         if not redeemable:
-            logger.debug("redeemer_nothing_to_redeem")
-            return {"redeemed": 0, "total_value": 0}
+            logger.debug(
+                "redeemer_nothing_to_redeem",
+                total_positions=len(positions),
+                pending=pending_count,
+                losers=loser_count,
+            )
+            return {"redeemed": 0, "total_value": 0, "pending": pending_count, "losers": loser_count}
 
         # Deduplicate by condition_id
         seen_cids: set[str] = set()
@@ -228,7 +365,7 @@ class PolymarketRedeemer:
                 seen_cids.add(cid)
                 unique.append(pos)
 
-        total_value = sum(float(p.get("currentValue", 0)) for p in redeemable)
+        total_value = sum(p.get("_expected_usdc", 0) for p in unique)
         logger.info(
             "redeemer_found_redeemable",
             conditions=len(unique),
@@ -242,7 +379,7 @@ class PolymarketRedeemer:
         for pos in unique:
             condition_id = pos["conditionId"]
             title = pos.get("title", "")[:50]
-            value = float(pos.get("currentValue", 0))
+            value = pos.get("_expected_usdc", 0)
 
             try:
                 tx_hash = await self._redeem_single(condition_id, gas_price)
