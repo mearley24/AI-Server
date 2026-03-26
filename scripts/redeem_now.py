@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""One-shot script to redeem ALL winning Polymarket positions via Multicall3.
+"""One-shot script to redeem ALL winning Polymarket positions.
+
+Sends individual redeemPositions transactions (not Multicall3, because
+the CTF contract redeems for msg.sender and Multicall3 changes msg.sender).
 
 Run on Bob:
     cd ~/AI-Server
-    pip3 install web3 httpx
+    pip3 install --break-system-packages web3 httpx
     python3 scripts/redeem_now.py
-
-Reads POLY_PRIVATE_KEY from .env file in the repo root.
 """
 
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 # Load .env
@@ -35,10 +37,8 @@ import httpx
 from web3 import Web3
 from web3.middleware import ExtraDataToPOAMiddleware
 
-# --- Config ---
 USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
-MC3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
 ZERO = b"\x00" * 32
 RPCS = [
     "https://polygon-bor-rpc.publicnode.com",
@@ -59,21 +59,6 @@ REDEEM_ABI = [{
     "payable": False,
     "stateMutability": "nonpayable",
     "type": "function",
-}]
-
-MC3_ABI = [{
-    "inputs": [{"components": [
-        {"name": "target", "type": "address"},
-        {"name": "allowFailure", "type": "bool"},
-        {"name": "callData", "type": "bytes"}
-    ], "name": "calls", "type": "tuple[]"}],
-    "name": "aggregate3",
-    "outputs": [{"components": [
-        {"name": "success", "type": "bool"},
-        {"name": "returnData", "type": "bytes"}
-    ], "name": "returnData", "type": "tuple[]"}],
-    "stateMutability": "payable",
-    "type": "function"
 }]
 
 ERC20_ABI = [{
@@ -106,7 +91,6 @@ def main():
     wallet = account.address
     print(f"Wallet: {wallet}")
 
-    # Check balances
     usdc_contract = w3.eth.contract(address=Web3.to_checksum_address(USDC_E), abi=ERC20_ABI)
     usdc_before = usdc_contract.functions.balanceOf(Web3.to_checksum_address(wallet)).call() / 1e6
     pol_balance = float(w3.from_wei(w3.eth.get_balance(Web3.to_checksum_address(wallet)), "ether"))
@@ -114,8 +98,8 @@ def main():
     print(f"POL: {pol_balance:.4f}")
     print()
 
-    # Fetch redeemable positions
-    print("Fetching positions from Polymarket...")
+    # Fetch positions
+    print("Fetching positions...")
     with httpx.Client(timeout=30) as http:
         resp = http.get(
             "https://data-api.polymarket.com/positions",
@@ -134,78 +118,75 @@ def main():
         print("No redeemable positions found!")
         return
 
-    total_value = sum(float(p.get("currentValue", 0)) for p in redeemable)
-    print(f"Found {len(redeemable)} redeemable positions worth ${total_value:.2f}")
-    print()
-
     # Deduplicate by condition_id
-    condition_ids = list(set(p["conditionId"] for p in redeemable))
-    print(f"Unique conditions to redeem: {len(condition_ids)}")
+    seen = set()
+    unique = []
+    for p in redeemable:
+        cid = p["conditionId"]
+        if cid not in seen:
+            seen.add(cid)
+            unique.append(p)
 
-    # Build multicall
+    total_value = sum(float(p.get("currentValue", 0)) for p in redeemable)
+    print(f"Found {len(unique)} conditions to redeem (${total_value:.2f})")
+    print()
+
     ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF), abi=REDEEM_ABI)
-    mc3 = w3.eth.contract(address=Web3.to_checksum_address(MC3), abi=MC3_ABI)
     usdc_addr = Web3.to_checksum_address(USDC_E)
-    ctf_addr = Web3.to_checksum_address(CTF)
-
-    calls = []
-    for cid in condition_ids:
-        cid_bytes = bytes.fromhex(cid[2:]) if cid.startswith("0x") else bytes.fromhex(cid)
-        call_data = ctf.functions.redeemPositions(
-            usdc_addr, ZERO, cid_bytes, [1, 2]
-        )._encode_transaction_data()
-        calls.append((ctf_addr, True, bytes.fromhex(call_data[2:])))
-
-    # Estimate gas
-    print("Estimating gas...")
-    gas_est = mc3.functions.aggregate3(calls).estimate_gas({"from": wallet})
-    gas_with_buffer = int(gas_est * 1.3)
-    gas_price = w3.eth.gas_price
-    cost_pol = float(w3.from_wei(gas_with_buffer * gas_price, "ether"))
-    print(f"Gas estimate: {gas_est:,} (with buffer: {gas_with_buffer:,})")
-    print(f"Gas price: {w3.from_wei(gas_price, 'gwei'):.1f} gwei")
-    print(f"Cost: {cost_pol:.6f} POL")
-
-    if cost_pol > pol_balance:
-        print(f"ERROR: Not enough POL! Need {cost_pol:.6f}, have {pol_balance:.4f}")
-        return
-
-    # Send transaction
-    print()
-    print(f"Redeeming {len(condition_ids)} conditions in one batch...")
     nonce = w3.eth.get_transaction_count(Web3.to_checksum_address(wallet))
-    tx = mc3.functions.aggregate3(calls).build_transaction({
-        "from": wallet,
-        "nonce": nonce,
-        "gas": gas_with_buffer,
-        "gasPrice": gas_price,
-        "chainId": 137,
-    })
 
-    signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    tx_hex = w3.to_hex(tx_hash)
-    print(f"TX sent: {tx_hex}")
-    print(f"View: https://polygonscan.com/tx/{tx_hex}")
-    print()
+    redeemed = 0
+    for i, p in enumerate(unique):
+        cid = p["conditionId"]
+        title = p.get("title", "")[:50]
+        val = float(p.get("currentValue", 0))
+        cid_bytes = bytes.fromhex(cid[2:]) if cid.startswith("0x") else bytes.fromhex(cid)
 
-    print("Waiting for confirmation...")
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
-    if receipt.status == 1:
-        print(f"✓ SUCCESS! Gas used: {receipt.gasUsed:,}")
-    else:
-        print(f"✗ REVERTED!")
-        return
+        print(f"[{i+1}/{len(unique)}] ${val:.2f}  {title}")
 
-    # Check new balance
+        try:
+            gas_est = ctf.functions.redeemPositions(
+                usdc_addr, ZERO, cid_bytes, [1, 2]
+            ).estimate_gas({"from": wallet})
+
+            gas_price = w3.eth.gas_price
+            tx = ctf.functions.redeemPositions(
+                usdc_addr, ZERO, cid_bytes, [1, 2]
+            ).build_transaction({
+                "from": wallet,
+                "nonce": nonce,
+                "gas": int(gas_est * 1.3),
+                "gasPrice": gas_price,
+                "chainId": 137,
+            })
+
+            signed = w3.eth.account.sign_transaction(tx, PRIVATE_KEY)
+            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+            tx_hex = w3.to_hex(tx_hash)
+            print(f"  TX: {tx_hex}")
+
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            if receipt.status == 1:
+                print(f"  ✓ Confirmed (gas: {receipt.gasUsed:,})")
+                redeemed += 1
+                nonce += 1
+            else:
+                print(f"  ✗ Reverted")
+                nonce += 1
+
+            time.sleep(1)  # Brief pause between txns
+
+        except Exception as e:
+            print(f"  ✗ Error: {str(e)[:100]}")
+
+    # Final balance
     usdc_after = usdc_contract.functions.balanceOf(Web3.to_checksum_address(wallet)).call() / 1e6
     recovered = usdc_after - usdc_before
     print()
+    print(f"Redeemed: {redeemed}/{len(unique)}")
     print(f"USDC.e before: ${usdc_before:.2f}")
     print(f"USDC.e after:  ${usdc_after:.2f}")
     print(f"Recovered:     ${recovered:.2f}")
-    print()
-    print("Done!")
 
 
 if __name__ == "__main__":

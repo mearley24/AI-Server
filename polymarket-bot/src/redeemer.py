@@ -3,8 +3,9 @@
 Automatically redeems resolved winning positions from the ConditionalTokens
 contract on Polygon, converting winning outcome tokens back into USDC.e.
 
-Uses Multicall3 to batch ALL redemptions into a single transaction,
-dramatically reducing gas costs (~1.4M gas total vs ~3.1M for 25 individual txns).
+Sends individual redeemPositions transactions directly from the EOA wallet.
+(Multicall3 doesn't work because CTF redeems for msg.sender, and Multicall3
+changes msg.sender to its own address.)
 
 Works with EOA wallets (signature_type=0).
 """
@@ -25,7 +26,6 @@ logger = structlog.get_logger(__name__)
 # Contract addresses on Polygon
 USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
-MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11"
 
 # Minimal ABI for redeemPositions
 REDEEM_ABI = [
@@ -41,36 +41,6 @@ REDEEM_ABI = [
         "outputs": [],
         "payable": False,
         "stateMutability": "nonpayable",
-        "type": "function",
-    }
-]
-
-# Multicall3 aggregate3 ABI
-MULTICALL3_ABI = [
-    {
-        "inputs": [
-            {
-                "components": [
-                    {"name": "target", "type": "address"},
-                    {"name": "allowFailure", "type": "bool"},
-                    {"name": "callData", "type": "bytes"},
-                ],
-                "name": "calls",
-                "type": "tuple[]",
-            }
-        ],
-        "name": "aggregate3",
-        "outputs": [
-            {
-                "components": [
-                    {"name": "success", "type": "bool"},
-                    {"name": "returnData", "type": "bytes"},
-                ],
-                "name": "returnData",
-                "type": "tuple[]",
-            }
-        ],
-        "stateMutability": "payable",
         "type": "function",
     }
 ]
@@ -98,14 +68,13 @@ POLYGON_RPCS = [
 ]
 
 # Gas settings
-MAX_GAS_PRICE_GWEI = 200  # Don't transact above this
-MAX_SINGLE_TX_MATIC = 0.3  # Safety cap per transaction
+MAX_GAS_PRICE_GWEI = 300  # Don't transact above this
 
 
 class PolymarketRedeemer:
     """Redeems resolved winning Polymarket positions for USDC.e.
 
-    Uses Multicall3 to batch all redemptions into a single transaction.
+    Sends individual redeemPositions calls directly from the wallet.
     Monitors gas price and MATIC balance to ensure transactions succeed.
     """
 
@@ -131,10 +100,6 @@ class PolymarketRedeemer:
         self._ctf = self._w3.eth.contract(
             address=Web3.to_checksum_address(CTF_ADDRESS),
             abi=REDEEM_ABI,
-        )
-        self._mc3 = self._w3.eth.contract(
-            address=Web3.to_checksum_address(MULTICALL3_ADDRESS),
-            abi=MULTICALL3_ABI,
         )
         self._usdc = self._w3.eth.contract(
             address=Web3.to_checksum_address(USDC_E_ADDRESS),
@@ -205,20 +170,18 @@ class PolymarketRedeemer:
                 break
 
     async def redeem_all_winning(self) -> dict[str, Any]:
-        """Find and redeem all resolved winning positions in a single batch tx.
+        """Find and redeem all resolved winning positions one by one.
 
         Returns summary of redemption attempt.
         """
         assert self._http is not None
 
-        # 1. Check MATIC balance and gas price
-        matic_balance = self._get_matic_balance()
+        # 1. Check gas price
         gas_price = self._w3.eth.gas_price
         gas_gwei = float(self._w3.from_wei(gas_price, "gwei"))
 
         if gas_gwei > MAX_GAS_PRICE_GWEI:
-            logger.info("redeemer_gas_too_high", gas_gwei=round(gas_gwei, 1),
-                        max_gwei=MAX_GAS_PRICE_GWEI)
+            logger.info("redeemer_gas_too_high", gas_gwei=round(gas_gwei, 1))
             return {"status": "gas_too_high", "gas_gwei": round(gas_gwei, 1)}
 
         # 2. Get current USDC.e balance before
@@ -256,123 +219,102 @@ class PolymarketRedeemer:
             logger.debug("redeemer_nothing_to_redeem")
             return {"redeemed": 0, "total_value": 0}
 
-        # Deduplicate by condition_id (multiple positions per condition)
-        unique_conditions: dict[str, float] = {}
+        # Deduplicate by condition_id
+        seen_cids: set[str] = set()
+        unique: list[dict] = []
         for pos in redeemable:
             cid = pos["conditionId"]
-            val = float(pos.get("currentValue", 0))
-            unique_conditions[cid] = unique_conditions.get(cid, 0) + val
+            if cid not in seen_cids:
+                seen_cids.add(cid)
+                unique.append(pos)
 
-        total_value = sum(unique_conditions.values())
+        total_value = sum(float(p.get("currentValue", 0)) for p in redeemable)
         logger.info(
             "redeemer_found_redeemable",
-            conditions=len(unique_conditions),
+            conditions=len(unique),
             total_value=round(total_value, 2),
-            matic_balance=round(matic_balance, 6),
-            gas_gwei=round(gas_gwei, 1),
         )
 
-        # 5. Estimate gas for batch redemption
-        condition_ids = list(unique_conditions.keys())
+        # 5. Redeem each condition individually
+        redeemed_count = 0
+        errors = []
 
-        try:
-            gas_estimate, tx_cost_matic = await self._estimate_batch_gas(
-                condition_ids, gas_price
-            )
-        except Exception as exc:
-            logger.error("redeemer_gas_estimate_failed", error=str(exc))
-            return {"error": f"Gas estimate failed: {exc}"}
+        for pos in unique:
+            condition_id = pos["conditionId"]
+            title = pos.get("title", "")[:50]
+            value = float(pos.get("currentValue", 0))
 
-        if tx_cost_matic > matic_balance:
-            logger.warning(
-                "redeemer_insufficient_matic",
-                need=round(tx_cost_matic, 6),
-                have=round(matic_balance, 6),
-                shortfall=round(tx_cost_matic - matic_balance, 6),
-                to_recover=round(total_value, 2),
-            )
-            return {
-                "status": "insufficient_matic",
-                "need_matic": round(tx_cost_matic, 6),
-                "have_matic": round(matic_balance, 6),
-                "to_recover_usdc": round(total_value, 2),
-            }
+            try:
+                tx_hash = await self._redeem_single(condition_id, gas_price)
+                if tx_hash:
+                    self._redeemed_conditions.add(condition_id)
+                    redeemed_count += 1
+                    logger.info(
+                        "redeemer_redeemed",
+                        title=title,
+                        value=round(value, 2),
+                        tx_hash=tx_hash,
+                    )
+            except Exception as exc:
+                err_msg = str(exc)
+                errors.append({"condition_id": condition_id[:20], "error": err_msg[:80]})
+                logger.error(
+                    "redeemer_redeem_error",
+                    title=title,
+                    error=err_msg[:120],
+                )
 
-        if tx_cost_matic > MAX_SINGLE_TX_MATIC:
-            logger.warning("redeemer_tx_cost_too_high", cost=round(tx_cost_matic, 6))
-            return {"status": "tx_cost_safety_cap", "cost": round(tx_cost_matic, 6)}
-
-        # 6. Execute batch redemption
-        try:
-            tx_hash = await self._execute_batch_redeem(
-                condition_ids, gas_estimate, gas_price
-            )
-        except Exception as exc:
-            logger.error("redeemer_batch_redeem_failed", error=str(exc))
-            return {"error": f"Batch redeem failed: {exc}"}
-
-        # Mark all as redeemed
-        for cid in condition_ids:
-            self._redeemed_conditions.add(cid)
-
-        # 7. Check balance after
+        # 6. Check balance after
         usdc_after = self._get_usdc_balance()
         recovered = usdc_after - usdc_before
 
         logger.info(
-            "redeemer_batch_complete",
-            tx_hash=tx_hash,
-            conditions_redeemed=len(condition_ids),
+            "redeemer_complete",
+            redeemed=redeemed_count,
+            total=len(unique),
+            errors=len(errors),
             usdc_before=round(usdc_before, 2),
             usdc_after=round(usdc_after, 2),
             recovered=round(recovered, 2),
-            gas_used_matic=round(tx_cost_matic, 6),
         )
 
         return {
             "status": "redeemed",
-            "tx_hash": tx_hash,
-            "conditions": len(condition_ids),
+            "redeemed": redeemed_count,
+            "total": len(unique),
+            "errors": len(errors),
             "usdc_before": round(usdc_before, 2),
             "usdc_after": round(usdc_after, 2),
             "recovered": round(recovered, 2),
         }
 
-    async def _estimate_batch_gas(
-        self, condition_ids: list[str], gas_price: int
-    ) -> tuple[int, float]:
-        """Estimate gas for a Multicall3 batch of redemptions.
+    async def _redeem_single(
+        self, condition_id: str, gas_price: int
+    ) -> Optional[str]:
+        """Call redeemPositions directly from the wallet for one condition.
 
-        Returns (gas_estimate, cost_in_matic).
+        Returns transaction hash string, or None on failure.
         """
         loop = asyncio.get_event_loop()
 
-        def _estimate() -> tuple[int, float]:
-            calls = self._build_multicall_data(condition_ids)
-            gas_est = self._mc3.functions.aggregate3(calls).estimate_gas(
-                {"from": self._wallet_address}
-            )
-            gas_with_buffer = int(gas_est * 1.2)  # 20% buffer
-            cost_wei = gas_with_buffer * gas_price
-            cost_matic = float(self._w3.from_wei(cost_wei, "ether"))
-            return gas_with_buffer, cost_matic
+        def _do_redeem() -> str:
+            usdc_address = Web3.to_checksum_address(USDC_E_ADDRESS)
+            cid_bytes = bytes.fromhex(condition_id[2:]) if condition_id.startswith("0x") else bytes.fromhex(condition_id)
 
-        return await loop.run_in_executor(None, _estimate)
+            # Estimate gas
+            try:
+                gas_estimate = self._ctf.functions.redeemPositions(
+                    usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
+                ).estimate_gas({"from": self._wallet_address})
+                gas_limit = int(gas_estimate * 1.3)
+            except Exception:
+                gas_limit = 200_000  # fallback
 
-    async def _execute_batch_redeem(
-        self, condition_ids: list[str], gas_limit: int, gas_price: int
-    ) -> str:
-        """Execute batch redemption via Multicall3.
-
-        Returns transaction hash.
-        """
-        loop = asyncio.get_event_loop()
-
-        def _execute() -> str:
-            calls = self._build_multicall_data(condition_ids)
             nonce = self._w3.eth.get_transaction_count(self._wallet_address)
 
-            tx = self._mc3.functions.aggregate3(calls).build_transaction({
+            tx = self._ctf.functions.redeemPositions(
+                usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
+            ).build_transaction({
                 "from": self._wallet_address,
                 "nonce": nonce,
                 "gas": gas_limit,
@@ -384,37 +326,16 @@ class PolymarketRedeemer:
             tx_hash = self._w3.eth.send_raw_transaction(signed_tx.raw_transaction)
             tx_hash_hex = self._w3.to_hex(tx_hash)
 
-            logger.info("redeemer_tx_sent", tx_hash=tx_hash_hex,
-                        conditions=len(condition_ids))
-
-            receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+            receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
             if receipt.status != 1:
                 raise RuntimeError(f"Transaction reverted: {tx_hash_hex}")
 
-            logger.info("redeemer_tx_confirmed", tx_hash=tx_hash_hex,
-                        gas_used=receipt.gasUsed)
             return tx_hash_hex
 
-        return await loop.run_in_executor(None, _execute)
-
-    def _build_multicall_data(self, condition_ids: list[str]) -> list[tuple]:
-        """Build Multicall3 call tuples for batch redemption."""
-        usdc_address = Web3.to_checksum_address(USDC_E_ADDRESS)
-        ctf_address = Web3.to_checksum_address(CTF_ADDRESS)
-        calls = []
-
-        for cid in condition_ids:
-            cid_bytes = bytes.fromhex(cid[2:]) if cid.startswith("0x") else bytes.fromhex(cid)
-            call_data = self._ctf.functions.redeemPositions(
-                usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
-            )._encode_transaction_data()
-            # (target, allowFailure, callData)
-            calls.append((ctf_address, True, bytes.fromhex(call_data[2:])))
-
-        return calls
+        return await loop.run_in_executor(None, _do_redeem)
 
     def _get_matic_balance(self) -> float:
-        """Get MATIC balance in human-readable format."""
+        """Get MATIC/POL balance."""
         try:
             raw = self._w3.eth.get_balance(Web3.to_checksum_address(self._wallet_address))
             return float(self._w3.from_wei(raw, "ether"))
@@ -422,12 +343,12 @@ class PolymarketRedeemer:
             return 0.0
 
     def _get_usdc_balance(self) -> float:
-        """Get current USDC.e balance in human-readable format."""
+        """Get current USDC.e balance."""
         try:
             raw_balance = self._usdc.functions.balanceOf(
                 Web3.to_checksum_address(self._wallet_address)
             ).call()
-            return raw_balance / 1e6  # USDC.e has 6 decimals
+            return raw_balance / 1e6
         except Exception:
             return 0.0
 
