@@ -917,7 +917,7 @@ class PolymarketCopyTrader:
                         market=market_question[:50],
                     )
 
-                    await self._copy_trade(
+                    was_placed = await self._copy_trade(
                         wallet=wallet,
                         trade=trade,
                         token_id=token_id,
@@ -926,7 +926,8 @@ class PolymarketCopyTrader:
                         market_question=market_question,
                         source_trade_id=trade_id,
                     )
-                    copied_this_cycle = True
+                    if was_placed:
+                        copied_this_cycle = True
 
             except Exception as exc:
                 logger.error(
@@ -965,47 +966,49 @@ class PolymarketCopyTrader:
         market: str,
         market_question: str,
         source_trade_id: str,
-    ) -> None:
-        """Copy a BUY trade with Kelly sizing, LLM validation, and correlation checks."""
+    ) -> bool:
+        """Copy a BUY trade with Kelly sizing, LLM validation, and correlation checks.
+        Returns True if trade was actually placed, False if skipped."""
 
         # Skip tiny source trades (noise/test)
         source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
-        if source_usdc < 5.0:
+        min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "1.0"))
+        if source_usdc < min_source_trade:
             logger.debug("copytrade_skip_small_trade", market=market_question[:40], usdc=source_usdc)
-            return
+            return False
 
         # Guard: max positions
         if len(self._positions) >= self._max_positions:
-            return
+            return False
 
         # Guard: circuit breaker
         daily_net = self._daily_wins - self._daily_spend
         if daily_net < -self._daily_loss_limit:
-            return
+            return False
 
         # Guard: basically-resolved markets
         if price > 0.98 or price < 0.02:
-            return
+            return False
 
         # Guard: already have position in this market
         if market and market in self._active_condition_ids:
             logger.debug("copytrade_skip_same_market", market=market_question[:40] if market_question else market[:16])
-            return
+            return False
 
         # Guard: already have position in this exact token
         for pos in self._positions.values():
             if pos.token_id == token_id:
-                return
+                return False
 
         # Skip crypto Up/Down markets
         if self._is_crypto_updown_market(market_question):
-            return
+            return False
 
         if not market_question:
             market_question = market
 
         if self._clob_client is None:
-            return
+            return False
 
         # ── NEW: Correlation exposure check ──────────────────────────
         # Calculate size first (needed for correlation check)
@@ -1030,7 +1033,7 @@ class PolymarketCopyTrader:
                 limit=round(self._correlation_tracker.get_category_limit(), 2),
                 market=market_question[:40],
             )
-            return
+            return False
 
         # ── NEW: LLM Trade Validation ────────────────────────────────
         if self._llm_validator.enabled:
@@ -1055,7 +1058,7 @@ class PolymarketCopyTrader:
                     f"Price: {price:.2f} | LLM prob: {validation.llm_probability:.2f}\n"
                     f"Reason: {validation.reasoning[:60]}",
                 )
-                return
+                return False
 
         loop = asyncio.get_event_loop()
 
@@ -1132,7 +1135,7 @@ class PolymarketCopyTrader:
                 err_str = str(exc)
                 if "does not exist" not in err_str and "not enough balance" not in err_str and "invalid signature" not in err_str:
                     logger.warning("copytrade_order_error", error=err_str[:120], token_id=token_id[:16] + "...")
-                return
+                return False
 
         # Track position
         position = CopiedPosition(
@@ -1185,6 +1188,7 @@ class PolymarketCopyTrader:
             f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
             f"Category: {category}",
         )
+        return True
 
     # ── 4. Position Management — Smart Exit Engine ───────────────────────
 
