@@ -668,31 +668,17 @@ class PolymarketCopyTrader:
         if not market_question:
             market_question = market
 
-        # Get REAL order book price — don't use the copied wallet's price
         if self._clob_client is None:
             return
 
         loop = asyncio.get_event_loop()
-        try:
-            book = await loop.run_in_executor(
-                None, lambda: self._clob_client.get_order_book(token_id)
-            )
-        except Exception:
-            return
 
-        if not book or not book.asks:
-            logger.debug("copytrade_no_asks", token_id=token_id[:16])
-            return
+        # Use the wallet's trade price directly — they know the market
+        buy_price = round(round(price / 0.01) * 0.01, 2)  # round to nearest cent
+        if buy_price >= 1.0:
+            buy_price = 0.99
 
-        best_ask = float(book.asks[0].price)
-
-        # Only trade if best ask is in tradeable range
-        if best_ask > 0.98 or best_ask < 0.03:
-            logger.debug("copytrade_ask_out_of_range", ask=best_ask, token_id=token_id[:16])
-            return
-
-        # Calculate size at the actual ask price
-        size_shares = self._size_usd / best_ask
+        size_shares = self._size_usd / buy_price
         if size_shares < 5:
             size_shares = 5.0
         size_shares = round(size_shares, 2)
@@ -708,7 +694,7 @@ class PolymarketCopyTrader:
                 mode="dry_run",
                 wallet=wallet.address[:10] + "...",
                 market=market_question[:40],
-                best_ask=best_ask,
+                buy_price=buy_price,
                 size_usd=self._size_usd,
                 size_shares=size_shares,
                 win_rate=round(wallet.win_rate, 3),
@@ -719,7 +705,7 @@ class PolymarketCopyTrader:
 
                 order_args = OrderArgs(
                     token_id=token_id,
-                    price=best_ask,
+                    price=buy_price,
                     size=size_shares,
                     side="BUY",
                 )
@@ -740,7 +726,7 @@ class PolymarketCopyTrader:
                     mode="live",
                     wallet=wallet.address[:10] + "...",
                     market=market_question[:40],
-                    best_ask=best_ask,
+                    buy_price=buy_price,
                     wallet_price=price,
                     size_usd=self._size_usd,
                     size_shares=size_shares,
