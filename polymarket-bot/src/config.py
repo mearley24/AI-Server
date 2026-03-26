@@ -195,6 +195,7 @@ class Settings(BaseSettings):
     copytrade_min_trades: int = Field(default=20, description="Minimum resolved trades for wallet to qualify")
     copytrade_scan_interval_hours: float = Field(default=6.0, description="Hours between wallet re-scans")
     copytrade_check_interval: float = Field(default=30.0, description="Seconds between trade checks")
+    copytrade_daily_spend_limit: float = Field(default=25.0, description="Max USDC to spend per day on copy trades")
 
     # --- Momentum/Mean-Reversion Hybrid Strategy ---
     crypto_momentum_mr_enabled: bool = Field(default=False, description="Enable momentum/mean-reversion strategy")
