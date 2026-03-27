@@ -138,7 +138,7 @@ class PolymarketCopyTrader:
 
         # Config from settings
         self._size_usd: float = getattr(settings, "copytrade_size_usd", 5.0)
-        self._max_positions: int = getattr(settings, "copytrade_max_positions", 20)
+        self._max_positions: int = getattr(settings, "copytrade_max_positions", 25)
         self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.55)
         self._min_trades: int = getattr(settings, "copytrade_min_trades", 20)
         self._scan_interval_hours: float = getattr(settings, "copytrade_scan_interval_hours", 6.0)
@@ -1511,6 +1511,7 @@ class PolymarketCopyTrader:
             return
 
         exits_to_execute: list[tuple[str, ExitSignal]] = []
+        positions_to_remove: list[str] = []  # resolved/stale — skip sell, just clean up
 
         for pos_id, pos in self._positions.items():
             try:
@@ -1527,16 +1528,25 @@ class PolymarketCopyTrader:
                     continue
 
                 # Check market resolved (price → 0 or 1)
+                # Resolved markets have no orderbook — skip sell, just clean up tracking.
+                # The redeemer handles on-chain USDC recovery separately.
                 if current_price >= 0.99 or current_price <= 0.01:
-                    exits_to_execute.append((pos_id, ExitSignal(
+                    hold_hours = (time.time() - pos.copied_at) / 3600
+                    logger.info(
+                        "copytrade_resolved_cleanup",
                         position_id=pos_id,
-                        reason="market_resolved",
-                        sell_fraction=1.0,
+                        market=pos.market_question[:50],
                         current_price=current_price,
                         entry_price=pos.entry_price,
-                        pnl_pct=(current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0,
-                        hold_time_hours=(time.time() - pos.copied_at) / 3600,
-                    )))
+                        hold_hours=round(hold_hours, 1),
+                    )
+                    _notify(
+                        "🧹 Resolved Cleanup",
+                        f"{pos.market_question[:45]}\n"
+                        f"Entry: {pos.entry_price:.2f} → Resolved: {current_price:.2f}\n"
+                        f"Hold: {hold_hours:.1f}h | Redeemer handles USDC recovery",
+                    )
+                    positions_to_remove.append(pos_id)
                     continue
 
                 # Check source wallet sold
@@ -1558,12 +1568,52 @@ class PolymarketCopyTrader:
                 if signal:
                     exits_to_execute.append((pos_id, signal))
 
+                # Safety net: force-cleanup positions older than 2x their category stale time
+                if not signal:
+                    hold_hours = (time.time() - pos.copied_at) / 3600
+                    cat_params = CATEGORY_EXIT_PARAMS.get(
+                        pos.category if hasattr(pos, 'category') and pos.category else "other", {}
+                    )
+                    max_stale = cat_params.get("time_hours", 48) * 2
+                    if hold_hours > max_stale:
+                        logger.warning(
+                            "copytrade_force_stale_cleanup",
+                            position_id=pos_id,
+                            market=pos.market_question[:50],
+                            hold_hours=round(hold_hours, 1),
+                            max_stale_hours=max_stale,
+                            category=getattr(pos, 'category', 'other'),
+                        )
+                        exits_to_execute.append((pos_id, ExitSignal(
+                            position_id=pos_id,
+                            reason="force_stale_cleanup",
+                            sell_fraction=1.0,
+                            current_price=current_price,
+                            entry_price=pos.entry_price,
+                            pnl_pct=(current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0,
+                            hold_time_hours=hold_hours,
+                        )))
+
             except Exception as exc:
                 logger.error("copytrade_position_check_error", position_id=pos_id, error=str(exc))
 
-        # Execute exits
+        # Execute exits (actual sells via FOK)
         for pos_id, signal in exits_to_execute:
             await self._exit_position(pos_id, signal)
+
+        # Clean up resolved/stale positions (no sell needed — redeemer handles USDC)
+        for pos_id in positions_to_remove:
+            pos = self._positions.get(pos_id)
+            if not pos:
+                continue
+            del self._positions[pos_id]
+            self._active_condition_ids.discard(pos.condition_id)
+            self._exit_engine.unregister_position(pos_id)
+            self._correlation_tracker.remove_position(pos_id)
+            wallet_sells = self._source_sells.get(pos.source_wallet, set())
+            wallet_sells.discard(pos.token_id)
+        if positions_to_remove:
+            self._save_positions()
 
     async def _exit_position(self, position_id: str, signal: ExitSignal) -> None:
         """Close a copied position (full or partial)."""
@@ -1608,15 +1658,26 @@ class PolymarketCopyTrader:
                 order_id = result.get("orderID", "")
                 status = result.get("status", "")
                 if not order_id and status not in ("matched", "filled", ""):
-                    logger.warning(
-                        "copytrade_exit_fok_unfilled",
-                        position_id=position_id,
-                        reason=signal.reason,
-                        sell_price=sell_price,
-                        current_price=current_price,
-                        status=status,
-                    )
-                    return
+                    if signal.reason in ("market_resolved", "force_stale_cleanup"):
+                        # Resolved/stale markets may have no orderbook — FOK fails.
+                        # Fall through to cleanup; redeemer handles on-chain USDC recovery.
+                        logger.info(
+                            "copytrade_exit_resolved_cleanup",
+                            position_id=position_id,
+                            reason=f"{signal.reason}_fok_failed",
+                            entry_price=pos.entry_price,
+                            current_price=current_price,
+                        )
+                    else:
+                        logger.warning(
+                            "copytrade_exit_fok_unfilled",
+                            position_id=position_id,
+                            reason=signal.reason,
+                            sell_price=sell_price,
+                            current_price=current_price,
+                            status=status,
+                        )
+                        return
                 logger.info(
                     "copytrade_position_exit",
                     mode="live",
