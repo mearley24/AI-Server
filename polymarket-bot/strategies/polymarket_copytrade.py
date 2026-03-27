@@ -1570,15 +1570,37 @@ class PolymarketCopyTrader:
         for pos_id, pos in self._positions.items():
             try:
                 # Get current price
+                current_price = 0
                 try:
                     current_price = await self._client.get_midpoint(pos.token_id)
                 except Exception:
                     try:
                         current_price = await self._client.get_price(pos.token_id, side="sell")
                     except Exception:
-                        continue
+                        pass
 
+                # If we can't get a price, check if position is stale and should be removed
                 if current_price <= 0:
+                    hold_hours = (time.time() - pos.copied_at) / 3600
+                    cat_params = CATEGORY_EXIT_PARAMS.get(
+                        pos.category if hasattr(pos, 'category') and pos.category else "other", {}
+                    )
+                    stale_hours = cat_params.get("time_hours", 48)
+                    # Remove if older than stale time — market likely delisted/resolved
+                    if hold_hours > stale_hours:
+                        logger.info(
+                            "copytrade_no_price_cleanup",
+                            position_id=pos_id,
+                            market=pos.market_question[:50],
+                            hold_hours=round(hold_hours, 1),
+                            stale_hours=stale_hours,
+                        )
+                        _notify(
+                            "🧹 Stale Cleanup (no price)",
+                            f"{pos.market_question[:45]}\n"
+                            f"Age: {hold_hours:.1f}h — market likely resolved/delisted",
+                        )
+                        positions_to_remove.append(pos_id)
                     continue
 
                 # Check market resolved (price → 0 or 1)
