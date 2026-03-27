@@ -1866,16 +1866,25 @@ class PolymarketCopyTrader:
             )
         else:
             try:
-                # FOK (Fill or Kill) for instant execution — 5% slippage tolerance
+                # Sell via official py-clob-client (same as buys) — 5% slippage tolerance
                 sell_price = round(round((current_price * 0.95) / 0.01) * 0.01, 2)
                 if sell_price < 0.01:
                     sell_price = 0.01
-                result = await self._client.place_order(
+                loop = asyncio.get_event_loop()
+                from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
+                sell_args = OrderArgs(
                     token_id=pos.token_id,
                     price=sell_price,
                     size=sell_shares,
-                    side=SIDE_SELL,
-                    order_type=ORDER_TYPE_FOK,
+                    side="SELL",
+                )
+                sell_options = PartialCreateOrderOptions(
+                    tick_size="0.01",
+                    neg_risk=False,
+                )
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: self._clob_client.create_and_post_order(sell_args, sell_options),
                 )
                 order_id = result.get("orderID", "")
                 status = result.get("status", "")
