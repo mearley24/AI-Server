@@ -24,7 +24,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 OWNER_PHONE = os.environ.get("OWNER_PHONE_NUMBER", "+19705193013")
-REPLY_TO = os.environ.get("REPLY_TO", OWNER_PHONE)
+REPLY_TO = os.environ.get("REPLY_TO", "bob@symphonysh.com")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
@@ -370,4 +370,8 @@ if __name__ == "__main__":
     print(f"[bridge] Listening for: {OWNER_PHONE}")
     print(f"[bridge] Replying to: {REPLY_TO}")
     print(f"[bridge] OpenClaw: {OPENCLAW_URL}")
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    class ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+
+    server = ReusableHTTPServer(("0.0.0.0", PORT), Handler)
+    server.serve_forever()
