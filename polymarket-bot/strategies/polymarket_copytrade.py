@@ -154,6 +154,15 @@ class PolymarketCopyTrader:
         self._daily_spend_reset_time: float = 0.0
         self._halted: bool = False
 
+        # ── Re-entry queue: buy back into winners after trailing stop exit ────
+        # {token_id: {market_question, condition_id, exit_price, exit_time,
+        #             category, peak_price, original_entry, token_id}}
+        self._reentry_queue: dict[str, dict[str, Any]] = {}
+        self._REENTRY_DIP_PCT = 0.10  # re-enter if price dips 10% below exit
+        self._REENTRY_MAX_AGE = 3600 * 4  # 4 hours max to re-enter
+        self._REENTRY_MIN_PRICE = 0.15  # don't re-enter below this
+        self._REENTRY_MAX_PRICE = 0.90  # don't re-enter above this
+
         # ── Per-category circuit breaker ──────────────────────────────
         self._daily_category_losses: dict[str, float] = {}
         self._halted_categories: set[str] = set()
@@ -1634,6 +1643,185 @@ class PolymarketCopyTrader:
         if positions_to_remove:
             self._save_positions()
 
+        # ── Re-entry check: buy back into winners that dipped ──────────────
+        await self._check_reentry_queue()
+
+    async def _check_reentry_queue(self) -> None:
+        """Check queued re-entries — buy back into winners that dipped after trailing stop."""
+        if not self._reentry_queue:
+            return
+
+        now = time.time()
+        expired = []
+        reentries = []
+
+        for token_id, entry in self._reentry_queue.items():
+            # Expire old entries
+            if now - entry["exit_time"] > self._REENTRY_MAX_AGE:
+                expired.append(token_id)
+                continue
+
+            # Skip if we already have a position in this market
+            if entry["condition_id"] in self._active_condition_ids:
+                continue
+
+            # Skip if at max positions
+            if len(self._positions) >= self._max_positions:
+                continue
+
+            # Check current price
+            try:
+                current_price = await self._client.get_midpoint(token_id)
+            except Exception:
+                try:
+                    current_price = await self._client.get_price(token_id, side="buy")
+                except Exception:
+                    continue
+
+            if current_price <= 0 or current_price >= 0.99 or current_price <= 0.01:
+                expired.append(token_id)
+                continue
+
+            # Re-enter if price dipped below our target AND is still in valid range
+            if (current_price <= entry["reentry_price"]
+                    and current_price >= self._REENTRY_MIN_PRICE
+                    and current_price <= self._REENTRY_MAX_PRICE):
+                reentries.append((token_id, entry, current_price))
+
+            # Also re-enter if price is ABOVE exit (market still running up) and we're missing out
+            elif current_price > entry["exit_price"] * 1.02:  # 2% above exit = momentum continuing
+                # Only if still below 0.90 (don't chase near-certainties)
+                if current_price <= self._REENTRY_MAX_PRICE:
+                    reentries.append((token_id, entry, current_price))
+
+        # Remove expired
+        for token_id in expired:
+            logger.debug("copytrade_reentry_expired", token_id=token_id[:16])
+            del self._reentry_queue[token_id]
+
+        # Execute re-entries
+        for token_id, entry, current_price in reentries:
+            await self._execute_reentry(entry, current_price)
+            self._reentry_queue.pop(token_id, None)
+
+    async def _execute_reentry(self, entry: dict, current_price: float) -> None:
+        """Execute a re-entry buy on a market we profitably exited."""
+        market_question = entry["market_question"]
+        token_id = entry["token_id"]
+        condition_id = entry["condition_id"]
+        category = entry["category"]
+        exit_price = entry["exit_price"]
+
+        # Kelly sizing with category multiplier
+        cat_mult = self._category_size_multiplier(category)
+        base_size = self._size_usd * cat_mult
+
+        # Size it slightly smaller than original — we're being opportunistic
+        size_usd = base_size * 0.75
+
+        buy_price = round(round(current_price / 0.01) * 0.01, 2)
+        if buy_price >= 1.0:
+            buy_price = 0.99
+
+        size_shares = size_usd / buy_price
+        if size_shares < 5:
+            size_shares = 5.0
+        size_shares = round(size_shares, 2)
+
+        position_id = f"ct-re-{uuid.uuid4().hex[:10]}"
+
+        logger.info(
+            "copytrade_reentry_attempt",
+            market=market_question[:40],
+            exit_price=round(exit_price, 3),
+            reentry_price=round(current_price, 3),
+            size_usd=round(size_usd, 2),
+        )
+
+        if self._dry_run:
+            order_id = f"paper-re-{position_id}"
+        else:
+            try:
+                loop = asyncio.get_event_loop()
+                from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
+                order_args = OrderArgs(
+                    token_id=token_id,
+                    price=buy_price,
+                    size=size_shares,
+                    side="BUY",
+                )
+                options = PartialCreateOrderOptions(
+                    tick_size="0.01",
+                    neg_risk=False,
+                )
+                order_resp = await loop.run_in_executor(
+                    None,
+                    lambda: self._clob_client.create_and_post_order(order_args, options),
+                )
+                order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
+            except Exception as exc:
+                logger.error("copytrade_reentry_error", error=str(exc)[:200], market=market_question[:40])
+                return
+
+        # Track the new position
+        position = CopiedPosition(
+            position_id=position_id,
+            source_wallet=entry.get("source_wallet", ""),
+            token_id=token_id,
+            market_question=market_question,
+            condition_id=condition_id,
+            side="BUY",
+            entry_price=current_price,
+            size_usd=size_usd,
+            size_shares=size_shares,
+            copied_at=time.time(),
+            source_trade_id=f"reentry-{position_id}",
+            order_id=order_id,
+            category=category,
+            thesis=f"Re-entry after profitable trailing stop exit at {exit_price:.2f}",
+        )
+        self._positions[position_id] = position
+        self._save_positions()
+        self._exit_engine.register_position(position_id, current_price, time.time(), category=category)
+        self._correlation_tracker.add_position(position_id, market_question, size_usd)
+        if condition_id:
+            self._active_condition_ids.add(condition_id)
+
+        self._bankroll = max(0, self._bankroll - size_usd)
+        self._daily_spend += size_usd
+        self._daily_trades += 1
+
+        # Record in PnL tracker
+        pnl_trade = Trade(
+            trade_id=order_id or position_id,
+            timestamp=time.time(),
+            market=market_question,
+            token_id=token_id,
+            side="BUY",
+            price=current_price,
+            size=size_shares,
+            fee=0.0,
+            strategy="copytrade",
+        )
+        self._pnl_tracker.record_trade(pnl_trade)
+
+        _notify(
+            "🔄 Re-entry Executed",
+            f"{market_question[:45]}\n"
+            f"Exited at {exit_price:.2f} → Re-entered at {current_price:.2f}\n"
+            f"Size: ${size_usd:.2f} | Cat: {category}\n"
+            f"Riding the winner back in",
+        )
+
+        logger.info(
+            "copytrade_reentry_executed",
+            market=market_question[:40],
+            exit_price=round(exit_price, 3),
+            reentry_price=round(current_price, 3),
+            size_usd=round(size_usd, 2),
+            category=category,
+        )
+
     async def _exit_position(self, position_id: str, signal: ExitSignal) -> None:
         """Close a copied position (full or partial)."""
         pos = self._positions.get(position_id)
@@ -1804,6 +1992,35 @@ class PolymarketCopyTrader:
             + (f"\nThesis: {pos_thesis[:50]}" if pos_thesis else ""),
         )
 
+        # ── Re-entry queue: if profitable trailing stop, watch for dip to buy back ──
+        if pnl_usd > 0 and signal.reason == "trailing_stop" and current_price < 0.95:
+            reentry_price = current_price * (1 - self._REENTRY_DIP_PCT)
+            self._reentry_queue[pos.token_id] = {
+                "market_question": pos.market_question,
+                "condition_id": pos.condition_id,
+                "token_id": pos.token_id,
+                "exit_price": current_price,
+                "exit_time": time.time(),
+                "reentry_price": reentry_price,
+                "category": category,
+                "peak_price": signal.peak_price,
+                "original_entry": pos.entry_price,
+                "source_wallet": pos.source_wallet,
+            }
+            logger.info(
+                "copytrade_reentry_queued",
+                market=pos.market_question[:40],
+                exit_price=round(current_price, 3),
+                reentry_below=round(reentry_price, 3),
+                pnl=round(pnl_usd, 2),
+            )
+            _notify(
+                "🔄 Re-entry Watching",
+                f"{pos.market_question[:45]}\n"
+                f"Exited at {current_price:.2f} (+${pnl_usd:.2f})\n"
+                f"Will buy back if price dips to {reentry_price:.2f}",
+            )
+
         # Full exit — remove position entirely (all exits are 100% now)
         del self._positions[position_id]
         self._save_positions()
@@ -1915,6 +2132,16 @@ class PolymarketCopyTrader:
             "category_pnl": {k: round(v, 2) for k, v in self._category_pnl.items()},
             "correlation_exposure": self._correlation_tracker.get_summary(),
             "exit_engine_tracked": self._exit_engine.active_count(),
+            "reentry_queue": [
+                {
+                    "market": e["market_question"][:50],
+                    "exit_price": round(e["exit_price"], 3),
+                    "reentry_below": round(e["reentry_price"], 3),
+                    "category": e["category"],
+                    "age_minutes": round((time.time() - e["exit_time"]) / 60, 1),
+                }
+                for e in self._reentry_queue.values()
+            ],
             "config": {
                 "size_usd": self._size_usd,
                 "max_positions": self._max_positions,
