@@ -17,6 +17,15 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
+CATEGORY_EXIT_PARAMS: dict[str, dict[str, float]] = {
+    "crypto_updown": {"sl": 0.35, "time_hours": 12, "trailing": 0.10},
+    "sports": {"sl": 0.40, "time_hours": 24, "trailing": 0.12},
+    "weather": {"sl": 0.50, "time_hours": 72, "trailing": 0.15},
+    "politics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
+    "other": {"sl": 0.50, "time_hours": 72, "trailing": 0.18},
+}
+
+
 @dataclass
 class PositionTracker:
     """Tracks peak prices and trailing stop state per position."""
@@ -28,6 +37,10 @@ class PositionTracker:
     trailing_stop_active: bool = False
     trailing_stop_price: float = 0.0
     _trailing_pct: float = 0.15  # set by ExitEngine on registration
+    # Category-specific overrides
+    category: str = ""
+    _sl_override: float = 0.0  # 0 = use engine default
+    _time_hours_override: float = 0.0  # 0 = use engine default
 
     def update_peak(self, current_price: float) -> None:
         if current_price > self.peak_price:
@@ -72,15 +85,33 @@ class ExitEngine:
         # Track per-position state
         self._trackers: dict[str, PositionTracker] = {}
 
-    def register_position(self, position_id: str, entry_price: float, entry_time: float) -> None:
-        """Register a new position for tracking."""
+    def register_position(self, position_id: str, entry_price: float, entry_time: float, category: str = "") -> None:
+        """Register a new position for tracking with optional category overrides."""
+        # Look up category-specific exit parameters
+        cat_params = CATEGORY_EXIT_PARAMS.get(category, {})
+        sl_override = cat_params.get("sl", 0.0)
+        time_override = cat_params.get("time_hours", 0.0)
+        trailing_pct = cat_params.get("trailing", self._trailing_pct)
+
         self._trackers[position_id] = PositionTracker(
             position_id=position_id,
             entry_price=entry_price,
             entry_time=entry_time,
             peak_price=entry_price,
-            _trailing_pct=self._trailing_pct,
+            _trailing_pct=trailing_pct,
+            category=category,
+            _sl_override=sl_override,
+            _time_hours_override=time_override,
         )
+        if category and cat_params:
+            logger.debug(
+                "exit_category_params_applied",
+                position_id=position_id,
+                category=category,
+                sl=sl_override,
+                time_hours=time_override,
+                trailing=trailing_pct,
+            )
 
     def unregister_position(self, position_id: str) -> None:
         """Remove a position from tracking."""
@@ -103,8 +134,12 @@ class ExitEngine:
         # Update peak price
         tracker.update_peak(current_price)
 
-        # 1. Stop-loss: 50% drop from entry → sell all
-        if pnl_pct <= -self._sl:
+        # Use per-position category overrides if set, otherwise engine defaults
+        effective_sl = tracker._sl_override if tracker._sl_override > 0 else self._sl
+        effective_time_hours = tracker._time_hours_override if tracker._time_hours_override > 0 else self._time_hours
+
+        # 1. Stop-loss: category-specific drop from entry → sell all
+        if pnl_pct <= -effective_sl:
             return ExitSignal(
                 position_id=position_id,
                 reason="stop_loss",
@@ -142,8 +177,8 @@ class ExitEngine:
             )
             return None  # Don't sell — just activate trailing
 
-        # 4. Time-based exit: held >48h with <5% absolute move → stale position
-        if hold_hours >= self._time_hours and abs(pnl_pct) < self._time_min_move:
+        # 4. Time-based exit: category-specific stale timer with <5% absolute move
+        if hold_hours >= effective_time_hours and abs(pnl_pct) < self._time_min_move:
             return ExitSignal(
                 position_id=position_id,
                 reason="time_exit_stale",

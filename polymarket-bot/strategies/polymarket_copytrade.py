@@ -47,10 +47,10 @@ from src.config import Settings
 from src.pnl_tracker import PnLTracker, Trade
 from src.signer import SIDE_BUY, SIDE_SELL
 
-from strategies.exit_engine import ExitEngine, ExitSignal
+from strategies.exit_engine import ExitEngine, ExitSignal, CATEGORY_EXIT_PARAMS
 from strategies.kelly_sizing import KellySizer, get_bankroll_from_env, fetch_onchain_bankroll
 from strategies.wallet_scoring import WalletScorer
-from strategies.correlation_tracker import CorrelationTracker
+from strategies.correlation_tracker import CorrelationTracker, categorize_market
 from strategies.llm_validator import LLMValidator, detect_anti_patterns
 
 logger = structlog.get_logger(__name__)
@@ -153,6 +153,17 @@ class PolymarketCopyTrader:
         self._daily_trades: int = 0
         self._daily_spend_reset_time: float = 0.0
         self._halted: bool = False
+
+        # ── Per-category circuit breaker ──────────────────────────────
+        self._daily_category_losses: dict[str, float] = {}
+        self._halted_categories: set[str] = set()
+        self._CATEGORY_LOSS_LIMITS: dict[str, float] = {
+            "crypto_updown": 10.0,
+            "sports": 15.0,
+            "weather": 25.0,
+            "politics": 35.0,
+            "other": 25.0,
+        }
 
         # API base URLs
         self._gamma_url = settings.gamma_api_url.rstrip("/")
@@ -270,6 +281,8 @@ class PolymarketCopyTrader:
 
         # ── Category P/L tracking for adaptive position sizing ──────
         self._category_pnl: dict[str, float] = {}  # category -> realized P/L
+        # Dynamic multipliers — copied from class defaults, updated by learning loop
+        self._CATEGORY_MULTIPLIERS: dict[str, float] = dict(self._DEFAULT_CATEGORY_MULTIPLIERS)
 
         # ── NEW: Phase 2 — Correlation Exposure Tracker ──────────────
         self._correlation_tracker = CorrelationTracker(
@@ -302,9 +315,9 @@ class PolymarketCopyTrader:
             }
             logger.info("copytrade_category_pnl_seeded", categories=self._category_pnl)
 
-        # Re-register persisted positions with exit engine
+        # Re-register persisted positions with exit engine (category-specific params)
         for pos_id, pos in self._positions.items():
-            self._exit_engine.register_position(pos_id, pos.entry_price, pos.copied_at)
+            self._exit_engine.register_position(pos_id, pos.entry_price, pos.copied_at, category=pos.category)
             self._correlation_tracker.add_position(pos_id, pos.market_question, pos.size_usd)
         if self._positions:
             logger.info("copytrade_positions_restored", count=len(self._positions))
@@ -400,8 +413,8 @@ class PolymarketCopyTrader:
 
     # ── Category-weighted position sizing ────────────────────────────────
 
-    # Category sizing multipliers based on actual Polymarket P/L data (2026-03-27)
-    _CATEGORY_MULTIPLIERS: dict[str, float] = {
+    # Default category sizing multipliers based on actual Polymarket P/L data (2026-03-27)
+    _DEFAULT_CATEGORY_MULTIPLIERS: dict[str, float] = {
         "crypto_updown": 0.15,  # -$56.68 on 104 trades — both-sides buying kills us
         "sports": 0.25,         # -$24.68 on 51 trades — mostly esports losses
         "weather": 0.8,         # -$12.65 on 59 trades — $77 open, jury still out
@@ -412,10 +425,37 @@ class PolymarketCopyTrader:
     def _category_size_multiplier(self, category: str) -> float:
         """Scale position size based on category's track record.
 
-        Uses fixed multipliers derived from actual Polymarket trading data.
+        Uses dynamic multipliers that adapt from live P/L data.
         Unknown categories get 0.5x (conservative until proven).
         """
         return self._CATEGORY_MULTIPLIERS.get(category, 0.5)
+
+    def _recalculate_category_multipliers(self) -> None:
+        """Recalculate category multipliers from live P/L data.
+
+        Called after every exit to create a feedback loop:
+        win → multiplier up → bigger positions → more profit on winners
+        lose → multiplier down → smaller positions → less damage
+        """
+        for cat, pnl in self._category_pnl.items():
+            old = self._CATEGORY_MULTIPLIERS.get(cat, 0.5)
+            if pnl > 20:
+                new = min(1.5, old * 1.1)
+            elif pnl > 0:
+                new = min(1.2, old * 1.05)
+            elif pnl > -25:
+                new = max(0.1, old * 0.95)
+            else:
+                new = max(0.05, old * 0.85)
+            if new != old:
+                self._CATEGORY_MULTIPLIERS[cat] = round(new, 3)
+                logger.info(
+                    "copytrade_multiplier_updated",
+                    category=cat,
+                    pnl=round(pnl, 2),
+                    old_mult=round(old, 3),
+                    new_mult=round(new, 3),
+                )
 
     # ── Trade pacing ──────────────────────────────────────────────────────
 
@@ -456,6 +496,8 @@ class PolymarketCopyTrader:
             self._daily_trades = 0
             self._halted = False
             self._wallet_daily_trades = {}
+            self._daily_category_losses = {}
+            self._halted_categories = set()
             self._daily_spend_reset_time = today_midnight
 
     # ── 1. Wallet Discovery & Scoring ────────────────────────────────────
@@ -490,13 +532,16 @@ class PolymarketCopyTrader:
                     last_active=stats.get("last_active", 0.0),
                     avg_win_pnl=stats.get("avg_win_pnl", 0.0),
                     avg_loss_pnl=stats.get("avg_loss_pnl", 0.0),
+                    category_pnl=self._category_pnl,
+                    wallet_categories=stats.get("categories"),
                 )
 
                 # Skip wallets flagged by red flag filters
                 if analysis.is_filtered and total_resolved < 50:
                     continue
 
-                composite_score = analysis.composite_score
+                # Prefer category-adjusted score if available
+                composite_score = analysis.category_adjusted_score if analysis.category_adjusted_score > 0 else analysis.composite_score
                 if composite_score <= 0:
                     # Fallback to legacy scoring if composite is zero
                     base_score = win_rate * math.log(total_resolved + 1)
@@ -657,6 +702,10 @@ class PolymarketCopyTrader:
 
             winning_token_id = token_ids[winning_index]
 
+            # Categorize this market for wallet category tracking
+            market_question_text = market.get("question", market.get("title", ""))
+            market_category = categorize_market(market_question_text)
+
             try:
                 trades = await self._fetch_market_trades(condition_id, limit=200)
             except Exception as exc:
@@ -693,6 +742,7 @@ class PolymarketCopyTrader:
                         "last_active": 0.0,
                         "win_pnls": [],
                         "loss_pnls": [],
+                        "categories": {},  # category -> trade count
                     }
 
                 stats = wallet_stats[wallet_addr]
@@ -700,6 +750,12 @@ class PolymarketCopyTrader:
                 stats["volume"] += trade_value
                 if isinstance(ts, (int, float)) and ts > stats["last_active"]:
                     stats["last_active"] = ts
+
+                # Track which categories this wallet trades in
+                if market_category:
+                    cats = stats.get("categories", {})
+                    cats[market_category] = cats.get(market_category, 0) + 1
+                    stats["categories"] = cats
 
                 if side == "BUY" and trade_token == winning_token_id:
                     stats["wins"] += 1
@@ -1164,13 +1220,29 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="no_clob_client")
             return False
 
-        # ── NEW: Correlation exposure check ──────────────────────────
-        # Calculate size first (needed for correlation check)
+        # ── Correlation exposure check + category detection ────────
+        # Detect category first (needed for all downstream checks)
+        category = categorize_market(market_question)
+
+        # ── Per-category circuit breaker ──────────────────────────
+        if category in self._halted_categories:
+            logger.info(
+                "copytrade_skip", reason="category_halted",
+                category=category,
+                daily_loss=round(self._daily_category_losses.get(category, 0), 2),
+                market=market_question[:40],
+            )
+            return False
+
+        # Calculate size with category-aware Kelly
+        cat_pnl = self._category_pnl.get(category, 0)
         if self._kelly_enabled:
             size_usd = self._kelly_sizer.calculate_position_size(
                 wallet_win_rate=wallet.win_rate,
                 market_price=price,
                 bankroll=self._bankroll,
+                category=category,
+                category_pnl=cat_pnl,
             )
         else:
             size_usd = self._size_usd
@@ -1385,8 +1457,8 @@ class PolymarketCopyTrader:
         self._positions[position_id] = position
         self._save_positions()
 
-        # Register with exit engine
-        self._exit_engine.register_position(position_id, price, time.time())
+        # Register with exit engine (category-specific TP/SL/trailing)
+        self._exit_engine.register_position(position_id, price, time.time(), category=category)
 
         # Register with correlation tracker
         self._correlation_tracker.add_position(position_id, market_question, size_usd)
@@ -1409,13 +1481,16 @@ class PolymarketCopyTrader:
         )
         self._pnl_tracker.record_trade(pnl_trade)
 
-        # Send notification
-        # Position lifecycle info — trailing activates at +30%, SL at -50%
+        # Send notification with full context
+        # Position lifecycle info — category-specific TP/SL
+        cat_exit = CATEGORY_EXIT_PARAMS.get(category, {})
+        sl_pct = cat_exit.get("sl", 0.50)
         tp1_price = min(price * 1.30, 0.99)  # trailing stop activation
-        sl_price = price * 0.50
+        sl_price = price * (1 - sl_pct)
         close_line = f"Closes in: {time_to_close}" if time_to_close else ""
         lifecycle = f"Trail@: {tp1_price:.2f} | SL: {sl_price:.2f}"
         cat_pnl = self._category_pnl.get(category, 0)
+        daily_net = self._daily_wins - self._daily_realized_losses
         _notify(
             "📈 Copy Trade",
             f"{market_question[:45]}\n"
@@ -1423,7 +1498,7 @@ class PolymarketCopyTrader:
             f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
             f"{lifecycle}"
             + (f"\n{close_line}" if close_line else "")
-            + (f"\nCat: {category} ({cat_mult:.1f}x) P/L: ${cat_pnl:+.2f}" if category else "")
+            + (f"\nCat: {category} ({cat_mult:.1f}x) | Cat P/L: ${cat_pnl:+.2f} | Daily: {self._daily_trades} trades, net ${daily_net:+.2f}" if category else "")
             + (f"\nThesis: {trade_thesis[:60]}" if trade_thesis else ""),
         )
         return True
@@ -1593,6 +1668,30 @@ class PolymarketCopyTrader:
         category = pos.category if hasattr(pos, 'category') and pos.category else "other"
         self._category_pnl[category] = self._category_pnl.get(category, 0) + pnl_usd
 
+        # ── Per-category circuit breaker tracking ─────────────────────
+        if pnl_usd < 0:
+            self._daily_category_losses[category] = (
+                self._daily_category_losses.get(category, 0) + abs(pnl_usd)
+            )
+            cat_loss = self._daily_category_losses[category]
+            cat_limit = self._CATEGORY_LOSS_LIMITS.get(category, 25.0)
+            if cat_loss >= cat_limit and category not in self._halted_categories:
+                self._halted_categories.add(category)
+                logger.warning(
+                    "copytrade_category_halted",
+                    category=category,
+                    daily_loss=round(cat_loss, 2),
+                    limit=cat_limit,
+                )
+                _notify(
+                    f"🛑 {category} Halted",
+                    f"Category daily loss: ${cat_loss:.2f} (limit: ${cat_limit:.0f})\n"
+                    f"Other categories still active. Resumes at midnight.",
+                )
+
+        # ── Learning loop: recalculate dynamic multipliers ────────────
+        self._recalculate_category_multipliers()
+
         # Log learning: outcome vs. original thesis for feedback loop
         pos_thesis = getattr(pos, 'thesis', '') or ''
         outcome = "win" if pnl_usd >= 0 else "loss"
@@ -1604,9 +1703,13 @@ class PolymarketCopyTrader:
             pnl=round(pnl_usd, 4),
             hold_hours=round(hold_hours, 1),
             category=category,
+            category_pnl=round(self._category_pnl.get(category, 0), 2),
+            category_mult=self._CATEGORY_MULTIPLIERS.get(category, 0.5),
         )
 
-        # Send iMessage notification with full exit details
+        # ── Full-context exit notification ────────────────────────────
+        daily_net = self._daily_wins - self._daily_realized_losses
+        cat_pnl_after = self._category_pnl.get(category, 0)
         emoji = "✅" if pnl_usd >= 0 else "❌"
         entry_tp = min(pos.entry_price * 1.30, 0.99)
         entry_sl = pos.entry_price * 0.50
@@ -1616,7 +1719,8 @@ class PolymarketCopyTrader:
             f"Entry: {pos.entry_price:.2f} → Exit: {current_price:.2f}\n"
             f"P&L: ${pnl_usd:+.2f} ({pnl_pct*100:+.1f}%)\n"
             f"Hold: {hold_hours:.1f}h | Peak: {signal.peak_price:.2f}\n"
-            f"Targets were Trail@: {entry_tp:.2f} | SL: {entry_sl:.2f}"
+            f"Targets were Trail@: {entry_tp:.2f} | SL: {entry_sl:.2f}\n"
+            f"Cat P/L after: ${cat_pnl_after:+.2f} (${pnl_usd:+.2f} this trade) | Daily net: ${daily_net:+.2f} | Session: ${self._bankroll:.0f} bankroll"
             + (f"\nThesis: {pos_thesis[:50]}" if pos_thesis else ""),
         )
 

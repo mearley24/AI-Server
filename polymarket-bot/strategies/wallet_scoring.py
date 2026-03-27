@@ -57,6 +57,12 @@ class WalletAnalysis:
     last_active: float = 0.0
     total_volume: float = 0.0
 
+    # Category-aware scoring
+    category_win_rates: dict[str, float] = field(default_factory=dict)  # category -> win rate
+    primary_categories: list[str] = field(default_factory=list)  # top 2-3 categories
+    category_adjusted_score: float = 0.0  # composite score weighted by our category performance
+    both_sides_trader: bool = False  # flags wallets that buy opposing outcomes
+
 
 class WalletScorer:
     """Scores wallets using composite metrics and red flag detection."""
@@ -274,8 +280,16 @@ class WalletScorer:
         open_losing: int = 0,
         avg_win_pnl: float = 0.0,
         avg_loss_pnl: float = 0.0,
+        category_pnl: dict[str, float] | None = None,
+        wallet_categories: dict[str, int] | None = None,
     ) -> WalletAnalysis:
-        """Quick scoring from pre-aggregated stats (used during wallet scan)."""
+        """Quick scoring from pre-aggregated stats (used during wallet scan).
+
+        Args:
+            category_pnl: Our bot's actual P/L per category — used to boost/penalize
+                wallets based on which categories they trade.
+            wallet_categories: category -> trade count for this wallet.
+        """
         analysis = WalletAnalysis(address=address)
         analysis.wins = wins
         analysis.losses = losses
@@ -321,5 +335,33 @@ class WalletScorer:
                 + analysis.recency_score * self._w_rec
                 + analysis.consistency_score * self._w_con
             )
+
+        # ── Category-aware scoring ────────────────────────────────────
+        if wallet_categories:
+            total_cat_trades = sum(wallet_categories.values())
+            if total_cat_trades > 0:
+                # Build primary_categories (top 2-3 by trade count)
+                sorted_cats = sorted(wallet_categories.items(), key=lambda x: -x[1])
+                analysis.primary_categories = [c for c, _ in sorted_cats[:3]]
+
+                # Apply category P/L weighting if we have our bot's P/L data
+                if category_pnl and analysis.composite_score > 0:
+                    weighted_boost = 0.0
+                    for cat, count in wallet_categories.items():
+                        cat_weight = count / total_cat_trades
+                        our_pnl = category_pnl.get(cat, 0.0)
+                        if our_pnl > 0:
+                            # Profitable category — boost up to 30%
+                            weighted_boost += cat_weight * 0.30
+                        elif our_pnl < -25:
+                            # Heavily losing category — penalize up to 40%
+                            weighted_boost -= cat_weight * 0.40
+                        elif our_pnl < 0:
+                            # Slightly losing — smaller penalty
+                            weighted_boost -= cat_weight * 0.20
+
+                    analysis.category_adjusted_score = analysis.composite_score * (1.0 + weighted_boost)
+                else:
+                    analysis.category_adjusted_score = analysis.composite_score
 
         return analysis

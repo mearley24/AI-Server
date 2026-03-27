@@ -32,6 +32,8 @@ class KellySizer:
         wallet_win_rate: float,
         market_price: float,
         bankroll: float,
+        category: str = "",
+        category_pnl: float = 0.0,
     ) -> float:
         """Calculate position size using Kelly Criterion for binary prediction markets.
 
@@ -39,6 +41,8 @@ class KellySizer:
             wallet_win_rate: Estimated true probability (from source wallet's win rate)
             market_price: Current market price (0-1)
             bankroll: Available USDC balance
+            category: Market category (e.g. "crypto_updown", "politics")
+            category_pnl: Our bot's realized P/L for this category
 
         Returns:
             Position size in USD, clamped to [min_size, max_bankroll_pct * bankroll]
@@ -46,7 +50,25 @@ class KellySizer:
         if bankroll <= 0 or market_price <= 0 or market_price >= 1:
             return self._min_size
 
-        p = wallet_win_rate  # estimated true probability of outcome
+        # ── Category-adjusted win rate ────────────────────────────────
+        original_win_rate = wallet_win_rate
+        p = wallet_win_rate
+
+        if category and category_pnl < 0:
+            if category_pnl > -25:
+                p = p * 0.90  # reduce by 10%
+            elif category_pnl > -50:
+                p = p * 0.75  # reduce by 25%
+            else:
+                p = p * 0.60  # reduce by 40%
+            logger.info(
+                "kelly_category_adjustment",
+                category=category,
+                category_pnl=round(category_pnl, 2),
+                original_win_rate=round(original_win_rate, 3),
+                adjusted_win_rate=round(p, 3),
+            )
+
         q = 1 - p
         b = (1 / market_price) - 1  # payout odds (e.g., price 0.40 → odds 1.5)
 
@@ -61,8 +83,10 @@ class KellySizer:
             logger.debug(
                 "kelly_negative_ev",
                 win_rate=round(wallet_win_rate, 3),
+                adjusted_win_rate=round(p, 3),
                 price=round(market_price, 3),
                 kelly=round(kelly, 4),
+                category=category,
             )
             return self._min_size
 
@@ -76,11 +100,13 @@ class KellySizer:
         logger.debug(
             "kelly_size_calculated",
             win_rate=round(wallet_win_rate, 3),
+            adjusted_win_rate=round(p, 3),
             price=round(market_price, 3),
             kelly_raw=round(kelly, 4),
             quarter_kelly=round(kelly * self._kelly_fraction, 4),
             bankroll=round(bankroll, 2),
             position_usd=round(result, 2),
+            category=category,
         )
 
         return round(result, 2)
