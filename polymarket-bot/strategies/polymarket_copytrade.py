@@ -1147,12 +1147,6 @@ class PolymarketCopyTrader:
                     ev=round(validation.expected_value, 3),
                     reasoning=validation.reasoning[:80],
                 )
-                _notify(
-                    "🤖 LLM Rejected Trade",
-                    f"{market_question[:45]}\n"
-                    f"Price: {price:.2f} | LLM prob: {validation.llm_probability:.2f}\n"
-                    f"Reason: {validation.reasoning[:60]}",
-                )
                 return False
 
         loop = asyncio.get_event_loop()
@@ -1174,10 +1168,14 @@ class PolymarketCopyTrader:
         time_to_close = ""
         try:
             if market and self._http:
-                mkt_resp = await self._http.get(f"{self._gamma_url}/markets/{market}")
+                mkt_resp = await self._http.get(
+                    f"{self._gamma_url}/markets",
+                    params={"condition_id": market, "limit": 1},
+                )
                 if mkt_resp.status_code == 200:
-                    mkt_data = mkt_resp.json()
-                    market_end_date = mkt_data.get("endDate", mkt_data.get("end_date_iso", ""))
+                    mkt_list = mkt_resp.json()
+                    mkt_data = mkt_list[0] if isinstance(mkt_list, list) and mkt_list else mkt_list
+                    market_end_date = mkt_data.get("endDate", mkt_data.get("endDateIso", ""))
                     if market_end_date:
                         import datetime as _dt
                         try:
@@ -1195,8 +1193,8 @@ class PolymarketCopyTrader:
                                     time_to_close = f"{days:.1f}d"
                         except Exception:
                             pass
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("copytrade_enddate_fetch_error", error=str(exc)[:80])
 
         # Place order
         logger.info("copytrade_placing_order", market=market_question[:40], buy_price=buy_price, size_usd=round(size_usd, 2), size_shares=size_shares, kelly=self._kelly_enabled, bankroll=round(self._bankroll, 2))
