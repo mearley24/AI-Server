@@ -49,6 +49,7 @@ from src.signer import SIDE_BUY, SIDE_SELL
 
 from strategies.exit_engine import ExitEngine, ExitSignal
 from strategies.kelly_sizing import KellySizer, get_bankroll_from_env, fetch_onchain_bankroll
+from strategies.rate_scaler import RateScaler
 from strategies.wallet_scoring import WalletScorer
 from strategies.correlation_tracker import CorrelationTracker
 from strategies.llm_validator import LLMValidator
@@ -206,6 +207,9 @@ class PolymarketCopyTrader:
         self._max_trades_per_hour: int = int(os.environ.get("MAX_TRADES_PER_HOUR", "10"))
         self._hourly_trade_times: list[float] = []  # epoch timestamps of recent trades
 
+        # ── Bankroll-based rate auto-scaling ──────────────────────────
+        self._rate_scaler = RateScaler(notify_fn=_notify)
+
         # ── Per-wallet daily trade limit ──────────────────────────────
         self._max_trades_per_wallet_per_day: int = int(os.environ.get("MAX_TRADES_PER_WALLET_PER_DAY", "3"))
         self._wallet_daily_trades: dict[str, int] = {}  # wallet_address -> trade count today
@@ -294,6 +298,10 @@ class PolymarketCopyTrader:
         if self._positions:
             logger.info("copytrade_positions_restored", count=len(self._positions))
 
+        # Initialize rate scaler with current bankroll
+        initial_rate = self._rate_scaler.update(self._bankroll)
+        self._max_trades_per_hour = initial_rate
+
         self._task = asyncio.create_task(self._run_loop())
         logger.info(
             "copytrade_started",
@@ -305,6 +313,7 @@ class PolymarketCopyTrader:
             check_interval=self._check_interval,
             daily_loss_limit=self._daily_loss_limit,
             max_trades_per_hour=self._max_trades_per_hour,
+            rate_auto_scaling=self._rate_scaler.is_auto,
             dry_run=self._dry_run,
             kelly_enabled=self._kelly_enabled,
             bankroll=self._bankroll,
@@ -352,6 +361,9 @@ class PolymarketCopyTrader:
                             if new_bankroll > 0:
                                 self._bankroll = new_bankroll
                                 logger.info("bankroll_updated", bankroll=round(self._bankroll, 2), source="onchain")
+                                # Auto-scale trade rate based on new bankroll
+                                new_rate = self._rate_scaler.update(self._bankroll)
+                                self._max_trades_per_hour = new_rate
                         self._last_bankroll_refresh = now
                     except Exception as exc:
                         logger.warning("bankroll_refresh_error", error=str(exc)[:100])

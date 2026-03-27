@@ -77,15 +77,6 @@ sports_arb:
     - sports
     - esports
 
-# Order Flow Analyzer
-order_flow:
-  enabled: true
-  imbalance_threshold: 2.5  # bid:ask ratio to trigger signal
-  compression_atr_periods: 14
-  compression_squeeze_factor: 0.5  # ATR < 50% of 20-period avg
-  delta_divergence_threshold: 0.3  # 30% divergence between price and CVD
-  lookback_candles: 50
-
 # Security
 security:
   vault_enabled: true
@@ -98,22 +89,9 @@ security:
   audit_retention_days: 90
   kill_switch_enabled: true
 
-# BTC price feed source for latency detection and correlation strategies
+# BTC price feed source for correlation strategies
 # Options: kraken (default, US-friendly), coinbase, binance (geoblocked in US)
 btc_feed_source: kraken
-
-# Latency Detector (BTC-Polymarket spread)
-# Uses proven 9-16 second timing window for structural Polymarket repricing lag
-latency_detector:
-  enabled: true
-  binance_symbol: btcusdt  # legacy, only used when btc_feed_source=binance
-  momentum_window_seconds: 10
-  price_change_threshold_pct: 0.11  # 0.11% BTC move triggers detection
-  entry_delay_ms: 9000  # wait 9 seconds after detection before entering
-  entry_window_ms: 7000  # window closes 16 seconds after detection (9+7)
-  polymarket_lag_threshold_seconds: 3  # if PM hasn't repriced within 3s
-  signal_cooldown_seconds: 30
-  track_timing_metrics: true
 
 # Debate Engine (Bull/Bear/Judge pre-trade validation)
 debate_engine:
@@ -159,6 +137,16 @@ crypto:
   cvd_lookback_trades: 500
   cvd_divergence_threshold: 0.02
   cvd_poll_interval: 120
+
+# ── Liquidity Provider (market-making) ────────────────────────────
+# Disabled by default — set copytrade_lp_enabled: true when ready
+liquidity_provider:
+  enabled: false
+  spread: 0.03           # 3% spread (bid-ask)
+  refresh_secs: 60       # refresh quotes every 60 seconds
+  max_markets: 5         # max concurrent LP markets
+  max_inventory: 50.0    # max inventory per market in USD
+  circuit_breaker: -30.0 # halt LP if daily P/L drops below this
 
 # ── Notifications ─────────────────────────────────────────────────
 notifications:
