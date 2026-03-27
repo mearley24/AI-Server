@@ -143,71 +143,50 @@ def ask_openclaw(message: str) -> str:
 
 
 def get_trading_status() -> str:
-    """Get live trading P&L and positions."""
+    """Get live Polymarket trading status."""
     parts = []
 
     try:
-        # Bot status
         resp = urlopen("http://127.0.0.1:8430/status", timeout=10)
         status = json.loads(resp.read())
-        mode = "LIVE" if not status.get("platforms", {}).get("crypto", {}).get("dry_run") else "PAPER"
-        parts.append(f"Mode: {mode}")
-    except:
-        parts.append("Mode: Unknown")
+
+        # Bankroll / USDC balance
+        bankroll = status.get("bankroll", 0)
+        parts.append(f"USDC Balance: ${bankroll:.2f}")
+
+        # Positions
+        positions = status.get("positions", [])
+        if positions:
+            total_value = sum(p.get("value", 0) for p in positions)
+            parts.append(f"Open positions: {len(positions)} (${total_value:.2f})")
+        else:
+            parts.append("Open positions: 0")
+
+        # Open orders
+        open_orders = status.get("open_orders", 0)
+        parts.append(f"Open orders: {open_orders}")
+
+        # Category P/L breakdown
+        category_pnl = status.get("category_pnl", {})
+        if category_pnl:
+            parts.append("Category P/L:")
+            for cat, pnl in category_pnl.items():
+                parts.append(f"  {cat}: ${pnl:.2f}")
+            total_pnl = sum(category_pnl.values())
+            parts.append(f"Total P/L: ${total_pnl:.2f}")
+
+        # Recent trades
+        recent_trades = status.get("recent_trades", status.get("total_trades", 0))
+        if recent_trades:
+            parts.append(f"Recent trades: {recent_trades}")
+    except Exception as e:
+        parts.append(f"Polymarket status unavailable: {e}")
 
     try:
-        # Strategies
         resp = urlopen("http://127.0.0.1:8430/strategies", timeout=10)
         strats = json.loads(resp.read()).get("strategies", {})
         running = [name for name, s in strats.items() if s.get("state") == "running"]
         parts.append(f"Strategies: {len(running)} running ({', '.join(running[:4])})")
-    except:
-        pass
-
-    try:
-        # Real Kraken balance via a helper endpoint or direct calculation
-        # Hit the mission control trading API which reads paper_trades.jsonl
-        resp = urlopen("http://127.0.0.1:8098/api/trading", timeout=10)
-        data = json.loads(resp.read())
-        total_trades = data.get("total_trades", 0)
-
-        # Per-pair P&L
-        pairs = data.get("pairs", {})
-        for pair_name, info in pairs.items():
-            display = info.get("display_name", pair_name)
-            buys = info.get("buys", 0)
-            sells = info.get("sells", 0)
-            pnl = info.get("estimated_pnl", 0)
-            spread = info.get("spread_capture", 0)
-            parts.append(f"{display}: {buys}B/{sells}S spread=${spread:.4f} P&L=${pnl:.2f}")
-
-        parts.append(f"Total trades: {total_trades}")
-        total_pnl = data.get("total_pnl", 0)
-        if total_pnl:
-            parts.append(f"Total P&L: ${total_pnl:.2f}")
-    except Exception as e:
-        parts.append(f"P&L data unavailable: {e}")
-
-    try:
-        # Weather positions
-        resp = urlopen("http://127.0.0.1:8430/weather/edges", timeout=10)
-        data = json.loads(resp.read())
-        edges = data.get("count", 0)
-        positions = data.get("positions", 0)
-
-        if positions > 0:
-            open_pos = data.get("open_positions", [])
-            total_weather_pnl = sum(p.get("unrealized_pnl", 0) for p in open_pos)
-            parts.append(f"Weather: {edges} edges, {positions} positions, unrealized=${total_weather_pnl:.2f}")
-    except:
-        pass
-
-    try:
-        # Open orders
-        resp = urlopen("http://127.0.0.1:8430/status", timeout=10)
-        data = json.loads(resp.read())
-        open_orders = data.get("open_orders", 0)
-        parts.append(f"Open orders: {open_orders}")
     except:
         pass
 
@@ -237,15 +216,21 @@ def get_calendar_status() -> str:
 
 
 def get_weather_status() -> str:
-    """Get weather edges."""
+    """Get weather category P/L from Polymarket."""
     try:
-        resp = urlopen("http://127.0.0.1:8430/weather/edges", timeout=10)
-        data = json.loads(resp.read())
-        edges = data.get("edges", [])
-        positions = data.get("positions", 0)
-        return f"Weather: {len(edges)} edges found, {positions} open positions"
+        resp = urlopen("http://127.0.0.1:8430/status", timeout=10)
+        status = json.loads(resp.read())
+        category_pnl = status.get("category_pnl", {})
+        weather_pnl = category_pnl.get("weather", category_pnl.get("Weather", 0))
+        positions = [p for p in status.get("positions", []) if "weather" in p.get("category", "").lower()]
+        parts = [f"Weather positions: {len(positions)}"]
+        if weather_pnl:
+            parts.append(f"Weather P/L: ${weather_pnl:.2f}")
+        for p in positions[:5]:
+            parts.append(f"  {p.get('title', p.get('market', 'Unknown'))}: ${p.get('value', 0):.2f}")
+        return "\n".join(parts)
     except Exception as e:
-        return f"Weather unavailable: {e}"
+        return f"Weather status unavailable: {e}"
 
 
 def get_system_status() -> str:
@@ -260,7 +245,6 @@ def get_system_status() -> str:
         "Notifications": 8095,
         "D-Tools": 8096,
         "ClawWork": 8097,
-        "Mission Ctrl": 8098,
         "Knowledge": 8100,
     }
     up = 0
