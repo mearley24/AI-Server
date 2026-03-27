@@ -138,7 +138,7 @@ class PolymarketCopyTrader:
 
         # Config from settings
         self._size_usd: float = getattr(settings, "copytrade_size_usd", 5.0)
-        self._max_positions: int = getattr(settings, "copytrade_max_positions", 35)
+        self._max_positions: int = getattr(settings, "copytrade_max_positions", 100)
         self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.55)
         self._min_trades: int = getattr(settings, "copytrade_min_trades", 20)
         self._scan_interval_hours: float = getattr(settings, "copytrade_scan_interval_hours", 6.0)
@@ -232,7 +232,7 @@ class PolymarketCopyTrader:
         self._wallet_daily_trades: dict[str, int] = {}  # wallet_address -> trade count today
 
         # ── Per-category absolute position cap ────────────────────────
-        self._max_positions_per_category: int = int(os.environ.get("MAX_POSITIONS_PER_CATEGORY", "8"))
+        self._max_positions_per_category: int = int(os.environ.get("MAX_POSITIONS_PER_CATEGORY", "50"))
 
         # Open copied positions — persisted to disk
         self._positions_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_positions.json"
