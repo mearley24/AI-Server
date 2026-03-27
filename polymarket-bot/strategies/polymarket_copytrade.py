@@ -1064,7 +1064,7 @@ class PolymarketCopyTrader:
 
         # Skip tiny source trades (noise/test)
         source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
-        min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "1.0"))
+        min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "0.95"))
         if source_usdc < min_source_trade:
             logger.info("copytrade_skip", reason="small_trade", usdc=source_usdc, min=min_source_trade, market=market_question[:40])
             return False
@@ -1113,10 +1113,6 @@ class PolymarketCopyTrader:
                 logger.info("copytrade_skip", reason="same_token", token=token_id[:16])
                 return False
 
-        # Skip crypto Up/Down markets
-        if self._is_crypto_updown_market(market_question):
-            logger.info("copytrade_skip", reason="crypto_updown", market=market_question[:40])
-            return False
 
         if not market_question:
             market_question = market
