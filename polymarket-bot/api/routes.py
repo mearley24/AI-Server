@@ -100,8 +100,13 @@ async def status() -> StatusResponse:
     strat_status = {}
     total_orders = 0
     for name, strat in deps.strategies.items():
-        strat_status[name] = strat.status
-        total_orders += len(strat.open_orders)
+        if hasattr(strat, "get_status"):
+            st = strat.get_status()
+            strat_status[name] = st
+            total_orders += st.get("open_positions", 0)
+        else:
+            strat_status[name] = strat.status
+            total_orders += len(strat.open_orders)
 
     # Gather platform connection states
     platform_info: dict[str, Any] = {}
@@ -135,17 +140,24 @@ async def positions(
     # Polymarket strategy-tracked positions
     if platform is None or platform == "polymarket":
         for name, strat in deps.strategies.items():
-            for order_id, order in strat.open_orders.items():
-                all_positions.append({
-                    "platform": "polymarket",
-                    "order_id": order_id,
-                    "token_id": order.token_id,
-                    "market": order.market,
-                    "side": order.side,
-                    "price": order.price,
-                    "size": order.size,
-                    "strategy": name,
-                })
+            if hasattr(strat, "get_status"):
+                st = strat.get_status()
+                for pos in st.get("positions", []):
+                    pos["platform"] = "polymarket"
+                    pos["strategy"] = name
+                    all_positions.append(pos)
+            elif hasattr(strat, "open_orders"):
+                for order_id, order in strat.open_orders.items():
+                    all_positions.append({
+                        "platform": "polymarket",
+                        "order_id": order_id,
+                        "token_id": order.token_id,
+                        "market": order.market,
+                        "side": order.side,
+                        "price": order.price,
+                        "size": order.size,
+                        "strategy": name,
+                    })
 
         # Also fetch from P&L tracker
         if deps.pnl_tracker:

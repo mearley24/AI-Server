@@ -211,6 +211,8 @@ async def lifespan(app: FastAPI):
     deps.platform_clients = platform_clients
     deps.redeemer = redeemer
     deps.strategies = {}
+    for name, strat in platform_strategies:
+        deps.strategies[name] = strat
 
     # Register kill switch callback to stop all strategies
     async def _on_kill(reason: str) -> None:
