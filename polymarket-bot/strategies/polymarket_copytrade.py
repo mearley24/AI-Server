@@ -295,7 +295,7 @@ class PolymarketCopyTrader:
 
         # ── NEW: Phase 2 — Correlation Exposure Tracker ──────────────
         self._correlation_tracker = CorrelationTracker(
-            max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.25")),
+            max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.50")),
             bankroll=self._bankroll,
         )
 
@@ -1188,7 +1188,7 @@ class PolymarketCopyTrader:
 
         # Skip tiny source trades (noise/test)
         source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
-        min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "0.95"))
+        min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "0.50"))
         if source_usdc < min_source_trade:
             logger.info("copytrade_skip", reason="small_trade", usdc=source_usdc, min=min_source_trade, market=market_question[:40])
             return False
