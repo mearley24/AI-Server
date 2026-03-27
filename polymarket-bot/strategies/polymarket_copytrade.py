@@ -203,7 +203,7 @@ class PolymarketCopyTrader:
         self._min_trade_gap: float = 10.0
 
         # ── Trade pacing — rolling hourly cap ─────────────────────────
-        self._max_trades_per_hour: int = int(os.environ.get("MAX_TRADES_PER_HOUR", "10"))
+        self._max_trades_per_hour: int = int(os.environ.get("MAX_TRADES_PER_HOUR", "20"))
         self._hourly_trade_times: list[float] = []  # epoch timestamps of recent trades
 
         # ── Per-wallet daily trade limit ──────────────────────────────
@@ -1337,14 +1337,19 @@ class PolymarketCopyTrader:
         self._pnl_tracker.record_trade(pnl_trade)
 
         # Send notification
+        # Position lifecycle info
+        tp1_price = min(price * 2.0, 0.99)  # 100% gain
+        sl_price = price * 0.74
         close_line = f"Closes in: {time_to_close}" if time_to_close else ""
+        lifecycle = f"TP: {tp1_price:.2f} | SL: {sl_price:.2f}"
         _notify(
             "📈 Copy Trade",
             f"{market_question[:45]}\n"
             f"Price: {price:.2f} | Size: ${size_usd:.2f}\n"
             f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
-            f"Category: {category}"
-            + (f"\n{close_line}" if close_line else ""),
+            f"{lifecycle}"
+            + (f"\n{close_line}" if close_line else "")
+            + (f"\nCategory: {category}" if category else ""),
         )
         return True
 
