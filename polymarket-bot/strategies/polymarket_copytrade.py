@@ -1248,12 +1248,16 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="no_clob_client")
             return False
 
-        # ── Correlation exposure check + category detection ────────
-        # Detect category first (needed for all downstream checks)
+        # ── Detect category ─────────────────────────────────────
         category = categorize_market(market_question)
 
-        # ── Per-category circuit breaker ──────────────────────────
-        if category in self._halted_categories:
+        # ── HIGH-CONVICTION BYPASS ─────────────────────────────
+        # Wallets with 90%+ win rate on 20+ trades are proven winners.
+        # Skip correlation limits, category caps, and LLM validation.
+        high_conviction = wallet.win_rate >= 0.90 and wallet.total_resolved >= 20
+
+        # ── Per-category circuit breaker (skip for high conviction) ──
+        if not high_conviction and category in self._halted_categories:
             logger.info(
                 "copytrade_skip", reason="category_halted",
                 category=category,
@@ -1290,81 +1294,88 @@ class PolymarketCopyTrader:
             size_usd *= 0.5
             logger.info("copytrade_esports_reduction", market=market_question[:40], size_after=round(size_usd, 2))
 
-        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, esports=is_esports, category_pnl=round(self._category_pnl.get(category, 0), 2))
+        # High conviction wallets get 1.5x size boost
+        if high_conviction:
+            size_usd *= 1.5
 
-        # Re-check correlation with adjusted size
-        # Profitable categories get NO exposure limit — let winners ride
-        cat_pnl_current = self._category_pnl.get(category, 0)
-        category_is_profitable = cat_pnl_current > 0
+        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, esports=is_esports, high_conviction=high_conviction, category_pnl=round(self._category_pnl.get(category, 0), 2))
 
-        if not category_is_profitable:
-            would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
-                market_question=market_question,
-                size_usd=size_usd,
+        # ── Correlation + category caps (SKIPPED for high conviction) ──
+        if not high_conviction:
+            cat_pnl_current = self._category_pnl.get(category, 0)
+            category_is_profitable = cat_pnl_current > 0
+
+            if not category_is_profitable:
+                would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
+                    market_question=market_question,
+                    size_usd=size_usd,
+                )
+                if would_exceed:
+                    logger.info(
+                        "copytrade_skip_correlation_limit",
+                        category=category,
+                        current_exposure=round(current_exposure, 2),
+                        limit=round(self._correlation_tracker.get_category_limit(), 2),
+                        category_pnl=round(cat_pnl_current, 2),
+                        market=market_question[:40],
+                    )
+                    return False
+
+            category_position_count = sum(
+                1 for p in self._positions.values() if p.category == category
             )
-            if would_exceed:
+            effective_cat_cap = self._max_positions_per_category * 2 if category_is_profitable else self._max_positions_per_category
+            if category_position_count >= effective_cat_cap:
                 logger.info(
-                    "copytrade_skip_correlation_limit",
+                    "copytrade_skip", reason="category_cap",
                     category=category,
-                    current_exposure=round(current_exposure, 2),
-                    limit=round(self._correlation_tracker.get_category_limit(), 2),
-                    category_pnl=round(cat_pnl_current, 2),
+                    count=category_position_count,
+                    limit=effective_cat_cap,
                     market=market_question[:40],
                 )
                 return False
         else:
             logger.info(
-                "copytrade_winner_no_limit",
+                "copytrade_high_conviction_bypass",
+                wallet=wallet.address[:10] + "...",
+                win_rate=round(wallet.win_rate, 3),
+                resolved=wallet.total_resolved,
                 category=category,
-                category_pnl=round(cat_pnl_current, 2),
                 market=market_question[:40],
             )
 
-        # Guard: per-category position count cap — relaxed for profitable categories
-        category_position_count = sum(
-            1 for p in self._positions.values() if p.category == category
-        )
-        effective_cat_cap = self._max_positions_per_category * 2 if category_is_profitable else self._max_positions_per_category
-        if category_position_count >= effective_cat_cap:
-            logger.info(
-                "copytrade_skip", reason="category_cap",
+        # ── LLM Validation (SKIPPED for high conviction) ──────────────
+        trade_thesis = ""
+        if not high_conviction:
+            bot_positions_ctx = [
+                {"market_question": p.market_question, "condition_id": p.condition_id}
+                for p in self._positions.values()
+            ]
+            validation = await self._llm_validator.validate_trade(
+                market_question=market_question,
+                current_price=price,
+                trade_direction="BUY",
+                wallet_win_rate=wallet.win_rate,
                 category=category,
-                count=category_position_count,
-                limit=effective_cat_cap,
-                profitable=category_is_profitable,
-                market=market_question[:40],
+                category_pnl=self._category_pnl.get(category, 0),
+                source_wallet=wallet.address,
+                bot_positions=bot_positions_ctx,
             )
-            return False
-
-        # ── Anti-pattern detection + LLM Trade Validation ─────────────
-        # Always run anti-pattern checks; LLM research if enabled
-        bot_positions_ctx = [
-            {"market_question": p.market_question, "condition_id": p.condition_id}
-            for p in self._positions.values()
-        ]
-        validation = await self._llm_validator.validate_trade(
-            market_question=market_question,
-            current_price=price,
-            trade_direction="BUY",
-            wallet_win_rate=wallet.win_rate,
-            category=category,
-            category_pnl=self._category_pnl.get(category, 0),
-            source_wallet=wallet.address,
-            bot_positions=bot_positions_ctx,
-        )
-        trade_thesis = validation.thesis
-        if not validation.approved:
-            logger.info(
-                "copytrade_rejected",
-                market=market_question[:40],
-                price=price,
-                llm_prob=validation.llm_probability,
-                ev=round(validation.expected_value, 3),
-                reasoning=validation.reasoning[:80],
-                anti_patterns=validation.anti_patterns,
-                thesis=trade_thesis[:80],
-            )
-            return False
+            trade_thesis = validation.thesis
+            if not validation.approved:
+                logger.info(
+                    "copytrade_rejected",
+                    market=market_question[:40],
+                    price=price,
+                    llm_prob=validation.llm_probability,
+                    ev=round(validation.expected_value, 3),
+                    reasoning=validation.reasoning[:80],
+                    anti_patterns=validation.anti_patterns,
+                    thesis=trade_thesis[:80],
+                )
+                return False
+        else:
+            trade_thesis = f"High-conviction copy: {wallet.win_rate*100:.0f}% WR on {wallet.total_resolved} trades"
 
         loop = asyncio.get_event_loop()
 
