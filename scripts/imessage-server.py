@@ -24,7 +24,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 OWNER_PHONE = os.environ.get("OWNER_PHONE_NUMBER", "+19705193013")
-REPLY_TO = os.environ.get("REPLY_TO", "bob@symphonysh.com")
+REPLY_TO = os.environ.get("REPLY_TO", OWNER_PHONE)
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
