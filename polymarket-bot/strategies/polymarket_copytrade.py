@@ -1220,8 +1220,8 @@ class PolymarketCopyTrader:
             return False
 
         # Guard: entry price filters — avoid extreme odds (lottery tickets and near-certainties)
-        min_entry_price = float(os.environ.get("COPYTRADE_MIN_ENTRY_PRICE", "0.15"))
-        max_entry_price = float(os.environ.get("COPYTRADE_MAX_ENTRY_PRICE", "0.90"))
+        min_entry_price = float(os.environ.get("COPYTRADE_MIN_ENTRY_PRICE", "0.10"))
+        max_entry_price = float(os.environ.get("COPYTRADE_MAX_ENTRY_PRICE", "0.97"))
         if price < min_entry_price:
             logger.info("copytrade_skip", reason="below_min_entry_price", price=price, min=min_entry_price, market=market_question[:40])
             return False
