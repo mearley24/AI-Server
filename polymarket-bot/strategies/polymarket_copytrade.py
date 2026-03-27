@@ -213,11 +213,14 @@ class PolymarketCopyTrader:
         # ── Per-category absolute position cap ────────────────────────
         self._max_positions_per_category: int = int(os.environ.get("MAX_POSITIONS_PER_CATEGORY", "5"))
 
-        # Open copied positions
-        self._positions: dict[str, CopiedPosition] = {}
+        # Open copied positions — persisted to disk
+        self._positions_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_positions.json"
+        self._positions: dict[str, CopiedPosition] = self._load_positions()
 
-        # Track condition_ids we already have positions in
-        self._active_condition_ids: set[str] = set()
+        # Track condition_ids we already have positions in (rebuild from loaded positions)
+        self._active_condition_ids: set[str] = {
+            p.condition_id for p in self._positions.values() if p.condition_id
+        }
 
         # Track source-wallet sells for exit signals
         self._source_sells: dict[str, set[str]] = {}
@@ -283,6 +286,13 @@ class PolymarketCopyTrader:
 
         # Load cached wallets if available
         self._load_wallet_cache()
+
+        # Re-register persisted positions with exit engine
+        for pos_id, pos in self._positions.items():
+            self._exit_engine.register_position(pos_id, pos.entry_price, pos.copied_at)
+            self._correlation_tracker.add_position(pos_id, pos.market_question, pos.size_usd)
+        if self._positions:
+            logger.info("copytrade_positions_restored", count=len(self._positions))
 
         self._task = asyncio.create_task(self._run_loop())
         logger.info(
@@ -851,6 +861,30 @@ class PolymarketCopyTrader:
         except Exception:
             pass
 
+    def _load_positions(self) -> dict[str, CopiedPosition]:
+        if not hasattr(self, '_positions_path') or not self._positions_path.exists():
+            return {}
+        try:
+            data = json.loads(self._positions_path.read_text())
+            positions = {}
+            for pos_dict in data.get("positions", []):
+                pos = CopiedPosition(**{k: v for k, v in pos_dict.items() if k in CopiedPosition.__dataclass_fields__})
+                positions[pos.position_id] = pos
+            if positions:
+                logger.info("copytrade_positions_loaded", count=len(positions))
+            return positions
+        except Exception as exc:
+            logger.warning("copytrade_positions_load_error", error=str(exc)[:80])
+            return {}
+
+    def _save_positions(self) -> None:
+        try:
+            self._positions_path.parent.mkdir(parents=True, exist_ok=True)
+            data = {"positions": [p.to_dict() for p in self._positions.values()]}
+            self._positions_path.write_text(json.dumps(data, indent=2, default=str))
+        except Exception:
+            pass
+
     # ── Market filtering ─────────────────────────────────────────────────
 
     @staticmethod
@@ -1280,6 +1314,7 @@ class PolymarketCopyTrader:
             end_date=market_end_date,
         )
         self._positions[position_id] = position
+        self._save_positions()
 
         # Register with exit engine
         self._exit_engine.register_position(position_id, price, time.time())
@@ -1469,6 +1504,7 @@ class PolymarketCopyTrader:
         if signal.sell_fraction >= 1.0:
             # Full exit — remove position entirely
             del self._positions[position_id]
+            self._save_positions()
             self._active_condition_ids.discard(pos.condition_id)
             self._exit_engine.unregister_position(position_id)
             self._correlation_tracker.remove_position(position_id)
@@ -1478,6 +1514,7 @@ class PolymarketCopyTrader:
             # Partial exit — reduce position size
             pos.size_shares -= sell_shares
             pos.size_usd -= sell_usd
+            self._save_positions()
 
     # ── 5. Position Redemption ───────────────────────────────────────────
 

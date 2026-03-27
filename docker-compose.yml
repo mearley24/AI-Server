@@ -117,9 +117,9 @@ services:
       - KELLY_FRACTION=${KELLY_FRACTION:-0.25}
       - COPYTRADE_BANKROLL=${COPYTRADE_BANKROLL:-300}
       # Phase 1: Smart exit parameters
-      - EXIT_TP1_PCT=${EXIT_TP1_PCT:-0.15}
-      - EXIT_TP2_PCT=${EXIT_TP2_PCT:-0.30}
-      - EXIT_SL_PCT=${EXIT_SL_PCT:-0.25}
+      - EXIT_TP1_PCT=${EXIT_TP1_PCT:-1.00}
+      - EXIT_TP2_PCT=${EXIT_TP2_PCT:-1.50}
+      - EXIT_SL_PCT=${EXIT_SL_PCT:-0.74}
       - EXIT_TRAILING_PCT=${EXIT_TRAILING_PCT:-0.10}
       - EXIT_TIME_HOURS=${EXIT_TIME_HOURS:-48}
       # Phase 2: Correlation exposure limits
