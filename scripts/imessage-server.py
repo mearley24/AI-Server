@@ -361,6 +361,22 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Kill any existing process on our port before starting
+    import signal
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{PORT}"],
+            capture_output=True, text=True, timeout=5
+        )
+        for pid in result.stdout.strip().split("\n"):
+            pid = pid.strip()
+            if pid and pid.isdigit() and int(pid) != os.getpid():
+                print(f"[bridge] Killing old process on port {PORT}: PID {pid}")
+                os.kill(int(pid), signal.SIGKILL)
+        time.sleep(1)
+    except Exception:
+        pass
+
     # Start message monitoring in background thread
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
@@ -370,8 +386,17 @@ if __name__ == "__main__":
     print(f"[bridge] Listening for: {OWNER_PHONE}")
     print(f"[bridge] Replying to: {REPLY_TO}")
     print(f"[bridge] OpenClaw: {OPENCLAW_URL}")
+
+    import socket
     class ReusableHTTPServer(HTTPServer):
         allow_reuse_address = True
+        def server_bind(self):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except (AttributeError, OSError):
+                pass
+            super().server_bind()
 
     server = ReusableHTTPServer(("0.0.0.0", PORT), Handler)
     server.serve_forever()
