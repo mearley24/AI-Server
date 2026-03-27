@@ -51,7 +51,7 @@ from strategies.exit_engine import ExitEngine, ExitSignal
 from strategies.kelly_sizing import KellySizer, get_bankroll_from_env, fetch_onchain_bankroll
 from strategies.wallet_scoring import WalletScorer
 from strategies.correlation_tracker import CorrelationTracker
-from strategies.llm_validator import LLMValidator
+from strategies.llm_validator import LLMValidator, detect_anti_patterns
 
 logger = structlog.get_logger(__name__)
 
@@ -115,6 +115,7 @@ class CopiedPosition:
     category: str = ""  # market category for correlation tracking
     wallet_win_rate: float = 0.0  # source wallet's win rate at time of copy
     end_date: str = ""  # market end date (ISO string from Gamma API)
+    thesis: str = ""  # research thesis — why this trade was copied
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -290,14 +291,14 @@ class PolymarketCopyTrader:
         # Load cached wallets if available
         self._load_wallet_cache()
 
-        # Seed category P/L from known performance data if empty
+        # Seed category P/L from known Polymarket-only performance data (as of 2026-03-27)
         if not self._category_pnl:
             self._category_pnl = {
-                "weather": 48.97,
-                "sports": -28.23,
-                "crypto_updown": -7.02,
-                "politics": -4.84,
-                "esports": -2.14,
+                "crypto_updown": -56.68,  # 104 trades — worst performer (both-sides buying)
+                "sports": -24.68,         # 51 trades — mostly esports losses
+                "weather": -12.65,        # 59 trades — $77 still in open positions
+                "politics": 2.85,         # 11 trades — profitable, small sample
+                "other": 2.73,            # 33 trades — slightly profitable
             }
             logger.info("copytrade_category_pnl_seeded", categories=self._category_pnl)
 
@@ -399,24 +400,22 @@ class PolymarketCopyTrader:
 
     # ── Category-weighted position sizing ────────────────────────────────
 
+    # Category sizing multipliers based on actual Polymarket P/L data (2026-03-27)
+    _CATEGORY_MULTIPLIERS: dict[str, float] = {
+        "crypto_updown": 0.15,  # -$56.68 on 104 trades — both-sides buying kills us
+        "sports": 0.25,         # -$24.68 on 51 trades — mostly esports losses
+        "weather": 0.8,         # -$12.65 on 59 trades — $77 open, jury still out
+        "politics": 1.2,        # +$2.85 on 11 trades — profitable, increase
+        "other": 1.0,           # +$2.73 on 33 trades — baseline
+    }
+
     def _category_size_multiplier(self, category: str) -> float:
         """Scale position size based on category's track record.
 
-        Winning categories get up to 2x size, losing categories get scaled down to 0.25x.
-        New/unknown categories get 0.5x (half size until proven).
+        Uses fixed multipliers derived from actual Polymarket trading data.
+        Unknown categories get 0.5x (conservative until proven).
         """
-        pnl = self._category_pnl.get(category, None)
-        if pnl is None:
-            return 0.5  # Unknown category — half size until we have data
-        if pnl > 20:
-            return 2.0  # Strong winner — double down
-        if pnl > 0:
-            return 1.5  # Moderate winner — increase
-        if pnl > -10:
-            return 0.75  # Slightly losing — reduce
-        if pnl > -25:
-            return 0.5  # Losing — half size
-        return 0.25  # Big loser — quarter size (but don't block entirely)
+        return self._CATEGORY_MULTIPLIERS.get(category, 0.5)
 
     # ── Trade pacing ──────────────────────────────────────────────────────
 
@@ -1136,11 +1135,14 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="low_bankroll", bankroll=round(self._bankroll, 2))
             return False
 
-        # Guard: basically-resolved markets
-        max_price = float(os.environ.get("COPYTRADE_MAX_PRICE", "0.95"))
-        min_price = float(os.environ.get("COPYTRADE_MIN_PRICE", "0.02"))
-        if price > max_price or price < min_price:
-            logger.info("copytrade_skip", reason="extreme_price", price=price, max=max_price, min=min_price)
+        # Guard: entry price filters — avoid extreme odds (lottery tickets and near-certainties)
+        min_entry_price = float(os.environ.get("COPYTRADE_MIN_ENTRY_PRICE", "0.15"))
+        max_entry_price = float(os.environ.get("COPYTRADE_MAX_ENTRY_PRICE", "0.90"))
+        if price < min_entry_price:
+            logger.info("copytrade_skip", reason="below_min_entry_price", price=price, min=min_entry_price, market=market_question[:40])
+            return False
+        if price > max_entry_price:
+            logger.info("copytrade_skip", reason="above_max_entry_price", price=price, max=max_entry_price, market=market_question[:40])
             return False
 
         # Guard: already have position in this market
@@ -1180,7 +1182,15 @@ class PolymarketCopyTrader:
         )
         cat_mult = self._category_size_multiplier(category)
         size_usd = size_usd * cat_mult
-        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, category_pnl=round(self._category_pnl.get(category, 0), 2))
+
+        # Esports detection — extra 0.5x size reduction for thin esports markets
+        esports_keywords = ["counter-strike", "cs2", "cs:go", "valorant", "dota", "lol ", "league of legends"]
+        is_esports = any(kw in (market_question or "").lower() for kw in esports_keywords)
+        if is_esports:
+            size_usd *= 0.5
+            logger.info("copytrade_esports_reduction", market=market_question[:40], size_after=round(size_usd, 2))
+
+        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, esports=is_esports, category_pnl=round(self._category_pnl.get(category, 0), 2))
 
         # Re-check correlation with adjusted size
         would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
@@ -1211,24 +1221,35 @@ class PolymarketCopyTrader:
             )
             return False
 
-        # ── NEW: LLM Trade Validation ────────────────────────────────
-        if self._llm_validator.enabled:
-            validation = await self._llm_validator.validate_trade(
-                market_question=market_question,
-                current_price=price,
-                trade_direction="BUY",
-                wallet_win_rate=wallet.win_rate,
+        # ── Anti-pattern detection + LLM Trade Validation ─────────────
+        # Always run anti-pattern checks; LLM research if enabled
+        bot_positions_ctx = [
+            {"market_question": p.market_question, "condition_id": p.condition_id}
+            for p in self._positions.values()
+        ]
+        validation = await self._llm_validator.validate_trade(
+            market_question=market_question,
+            current_price=price,
+            trade_direction="BUY",
+            wallet_win_rate=wallet.win_rate,
+            category=category,
+            category_pnl=self._category_pnl.get(category, 0),
+            source_wallet=wallet.address,
+            bot_positions=bot_positions_ctx,
+        )
+        trade_thesis = validation.thesis
+        if not validation.approved:
+            logger.info(
+                "copytrade_rejected",
+                market=market_question[:40],
+                price=price,
+                llm_prob=validation.llm_probability,
+                ev=round(validation.expected_value, 3),
+                reasoning=validation.reasoning[:80],
+                anti_patterns=validation.anti_patterns,
+                thesis=trade_thesis[:80],
             )
-            if not validation.approved:
-                logger.info(
-                    "copytrade_llm_rejected",
-                    market=market_question[:40],
-                    price=price,
-                    llm_prob=validation.llm_probability,
-                    ev=round(validation.expected_value, 3),
-                    reasoning=validation.reasoning[:80],
-                )
-                return False
+            return False
 
         loop = asyncio.get_event_loop()
 
@@ -1359,6 +1380,7 @@ class PolymarketCopyTrader:
             category=category,
             wallet_win_rate=wallet.win_rate,
             end_date=market_end_date,
+            thesis=trade_thesis,
         )
         self._positions[position_id] = position
         self._save_positions()
@@ -1393,6 +1415,7 @@ class PolymarketCopyTrader:
         sl_price = price * 0.50
         close_line = f"Closes in: {time_to_close}" if time_to_close else ""
         lifecycle = f"Trail@: {tp1_price:.2f} | SL: {sl_price:.2f}"
+        cat_pnl = self._category_pnl.get(category, 0)
         _notify(
             "📈 Copy Trade",
             f"{market_question[:45]}\n"
@@ -1400,7 +1423,8 @@ class PolymarketCopyTrader:
             f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
             f"{lifecycle}"
             + (f"\n{close_line}" if close_line else "")
-            + (f"\nCat: {category} ({cat_mult:.1f}x)" if category else ""),
+            + (f"\nCat: {category} ({cat_mult:.1f}x) P/L: ${cat_pnl:+.2f}" if category else "")
+            + (f"\nThesis: {trade_thesis[:60]}" if trade_thesis else ""),
         )
         return True
 
@@ -1569,6 +1593,19 @@ class PolymarketCopyTrader:
         category = pos.category if hasattr(pos, 'category') and pos.category else "other"
         self._category_pnl[category] = self._category_pnl.get(category, 0) + pnl_usd
 
+        # Log learning: outcome vs. original thesis for feedback loop
+        pos_thesis = getattr(pos, 'thesis', '') or ''
+        outcome = "win" if pnl_usd >= 0 else "loss"
+        logger.info(
+            "copytrade_learning_update",
+            market=pos.market_question[:50],
+            thesis=pos_thesis[:80],
+            outcome=outcome,
+            pnl=round(pnl_usd, 4),
+            hold_hours=round(hold_hours, 1),
+            category=category,
+        )
+
         # Send iMessage notification with full exit details
         emoji = "✅" if pnl_usd >= 0 else "❌"
         entry_tp = min(pos.entry_price * 1.30, 0.99)
@@ -1579,7 +1616,8 @@ class PolymarketCopyTrader:
             f"Entry: {pos.entry_price:.2f} → Exit: {current_price:.2f}\n"
             f"P&L: ${pnl_usd:+.2f} ({pnl_pct*100:+.1f}%)\n"
             f"Hold: {hold_hours:.1f}h | Peak: {signal.peak_price:.2f}\n"
-            f"Targets were Trail@: {entry_tp:.2f} | SL: {entry_sl:.2f}",
+            f"Targets were Trail@: {entry_tp:.2f} | SL: {entry_sl:.2f}"
+            + (f"\nThesis: {pos_thesis[:50]}" if pos_thesis else ""),
         )
 
         # Full exit — remove position entirely (all exits are 100% now)
@@ -1674,6 +1712,7 @@ class PolymarketCopyTrader:
                     "source_wallet": p.source_wallet[:10] + "...",
                     "age_minutes": round((time.time() - p.copied_at) / 60, 1),
                     "category": p.category,
+                    "thesis": (getattr(p, 'thesis', '') or '')[:60],
                 }
                 for p in self._positions.values()
             ],

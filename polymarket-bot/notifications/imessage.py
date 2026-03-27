@@ -50,6 +50,8 @@ class IMessageNotifier(Notifier):
         size = trade.get("size", 0)
         price = trade.get("price", 0)
         pnl = trade.get("pnl")
+        category = trade.get("category", "")
+        thesis = trade.get("thesis", "")
 
         text = f"Platform: {platform}\n"
         text += f"Strategy: {strategy}\n"
@@ -58,5 +60,9 @@ class IMessageNotifier(Notifier):
         text += f"Size: ${size:.2f} @ {price}\n"
         if pnl is not None:
             text += f"P&L: ${pnl:+.2f}\n"
+        if category:
+            text += f"Category: {category}\n"
+        if thesis:
+            text += f"Thesis: {thesis[:80]}\n"
 
         return self._publish("\U0001f4b0 Trade Executed", text)
