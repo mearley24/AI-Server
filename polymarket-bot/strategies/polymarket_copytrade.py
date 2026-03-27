@@ -267,6 +267,9 @@ class PolymarketCopyTrader:
             "COPYTRADE_LEADERBOARD_ENABLED", "true"
         ).lower() in ("true", "1", "yes")
 
+        # ── Category P/L tracking for adaptive position sizing ──────
+        self._category_pnl: dict[str, float] = {}  # category -> realized P/L
+
         # ── NEW: Phase 2 — Correlation Exposure Tracker ──────────────
         self._correlation_tracker = CorrelationTracker(
             max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.15")),
@@ -286,6 +289,17 @@ class PolymarketCopyTrader:
 
         # Load cached wallets if available
         self._load_wallet_cache()
+
+        # Seed category P/L from known performance data if empty
+        if not self._category_pnl:
+            self._category_pnl = {
+                "weather": 48.97,
+                "sports": -28.23,
+                "crypto_updown": -7.02,
+                "politics": -4.84,
+                "esports": -2.14,
+            }
+            logger.info("copytrade_category_pnl_seeded", categories=self._category_pnl)
 
         # Re-register persisted positions with exit engine
         for pos_id, pos in self._positions.items():
@@ -382,6 +396,27 @@ class PolymarketCopyTrader:
                 await asyncio.sleep(self._check_interval)
             except asyncio.CancelledError:
                 break
+
+    # ── Category-weighted position sizing ────────────────────────────────
+
+    def _category_size_multiplier(self, category: str) -> float:
+        """Scale position size based on category's track record.
+
+        Winning categories get up to 2x size, losing categories get scaled down to 0.25x.
+        New/unknown categories get 0.5x (half size until proven).
+        """
+        pnl = self._category_pnl.get(category, None)
+        if pnl is None:
+            return 0.5  # Unknown category — half size until we have data
+        if pnl > 20:
+            return 2.0  # Strong winner — double down
+        if pnl > 0:
+            return 1.5  # Moderate winner — increase
+        if pnl > -10:
+            return 0.75  # Slightly losing — reduce
+        if pnl > -25:
+            return 0.5  # Losing — half size
+        return 0.25  # Big loser — quarter size (but don't block entirely)
 
     # ── Trade pacing ──────────────────────────────────────────────────────
 
@@ -870,6 +905,9 @@ class PolymarketCopyTrader:
             for pos_dict in data.get("positions", []):
                 pos = CopiedPosition(**{k: v for k, v in pos_dict.items() if k in CopiedPosition.__dataclass_fields__})
                 positions[pos.position_id] = pos
+            # Restore category P/L if available
+            if hasattr(self, '_category_pnl'):
+                self._category_pnl = data.get("category_pnl", {})
             if positions:
                 logger.info("copytrade_positions_loaded", count=len(positions))
             return positions
@@ -880,7 +918,10 @@ class PolymarketCopyTrader:
     def _save_positions(self) -> None:
         try:
             self._positions_path.parent.mkdir(parents=True, exist_ok=True)
-            data = {"positions": [p.to_dict() for p in self._positions.values()]}
+            data = {
+                "positions": [p.to_dict() for p in self._positions.values()],
+                "category_pnl": self._category_pnl,
+            }
             self._positions_path.write_text(json.dumps(data, indent=2, default=str))
         except Exception:
             pass
@@ -1132,6 +1173,16 @@ class PolymarketCopyTrader:
         else:
             size_usd = self._size_usd
 
+        # ── Category-weighted sizing based on realized P/L ─────────
+        would_exceed_cat_check, category, current_exposure = self._correlation_tracker.would_exceed_limit(
+            market_question=market_question,
+            size_usd=size_usd,
+        )
+        cat_mult = self._category_size_multiplier(category)
+        size_usd = size_usd * cat_mult
+        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, category_pnl=round(self._category_pnl.get(category, 0), 2))
+
+        # Re-check correlation with adjusted size
         would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
             market_question=market_question,
             size_usd=size_usd,
@@ -1349,7 +1400,7 @@ class PolymarketCopyTrader:
             f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
             f"{lifecycle}"
             + (f"\n{close_line}" if close_line else "")
-            + (f"\nCategory: {category}" if category else ""),
+            + (f"\nCat: {category} ({cat_mult:.1f}x)" if category else ""),
         )
         return True
 
@@ -1514,6 +1565,10 @@ class PolymarketCopyTrader:
         elif pnl_usd < 0:
             self._daily_realized_losses += abs(pnl_usd)
 
+        # Track category P/L for adaptive sizing
+        category = pos.category if hasattr(pos, 'category') and pos.category else "other"
+        self._category_pnl[category] = self._category_pnl.get(category, 0) + pnl_usd
+
         # Send iMessage notification with full exit details
         emoji = "✅" if pnl_usd >= 0 else "❌"
         entry_tp = min(pos.entry_price * 1.30, 0.99)
@@ -1634,6 +1689,7 @@ class PolymarketCopyTrader:
             "kelly_enabled": self._kelly_enabled,
             "bankroll": self._bankroll,
             "llm_validation_enabled": self._llm_validator.enabled,
+            "category_pnl": {k: round(v, 2) for k, v in self._category_pnl.items()},
             "correlation_exposure": self._correlation_tracker.get_summary(),
             "exit_engine_tracked": self._exit_engine.active_count(),
             "config": {
