@@ -20,8 +20,8 @@ Flow
    order sized by Kelly Criterion. Guards: condition_id dedup, daily loss
    circuit breaker, per-market dedup, category exposure limits.
 
-5. **Position Management** — Smart exit engine: tiered take-profit (15%/30%),
-   stop-loss (25%), trailing stop (10% below peak), time-based exit (48h stale).
+5. **Position Management** — Smart exit engine: trailing stop activation at +30%
+   (15% below peak), stop-loss (50%), time-based exit (48h stale). Let winners ride.
 
 6. **Redemption** — every 5 minutes, check for resolved winning positions
    and redeem them via the ConditionalTokens contract to recover USDC.e.
@@ -42,7 +42,7 @@ from typing import Any, Optional
 import httpx
 import structlog
 
-from src.client import PolymarketClient, ORDER_TYPE_GTC
+from src.client import PolymarketClient, ORDER_TYPE_FOK, ORDER_TYPE_GTC
 from src.config import Settings
 from src.pnl_tracker import PnLTracker, Trade
 from src.signer import SIDE_BUY, SIDE_SELL
@@ -231,10 +231,10 @@ class PolymarketCopyTrader:
 
         # ── NEW: Phase 1 — Smart Exit Engine ─────────────────────────
         self._exit_engine = ExitEngine(
-            take_profit_1_pct=float(os.environ.get("EXIT_TP1_PCT", "0.15")),
-            take_profit_2_pct=float(os.environ.get("EXIT_TP2_PCT", "0.30")),
-            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.25")),
-            trailing_stop_pct=float(os.environ.get("EXIT_TRAILING_PCT", "0.10")),
+            take_profit_1_pct=float(os.environ.get("EXIT_TP1_PCT", "0.30")),
+            take_profit_2_pct=float(os.environ.get("EXIT_TP2_PCT", "9.99")),
+            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.50")),
+            trailing_stop_pct=float(os.environ.get("EXIT_TRAILING_PCT", "0.15")),
             time_exit_hours=float(os.environ.get("EXIT_TIME_HOURS", "48")),
             time_exit_min_move_pct=float(os.environ.get("EXIT_TIME_MIN_MOVE", "0.05")),
         )
@@ -1337,11 +1337,11 @@ class PolymarketCopyTrader:
         self._pnl_tracker.record_trade(pnl_trade)
 
         # Send notification
-        # Position lifecycle info
-        tp1_price = min(price * 2.0, 0.99)  # 100% gain
-        sl_price = price * 0.74
+        # Position lifecycle info — trailing activates at +30%, SL at -50%
+        tp1_price = min(price * 1.30, 0.99)  # trailing stop activation
+        sl_price = price * 0.50
         close_line = f"Closes in: {time_to_close}" if time_to_close else ""
-        lifecycle = f"TP: {tp1_price:.2f} | SL: {sl_price:.2f}"
+        lifecycle = f"Trail@: {tp1_price:.2f} | SL: {sl_price:.2f}"
         _notify(
             "📈 Copy Trade",
             f"{market_question[:45]}\n"
@@ -1444,13 +1444,29 @@ class PolymarketCopyTrader:
             )
         else:
             try:
+                # FOK (Fill or Kill) for instant execution — 5% slippage tolerance
+                sell_price = round(round((current_price * 0.95) / 0.01) * 0.01, 2)
+                if sell_price < 0.01:
+                    sell_price = 0.01
                 result = await self._client.place_order(
                     token_id=pos.token_id,
-                    price=current_price,
+                    price=sell_price,
                     size=sell_shares,
                     side=SIDE_SELL,
-                    order_type=ORDER_TYPE_GTC,
+                    order_type=ORDER_TYPE_FOK,
                 )
+                order_id = result.get("orderID", "")
+                status = result.get("status", "")
+                if not order_id and status not in ("matched", "filled", ""):
+                    logger.warning(
+                        "copytrade_exit_fok_unfilled",
+                        position_id=position_id,
+                        reason=signal.reason,
+                        sell_price=sell_price,
+                        current_price=current_price,
+                        status=status,
+                    )
+                    return
                 logger.info(
                     "copytrade_position_exit",
                     mode="live",
@@ -1458,14 +1474,22 @@ class PolymarketCopyTrader:
                     reason=signal.reason,
                     entry_price=pos.entry_price,
                     exit_price=current_price,
+                    sell_price=sell_price,
                     pnl_pct=round(pnl_pct * 100, 2),
                     pnl_usd=round(pnl_usd, 4),
                     sell_fraction=signal.sell_fraction,
                     hold_time_hours=round(hold_hours, 1),
-                    order_id=result.get("orderID", ""),
+                    order_id=order_id,
+                    order_type="FOK",
                 )
             except Exception as exc:
-                logger.error("copytrade_exit_order_error", position_id=position_id, reason=signal.reason, error=str(exc))
+                logger.error(
+                    "copytrade_exit_fok_error",
+                    position_id=position_id,
+                    reason=signal.reason,
+                    sell_price=sell_price,
+                    error=str(exc)[:200],
+                )
                 return
 
         # Record sell in PnL tracker
@@ -1492,30 +1516,25 @@ class PolymarketCopyTrader:
 
         # Send iMessage notification with full exit details
         emoji = "✅" if pnl_usd >= 0 else "❌"
+        entry_tp = min(pos.entry_price * 1.30, 0.99)
+        entry_sl = pos.entry_price * 0.50
         _notify(
             f"{emoji} Position Exit — {signal.reason}",
             f"{pos.market_question[:45]}\n"
             f"Entry: {pos.entry_price:.2f} → Exit: {current_price:.2f}\n"
             f"P&L: ${pnl_usd:+.2f} ({pnl_pct*100:+.1f}%)\n"
-            f"Hold: {hold_hours:.1f}h | Sold: {signal.sell_fraction*100:.0f}%\n"
-            f"Peak: {signal.peak_price:.2f}" if signal.peak_price else "",
+            f"Hold: {hold_hours:.1f}h | Peak: {signal.peak_price:.2f}\n"
+            f"Targets were Trail@: {entry_tp:.2f} | SL: {entry_sl:.2f}",
         )
 
-        # Handle full vs partial exit
-        if signal.sell_fraction >= 1.0:
-            # Full exit — remove position entirely
-            del self._positions[position_id]
-            self._save_positions()
-            self._active_condition_ids.discard(pos.condition_id)
-            self._exit_engine.unregister_position(position_id)
-            self._correlation_tracker.remove_position(position_id)
-            wallet_sells = self._source_sells.get(pos.source_wallet, set())
-            wallet_sells.discard(pos.token_id)
-        else:
-            # Partial exit — reduce position size
-            pos.size_shares -= sell_shares
-            pos.size_usd -= sell_usd
-            self._save_positions()
+        # Full exit — remove position entirely (all exits are 100% now)
+        del self._positions[position_id]
+        self._save_positions()
+        self._active_condition_ids.discard(pos.condition_id)
+        self._exit_engine.unregister_position(position_id)
+        self._correlation_tracker.remove_position(position_id)
+        wallet_sells = self._source_sells.get(pos.source_wallet, set())
+        wallet_sells.discard(pos.token_id)
 
     # ── 5. Position Redemption ───────────────────────────────────────────
 
