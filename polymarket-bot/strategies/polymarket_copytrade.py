@@ -263,7 +263,7 @@ class PolymarketCopyTrader:
         # ── NEW: Phase 1 — Kelly Criterion Position Sizing ───────────
         self._bankroll = float(os.environ.get("COPYTRADE_BANKROLL", "300"))
         self._last_bankroll_refresh: float = 0.0
-        self._bankroll_refresh_interval: float = 3600.0
+        self._bankroll_refresh_interval: float = 300.0  # refresh every 5 min
         self._kelly_enabled = os.environ.get("KELLY_SIZING_ENABLED", "true").lower() in ("true", "1", "yes")
         self._kelly_sizer = KellySizer(
             kelly_fraction=float(os.environ.get("KELLY_FRACTION", "0.25")),
@@ -323,6 +323,18 @@ class PolymarketCopyTrader:
                 "other": 2.73,            # 33 trades — slightly profitable
             }
             logger.info("copytrade_category_pnl_seeded", categories=self._category_pnl)
+
+        # Sync bankroll from on-chain USDC.e balance at startup
+        try:
+            wallet_addr = self._client.wallet_address
+            if wallet_addr:
+                onchain_balance = await fetch_onchain_bankroll(wallet_addr)
+                if onchain_balance > 0:
+                    self._bankroll = onchain_balance
+                    self._correlation_tracker.bankroll = onchain_balance
+                    logger.info("bankroll_startup_sync", balance=round(onchain_balance, 2), source="onchain")
+        except Exception as exc:
+            logger.warning("bankroll_startup_sync_error", error=str(exc)[:100])
 
         # Re-register persisted positions with exit engine (category-specific params)
         for pos_id, pos in self._positions.items():
@@ -387,8 +399,11 @@ class PolymarketCopyTrader:
                         if wallet_addr:
                             new_bankroll = await fetch_onchain_bankroll(wallet_addr)
                             if new_bankroll > 0:
+                                old = self._bankroll
                                 self._bankroll = new_bankroll
-                                logger.info("bankroll_updated", bankroll=round(self._bankroll, 2), source="onchain")
+                                self._correlation_tracker.bankroll = new_bankroll
+                                if abs(old - new_bankroll) > 1:
+                                    logger.info("bankroll_synced", old=round(old, 2), new=round(new_bankroll, 2), source="onchain")
                         self._last_bankroll_refresh = now
                     except Exception as exc:
                         logger.warning("bankroll_refresh_error", error=str(exc)[:100])
