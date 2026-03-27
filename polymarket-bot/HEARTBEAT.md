@@ -19,12 +19,10 @@
 ### Strategies (Last 24h)
 | Strategy | Platform | Signals | Trades | Win Rate | P&L | Status |
 |----------|----------|---------|--------|----------|-----|--------|
-| latency_detector | polymarket | — | — | — | — | awaiting review |
 | stink_bid | polymarket | — | — | — | — | awaiting review |
 | flash_crash | polymarket | — | — | — | — | awaiting review |
 | weather_trader | polymarket | — | — | — | — | awaiting review |
 | sports_arb | polymarket | — | — | — | — | awaiting review |
-| order_flow_analyzer | polymarket | — | — | — | — | awaiting review |
 | kalshi_scanner | kalshi | — | — | — | — | awaiting review |
 | kalshi_weather | kalshi | — | — | — | — | awaiting review |
 | kalshi_fed | kalshi | — | — | — | — | awaiting review |

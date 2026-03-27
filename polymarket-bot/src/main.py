@@ -18,8 +18,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes import deps, router
 from src.client import PolymarketClient
 from src.config import load_settings
-from src.latency_detector import LatencyDetector
-from src.order_flow_analyzer import OrderFlowAnalyzer
 from src.pnl_tracker import PnLTracker
 from src.security.audit import AuditTrail
 from src.security.sandbox import ExecutionSandbox
@@ -159,8 +157,6 @@ async def lifespan(app: FastAPI):
 
     # Initialise new components
     signal_bus = SignalBus()
-    latency_detector = LatencyDetector(settings, signal_bus, orderbook)
-    order_flow = OrderFlowAnalyzer(settings, signal_bus, orderbook)
 
     # ── Platform initialization (Polymarket only) ──────────────────────
     platform_clients: dict[str, Any] = {}
@@ -186,6 +182,21 @@ async def lifespan(app: FastAPI):
             pnl_tracker=pnl_tracker,
         )
         platform_strategies.append(("copytrade", copytrade))
+
+    # Polymarket Liquidity Provider module (disabled by default)
+    lp_module = None
+    if getattr(settings, "copytrade_lp_enabled", False):
+        try:
+            from strategies.liquidity_provider import LiquidityProvider
+            lp_module = LiquidityProvider(
+                clob_client=None,  # initialized lazily from py-clob-client
+                gamma_api_url=settings.gamma_api_url,
+                bankroll=float(os.environ.get("COPYTRADE_BANKROLL", "300")),
+            )
+            platform_strategies.append(("liquidity_provider", lp_module))
+            log.info("lp_module_enabled")
+        except Exception as exc:
+            log.warning("lp_module_init_failed", error=str(exc))
 
     # Polymarket position redeemer — automatically redeems resolved winning positions
     redeemer = None
@@ -232,8 +243,6 @@ async def lifespan(app: FastAPI):
     # Start components
     await signal_bus.start()
     await orderbook.start()
-    await latency_detector.start()
-    await order_flow.start()
 
     # Start platform-specific strategies (copytrade + redeemer)
     for name, strat in platform_strategies:
@@ -279,8 +288,6 @@ async def lifespan(app: FastAPI):
         platforms=list(platform_clients.keys()),
         max_exposure=settings.poly_max_exposure,
         default_size=settings.poly_default_size,
-        latency_detector=settings.latency_detector_enabled,
-        order_flow=order_flow.enabled,
         security_sandbox="active",
         audit_trail="active",
     )
@@ -306,15 +313,13 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
 
-    # Stop platform-specific strategies (copytrade + redeemer)
+    # Stop platform-specific strategies (copytrade, LP, redeemer)
     for name, strat in platform_strategies:
         try:
             await strat.stop()
         except Exception:
             pass
 
-    await order_flow.stop()
-    await latency_detector.stop()
     await signal_bus.stop()
     await orderbook.stop()
     await client.close()

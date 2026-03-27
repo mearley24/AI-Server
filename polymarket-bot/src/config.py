@@ -96,16 +96,6 @@ class Settings(BaseSettings):
     # --- BTC Price Feed ---
     btc_feed_source: str = Field(default="kraken", description="BTC price feed: 'kraken', 'coinbase', or 'binance'")
 
-    # --- Latency Detector ---
-    latency_detector_enabled: bool = Field(default=True, description="Enable BTC-Polymarket latency detector")
-    latency_binance_symbol: str = Field(default="btcusdt", description="Binance symbol to monitor (legacy, used when btc_feed_source=binance)")
-    latency_momentum_window_seconds: float = Field(default=10.0, description="Momentum calculation window")
-    latency_price_change_threshold_pct: float = Field(default=0.11, description="Min BTC move % to signal")
-    latency_polymarket_lag_threshold_seconds: float = Field(default=3.0, description="Min Polymarket lag")
-    latency_signal_cooldown_seconds: float = Field(default=30.0, description="Cooldown between signals")
-    latency_entry_delay_ms: int = Field(default=9000, description="Wait ms after detection before entry window opens")
-    latency_entry_window_ms: int = Field(default=7000, description="Entry window duration ms (closes at delay + window)")
-    latency_track_timing_metrics: bool = Field(default=True, description="Track Binance-Polymarket timing metrics")
 
     # --- Debate Engine ---
     debate_enabled: bool = Field(default=True, description="Enable bull/bear debate engine")
@@ -196,6 +186,14 @@ class Settings(BaseSettings):
     copytrade_scan_interval_hours: float = Field(default=6.0, description="Hours between wallet re-scans")
     copytrade_check_interval: float = Field(default=30.0, description="Seconds between trade checks")
     copytrade_daily_loss_limit: float = Field(default=50.0, description="Max net daily loss before halting trades — no cap on spending while profitable")
+
+    # --- Liquidity Provider ---
+    copytrade_lp_enabled: bool = Field(default=False, description="Enable LP market-making module (disabled by default)")
+    copytrade_lp_spread: float = Field(default=0.03, description="LP spread as decimal (0.03 = 3%)")
+    copytrade_lp_refresh_secs: float = Field(default=60.0, description="Seconds between LP quote refreshes")
+    copytrade_lp_max_markets: int = Field(default=5, description="Max concurrent LP markets")
+    copytrade_lp_max_inventory: float = Field(default=50.0, description="Max inventory per market in USD")
+    copytrade_lp_circuit_breaker: float = Field(default=-30.0, description="Halt LP if daily P/L drops below this")
 
     # --- Momentum/Mean-Reversion Hybrid Strategy ---
     crypto_momentum_mr_enabled: bool = Field(default=False, description="Enable momentum/mean-reversion strategy")
