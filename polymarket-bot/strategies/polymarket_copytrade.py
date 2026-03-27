@@ -360,10 +360,8 @@ class PolymarketCopyTrader:
             llm_validation=self._llm_validator.enabled,
         )
         _notify(
-            "🟢 Copy-Trader Started",
-            f"Mode: {'DRY RUN' if self._dry_run else 'LIVE'}\n"
-            f"Kelly: {'ON' if self._kelly_enabled else 'OFF'} | Bankroll: ${self._bankroll:.0f}\n"
-            f"LLM Validation: {'ON' if self._llm_validator.enabled else 'OFF'}",
+            "🟢 Bot Started",
+            f"{'DRY RUN' if self._dry_run else 'LIVE'} | ${self._bankroll:.0f} bankroll",
         )
 
     async def stop(self) -> None:
@@ -1067,8 +1065,7 @@ class PolymarketCopyTrader:
                 )
                 _notify(
                     "🛑 Trading Halted",
-                    f"Daily realized losses hit ${daily_realized_loss:.2f} (limit: ${self._daily_loss_limit:.0f})\n"
-                    f"Trades today: {self._daily_trades} | Resumes at midnight",
+                    f"Daily loss ${daily_realized_loss:.2f} hit ${self._daily_loss_limit:.0f} limit. Resumes midnight.",
                 )
             return
 
@@ -1546,12 +1543,11 @@ class PolymarketCopyTrader:
         cat_pnl = self._category_pnl.get(category, 0)
         daily_net = self._daily_wins - self._daily_realized_losses
         _notify(
-            "📈 Copy Trade",
-            f"{market_question[:45]}\n"
-            f"Price: {price:.2f} | Size: ${size_usd:.2f}\n"
-            f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
-            f"{lifecycle}"
-            + (f"\n{close_line}" if close_line else "")
+            "📈 New Trade",
+            f"{market_question[:50]}\n"
+            f"${size_usd:.2f} @ {price:.2f} — {wallet.win_rate*100:.0f}% WR wallet\n"
+            f"SL: {sl_price:.2f} | Trail@: {tp1_price:.2f}"
+            + (f" | {time_to_close}" if time_to_close else "")
             + (f"\nCat: {category} ({cat_mult:.1f}x) | Cat P/L: ${cat_pnl:+.2f} | Daily: {self._daily_trades} trades, net ${daily_net:+.2f}" if category else "")
             + (f"\nThesis: {trade_thesis[:60]}" if trade_thesis else ""),
         )
@@ -1596,9 +1592,8 @@ class PolymarketCopyTrader:
                             stale_hours=stale_hours,
                         )
                         _notify(
-                            "🧹 Stale Cleanup (no price)",
-                            f"{pos.market_question[:45]}\n"
-                            f"Age: {hold_hours:.1f}h — market likely resolved/delisted",
+                            "🧹 Cleaned",
+                            f"{pos.market_question[:50]} — {hold_hours:.0f}h old, no price",
                         )
                         positions_to_remove.append(pos_id)
                     continue
@@ -1617,10 +1612,8 @@ class PolymarketCopyTrader:
                         hold_hours=round(hold_hours, 1),
                     )
                     _notify(
-                        "🧹 Resolved Cleanup",
-                        f"{pos.market_question[:45]}\n"
-                        f"Entry: {pos.entry_price:.2f} → Resolved: {current_price:.2f}\n"
-                        f"Hold: {hold_hours:.1f}h | Redeemer handles USDC recovery",
+                        "🧹 Resolved",
+                        f"{pos.market_question[:50]} → {'WON' if current_price >= 0.99 else 'LOST'}",
                     )
                     positions_to_remove.append(pos_id)
                     continue
@@ -1854,11 +1847,9 @@ class PolymarketCopyTrader:
         self._pnl_tracker.record_trade(pnl_trade)
 
         _notify(
-            "🔄 Re-entry Executed",
-            f"{market_question[:45]}\n"
-            f"Exited at {exit_price:.2f} → Re-entered at {current_price:.2f}\n"
-            f"Size: ${size_usd:.2f} | Cat: {category}\n"
-            f"Riding the winner back in",
+            "🔄 Re-entry",
+            f"{market_question[:50]}\n"
+            f"Back in @ {current_price:.2f} (exited {exit_price:.2f}) — ${size_usd:.2f}",
         )
 
         logger.info(
@@ -2009,9 +2000,8 @@ class PolymarketCopyTrader:
                     limit=cat_limit,
                 )
                 _notify(
-                    f"🛑 {category} Halted",
-                    f"Category daily loss: ${cat_loss:.2f} (limit: ${cat_limit:.0f})\n"
-                    f"Other categories still active. Resumes at midnight.",
+                    f"🛑 {category} Paused",
+                    f"-${cat_loss:.2f} today (limit ${cat_limit:.0f}). Other categories still active.",
                 )
 
         # ── Learning loop: recalculate dynamic multipliers ────────────
@@ -2038,15 +2028,12 @@ class PolymarketCopyTrader:
         emoji = "✅" if pnl_usd >= 0 else "❌"
         entry_tp = min(pos.entry_price * 1.30, 0.99)
         entry_sl = pos.entry_price * 0.50
+        reason_label = {"trailing_stop": "Trail Stop", "stop_loss": "Stop Loss", "time_exit_stale": "Timed Out", "market_resolved": "Resolved", "source_wallet_exit": "Wallet Sold", "force_stale_cleanup": "Force Cleaned"}.get(signal.reason, signal.reason)
         _notify(
-            f"{emoji} Position Exit — {signal.reason}",
-            f"{pos.market_question[:45]}\n"
-            f"Entry: {pos.entry_price:.2f} → Exit: {current_price:.2f}\n"
-            f"P&L: ${pnl_usd:+.2f} ({pnl_pct*100:+.1f}%)\n"
-            f"Hold: {hold_hours:.1f}h | Peak: {signal.peak_price:.2f}\n"
-            f"Targets were Trail@: {entry_tp:.2f} | SL: {entry_sl:.2f}\n"
-            f"Cat P/L after: ${cat_pnl_after:+.2f} (${pnl_usd:+.2f} this trade) | Daily net: ${daily_net:+.2f} | Session: ${self._bankroll:.0f} bankroll"
-            + (f"\nThesis: {pos_thesis[:50]}" if pos_thesis else ""),
+            f"{emoji} Exit — {reason_label}",
+            f"{pos.market_question[:50]}\n"
+            f"{pos.entry_price:.2f} → {current_price:.2f} = ${pnl_usd:+.2f} ({pnl_pct*100:+.0f}%)\n"
+            f"Held {hold_hours:.1f}h | Bank: ${self._bankroll:.0f}",
         )
 
         # ── Re-entry queue: if profitable trailing stop, watch for dip to buy back ──
@@ -2072,10 +2059,8 @@ class PolymarketCopyTrader:
                 pnl=round(pnl_usd, 2),
             )
             _notify(
-                "🔄 Re-entry Watching",
-                f"{pos.market_question[:45]}\n"
-                f"Exited at {current_price:.2f} (+${pnl_usd:.2f})\n"
-                f"Will buy back if price dips to {reentry_price:.2f}",
+                "👀 Watching",
+                f"{pos.market_question[:50]} — buy back below {reentry_price:.2f}",
             )
 
         # Full exit — remove position entirely (all exits are 100% now)
