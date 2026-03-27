@@ -138,7 +138,7 @@ class PolymarketCopyTrader:
 
         # Config from settings
         self._size_usd: float = getattr(settings, "copytrade_size_usd", 5.0)
-        self._max_positions: int = getattr(settings, "copytrade_max_positions", 25)
+        self._max_positions: int = getattr(settings, "copytrade_max_positions", 35)
         self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.55)
         self._min_trades: int = getattr(settings, "copytrade_min_trades", 20)
         self._scan_interval_hours: float = getattr(settings, "copytrade_scan_interval_hours", 6.0)
@@ -158,11 +158,11 @@ class PolymarketCopyTrader:
         self._daily_category_losses: dict[str, float] = {}
         self._halted_categories: set[str] = set()
         self._CATEGORY_LOSS_LIMITS: dict[str, float] = {
-            "crypto_updown": 10.0,
-            "sports": 15.0,
-            "weather": 25.0,
-            "politics": 35.0,
-            "other": 25.0,
+            "crypto_updown": 15.0,
+            "sports": 20.0,
+            "weather": 40.0,
+            "politics": 50.0,
+            "other": 35.0,
         }
 
         # API base URLs
@@ -223,7 +223,7 @@ class PolymarketCopyTrader:
         self._wallet_daily_trades: dict[str, int] = {}  # wallet_address -> trade count today
 
         # ── Per-category absolute position cap ────────────────────────
-        self._max_positions_per_category: int = int(os.environ.get("MAX_POSITIONS_PER_CATEGORY", "5"))
+        self._max_positions_per_category: int = int(os.environ.get("MAX_POSITIONS_PER_CATEGORY", "8"))
 
         # Open copied positions — persisted to disk
         self._positions_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_positions.json"
@@ -286,7 +286,7 @@ class PolymarketCopyTrader:
 
         # ── NEW: Phase 2 — Correlation Exposure Tracker ──────────────
         self._correlation_tracker = CorrelationTracker(
-            max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.15")),
+            max_category_pct=float(os.environ.get("CORRELATION_MAX_PCT", "0.25")),
             bankroll=self._bankroll,
         )
 
@@ -415,11 +415,15 @@ class PolymarketCopyTrader:
 
     # Default category sizing multipliers based on actual Polymarket P/L data (2026-03-27)
     _DEFAULT_CATEGORY_MULTIPLIERS: dict[str, float] = {
-        "crypto_updown": 0.15,  # -$56.68 on 104 trades — both-sides buying kills us
-        "sports": 0.25,         # -$24.68 on 51 trades — mostly esports losses
-        "weather": 0.8,         # -$12.65 on 59 trades — $77 open, jury still out
-        "politics": 1.2,        # +$2.85 on 11 trades — profitable, increase
-        "other": 1.0,           # +$2.73 on 33 trades — baseline
+        "crypto_updown": 0.15,  # -$56.68 — both-sides trap, keep minimal
+        "sports": 0.4,          # -$24.68 — loosen slightly, NHL/NBA have better liquidity than esports
+        "weather": 0.8,         # -$12.65 — $77 open, jury still out
+        "politics": 1.5,        # +$2.85 — profitable, maximize
+        "other": 1.0,           # +$2.73 — baseline
+        "geopolitics": 1.0,     # similar to politics, decent edge potential
+        "economics": 1.0,       # fed/rates markets can have edge
+        "science": 0.8,         # tech/AI markets, moderate
+        "entertainment": 0.6,   # lower confidence
     }
 
     def _category_size_multiplier(self, category: str) -> float:
@@ -1265,30 +1269,45 @@ class PolymarketCopyTrader:
         logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, esports=is_esports, category_pnl=round(self._category_pnl.get(category, 0), 2))
 
         # Re-check correlation with adjusted size
-        would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
-            market_question=market_question,
-            size_usd=size_usd,
-        )
-        if would_exceed:
+        # Profitable categories get NO exposure limit — let winners ride
+        cat_pnl_current = self._category_pnl.get(category, 0)
+        category_is_profitable = cat_pnl_current > 0
+
+        if not category_is_profitable:
+            would_exceed, category, current_exposure = self._correlation_tracker.would_exceed_limit(
+                market_question=market_question,
+                size_usd=size_usd,
+            )
+            if would_exceed:
+                logger.info(
+                    "copytrade_skip_correlation_limit",
+                    category=category,
+                    current_exposure=round(current_exposure, 2),
+                    limit=round(self._correlation_tracker.get_category_limit(), 2),
+                    category_pnl=round(cat_pnl_current, 2),
+                    market=market_question[:40],
+                )
+                return False
+        else:
             logger.info(
-                "copytrade_skip_correlation_limit",
+                "copytrade_winner_no_limit",
                 category=category,
-                current_exposure=round(current_exposure, 2),
-                limit=round(self._correlation_tracker.get_category_limit(), 2),
+                category_pnl=round(cat_pnl_current, 2),
                 market=market_question[:40],
             )
-            return False
 
-        # Guard: absolute per-category position count cap
+        # Guard: per-category position count cap — relaxed for profitable categories
         category_position_count = sum(
             1 for p in self._positions.values() if p.category == category
         )
-        if category_position_count >= self._max_positions_per_category:
+        effective_cat_cap = self._max_positions_per_category * 2 if category_is_profitable else self._max_positions_per_category
+        if category_position_count >= effective_cat_cap:
             logger.info(
                 "copytrade_skip", reason="category_cap",
                 category=category,
                 count=category_position_count,
-                limit=self._max_positions_per_category,
+                limit=effective_cat_cap,
+                profitable=category_is_profitable,
                 market=market_question[:40],
             )
             return False
