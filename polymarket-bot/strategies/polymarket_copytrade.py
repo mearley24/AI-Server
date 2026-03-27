@@ -114,6 +114,7 @@ class CopiedPosition:
     order_id: str = ""
     category: str = ""  # market category for correlation tracking
     wallet_win_rate: float = 0.0  # source wallet's win rate at time of copy
+    end_date: str = ""  # market end date (ISO string from Gamma API)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1168,6 +1169,35 @@ class PolymarketCopyTrader:
 
         position_id = f"ct-{uuid.uuid4().hex[:12]}"
 
+        # Fetch market end date from Gamma API
+        market_end_date = ""
+        time_to_close = ""
+        try:
+            if market and self._http:
+                mkt_resp = await self._http.get(f"{self._gamma_url}/markets/{market}")
+                if mkt_resp.status_code == 200:
+                    mkt_data = mkt_resp.json()
+                    market_end_date = mkt_data.get("endDate", mkt_data.get("end_date_iso", ""))
+                    if market_end_date:
+                        import datetime as _dt
+                        try:
+                            end_dt = _dt.datetime.fromisoformat(market_end_date.replace("Z", "+00:00"))
+                            now_dt = _dt.datetime.now(_dt.timezone.utc)
+                            delta = end_dt - now_dt
+                            if delta.total_seconds() > 0:
+                                hours = delta.total_seconds() / 3600
+                                if hours < 1:
+                                    time_to_close = f"{int(delta.total_seconds() / 60)}min"
+                                elif hours < 24:
+                                    time_to_close = f"{hours:.1f}h"
+                                else:
+                                    days = hours / 24
+                                    time_to_close = f"{days:.1f}d"
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
         # Place order
         logger.info("copytrade_placing_order", market=market_question[:40], buy_price=buy_price, size_usd=round(size_usd, 2), size_shares=size_shares, kelly=self._kelly_enabled, bankroll=round(self._bankroll, 2))
         order_id = ""
@@ -1249,6 +1279,7 @@ class PolymarketCopyTrader:
             order_id=order_id,
             category=category,
             wallet_win_rate=wallet.win_rate,
+            end_date=market_end_date,
         )
         self._positions[position_id] = position
 
@@ -1277,12 +1308,14 @@ class PolymarketCopyTrader:
         self._pnl_tracker.record_trade(pnl_trade)
 
         # Send notification
+        close_line = f"Closes in: {time_to_close}" if time_to_close else ""
         _notify(
             "📈 Copy Trade",
             f"{market_question[:45]}\n"
             f"Price: {price:.2f} | Size: ${size_usd:.2f}\n"
             f"Wallet: {wallet.address[:10]}... ({wallet.win_rate*100:.0f}% WR)\n"
-            f"Category: {category}",
+            f"Category: {category}"
+            + (f"\n{close_line}" if close_line else ""),
         )
         return True
 
