@@ -82,23 +82,59 @@ class MessageMonitor:
             return []
 
 
+# Track consecutive send failures to avoid log spam
+_send_failures = 0
+_MAX_SPAM_ERRORS = 3
+
+
 def send_imessage(address: str, message: str):
-    """Send an iMessage via AppleScript."""
+    """Send a message via Messages.app AppleScript.
+
+    Tries iMessage first, falls back to SMS, then direct buddy send.
+    Suppresses repeated error logs after _MAX_SPAM_ERRORS consecutive failures.
+    """
+    global _send_failures
     message = message.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
     if len(message) > 2000:
         message = message[:1997] + "..."
 
-    cmd = '''tell application "Messages"
-set targetService to 1st account whose service type = iMessage
+    # Strategy 1: Direct send to buddy (most compatible — works with any service)
+    cmd_direct = '''tell application "Messages"
+set targetBuddy to buddy "%s" of (1st account whose service type = iMessage)
+send "%s" to targetBuddy
+end tell''' % (address, message)
+
+    # Strategy 2: SMS fallback
+    cmd_sms = '''tell application "Messages"
+set targetService to 1st account whose service type = SMS
 set targetBuddy to participant "%s" of targetService
 send "%s" to targetBuddy
 end tell''' % (address, message)
 
-    result = subprocess.run(["osascript", "-e", cmd], capture_output=True, text=True, timeout=10)
-    if result.returncode != 0:
-        print(f"[send] AppleScript error: {result.stderr}")
-    else:
-        print(f"[send] Sent to {address}")
+    # Strategy 3: Just send to the address (let Messages.app figure it out)
+    cmd_simple = '''tell application "Messages"
+send "%s" to buddy "%s"
+end tell''' % (message, address)
+
+    for label, cmd in [("iMessage", cmd_direct), ("SMS", cmd_sms), ("auto", cmd_simple)]:
+        try:
+            result = subprocess.run(["osascript", "-e", cmd], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                _send_failures = 0
+                print(f"[send] Sent via {label} to {address}")
+                return
+        except subprocess.TimeoutExpired:
+            continue
+        except Exception:
+            continue
+
+    # All strategies failed
+    _send_failures += 1
+    if _send_failures <= _MAX_SPAM_ERRORS:
+        print(f"[send] All send methods failed for {address} (attempt {_send_failures})")
+        print(f"[send] Check: Messages.app open? Apple ID signed in? iMessage enabled?")
+    elif _send_failures == _MAX_SPAM_ERRORS + 1:
+        print(f"[send] Suppressing further send errors until a send succeeds.")
 
 
 def ask_openclaw(message: str) -> str:
