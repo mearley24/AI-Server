@@ -137,9 +137,74 @@ end tell''' % (message, address)
         print(f"[send] Suppressing further send errors until a send succeeds.")
 
 
+def research_link(url: str, context: str = "") -> str:
+    """Fetch a URL and analyze it for trading profitability insights."""
+    import re as _re
+    try:
+        from urllib.request import Request as _Req, urlopen as _urlopen
+        # Fetch the page
+        headers = {"User-Agent": "Mozilla/5.0"}
+        req = _Req(url, headers=headers)
+        resp = _urlopen(req, timeout=15)
+        content = resp.read().decode("utf-8", errors="ignore")[:8000]
+
+        # Strip HTML tags for a rough text extraction
+        text = _re.sub(r'<[^>]+>', ' ', content)
+        text = _re.sub(r'\s+', ' ', text).strip()[:4000]
+
+        # Send to OpenAI for analysis
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return f"Link: {url}\nCan't analyze — no OpenAI API key configured."
+
+        import json as _json
+        prompt = f"""Analyze this content for a Polymarket prediction market copy-trader.
+The bot copies high win-rate wallets on Polymarket. We need to know:
+
+1. SUMMARY (2 sentences max)
+2. PROS — how could this improve our trading profits?
+3. CONS — risks or downsides
+4. ACTION — specific steps to implement (if applicable)
+
+Keep it short and direct. No fluff.
+
+User context: {context}
+
+Content from {url}:
+{text[:3000]}"""
+
+        data = _json.dumps({
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 500,
+        }).encode()
+        req = _Req(
+            "https://api.openai.com/v1/chat/completions",
+            data=data,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        )
+        resp = _urlopen(req, timeout=30)
+        result = _json.loads(resp.read())
+        analysis = result["choices"][0]["message"]["content"]
+        return analysis
+    except Exception as e:
+        return f"Couldn't analyze link: {e}"
+
+
 def ask_openclaw(message: str) -> str:
     """Send a message to OpenClaw and get a response."""
     try:
+        # Check for URLs first — research any links sent
+        import re as _re
+        urls = _re.findall(r'https?://[^\s<>"]+', message)
+        if urls:
+            # Strip the URL from the message to get context
+            context = _re.sub(r'https?://[^\s<>"]+', '', message).strip()
+            results = []
+            for url in urls[:2]:  # max 2 links per message
+                results.append(research_link(url, context))
+            return "\n\n---\n\n".join(results)
+
         # Direct service queries (skip LLM, just call the API)
         lower = message.lower()
 
