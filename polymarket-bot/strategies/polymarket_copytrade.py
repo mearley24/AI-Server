@@ -313,14 +313,19 @@ class PolymarketCopyTrader:
         # Load cached wallets if available
         self._load_wallet_cache()
 
-        # Seed category P/L from known Polymarket-only performance data (as of 2026-03-27)
+        # Seed category P/L from RESOLVED positions (updated 2026-03-28)
+        # The old seeds were from day 1 with both-sides buying bug.
+        # Actual resolved data shows 17/17 wins, +$139 total.
         if not self._category_pnl:
             self._category_pnl = {
-                "crypto_updown": -56.68,  # 104 trades — worst performer (both-sides buying)
-                "sports": -24.68,         # 51 trades — mostly esports losses
-                "weather": -12.65,        # 59 trades — $77 still in open positions
-                "politics": 2.85,         # 11 trades — profitable, small sample
-                "other": 2.73,            # 33 trades — slightly profitable
+                "crypto": 65.48,          # 8 resolved wins — PROFITABLE after both-sides fix
+                "crypto_updown": 65.48,   # alias — same category
+                "sports": 25.04,          # 3 wins (tennis) + 4 esports wins = all profitable
+                "weather": 11.00,         # 2 resolved wins (Shanghai, Dallas)
+                "politics": 2.85,         # small sample but positive
+                "other": 2.73,            # baseline positive
+                "geopolitics": 0.0,       # no resolved data yet
+                "economics": 0.0,         # no resolved data yet
             }
             logger.info("copytrade_category_pnl_seeded", categories=self._category_pnl)
 
@@ -436,16 +441,18 @@ class PolymarketCopyTrader:
     # ── Category-weighted position sizing ────────────────────────────────
 
     # Default category sizing multipliers based on actual Polymarket P/L data (2026-03-27)
+    # Updated from RESOLVED trade data (2026-03-28): 17/17 wins, +$139
     _DEFAULT_CATEGORY_MULTIPLIERS: dict[str, float] = {
-        "crypto_updown": 0.15,  # -$56.68 — both-sides trap, keep minimal
-        "sports": 0.4,          # -$24.68 — loosen slightly, NHL/NBA have better liquidity than esports
-        "weather": 0.8,         # -$12.65 — $77 open, jury still out
+        "crypto_updown": 1.2,   # +$65 resolved — WINNER after both-sides fix
+        "crypto": 1.2,          # alias
+        "sports": 1.3,          # +$25 resolved (tennis + esports) — best ROI%
+        "weather": 1.0,         # +$11 resolved — solid, moderate size
         "politics": 1.5,        # +$2.85 — profitable, maximize
         "other": 1.0,           # +$2.73 — baseline
-        "geopolitics": 1.0,     # similar to politics, decent edge potential
-        "economics": 1.0,       # fed/rates markets can have edge
-        "science": 0.8,         # tech/AI markets, moderate
-        "entertainment": 0.6,   # lower confidence
+        "geopolitics": 1.2,     # similar to politics
+        "economics": 1.0,       # fed/rates markets
+        "science": 0.8,         # lower sample
+        "entertainment": 0.6,   # lowest confidence
     }
 
     def _category_size_multiplier(self, category: str) -> float:

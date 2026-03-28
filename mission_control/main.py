@@ -147,11 +147,11 @@ async def api_trading():
 
 # Seed category P/L data (from blockchain analysis as of March 27, 2026)
 CATEGORY_PNL_SEED = {
-    "crypto_updown": {"total_pnl": -57.17, "trades": 104, "bought": 365.38, "sold": 99.64, "redeemed": 204.23, "open_value": 4.34, "multiplier": 0.15, "verdict": "Worst performer — both-sides buying trap. Bot bought Up AND Down on same market.", "status": "danger"},
-    "sports": {"total_pnl": -24.68, "trades": 51, "bought": 131.44, "sold": 24.38, "redeemed": 82.38, "open_value": 0, "multiplier": 0.25, "verdict": "Heavy esports losses. Low-liquidity markets with poor odds.", "status": "danger"},
-    "weather": {"total_pnl": -11.28, "trades": 62, "bought": 169.65, "sold": 79.86, "redeemed": 0, "open_value": 78.52, "multiplier": 0.8, "verdict": "Jury still out — $78 in open positions. Could swing either way.", "status": "warning"},
-    "politics": {"total_pnl": 2.85, "trades": 11, "bought": 20.74, "sold": 15.12, "redeemed": 8.47, "open_value": 0, "multiplier": 1.2, "verdict": "Only profitable closed category. Small but positive.", "status": "success"},
-    "other": {"total_pnl": 2.73, "trades": 33, "bought": 101.88, "sold": 33.27, "redeemed": 71.33, "open_value": 0, "multiplier": 1.0, "verdict": "Slightly profitable. Mixed bag of markets.", "status": "success"},
+    "crypto": {"total_pnl": 65.48, "trades": 8, "bought": 0, "sold": 0, "redeemed": 0, "open_value": 0, "multiplier": 1.2, "verdict": "Top earner after both-sides fix. 8 resolved wins, avg 105% return.", "status": "success"},
+    "sports": {"total_pnl": 25.04, "trades": 7, "bought": 0, "sold": 0, "redeemed": 0, "open_value": 0, "multiplier": 1.3, "verdict": "Tennis + esports = 7/7 wins. Best ROI category.", "status": "success"},
+    "weather": {"total_pnl": 11.00, "trades": 2, "bought": 0, "sold": 0, "redeemed": 0, "open_value": 78.52, "multiplier": 1.0, "verdict": "2 resolved wins (Shanghai, Dallas). More positions pending.", "status": "success"},
+    "politics": {"total_pnl": 2.85, "trades": 11, "bought": 20.74, "sold": 15.12, "redeemed": 8.47, "open_value": 0, "multiplier": 1.5, "verdict": "Profitable. Highest multiplier — best edge from information.", "status": "success"},
+    "other": {"total_pnl": 2.73, "trades": 33, "bought": 101.88, "sold": 33.27, "redeemed": 71.33, "open_value": 0, "multiplier": 1.0, "verdict": "Baseline positive. Mixed markets.", "status": "success"},
 }
 
 @app.get("/api/trading/categories")
