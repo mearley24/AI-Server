@@ -174,8 +174,9 @@ class ScannerEngine:
                 self._all_signals.append(record)
                 self._signals_today += 1
 
-                # Send notification
-                self._notify_signal(record)
+                # Signals are silent — bot watches and acts, no notifications
+                # Only the copytrade strategy notifies when it actually TRADES
+                pass
 
         # 6. Expire old active signals
         cutoff = now - (SIGNAL_ACTIVE_HOURS * 3600)

@@ -1927,7 +1927,7 @@ class PolymarketCopyTrader:
             if tier == 1:
                 self._add_wallet_to_watchlist(signal.wallet)
                 logger.info(
-                    "whale_signal_tier1_alert",
+                    "whale_signal_tier1_watch",
                     tier=1,
                     signal_type=signal.signal_type,
                     market=market_question[:50],
@@ -1936,10 +1936,6 @@ class PolymarketCopyTrader:
                     trade_size=round(signal.trade_size, 2),
                 )
                 _notify(
-                    "[WATCHING] Whale Spotted",
-                    f"[WHALE] ${signal.trade_size:.2f} on {market_question[:50]}\n"
-                    f"by {wallet_short} -- watching only",
-                )
                 continue
 
             # ── Tiers 2-4: trading — apply circuit breakers ───────────
@@ -2127,11 +2123,7 @@ class PolymarketCopyTrader:
 
             # Tier-specific notifications
             if tier == 2:
-                _notify(
-                    "[WHALE FOLLOW] Entry",
-                    f"[WHALE FOLLOW] ${size_usd:.2f} on {market_question[:50]}\n"
-                    f"conf {conf:.0f} | {signal.signal_type} | Cat: {category}",
-                )
+                pass  # Tier 2: silent — only log, no notification
             elif tier == 3:
                 detail = f"fresh wallet, ${signal.trade_size:.2f} single bet" if is_insider else f"{wallet_count} wallets clustered"
                 _notify(
