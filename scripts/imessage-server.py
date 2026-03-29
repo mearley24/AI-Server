@@ -439,35 +439,84 @@ class MessageMonitor:
                 _cleanup_temp(tmp_db)
 
 
-def research_link(url: str, context: str = "") -> str:
-    """Fetch a URL and analyze it for trading profitability insights."""
+def _fetch_twitter_via_nitter(url: str) -> str:
+    """Try to fetch tweet content via nitter instances (no JS needed)."""
     import re as _re
+    from urllib.request import Request as _Req, urlopen as _urlopen
+
+    tweet_match = _re.search(r'(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)', url)
+    if not tweet_match:
+        return ""
+
+    user, tweet_id = tweet_match.group(1), tweet_match.group(2)
+    nitter_instances = [
+        f"https://nitter.privacydev.net/{user}/status/{tweet_id}",
+        f"https://nitter.poast.org/{user}/status/{tweet_id}",
+        f"https://nitter.cz/{user}/status/{tweet_id}",
+    ]
+
+    for nitter_url in nitter_instances:
+        try:
+            req = _Req(nitter_url, headers={"User-Agent": "Mozilla/5.0"})
+            resp = _urlopen(req, timeout=10)
+            html = resp.read().decode("utf-8", errors="ignore")
+            text = _re.sub(r'<[^>]+>', ' ', html)
+            text = _re.sub(r'\s+', ' ', text).strip()
+            if len(text) > 200:
+                return text[:4000]
+        except Exception:
+            continue
+    return ""
+
+
+def _fetch_page_text(url: str) -> str:
+    """Fetch and extract readable text from a URL."""
+    import re as _re
+    from urllib.request import Request as _Req, urlopen as _urlopen
+
+    if _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
+        nitter_text = _fetch_twitter_via_nitter(url)
+        if nitter_text:
+            return nitter_text
+
     try:
-        from urllib.request import Request as _Req, urlopen as _urlopen
-        headers = {"User-Agent": "Mozilla/5.0"}
-        req = _Req(url, headers=headers)
+        req = _Req(url, headers={"User-Agent": "Mozilla/5.0"})
         resp = _urlopen(req, timeout=15)
         content = resp.read().decode("utf-8", errors="ignore")[:8000]
-
         text = _re.sub(r'<[^>]+>', ' ', content)
         text = _re.sub(r'\s+', ' ', text).strip()[:4000]
+        return text
+    except Exception:
+        return ""
+
+
+def research_link(url: str, context: str = "") -> str:
+    """Fetch a URL and provide a smart, context-aware analysis."""
+    try:
+        text = _fetch_page_text(url)
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
+            if text:
+                return f"Link: {url}\n\n{text[:500]}"
             return f"Link: {url}\nCan't analyze — no OpenAI API key configured."
 
+        if not text or len(text) < 50:
+            text = f"(Could not fetch page content from {url} — it may require JavaScript. URL was: {url})"
+
         import json as _json
-        prompt = f"""Analyze this content for a Polymarket prediction market copy-trader.
-The bot copies high win-rate wallets on Polymarket. We need to know:
+        context_line = f"\nAdditional context from sender: {context}" if context else ""
+        prompt = f"""You are Bob, an AI assistant for a smart home business owner who also runs automated trading bots.
 
-1. SUMMARY (2 sentences max)
-2. PROS — how could this improve our trading profits?
-3. CONS — risks or downsides
-4. ACTION — specific steps to implement (if applicable)
+Analyze this content and give a useful, natural response. Adapt your analysis to what the content actually is:
+- If it's a tweet or social media post, summarize what it says and why it's interesting
+- If it's about trading, crypto, or markets, assess relevance and actionability
+- If it's a tool, product, or project, evaluate if it's useful
+- If it's news, give the key takeaway
+- If it's code or technical, explain what it does
 
-Keep it short and direct. No fluff.
-
-User context: {context}
+Be direct, concise, and conversational. 3-5 sentences max. No bullet points or numbered lists — just talk like a smart colleague.
+{context_line}
 
 Content from {url}:
 {text[:3000]}"""
@@ -475,8 +524,10 @@ Content from {url}:
         data = _json.dumps({
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 500,
+            "max_tokens": 400,
         }).encode()
+
+        from urllib.request import Request as _Req, urlopen as _urlopen
         req = _Req(
             "https://api.openai.com/v1/chat/completions",
             data=data,
@@ -484,8 +535,7 @@ Content from {url}:
         )
         resp = _urlopen(req, timeout=30)
         result = _json.loads(resp.read())
-        analysis = result["choices"][0]["message"]["content"]
-        return analysis
+        return result["choices"][0]["message"]["content"]
     except Exception as e:
         return f"Couldn't analyze link: {e}"
 
