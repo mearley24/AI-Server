@@ -15,12 +15,15 @@ logger = structlog.get_logger(__name__)
 class KellySizer:
     """Calculates position sizes using the Kelly Criterion."""
 
+    # Hard cap: NEVER exceed $10 per position regardless of Kelly output
+    HARD_CAP_USD: float = 10.0
+
     def __init__(
         self,
         kelly_fraction: float = 0.25,  # quarter Kelly
         min_size_usd: float = 2.0,
         max_bankroll_pct: float = 0.05,  # 5% max per trade
-        default_size_usd: float = 5.0,  # fallback
+        default_size_usd: float = 3.0,  # fallback — was $5, data shows <$5 has 78% WR
     ) -> None:
         self._kelly_fraction = kelly_fraction
         self._min_size = min_size_usd
@@ -97,6 +100,9 @@ class KellySizer:
         max_size = bankroll * self._max_pct
         result = max(self._min_size, min(position, max_size))
 
+        # Hard cap: NEVER exceed $10 per position regardless of Kelly output
+        result = min(result, self.HARD_CAP_USD)
+
         logger.debug(
             "kelly_size_calculated",
             win_rate=round(wallet_win_rate, 3),
@@ -107,6 +113,7 @@ class KellySizer:
             bankroll=round(bankroll, 2),
             position_usd=round(result, 2),
             category=category,
+            hard_cap=self.HARD_CAP_USD,
         )
 
         return round(result, 2)

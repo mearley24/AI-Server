@@ -116,6 +116,7 @@ class CopiedPosition:
     category: str = ""  # market category for correlation tracking
     wallet_win_rate: float = 0.0  # source wallet's win rate at time of copy
     end_date: str = ""  # market end date (ISO string from Gamma API)
+    event_slug: str = ""  # event-level slug for both-sides guard
     thesis: str = ""  # research thesis — why this trade was copied
 
     def to_dict(self) -> dict[str, Any]:
@@ -138,7 +139,7 @@ class PolymarketCopyTrader:
         self._pnl_tracker = pnl_tracker
 
         # Config from settings
-        self._size_usd: float = getattr(settings, "copytrade_size_usd", 5.0)
+        self._size_usd: float = getattr(settings, "copytrade_size_usd", 3.0)
         self._max_positions: int = getattr(settings, "copytrade_max_positions", 100)
         self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.55)
         self._min_trades: int = getattr(settings, "copytrade_min_trades", 20)
@@ -251,6 +252,12 @@ class PolymarketCopyTrader:
         # Track condition_ids we already have positions in (rebuild from loaded positions)
         self._active_condition_ids: set[str] = {
             p.condition_id for p in self._positions.values() if p.condition_id
+        }
+
+        # Track event slugs for both-sides guard — prevents buying multiple outcomes of same event
+        self._active_event_slugs: set[str] = {
+            p.event_slug for p in self._positions.values()
+            if hasattr(p, 'event_slug') and p.event_slug
         }
 
         # Track source-wallet sells for exit signals
@@ -453,15 +460,20 @@ class PolymarketCopyTrader:
 
     # ── Category-weighted position sizing ────────────────────────────────
 
-    # Default category sizing multipliers based on actual Polymarket P/L data (2026-03-27)
-    # Updated from RESOLVED trade data (2026-03-28): 17/17 wins, +$139
+    # Default category sizing multipliers — data-driven from 206 market analysis (2026-03-29)
+    # Winners: crypto_updown +$57, esports +$28, tennis +$18, politics +$2
+    # Losers: us_sports -$15 (40% WR), soccer_intl -$8 (40% WR), weather +$4 (barely)
     _DEFAULT_CATEGORY_MULTIPLIERS: dict[str, float] = {
-        "crypto_updown": 1.2,   # +$65 resolved — WINNER after both-sides fix
+        "crypto_updown": 1.2,   # +$57 — best earner after both-sides fix
         "crypto": 1.2,          # alias
-        "sports": 1.3,          # +$25 resolved (tennis + esports) — best ROI%
-        "weather": 1.0,         # +$11 resolved — solid, moderate size
-        "politics": 1.5,        # +$2.85 — profitable, maximize
-        "other": 1.0,           # +$2.73 — baseline
+        "esports": 1.0,         # +$28 — big swings, keep moderate
+        "tennis": 1.3,          # +$18 — consistent edge from copied wallets
+        "politics": 1.5,        # +$2 — small sample but positive, high potential
+        "us_sports": 0.3,       # -$15, 40% WR — NBA/NFL/NHL/MLB spreads are coin flips
+        "soccer_intl": 0.2,     # -$8, 40% WR — international friendlies unpredictable
+        "sports": 0.5,          # generic sports fallback — conservative
+        "weather": 0.5,         # +$4 barely — exact temps hard, was 1.0x
+        "other": 1.0,           # baseline
         "geopolitics": 1.2,     # similar to politics
         "economics": 1.0,       # fed/rates markets
         "science": 0.8,         # lower sample
@@ -502,6 +514,23 @@ class PolymarketCopyTrader:
                     old_mult=round(old, 3),
                     new_mult=round(new, 3),
                 )
+
+    # ── Quiet hours (11pm-5am MDT) ──────────────────────────────────────
+
+    @staticmethod
+    def _is_quiet_hours() -> bool:
+        """Return True if current time is between 23:00 and 05:00 MDT (America/Denver).
+
+        Data: midnight MDT trading has 29% WR — suppress new BUY entries during quiet hours.
+        Does NOT affect sell orders, redemptions, or exit engine.
+        """
+        import datetime
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo
+        now_mdt = datetime.datetime.now(ZoneInfo("America/Denver"))
+        return now_mdt.hour >= 23 or now_mdt.hour < 5
 
     # ── Trade pacing ──────────────────────────────────────────────────────
 
@@ -1216,6 +1245,12 @@ class PolymarketCopyTrader:
         Returns True if trade was actually placed, False if skipped."""
         logger.info("copytrade_copy_attempt", market=market_question[:40], price=price, token=token_id[:16])
 
+        # ── Quiet hours: suppress new BUY entries 11pm-5am MDT ────
+        # Data: midnight MDT trading has 29% WR — worst time slot
+        if self._is_quiet_hours():
+            logger.info("copytrade_skip", reason="quiet_hours", market=market_question[:40], price=price)
+            return False
+
         # Skip tiny source trades (noise/test)
         source_usdc = float(trade.get("usdcSize", trade.get("size", 0)))
         min_source_trade = float(os.environ.get("COPYTRADE_MIN_SOURCE_USD", "0.50"))
@@ -1250,10 +1285,16 @@ class PolymarketCopyTrader:
             return False
 
         # Guard: entry price filters — avoid extreme odds (lottery tickets and near-certainties)
-        min_entry_price = float(os.environ.get("COPYTRADE_MIN_ENTRY_PRICE", "0.10"))
+        # Data: <40¢ entries have 35% WR vs 83% for >80¢ — raise floor to 0.40
+        # Exception: wallets with >90% WR and >30 resolved trades bypass to 0.10 floor
+        high_conviction_entry = wallet.win_rate >= 0.90 and wallet.total_resolved >= 30
+        min_entry_price = float(os.environ.get(
+            "COPYTRADE_MIN_ENTRY_PRICE",
+            "0.10" if high_conviction_entry else "0.40",
+        ))
         max_entry_price = float(os.environ.get("COPYTRADE_MAX_ENTRY_PRICE", "0.97"))
         if price < min_entry_price:
-            logger.info("copytrade_skip", reason="below_min_entry_price", price=price, min=min_entry_price, market=market_question[:40])
+            logger.info("copytrade_skip", reason="below_min_entry_price", price=price, min=min_entry_price, high_conviction=high_conviction_entry, market=market_question[:40])
             return False
         if price > max_entry_price:
             logger.info("copytrade_skip", reason="above_max_entry_price", price=price, max=max_entry_price, market=market_question[:40])
@@ -1270,6 +1311,17 @@ class PolymarketCopyTrader:
                 logger.info("copytrade_skip", reason="same_token", token=token_id[:16])
                 return False
 
+        # Guard: event-level both-sides detection — check event slug, not just condition ID
+        # This catches buying both outcomes of the same event (e.g., BTC Up AND BTC Down)
+        trade_event_slug = trade.get("slug", trade.get("eventSlug", trade.get("event_slug", "")))
+        if trade_event_slug and trade_event_slug in self._active_event_slugs:
+            logger.info(
+                "copytrade_skip",
+                reason="event_level_duplicate",
+                event_slug=trade_event_slug,
+                market=market_question[:40] if market_question else market[:16],
+            )
+            return False
 
         if not market_question:
             market_question = market
@@ -1296,7 +1348,9 @@ class PolymarketCopyTrader:
             )
             return False
 
-        # Calculate size with category-aware Kelly
+        # ── Tiered position sizing based on wallet quality ────────
+        # Default $3, scale to $5 for >80% WR, $10 for >90% WR + >30 resolved in category
+        # Data: <$5 positions have 78% WR, $5-10 have 43% WR
         cat_pnl = self._category_pnl.get(category, 0)
         if self._kelly_enabled:
             size_usd = self._kelly_sizer.calculate_position_size(
@@ -1308,6 +1362,15 @@ class PolymarketCopyTrader:
             )
         else:
             size_usd = self._size_usd
+
+        # Apply tiered scaling caps based on wallet win rate
+        if wallet.win_rate >= 0.90 and wallet.total_resolved >= 30:
+            tier_cap = 10.0  # top tier: up to $10
+        elif wallet.win_rate >= 0.80:
+            tier_cap = 5.0   # mid tier: up to $5
+        else:
+            tier_cap = 3.0   # default tier: $3 max
+        size_usd = min(size_usd, tier_cap)
 
         # ── Category-weighted sizing based on realized P/L ─────────
         would_exceed_cat_check, category, current_exposure = self._correlation_tracker.would_exceed_limit(
@@ -1324,11 +1387,14 @@ class PolymarketCopyTrader:
             size_usd *= 0.5
             logger.info("copytrade_esports_reduction", market=market_question[:40], size_after=round(size_usd, 2))
 
-        # High conviction wallets get 1.5x size boost
+        # High conviction wallets get 1.5x size boost (still capped at $10 by hard cap)
         if high_conviction:
             size_usd *= 1.5
 
-        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, esports=is_esports, high_conviction=high_conviction, category_pnl=round(self._category_pnl.get(category, 0), 2))
+        # Hard cap: NEVER exceed $10 per position regardless of any multipliers
+        size_usd = min(size_usd, 10.0)
+
+        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, tier_cap=tier_cap, esports=is_esports, high_conviction=high_conviction, category_pnl=round(self._category_pnl.get(category, 0), 2))
 
         # ── Correlation + category caps (SKIPPED for high conviction) ──
         if not high_conviction:
@@ -1443,8 +1509,9 @@ class PolymarketCopyTrader:
 
         position_id = f"ct-{uuid.uuid4().hex[:12]}"
 
-        # Fetch market end date from Gamma API
+        # Fetch market metadata from Gamma API (end date + event slug)
         market_end_date = ""
+        event_slug = trade_event_slug  # may already have from trade data
         time_to_close = ""
         try:
             if market and self._http:
@@ -1456,6 +1523,18 @@ class PolymarketCopyTrader:
                     mkt_list = mkt_resp.json()
                     mkt_data = mkt_list[0] if isinstance(mkt_list, list) and mkt_list else mkt_list
                     market_end_date = mkt_data.get("endDate", mkt_data.get("endDateIso", ""))
+                    # Extract event slug for both-sides guard
+                    if not event_slug:
+                        event_slug = mkt_data.get("slug", mkt_data.get("eventSlug", mkt_data.get("groupItemTitle", "")))
+                    # Second check: event-level duplicate using Gamma-sourced slug
+                    if event_slug and event_slug in self._active_event_slugs:
+                        logger.info(
+                            "copytrade_skip",
+                            reason="event_level_duplicate_gamma",
+                            event_slug=event_slug,
+                            market=market_question[:40],
+                        )
+                        return False
                     if market_end_date:
                         import datetime as _dt
                         try:
@@ -1558,6 +1637,7 @@ class PolymarketCopyTrader:
             category=category,
             wallet_win_rate=wallet.win_rate,
             end_date=market_end_date,
+            event_slug=event_slug or "",
             thesis=trade_thesis,
         )
         self._positions[position_id] = position
@@ -1569,9 +1649,11 @@ class PolymarketCopyTrader:
         # Register with correlation tracker
         self._correlation_tracker.add_position(position_id, market_question, size_usd)
 
-        # Track condition_id
+        # Track condition_id and event_slug
         if market:
             self._active_condition_ids.add(market)
+        if event_slug:
+            self._active_event_slugs.add(event_slug)
 
         # Record in PnL tracker
         pnl_trade = Trade(
@@ -1732,6 +1814,8 @@ class PolymarketCopyTrader:
                 continue
             del self._positions[pos_id]
             self._active_condition_ids.discard(pos.condition_id)
+            if hasattr(pos, 'event_slug') and pos.event_slug:
+                self._active_event_slugs.discard(pos.event_slug)
             self._exit_engine.unregister_position(pos_id)
             self._correlation_tracker.remove_position(pos_id)
             wallet_sells = self._source_sells.get(pos.source_wallet, set())
@@ -1802,6 +1886,11 @@ class PolymarketCopyTrader:
 
     async def _execute_reentry(self, entry: dict, current_price: float) -> None:
         """Execute a re-entry buy on a market we profitably exited."""
+        # Quiet hours check — no new BUYs during 11pm-5am MDT
+        if self._is_quiet_hours():
+            logger.info("copytrade_reentry_skip", reason="quiet_hours", market=entry.get("market_question", "")[:40])
+            return
+
         market_question = entry["market_question"]
         token_id = entry["token_id"]
         condition_id = entry["condition_id"]
@@ -2122,6 +2211,8 @@ class PolymarketCopyTrader:
         del self._positions[position_id]
         self._save_positions()
         self._active_condition_ids.discard(pos.condition_id)
+        if hasattr(pos, 'event_slug') and pos.event_slug:
+            self._active_event_slugs.discard(pos.event_slug)
         self._exit_engine.unregister_position(position_id)
         self._correlation_tracker.remove_position(position_id)
         wallet_sells = self._source_sells.get(pos.source_wallet, set())
