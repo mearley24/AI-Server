@@ -145,13 +145,13 @@ async def api_trading():
     return result
 
 
-# Seed category P/L data (from blockchain analysis as of March 27, 2026)
+# Category P/L — updated 2026-03-29 after recovering $110 from 11 stuck neg risk positions
 CATEGORY_PNL_SEED = {
-    "crypto": {"total_pnl": 65.48, "trades": 8, "bought": 0, "sold": 0, "redeemed": 0, "open_value": 0, "multiplier": 1.2, "verdict": "Top earner after both-sides fix. 8 resolved wins, avg 105% return.", "status": "success"},
-    "sports": {"total_pnl": 25.04, "trades": 7, "bought": 0, "sold": 0, "redeemed": 0, "open_value": 0, "multiplier": 1.3, "verdict": "Tennis + esports = 7/7 wins. Best ROI category.", "status": "success"},
-    "weather": {"total_pnl": 11.00, "trades": 2, "bought": 0, "sold": 0, "redeemed": 0, "open_value": 78.52, "multiplier": 1.0, "verdict": "2 resolved wins (Shanghai, Dallas). More positions pending.", "status": "success"},
-    "politics": {"total_pnl": 2.85, "trades": 11, "bought": 20.74, "sold": 15.12, "redeemed": 8.47, "open_value": 0, "multiplier": 1.5, "verdict": "Profitable. Highest multiplier — best edge from information.", "status": "success"},
-    "other": {"total_pnl": 2.73, "trades": 33, "bought": 101.88, "sold": 33.27, "redeemed": 71.33, "open_value": 0, "multiplier": 1.0, "verdict": "Baseline positive. Mixed markets.", "status": "success"},
+    "crypto": {"total_pnl": 65.48, "trades": 8, "bought": 0, "sold": 0, "redeemed": 65.48, "open_value": 0, "multiplier": 1.2, "verdict": "Top earner. 8 resolved wins, avg 105% return.", "status": "success"},
+    "sports": {"total_pnl": 39.05, "trades": 10, "bought": 0, "sold": 0, "redeemed": 39.05, "open_value": 0, "multiplier": 1.3, "verdict": "Tennis + esports + soccer. 10 wins including Albacete +$4.62.", "status": "success"},
+    "weather": {"total_pnl": 87.50, "trades": 9, "bought": 0, "sold": 0, "redeemed": 87.50, "open_value": 0, "multiplier": 1.0, "verdict": "7 redeemed wins: Dallas +$5.43, Shanghai x2 +$21.95, Ankara +$1.04, Sao Paulo +$3.37, Atlanta +$0.31. Best volume.", "status": "success"},
+    "politics": {"total_pnl": 2.85, "trades": 11, "bought": 20.74, "sold": 15.12, "redeemed": 8.47, "open_value": 16.0, "multiplier": 1.5, "verdict": "Profitable. Open positions in TX Senate, Hungary PM.", "status": "success"},
+    "other": {"total_pnl": 15.42, "trades": 40, "bought": 0, "sold": 0, "redeemed": 15.42, "open_value": 25.0, "multiplier": 1.0, "verdict": "Iowa State +$0.21, Leclerc +$0.20, Hamilton +$0.20, Austria +$4.99. Solid.", "status": "success"},
 }
 
 @app.get("/api/trading/categories")
@@ -255,6 +255,13 @@ TIMELINE = [
     {"time": "03/26 08:00PM", "event": "First Politics Winner", "detail": "Politics trade resolves profitable. Small but validates the category thesis.", "type": "good"},
     {"time": "03/27 06:00AM", "event": "All Logic Tied Together", "detail": "Wallet scorer, Kelly sizing, exit engine, circuit breakers — all category-aware and working in concert.", "type": "fix"},
     {"time": "03/27 07:00AM", "event": "Playbook Dashboard Deployed", "detail": "Complete trading analysis dashboard replaces old Kraken mission control. Every trade tracked, every lesson documented.", "type": "good"},
+    {"time": "03/27 11:00AM", "event": "Stale Position Fix Deployed", "detail": "Positions with no price data now auto-clean. Resolved markets no longer block trade slots.", "type": "fix"},
+    {"time": "03/27 11:30AM", "event": "Sell Orders Fixed", "detail": "Switched from custom client to py-clob-client for sells. Stop-losses and trailing stops now execute properly.", "type": "fix"},
+    {"time": "03/28 09:00AM", "event": "Strategy Updated from Real Data", "detail": "All categories profitable. Crypto 0.15x\u21921.2x, Sports 0.4x\u21921.3x. Based on 17/17 resolved wins, +$139.", "type": "good"},
+    {"time": "03/28 11:00AM", "event": "METAR Weather Data Added", "detail": "Aviation weather sensors for 30+ cities. Temperature accurate to 0.1\u00b0C, hours ahead of forecasts.", "type": "fix"},
+    {"time": "03/28 11:30AM", "event": "Priority Wallets Added", "detail": "@tradecraft (tennis, 2139% ROI) and @coldmath (weather, $89K) always tracked.", "type": "good"},
+    {"time": "03/29 10:30AM", "event": "$110 Recovered from Neg Risk", "detail": "11 winning positions were stuck — redeemer wasn't using NegRiskAdapter. All recovered. Redeemer permanently fixed.", "type": "good"},
+    {"time": "03/29 10:30AM", "event": "Bob Employee Upgrade", "detail": "Hermes Agent, smux workspace, CLAUDE.md, BOB_TRAINING.md, self-improving learnings. Bob is a full 24/7 employee.", "type": "good"},
 ]
 
 @app.get("/api/trading/timeline")
