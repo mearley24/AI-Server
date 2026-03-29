@@ -1,13 +1,7 @@
-"""Redeem Neg Risk positions — approve NegRiskAdapter then redeem via CTF.
+"""Redeem ALL winning positions via NegRiskAdapter.
 
-For Neg Risk markets, the standard CTF redeemPositions still works,
-but the parentCollectionId must be the questionId from the neg risk event,
-NOT zero bytes. The NegRiskAdapter wraps multiple binary markets into one
-multi-outcome event.
-
-Actually, for Neg Risk: we need to call redeemPositions on the CTF contract
-but with the correct parentCollectionId derived from the neg risk event.
-OR we just need to ensure the CTF contract has approval to burn our tokens.
+For neg risk markets: call NegRiskAdapter.redeemPositions(conditionId, amounts)
+where amounts = [0, balance] for No tokens or [balance, 0] for Yes tokens.
 """
 
 from web3 import Web3
@@ -15,7 +9,6 @@ from web3.middleware import ExtraDataToPOAMiddleware
 import httpx
 import os
 import time
-import json
 
 w3 = Web3(Web3.HTTPProvider("https://polygon-bor-rpc.publicnode.com"))
 w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
@@ -26,53 +19,34 @@ if not pk.startswith("0x"):
 account = w3.eth.account.from_key(pk)
 eoa = account.address
 
-USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+NEG_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
 CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
-NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
-NEG_RISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+USDC = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 
-CTF_ABI = [
-    {"constant": False, "inputs": [{"name": "collateralToken", "type": "address"}, {"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSets", "type": "uint256[]"}], "name": "redeemPositions", "outputs": [], "type": "function"},
-    {"constant": True, "inputs": [{"name": "", "type": "bytes32"}], "name": "payoutDenominator", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
-    {"constant": True, "inputs": [{"name": "", "type": "bytes32"}, {"name": "", "type": "uint256"}], "name": "payoutNumerators", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
+adapter_abi = [{"constant": False, "inputs": [{"name": "_conditionId", "type": "bytes32"}, {"name": "_amounts", "type": "uint256[]"}], "name": "redeemPositions", "outputs": [], "type": "function"}]
+ctf_abi = [
     {"constant": True, "inputs": [{"name": "a", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
+    {"constant": True, "inputs": [{"name": "", "type": "bytes32"}], "name": "payoutDenominator", "outputs": [{"name": "", "type": "uint256"}], "type": "function"},
     {"constant": True, "inputs": [{"name": "account", "type": "address"}, {"name": "operator", "type": "address"}], "name": "isApprovedForAll", "outputs": [{"name": "", "type": "bool"}], "type": "function"},
     {"constant": False, "inputs": [{"name": "operator", "type": "address"}, {"name": "approved", "type": "bool"}], "name": "setApprovalForAll", "outputs": [], "type": "function"},
 ]
+usdc_abi = [{"constant": True, "inputs": [{"name": "a", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "type": "function"}]
 
-USDC_ABI = [{"constant": True, "inputs": [{"name": "a", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "type": "function"}]
-
-ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF), abi=CTF_ABI)
-usdc = w3.eth.contract(address=Web3.to_checksum_address(USDC_E), abi=USDC_ABI)
-
-zero32 = b"\x00" * 32
+adapter = w3.eth.contract(address=Web3.to_checksum_address(NEG_ADAPTER), abi=adapter_abi)
+ctf = w3.eth.contract(address=Web3.to_checksum_address(CTF), abi=ctf_abi)
+usdc_c = w3.eth.contract(address=Web3.to_checksum_address(USDC), abi=usdc_abi)
 
 print(f"Wallet: {eoa}")
-usdc_before = usdc.functions.balanceOf(Web3.to_checksum_address(eoa)).call() / 1e6
+usdc_before = usdc_c.functions.balanceOf(Web3.to_checksum_address(eoa)).call() / 1e6
 print(f"USDC before: ${usdc_before:.2f}")
 
-# Check if NegRiskAdapter has approval
-approved = ctf.functions.isApprovedForAll(
-    Web3.to_checksum_address(eoa),
-    Web3.to_checksum_address(NEG_RISK_ADAPTER)
-).call()
-print(f"NegRiskAdapter approved: {approved}")
-
+# Ensure approval
+approved = ctf.functions.isApprovedForAll(Web3.to_checksum_address(eoa), Web3.to_checksum_address(NEG_ADAPTER)).call()
 if not approved:
     print("Approving NegRiskAdapter...")
-    tx = ctf.functions.setApprovalForAll(
-        Web3.to_checksum_address(NEG_RISK_ADAPTER), True
-    ).build_transaction({
-        "from": eoa,
-        "nonce": w3.eth.get_transaction_count(eoa),
-        "gas": 100000,
-        "gasPrice": w3.eth.gas_price,
-        "chainId": 137,
-    })
+    tx = ctf.functions.setApprovalForAll(Web3.to_checksum_address(NEG_ADAPTER), True).build_transaction({"from": eoa, "nonce": w3.eth.get_transaction_count(eoa), "gas": 100000, "gasPrice": w3.eth.gas_price, "chainId": 137})
     signed = w3.eth.account.sign_transaction(tx, pk)
-    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-    receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-    print(f"Approval tx: {w3.to_hex(tx_hash)} status={'OK' if receipt.status==1 else 'FAIL'}")
+    w3.eth.wait_for_transaction_receipt(w3.eth.send_raw_transaction(signed.raw_transaction), timeout=60)
     time.sleep(2)
 
 # Get redeemable positions
@@ -87,69 +61,56 @@ for pos in redeemable:
     cid_hex = pos.get("conditionId", "")
     title = pos.get("title", "")[:50]
     value = float(pos.get("currentValue", 0))
-    is_neg_risk = pos.get("negativeRisk", False)
-    asset = pos.get("asset", "")
     outcome_index = pos.get("outcomeIndex", 0)
+    asset = pos.get("asset", "")
+    is_neg_risk = pos.get("negativeRisk", False)
 
-    if not cid_hex:
+    if not cid_hex or not asset:
         continue
 
     cid = bytes.fromhex(cid_hex[2:]) if cid_hex.startswith("0x") else bytes.fromhex(cid_hex)
 
-    # Check we actually hold tokens
-    if asset:
-        bal = ctf.functions.balanceOf(Web3.to_checksum_address(eoa), int(asset)).call()
-        if bal == 0:
-            print(f"  SKIP {title} - 0 tokens in EOA")
-            continue
-        print(f"  {title}: {bal/1e6:.2f} tokens, negRisk={is_neg_risk}, outcome={outcome_index}")
-
-    # Check payout
-    denom = ctf.functions.payoutDenominator(cid).call()
-    if denom == 0:
-        print(f"  SKIP {title} - not resolved on-chain")
+    # Check token balance
+    bal = ctf.functions.balanceOf(Web3.to_checksum_address(eoa), int(asset)).call()
+    if bal == 0:
+        print(f"  SKIP {title} - no tokens")
         continue
 
-    p0 = ctf.functions.payoutNumerators(cid, 0).call()
-    p1 = ctf.functions.payoutNumerators(cid, 1).call()
-    our_payout = p1 if outcome_index == 1 else p0
-    print(f"    Payouts: [{p0},{p1}], our index={outcome_index}, our_payout={our_payout}")
-
-    if our_payout == 0:
-        print(f"    LOSING SIDE - redemption would return $0")
+    # Check resolved
+    denom = ctf.functions.payoutDenominator(cid).call()
+    if denom == 0:
+        print(f"  SKIP {title} - not resolved")
         continue
 
     try:
-        gas_price = w3.eth.gas_price
-        nonce = w3.eth.get_transaction_count(eoa)
+        # Build amounts array: [Yes_amount, No_amount]
+        if outcome_index == 0:
+            amounts = [bal, 0]
+        else:
+            amounts = [0, bal]
 
-        # Standard CTF redemption with zero parentCollectionId
-        # This should work for both standard and neg risk IF we hold winning tokens
-        tx = ctf.functions.redeemPositions(
-            Web3.to_checksum_address(USDC_E),
-            zero32,
-            cid,
-            [1, 2]
-        ).build_transaction({
+        tx = adapter.functions.redeemPositions(cid, amounts).build_transaction({
             "from": eoa,
-            "nonce": nonce,
-            "gas": 300000,
-            "gasPrice": gas_price,
+            "nonce": w3.eth.get_transaction_count(eoa),
+            "gas": 500000,
+            "gasPrice": w3.eth.gas_price,
             "chainId": 137,
         })
-
         signed = w3.eth.account.sign_transaction(tx, pk)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=90)
-        status = "OK" if receipt.status == 1 else "FAIL"
+
         if receipt.status == 1:
             redeemed += 1
-        print(f"    Redeem: {status} tx={w3.to_hex(tx_hash)[:20]}...")
+            print(f"  OK {title} (${value:.2f})")
+        else:
+            print(f"  FAIL {title}")
         time.sleep(1)
 
     except Exception as e:
-        print(f"    ERR: {str(e)[:120]}")
+        print(f"  ERR {title}: {str(e)[:100]}")
 
-usdc_after = usdc.functions.balanceOf(Web3.to_checksum_address(eoa)).call() / 1e6
+usdc_after = usdc_c.functions.balanceOf(Web3.to_checksum_address(eoa)).call() / 1e6
 print(f"\nRedeemed: {redeemed}/{len(redeemable)}")
-print(f"USDC: ${usdc_before:.2f} -> ${usdc_after:.2f} (recovered ${usdc_after-usdc_before:.2f})")
+print(f"USDC: ${usdc_before:.2f} -> ${usdc_after:.2f}")
+print(f"Recovered: ${usdc_after - usdc_before:.2f}")
