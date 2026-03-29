@@ -79,6 +79,7 @@ class _Deps:
     paper_ledger: Any = None
     platform_clients: dict[str, Any] = {}  # {"polymarket": ..., "kalshi": ..., "crypto": ...}
     redeemer: Any = None  # PolymarketRedeemer instance
+    whale_scanner: Any = None  # ScannerEngine instance
 
 
 deps = _Deps()
@@ -633,6 +634,37 @@ async def redeem_status() -> dict[str, Any]:
     if deps.redeemer is None:
         return {"status": "not_initialized"}
     return deps.redeemer.get_status()
+
+
+# ── Whale Scanner endpoints ──────────────────────────────────────────
+
+@router.get("/whale-scanner/status")
+async def whale_scanner_status() -> dict[str, Any]:
+    """Get whale scanner status: last poll, trades scanned, active signals."""
+    if not deps.whale_scanner:
+        return {"status": "not_initialized"}
+    return deps.whale_scanner.get_status()
+
+
+@router.get("/whale-scanner/signals")
+async def whale_scanner_signals(
+    signal_type: str | None = Query(None, description="Filter: whale, insider, cluster"),
+    min_confidence: float = Query(0, description="Minimum confidence score"),
+) -> dict[str, Any]:
+    """Get active whale scanner signals."""
+    if not deps.whale_scanner:
+        raise HTTPException(status_code=503, detail="Whale scanner not initialized")
+
+    signals = deps.whale_scanner.get_active_signals()
+    if signal_type:
+        signals = [s for s in signals if s.signal_type == signal_type]
+    if min_confidence > 0:
+        signals = [s for s in signals if s.confidence_score >= min_confidence]
+
+    return {
+        "signals": [s.to_dict() for s in signals],
+        "count": len(signals),
+    }
 
 
 @router.get("/heartbeat/reports")

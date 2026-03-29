@@ -177,6 +177,15 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("polymarket_platform_unavailable", error=_PLATFORM_IMPORT_ERRORS.get("polymarket", "unknown"))
 
+    # ── Whale signal scanner ─────────────────────────────────────────────
+    whale_scanner = None
+    try:
+        from src.whale_scanner.scanner_engine import ScannerEngine
+        whale_scanner = ScannerEngine(data_dir=settings.data_dir)
+        log.info("whale_scanner_initialized")
+    except Exception as exc:
+        log.warning("whale_scanner_init_failed", error=str(exc))
+
     # Polymarket copy-trading strategy (uses existing Polymarket client)
     if settings.copytrade_enabled:
         from strategies.polymarket_copytrade import PolymarketCopyTrader
@@ -185,6 +194,8 @@ async def lifespan(app: FastAPI):
             settings=settings,
             pnl_tracker=pnl_tracker,
         )
+        if whale_scanner:
+            copytrade.set_whale_scanner(whale_scanner)
         platform_strategies.append(("copytrade", copytrade))
 
     # Polymarket position redeemer — automatically redeems resolved winning positions
@@ -210,6 +221,7 @@ async def lifespan(app: FastAPI):
     deps.sandbox = sandbox
     deps.platform_clients = platform_clients
     deps.redeemer = redeemer
+    deps.whale_scanner = whale_scanner
     deps.strategies = {}
     for name, strat in platform_strategies:
         deps.strategies[name] = strat
@@ -236,6 +248,14 @@ async def lifespan(app: FastAPI):
     await orderbook.start()
     await latency_detector.start()
     await order_flow.start()
+
+    # Start whale scanner before strategies so signals are available
+    if whale_scanner:
+        try:
+            await whale_scanner.start()
+            log.info("whale_scanner_started")
+        except Exception as exc:
+            log.warning("whale_scanner_start_failed", error=str(exc))
 
     # Start platform-specific strategies (copytrade + redeemer)
     for name, strat in platform_strategies:
@@ -285,6 +305,7 @@ async def lifespan(app: FastAPI):
         order_flow=order_flow.enabled,
         security_sandbox="active",
         audit_trail="active",
+        whale_scanner="active" if whale_scanner else "disabled",
     )
 
     _print_banner(settings)
@@ -306,6 +327,13 @@ async def lifespan(app: FastAPI):
         try:
             await redis_task
         except asyncio.CancelledError:
+            pass
+
+    # Stop whale scanner
+    if whale_scanner:
+        try:
+            await whale_scanner.stop()
+        except Exception:
             pass
 
     # Stop platform-specific strategies (copytrade + redeemer)
@@ -347,7 +375,7 @@ def _print_banner(settings) -> None:
 ║  Wallet:    {wallet_addr[:37]:<37}║
 ║  Exposure:  ${settings.poly_max_exposure:<36}║
 ║                                                  ║
-║  Strategies: copytrade + redeemer                ║
+║  Strategies: copytrade + redeemer + whale-scanner ║
 ║                                                  ║
 ║  Endpoints:                                      ║
 ║    GET  /health        — Health check            ║
@@ -356,6 +384,7 @@ def _print_banner(settings) -> None:
 ║    GET  /pnl           — Profit & Loss           ║
 ║    POST /heartbeat/run — Trigger heartbeat       ║
 ║    GET  /heartbeat/status — HEARTBEAT.md         ║
+║    GET  /whale-scanner/status — Scanner health   ║
 ╚══════════════════════════════════════════════════╝
 """
     print(banner, flush=True)

@@ -322,6 +322,9 @@ class PolymarketCopyTrader:
         # ── METAR aviation weather data for temperature edge ──────────
         self._metar_client = METARClient()
 
+        # ── Whale signal scanner (set externally via set_whale_scanner) ──
+        self._whale_scanner = None
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -389,6 +392,10 @@ class PolymarketCopyTrader:
             f"{'DRY RUN' if self._dry_run else 'LIVE'} | ${self._bankroll:.0f} bankroll",
         )
 
+    def set_whale_scanner(self, scanner) -> None:
+        """Inject the whale scanner engine (called by main.py after both are initialized)."""
+        self._whale_scanner = scanner
+
     async def stop(self) -> None:
         self._running = False
         if self._task:
@@ -439,6 +446,10 @@ class PolymarketCopyTrader:
 
                 # 2. Monitor top wallets for new trades (every tick)
                 await self._monitor_trades()
+
+                # 2b. Check whale scanner signals (every other tick ≈ 60s)
+                if tick_count % 2 == 1 and self._whale_scanner is not None:
+                    await self._check_whale_signals()
 
                 # 3. Manage positions with smart exit engine (every other tick ≈ 60s)
                 if tick_count % 2 == 0:
@@ -1826,6 +1837,200 @@ class PolymarketCopyTrader:
         # ── Re-entry check: buy back into winners that dipped ──────────────
         await self._check_reentry_queue()
 
+    async def _check_whale_signals(self) -> None:
+        """Check whale scanner for high-confidence signals and consider entering positions."""
+        if self._whale_scanner is None:
+            return
+
+        signals = self._whale_scanner.get_active_signals()
+        if not signals:
+            return
+
+        # Circuit breaker checks
+        if self._halted:
+            return
+        if self._daily_realized_losses > self._daily_loss_limit:
+            return
+        if self._hourly_limit_reached():
+            return
+        if len(self._positions) >= self._max_positions:
+            return
+        if self._bankroll < 10:
+            return
+
+        for signal in signals:
+            # Only act on high-confidence signals (score > 70)
+            if signal.confidence_score <= 70:
+                continue
+
+            # Skip if already have position in this market
+            if signal.condition_id and signal.condition_id in self._active_condition_ids:
+                continue
+
+            # Quiet hours guard
+            if self._is_quiet_hours():
+                continue
+
+            # Hourly pacing
+            if self._hourly_limit_reached():
+                break
+
+            # Need token_id — fetch from Gamma API
+            token_id = ""
+            market_question = signal.market_title or ""
+            event_slug = signal.market_slug or ""
+            try:
+                if signal.condition_id and self._http:
+                    mkt_resp = await self._http.get(
+                        f"{self._gamma_url}/markets",
+                        params={"condition_id": signal.condition_id, "limit": 1},
+                    )
+                    if mkt_resp.status_code == 200:
+                        mkt_list = mkt_resp.json()
+                        mkt_data = mkt_list[0] if isinstance(mkt_list, list) and mkt_list else mkt_list
+                        token_id = mkt_data.get("clobTokenIds", [""])[0] if isinstance(mkt_data.get("clobTokenIds"), list) else ""
+                        if not token_id:
+                            token_id = mkt_data.get("tokenID", "")
+                        if not market_question:
+                            market_question = mkt_data.get("question", mkt_data.get("title", ""))
+                        if not event_slug:
+                            event_slug = mkt_data.get("slug", mkt_data.get("eventSlug", ""))
+            except Exception as exc:
+                logger.debug("whale_signal_market_fetch_error", error=str(exc)[:80])
+                continue
+
+            if not token_id:
+                continue
+
+            # Event-level dedup
+            if event_slug and event_slug in self._active_event_slugs:
+                continue
+
+            # Entry price filter (same as copytrade: 0.40 - 0.97)
+            price = signal.details.get("trade_price", 0)
+            if not price:
+                try:
+                    price = await self._client.get_midpoint(token_id)
+                except Exception:
+                    continue
+            if price < 0.40 or price > 0.97:
+                continue
+
+            # Position sizing based on signal confidence
+            if signal.signal_type == "insider" and signal.confidence_score > 90:
+                size_usd = 7.0
+            elif signal.confidence_score > 80:
+                size_usd = 5.0
+            else:
+                size_usd = 3.0
+
+            # Hard cap
+            size_usd = min(size_usd, 10.0)
+
+            # Check category and apply multiplier
+            category = categorize_market(market_question)
+            cat_mult = self._category_size_multiplier(category)
+            size_usd = size_usd * cat_mult
+            size_usd = min(size_usd, 10.0)
+
+            # Place order
+            buy_price = round(round(price / 0.01) * 0.01, 2)
+            if buy_price >= 1.0:
+                buy_price = 0.99
+            size_shares = size_usd / buy_price
+            if size_shares < 5:
+                size_shares = 5.0
+            size_shares = round(size_shares, 2)
+
+            position_id = f"ws-{uuid.uuid4().hex[:12]}"
+
+            logger.info(
+                "whale_signal_trade",
+                signal_type=signal.signal_type,
+                market=market_question[:50],
+                wallet=signal.wallet[:10] + "..." if signal.wallet else "",
+                confidence=round(signal.confidence_score, 1),
+                size_usd=round(size_usd, 2),
+                price=buy_price,
+            )
+
+            order_id = ""
+            if self._dry_run:
+                order_id = f"paper-{position_id}"
+                logger.info("whale_signal_trade_executed", mode="dry_run", market=market_question[:40], size=round(size_usd, 2))
+            else:
+                if self._clob_client is None:
+                    continue
+                try:
+                    from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
+                    loop = asyncio.get_event_loop()
+                    order_args = OrderArgs(token_id=token_id, price=buy_price, size=size_shares, side="BUY")
+                    options = PartialCreateOrderOptions(tick_size="0.01", neg_risk=False)
+                    order_resp = await loop.run_in_executor(
+                        None, lambda: self._clob_client.create_and_post_order(order_args, options),
+                    )
+                    order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
+
+                    self._last_trade_time = time.time()
+                    self._daily_spend += size_usd
+                    self._daily_trades += 1
+                    self._bankroll = max(0, self._bankroll - size_usd)
+                    self._record_hourly_trade()
+                except Exception as exc:
+                    logger.info("whale_signal_order_error", error=str(exc)[:200], market=market_question[:40])
+                    continue
+
+            # Track position
+            thesis = f"whale-signal trade: {market_question[:40]} triggered by {signal.signal_type} from {signal.wallet[:10]}..."
+            position = CopiedPosition(
+                position_id=position_id,
+                source_wallet=signal.wallet,
+                token_id=token_id,
+                market_question=market_question,
+                condition_id=signal.condition_id,
+                side="BUY",
+                entry_price=price,
+                size_usd=size_usd,
+                size_shares=size_shares,
+                copied_at=time.time(),
+                source_trade_id=signal.details.get("trade_id", ""),
+                order_id=order_id,
+                category=category,
+                wallet_win_rate=signal.details.get("wallet_win_rate", 0),
+                event_slug=event_slug or "",
+                thesis=thesis,
+            )
+            self._positions[position_id] = position
+            self._save_positions()
+            self._exit_engine.register_position(position_id, price, time.time(), category=category)
+            self._correlation_tracker.add_position(position_id, market_question, size_usd)
+            if signal.condition_id:
+                self._active_condition_ids.add(signal.condition_id)
+            if event_slug:
+                self._active_event_slugs.add(event_slug)
+
+            # PnL tracking
+            pnl_trade = Trade(
+                trade_id=order_id or position_id,
+                timestamp=time.time(),
+                market=market_question,
+                token_id=token_id,
+                side="BUY",
+                price=price,
+                size=size_shares,
+                fee=0.0,
+                strategy="whale_signal",
+            )
+            self._pnl_tracker.record_trade(pnl_trade)
+
+            # Notification
+            _notify(
+                "🐋 Whale Signal Trade",
+                f"{market_question[:50]}\n"
+                f"${size_usd:.2f} @ {price:.2f} — {signal.signal_type} signal ({signal.confidence_score:.0f}% conf)\n"
+                f"Source: {signal.wallet[:10]}...",
+            )
+
     async def _check_reentry_queue(self) -> None:
         """Check queued re-entries — buy back into winners that dipped after trailing stop."""
         if not self._reentry_queue:
@@ -2330,6 +2535,7 @@ class PolymarketCopyTrader:
                 }
                 for e in self._reentry_queue.values()
             ],
+            "whale_scanner": self._whale_scanner.get_status() if self._whale_scanner else {"status": "disabled"},
             "config": {
                 "size_usd": self._size_usd,
                 "max_positions": self._max_positions,
