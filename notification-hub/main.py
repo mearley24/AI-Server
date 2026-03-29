@@ -78,21 +78,37 @@ async def send_console(title: str, body: str):
     logger.info("NOTIFICATION [%s]: %s", title, body)
 
 
+BRIDGE_RETRY_COUNT = 3
+BRIDGE_RETRY_BACKOFF = [2, 4, 8]
+
+
 async def send_imessage(title: str, body: str):
-    """Send iMessage via the host-side AppleScript bridge."""
+    """Send iMessage via the host-side AppleScript bridge with retry + backoff."""
     message = f"{title}\n{body}" if title else body
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                IMESSAGE_BRIDGE_URL,
-                json={"message": message},
-            )
-            if resp.status_code == 200:
-                logger.info("iMessage sent: %s", title or body[:60])
-                return "imessage"
-            logger.error("iMessage bridge returned %s: %s", resp.status_code, resp.text)
-    except Exception as e:
-        logger.error("iMessage bridge error: %s — falling back to console", e)
+
+    for attempt in range(BRIDGE_RETRY_COUNT):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    IMESSAGE_BRIDGE_URL,
+                    json={"message": message},
+                )
+                if resp.status_code == 200:
+                    logger.info("iMessage queued (attempt %d/%d): %s",
+                                attempt + 1, BRIDGE_RETRY_COUNT, title or body[:60])
+                    return "imessage"
+                logger.warning("iMessage bridge returned %s (attempt %d/%d): %s",
+                               resp.status_code, attempt + 1, BRIDGE_RETRY_COUNT, resp.text)
+        except Exception as e:
+            logger.warning("iMessage bridge error (attempt %d/%d): %s",
+                           attempt + 1, BRIDGE_RETRY_COUNT, e)
+
+        if attempt < BRIDGE_RETRY_COUNT - 1:
+            backoff = BRIDGE_RETRY_BACKOFF[attempt]
+            logger.info("Retrying iMessage bridge in %ds...", backoff)
+            await asyncio.sleep(backoff)
+
+    logger.error("All %d iMessage bridge attempts failed — falling back to console", BRIDGE_RETRY_COUNT)
     await send_console(title, body)
     return "console"
 
