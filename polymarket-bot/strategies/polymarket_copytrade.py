@@ -1748,17 +1748,35 @@ class PolymarketCopyTrader:
                 # The redeemer handles on-chain USDC recovery separately.
                 if current_price >= 0.99 or current_price <= 0.01:
                     hold_hours = (time.time() - pos.copied_at) / 3600
+                    won = current_price >= 0.99
+                    # Calculate actual P/L
+                    size_shares = pos.size if hasattr(pos, 'size') and pos.size else 0
+                    cost_basis = pos.entry_price * size_shares if size_shares else pos.cost_usd if hasattr(pos, 'cost_usd') else 0
+                    payout = size_shares if won else 0  # $1 per share if won, $0 if lost
+                    pnl_usd = payout - cost_basis
+                    pnl_pct = ((current_price - pos.entry_price) / pos.entry_price * 100) if pos.entry_price > 0 else 0
+                    result_label = "WON" if won else "LOST"
+                    # Track P/L
+                    if won:
+                        self._daily_wins += abs(pnl_usd) if pnl_usd > 0 else 0
+                    else:
+                        self._daily_realized_losses += abs(pnl_usd) if pnl_usd < 0 else cost_basis
+                    category = getattr(pos, 'category', None) or categorize_market(pos.market_question)
+                    self._category_pnl[category] = self._category_pnl.get(category, 0) + pnl_usd
                     logger.info(
-                        "copytrade_resolved_cleanup",
+                        "copytrade_resolved",
                         position_id=pos_id,
                         market=pos.market_question[:50],
-                        current_price=current_price,
+                        result=result_label,
                         entry_price=pos.entry_price,
+                        pnl_usd=round(pnl_usd, 2),
                         hold_hours=round(hold_hours, 1),
                     )
                     _notify(
-                        "[RESOLVED]",
-                        f"{pos.market_question[:50]}\n{'WON' if current_price >= 0.99 else 'LOST'} | Entry: {pos.entry_price:.2f}",
+                        f"[{result_label}]",
+                        f"{pos.market_question[:50]}\n"
+                        f"Entry: {pos.entry_price:.2f} -> {'$1.00' if won else '$0.00'} = ${pnl_usd:+.2f} ({pnl_pct:+.0f}%)\n"
+                        f"Held {hold_hours:.0f}h | Bank: ${self._bankroll:.2f}",
                     )
                     positions_to_remove.append(pos_id)
                     continue
