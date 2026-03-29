@@ -2123,7 +2123,7 @@ class PolymarketCopyTrader:
             wallet_short = (signal.wallet[:10] + "...") if signal.wallet else "unknown"
             category = categorize_market(market_question)
 
-            # ── Tier 1: Alert only — no trade ─────────────────────────
+            # ── Tier 1: Silent — add wallet to watchlist, no trade, no notification
             if tier == 1:
                 self._add_wallet_to_watchlist(signal.wallet)
                 logger.info(
@@ -2134,11 +2134,6 @@ class PolymarketCopyTrader:
                     wallet=wallet_short,
                     confidence=round(conf, 1),
                     trade_size=round(signal.trade_size, 2),
-                )
-                _notify(
-                    "[WHALE] Tier 1 Watch",
-                    f"[WHALE] {signal.signal_type} — {market_question[:50]}\n"
-                    f"Wallet {wallet_short}, conf {conf:.0f}%",
                 )
                 continue
 
