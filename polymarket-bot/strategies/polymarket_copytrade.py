@@ -388,8 +388,8 @@ class PolymarketCopyTrader:
             llm_validation=self._llm_validator.enabled,
         )
         _notify(
-            "🟢 Bot Started",
-            f"{'DRY RUN' if self._dry_run else 'LIVE'} | ${self._bankroll:.0f} bankroll",
+            "[BOT] Started",
+            f"{'DRY RUN' if self._dry_run else 'LIVE'} | ${self._bankroll:.2f} bankroll",
         )
 
     def set_whale_scanner(self, scanner) -> None:
@@ -1137,8 +1137,8 @@ class PolymarketCopyTrader:
                     trades=self._daily_trades,
                 )
                 _notify(
-                    "🛑 Trading Halted",
-                    f"Daily loss ${daily_realized_loss:.2f} hit ${self._daily_loss_limit:.0f} limit. Resumes midnight.",
+                    "[HALT] Trading Paused",
+                    f"Daily loss ${daily_realized_loss:.2f} hit ${self._daily_loss_limit:.2f} limit\nResumes midnight UTC",
                 )
             return
 
@@ -1691,13 +1691,10 @@ class PolymarketCopyTrader:
         cat_pnl = self._category_pnl.get(category, 0)
         daily_net = self._daily_wins - self._daily_realized_losses
         _notify(
-            "📈 New Trade",
-            f"{market_question[:50]}\n"
-            f"${size_usd:.2f} @ {price:.2f} — {wallet.win_rate*100:.0f}% WR wallet\n"
-            f"SL: {sl_price:.2f} | Trail@: {tp1_price:.2f}"
-            + (f" | {time_to_close}" if time_to_close else "")
-            + (f"\nCat: {category} ({cat_mult:.1f}x) | Cat P/L: ${cat_pnl:+.2f} | Daily: {self._daily_trades} trades, net ${daily_net:+.2f}" if category else "")
-            + (f"\nThesis: {trade_thesis[:60]}" if trade_thesis else ""),
+            "[NEW TRADE]",
+            f"[NEW TRADE] {market_question[:50]}\n"
+            f"${size_usd:.2f} @ {price:.2f} | {wallet.win_rate*100:.0f}% WR wallet\n"
+            f"SL: {sl_price:.2f} | Cat: {category}",
         )
         return True
 
@@ -1740,8 +1737,8 @@ class PolymarketCopyTrader:
                             stale_hours=stale_hours,
                         )
                         _notify(
-                            "🧹 Cleaned",
-                            f"{pos.market_question[:50]} — {hold_hours:.0f}h old, no price",
+                            "[CLEANED]",
+                            f"{pos.market_question[:50]}\n{hold_hours:.0f}h old, no price available",
                         )
                         positions_to_remove.append(pos_id)
                     continue
@@ -1760,8 +1757,8 @@ class PolymarketCopyTrader:
                         hold_hours=round(hold_hours, 1),
                     )
                     _notify(
-                        "🧹 Resolved",
-                        f"{pos.market_question[:50]} → {'WON' if current_price >= 0.99 else 'LOST'}",
+                        "[RESOLVED]",
+                        f"{pos.market_question[:50]}\n{'WON' if current_price >= 0.99 else 'LOST'} | Entry: {pos.entry_price:.2f}",
                     )
                     positions_to_remove.append(pos_id)
                     continue
@@ -1837,8 +1834,50 @@ class PolymarketCopyTrader:
         # ── Re-entry check: buy back into winners that dipped ──────────────
         await self._check_reentry_queue()
 
+    # ── Profitable categories for whale tier 2 filtering ────────────────
+    _WHALE_PROFITABLE_CATEGORIES: set[str] = {"crypto_updown", "crypto", "tennis", "esports"}
+
+    def _add_wallet_to_watchlist(self, wallet_address: str) -> None:
+        """Add a whale wallet to copytrade_wallets.json for future monitoring."""
+        try:
+            data: dict[str, Any] = {"wallets": [], "last_scan_time": 0, "count": 0}
+            if self._wallet_cache_path.exists():
+                data = json.loads(self._wallet_cache_path.read_text())
+
+            existing_addrs = {w.get("address", "").lower() for w in data.get("wallets", [])}
+            if wallet_address.lower() in existing_addrs:
+                return
+
+            data["wallets"].append({
+                "address": wallet_address.lower(),
+                "win_rate": 0.0,
+                "total_resolved": 0,
+                "wins": 0,
+                "losses": 0,
+                "total_volume": 0.0,
+                "last_active": time.time(),
+                "score": 0.0,
+                "event_trades": 0,
+                "adjusted_win_rate": 0.0,
+                "pl_ratio": 0.0,
+                "open_losing": 0,
+                "source": "whale_scanner",
+            })
+            data["count"] = len(data["wallets"])
+            self._wallet_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self._wallet_cache_path.write_text(json.dumps(data, indent=2))
+            logger.info("whale_wallet_added_to_watchlist", wallet=wallet_address[:10] + "...")
+        except Exception as exc:
+            logger.warning("whale_wallet_watchlist_error", error=str(exc)[:100])
+
     async def _check_whale_signals(self) -> None:
-        """Check whale scanner for high-confidence signals and consider entering positions."""
+        """Check whale scanner for signals and respond with tiered system.
+
+        Tier 1 (conf 50-70): Alert only — log + notify + add wallet to watchlist
+        Tier 2 (conf 70-85): Small $3 entry — only profitable categories
+        Tier 3 (conf 85-95): Medium $5 entry — insider/cluster, skip category filter
+        Tier 4 (conf 95+):   High conviction $7-10 entry
+        """
         if self._whale_scanner is None:
             return
 
@@ -1846,21 +1885,55 @@ class PolymarketCopyTrader:
         if not signals:
             return
 
-        # Circuit breaker checks
-        if self._halted:
-            return
-        if self._daily_realized_losses > self._daily_loss_limit:
-            return
-        if self._hourly_limit_reached():
-            return
-        if len(self._positions) >= self._max_positions:
-            return
-        if self._bankroll < 10:
-            return
-
         for signal in signals:
-            # Only act on high-confidence signals (score > 70)
-            if signal.confidence_score <= 70:
+            # Skip signals below minimum threshold
+            if signal.confidence_score < 50:
+                continue
+
+            # Determine tier
+            conf = signal.confidence_score
+            if conf >= 95:
+                tier = 4
+            elif conf >= 85:
+                tier = 3
+            elif conf >= 70:
+                tier = 2
+            else:
+                tier = 1
+
+            market_question = signal.market_title or ""
+            wallet_short = (signal.wallet[:10] + "...") if signal.wallet else "unknown"
+            category = categorize_market(market_question)
+
+            # ── Tier 1: Alert only — no trade ─────────────────────────
+            if tier == 1:
+                self._add_wallet_to_watchlist(signal.wallet)
+                logger.info(
+                    "whale_signal_tier1_alert",
+                    tier=1,
+                    signal_type=signal.signal_type,
+                    market=market_question[:50],
+                    wallet=wallet_short,
+                    confidence=round(conf, 1),
+                    trade_size=round(signal.trade_size, 2),
+                )
+                _notify(
+                    "[WATCHING] Whale Spotted",
+                    f"[WHALE] ${signal.trade_size:.2f} on {market_question[:50]}\n"
+                    f"by {wallet_short} -- watching only",
+                )
+                continue
+
+            # ── Tiers 2-4: trading — apply circuit breakers ───────────
+            if self._halted:
+                continue
+            if self._daily_realized_losses > self._daily_loss_limit:
+                continue
+            if self._hourly_limit_reached():
+                break
+            if len(self._positions) >= self._max_positions:
+                continue
+            if self._bankroll < 10:
                 continue
 
             # Skip if already have position in this market
@@ -1871,13 +1944,8 @@ class PolymarketCopyTrader:
             if self._is_quiet_hours():
                 continue
 
-            # Hourly pacing
-            if self._hourly_limit_reached():
-                break
-
             # Need token_id — fetch from Gamma API
             token_id = ""
-            market_question = signal.market_title or ""
             event_slug = signal.market_slug or ""
             try:
                 if signal.condition_id and self._http:
@@ -1916,21 +1984,35 @@ class PolymarketCopyTrader:
             if price < 0.40 or price > 0.97:
                 continue
 
-            # Position sizing based on signal confidence
-            if signal.signal_type == "insider" and signal.confidence_score > 90:
-                size_usd = 7.0
-            elif signal.confidence_score > 80:
+            # ── Tier-specific sizing and filtering ────────────────────
+            details = signal.details or {}
+            wallet_count = details.get("wallet_count", 1)
+            total_volume = details.get("total_cluster_volume", signal.trade_size)
+            is_cluster = signal.signal_type == "cluster"
+            is_insider = signal.signal_type == "insider"
+
+            if tier == 2:
+                # Tier 2: $3, only profitable categories
+                if category not in self._WHALE_PROFITABLE_CATEGORIES:
+                    logger.info(
+                        "whale_signal_tier2_skip_category",
+                        tier=2, category=category, market=market_question[:50],
+                    )
+                    continue
+                size_usd = 3.0
+            elif tier == 3:
+                # Tier 3: $5, skip category filter
                 size_usd = 5.0
             else:
-                size_usd = 3.0
+                # Tier 4: $7 default, $10 if cluster + insider combo
+                if is_cluster and is_insider:
+                    size_usd = 10.0
+                elif wallet_count >= 3 and total_volume >= 5000:
+                    size_usd = 10.0
+                else:
+                    size_usd = 7.0
 
-            # Hard cap
-            size_usd = min(size_usd, 10.0)
-
-            # Check category and apply multiplier
-            category = categorize_market(market_question)
-            cat_mult = self._category_size_multiplier(category)
-            size_usd = size_usd * cat_mult
+            # Hard cap: NEVER exceed $10
             size_usd = min(size_usd, 10.0)
 
             # Place order
@@ -1946,18 +2028,20 @@ class PolymarketCopyTrader:
 
             logger.info(
                 "whale_signal_trade",
+                tier=tier,
                 signal_type=signal.signal_type,
                 market=market_question[:50],
-                wallet=signal.wallet[:10] + "..." if signal.wallet else "",
-                confidence=round(signal.confidence_score, 1),
+                wallet=wallet_short,
+                confidence=round(conf, 1),
                 size_usd=round(size_usd, 2),
                 price=buy_price,
+                category=category,
             )
 
             order_id = ""
             if self._dry_run:
                 order_id = f"paper-{position_id}"
-                logger.info("whale_signal_trade_executed", mode="dry_run", market=market_question[:40], size=round(size_usd, 2))
+                logger.info("whale_signal_trade_executed", mode="dry_run", tier=tier, market=market_question[:40], size=round(size_usd, 2))
             else:
                 if self._clob_client is None:
                     continue
@@ -1981,7 +2065,7 @@ class PolymarketCopyTrader:
                     continue
 
             # Track position
-            thesis = f"whale-signal trade: {market_question[:40]} triggered by {signal.signal_type} from {signal.wallet[:10]}..."
+            thesis = f"whale-signal tier {tier}: {signal.signal_type} on {market_question[:40]}"
             position = CopiedPosition(
                 position_id=position_id,
                 source_wallet=signal.wallet,
@@ -2023,13 +2107,26 @@ class PolymarketCopyTrader:
             )
             self._pnl_tracker.record_trade(pnl_trade)
 
-            # Notification
-            _notify(
-                "🐋 Whale Signal Trade",
-                f"{market_question[:50]}\n"
-                f"${size_usd:.2f} @ {price:.2f} — {signal.signal_type} signal ({signal.confidence_score:.0f}% conf)\n"
-                f"Source: {signal.wallet[:10]}...",
-            )
+            # Tier-specific notifications
+            if tier == 2:
+                _notify(
+                    "[WHALE FOLLOW] Entry",
+                    f"[WHALE FOLLOW] ${size_usd:.2f} on {market_question[:50]}\n"
+                    f"conf {conf:.0f} | {signal.signal_type} | Cat: {category}",
+                )
+            elif tier == 3:
+                detail = f"fresh wallet, ${signal.trade_size:.2f} single bet" if is_insider else f"{wallet_count} wallets clustered"
+                _notify(
+                    "[INSIDER] Entry",
+                    f"[INSIDER] ${size_usd:.2f} on {market_question[:50]}\n"
+                    f"{detail}",
+                )
+            elif tier == 4:
+                _notify(
+                    "[HIGH CONVICTION] Entry",
+                    f"[HIGH CONVICTION] ${size_usd:.2f} on {market_question[:50]}\n"
+                    f"{wallet_count} wallets, ${total_volume:.2f} total",
+                )
 
     async def _check_reentry_queue(self) -> None:
         """Check queued re-entries — buy back into winners that dipped after trailing stop."""
@@ -2196,9 +2293,10 @@ class PolymarketCopyTrader:
         self._pnl_tracker.record_trade(pnl_trade)
 
         _notify(
-            "🔄 Re-entry",
-            f"{market_question[:50]}\n"
-            f"Back in @ {current_price:.2f} (exited {exit_price:.2f}) — ${size_usd:.2f}",
+            "[NEW TRADE] Re-entry",
+            f"[NEW TRADE] {market_question[:50]}\n"
+            f"${size_usd:.2f} @ {current_price:.2f} | prev exit {exit_price:.2f}\n"
+            f"Cat: {category}",
         )
 
         logger.info(
@@ -2349,8 +2447,8 @@ class PolymarketCopyTrader:
                     limit=cat_limit,
                 )
                 _notify(
-                    f"🛑 {category} Paused",
-                    f"-${cat_loss:.2f} today (limit ${cat_limit:.0f}). Other categories still active.",
+                    f"[HALT] {category} Paused",
+                    f"-${cat_loss:.2f} today (limit ${cat_limit:.2f})\nOther categories still active",
                 )
 
         # ── Learning loop: recalculate dynamic multipliers ────────────
@@ -2372,17 +2470,19 @@ class PolymarketCopyTrader:
         )
 
         # ── Full-context exit notification ────────────────────────────
-        daily_net = self._daily_wins - self._daily_realized_losses
-        cat_pnl_after = self._category_pnl.get(category, 0)
-        emoji = "✅" if pnl_usd >= 0 else "❌"
-        entry_tp = min(pos.entry_price * 1.30, 0.99)
-        entry_sl = pos.entry_price * 0.50
-        reason_label = {"trailing_stop": "Trail Stop", "stop_loss": "Stop Loss", "time_exit_stale": "Timed Out", "market_resolved": "Resolved", "source_wallet_exit": "Wallet Sold", "force_stale_cleanup": "Force Cleaned"}.get(signal.reason, signal.reason)
+        reason_label = {
+            "trailing_stop": "Trail Stop",
+            "stop_loss": "Stop Loss",
+            "time_exit_stale": "Timed Out",
+            "market_resolved": "Resolved",
+            "source_wallet_exit": "Wallet Sold",
+            "force_stale_cleanup": "Force Cleaned",
+        }.get(signal.reason, signal.reason)
         _notify(
-            f"{emoji} Exit — {reason_label}",
-            f"{pos.market_question[:50]}\n"
-            f"{pos.entry_price:.2f} → {current_price:.2f} = ${pnl_usd:+.2f} ({pnl_pct*100:+.0f}%)\n"
-            f"Held {hold_hours:.1f}h | Bank: ${self._bankroll:.0f}",
+            f"[EXIT - {reason_label}]",
+            f"[EXIT - {reason_label}] {pos.market_question[:50]}\n"
+            f"{pos.entry_price:.2f} -> {current_price:.2f} = ${pnl_usd:+.2f} ({pnl_pct*100:+.0f}%)\n"
+            f"Held {hold_hours:.0f}h | Bank: ${self._bankroll:.2f}",
         )
 
         # ── Re-entry queue: if profitable trailing stop, watch for dip to buy back ──
@@ -2408,8 +2508,8 @@ class PolymarketCopyTrader:
                 pnl=round(pnl_usd, 2),
             )
             _notify(
-                "👀 Watching",
-                f"{pos.market_question[:50]} — buy back below {reentry_price:.2f}",
+                "[WATCHING] Re-entry",
+                f"{pos.market_question[:50]}\nBuy back below ${reentry_price:.2f}",
             )
 
         # Full exit — remove position entirely (all exits are 100% now)
