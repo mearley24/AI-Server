@@ -33,7 +33,7 @@ tmux send-keys -t bob:agents.2 "bash ~/AI-Server/scripts/start_hermes.sh" Enter
 
 # Pane 3: Status Monitor (bash loop instead of watch for macOS compatibility)
 tmux split-window -v -t bob:agents.0
-tmux send-keys -t bob:agents.3 "while true; do curl -s http://localhost:8430/status 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin)[\\\"strategies\\\"][\\\"copytrade\\\"]; print(f\\\"Pos: {d[\\\\\\\"open_positions\\\\\\\"]} | Trades: {d[\\\\\\\"daily_trades\\\\\\\"]} | Bank: \\\\\\\${d[\\\\\\\"bankroll\\\\\\\"]:.0f}\\\")\" 2>/dev/null || echo \"Bot not running\"; sleep 60; done" Enter
+tmux send-keys -t bob:agents.3 'while true; do curl -s http://localhost:8430/status 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin)['"'"'strategies'"'"']['"'"'copytrade'"'"']; print(f'"'"'Pos: {d[\"open_positions\"]} | Trades: {d[\"daily_trades\"]} | Bank: ${d[\"bankroll\"]:.0f}'"'"')" 2>/dev/null || echo "Bot not running"; sleep 60; done' Enter
 
 # Tile the layout
 tmux select-layout -t bob:agents tiled
