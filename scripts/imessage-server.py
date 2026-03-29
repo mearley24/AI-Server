@@ -156,14 +156,9 @@ class MessagesAppHealth:
     def ensure_ready(self) -> bool:
         with self._lock:
             if self.is_running():
-                if self.is_responsive():
-                    return True
-                log.warning("[health] Messages.app is running but unresponsive — restarting")
-                self.force_quit()
-                time.sleep(3)
-                return self.launch()
-            else:
-                return self.launch()
+                return True
+            log.warning("[health] Messages.app not running — launching")
+            return self.launch()
 
     def periodic_check(self):
         now = time.time()
@@ -171,22 +166,8 @@ class MessagesAppHealth:
             return
         self._last_check = now
         if not self.is_running():
-            self._consecutive_unresponsive = 0
             log.warning("[health] Periodic check: Messages.app not running — relaunching")
             self.launch()
-        elif not self.is_responsive():
-            self._consecutive_unresponsive += 1
-            log.warning("[health] Periodic check: Messages.app unresponsive (%d/%d before restart)",
-                        self._consecutive_unresponsive, self.CONSECUTIVE_FAILURES_BEFORE_RESTART)
-            if self._consecutive_unresponsive >= self.CONSECUTIVE_FAILURES_BEFORE_RESTART:
-                log.warning("[health] %d consecutive unresponsive checks — restarting Messages.app",
-                            self._consecutive_unresponsive)
-                self.force_quit()
-                time.sleep(3)
-                self.launch()
-                self._consecutive_unresponsive = 0
-        else:
-            self._consecutive_unresponsive = 0
 
 
 messages_health = MessagesAppHealth()
@@ -286,7 +267,8 @@ def send_imessage(address: str, message: str) -> bool:
         message = message[:1997] + "..."
 
     for attempt in range(SEND_RETRY_COUNT):
-        messages_health.ensure_ready()
+        if attempt == 0:
+            messages_health.ensure_ready()
 
         label = _try_applescript_send(address, message)
         if label:
@@ -300,10 +282,7 @@ def send_imessage(address: str, message: str) -> bool:
                 "[send] All AppleScript methods failed for %s (attempt %d/%d) — retrying in %ds",
                 address, attempt + 1, SEND_RETRY_COUNT, backoff,
             )
-            messages_health.force_quit()
             time.sleep(backoff)
-            messages_health.launch()
-            time.sleep(2)
 
     log.error(
         "[send] All %d iMessage retry attempts exhausted for %s — trying Twilio SMS fallback",
