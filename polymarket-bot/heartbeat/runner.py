@@ -77,6 +77,13 @@ class HeartbeatRunner:
         except Exception as e:
             logger.error("heartbeat_knowledge_update_error", error=str(e))
 
+        # 3b. Auto-update AGENT_LEARNINGS.md with trade outcomes
+        try:
+            from heartbeat.learnings_updater import update_learnings
+            update_learnings(report["strategies"])
+        except Exception as e:
+            logger.error("heartbeat_learnings_update_error", error=str(e))
+
         # 4. Parameter tuning — propose adjustments
         report["proposals"] = await self.parameter_tuner.analyze(report["strategies"])
 
