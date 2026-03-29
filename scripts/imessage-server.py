@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Bob iMessage Bridge — two-way communication (bulletproof edition)
+Bob iMessage Bridge — two-way communication (v2)
 Runs natively on macOS (not Docker).
 - Monitors Messages.app for incoming texts from OWNER_PHONE
 - Routes messages to OpenClaw API
 - Sends responses back via iMessage
 - Also accepts HTTP POST /notify for outbound notifications
 - Rate-limited send queue prevents Apple throttling
-- Exponential backoff retry on failures
-- Messages.app health check and auto-recovery
-- Twilio SMS fallback when all iMessage methods fail
+- Retry with backoff on send failures
+- Twilio SMS fallback when iMessage fails
+- Twitter oEmbed for reading tweets
 
 Requirements:
 - macOS Full Disk Access for Terminal/python3 (System Settings > Privacy & Security)
@@ -31,6 +31,7 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.request import Request, urlopen
+from urllib.parse import quote
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +59,6 @@ if not CHAT_DB.exists():
 SEND_RETRY_COUNT = 3
 SEND_RETRY_BACKOFF = [2, 4, 8]
 MIN_SEND_GAP_SECONDS = 2.5
-HEALTH_CHECK_INTERVAL = 60
 
 
 def _copy_db_to_temp() -> Path:
@@ -78,288 +78,9 @@ def _copy_db_to_temp() -> Path:
 def _cleanup_temp(tmp_db: Path):
     """Remove the temp directory after use."""
     try:
-        tmp_dir = tmp_db.parent
-        shutil.rmtree(str(tmp_dir), ignore_errors=True)
+        shutil.rmtree(str(tmp_db.parent), ignore_errors=True)
     except Exception:
         pass
-
-
-class MessagesAppHealth:
-    """Manages Messages.app lifecycle — checks health, launches, force-quits if hung."""
-
-    CONSECUTIVE_FAILURES_BEFORE_RESTART = 3
-
-    def __init__(self):
-        self._last_check = 0
-        self._lock = threading.Lock()
-        self._consecutive_unresponsive = 0
-
-    def is_running(self) -> bool:
-        try:
-            result = subprocess.run(
-                ["pgrep", "-x", "Messages"],
-                capture_output=True, text=True, timeout=5,
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
-
-    def is_responsive(self) -> bool:
-        try:
-            result = subprocess.run(
-                ["osascript", "-e", 'tell application "System Events" to (name of processes) contains "Messages"'],
-                capture_output=True, text=True, timeout=5,
-            )
-            return result.returncode == 0 and "true" in result.stdout.lower()
-        except subprocess.TimeoutExpired:
-            log.warning("[health] System Events check timed out — assuming responsive (fail-open)")
-            return True
-        except Exception:
-            log.warning("[health] System Events check failed — assuming responsive (fail-open)")
-            return True
-
-    def launch(self) -> bool:
-        log.info("[health] Launching Messages.app...")
-        try:
-            subprocess.run(
-                ["open", "-a", "Messages"],
-                capture_output=True, text=True, timeout=10,
-            )
-            for _ in range(10):
-                time.sleep(1)
-                if self.is_running():
-                    log.info("[health] Messages.app launched successfully")
-                    time.sleep(2)
-                    return True
-            log.error("[health] Messages.app did not start within 10 seconds")
-            return False
-        except Exception as e:
-            log.error("[health] Failed to launch Messages.app: %s", e)
-            return False
-
-    def force_quit(self):
-        log.warning("[health] Force-quitting Messages.app...")
-        try:
-            subprocess.run(
-                ["osascript", "-e", 'tell application "Messages" to quit'],
-                capture_output=True, text=True, timeout=5,
-            )
-            time.sleep(2)
-        except Exception:
-            pass
-        try:
-            subprocess.run(["pkill", "-9", "Messages"], capture_output=True, timeout=5)
-            time.sleep(2)
-        except Exception:
-            pass
-
-    def ensure_ready(self) -> bool:
-        with self._lock:
-            if self.is_running():
-                return True
-            log.warning("[health] Messages.app not running — launching")
-            return self.launch()
-
-    def periodic_check(self):
-        now = time.time()
-        if now - self._last_check < HEALTH_CHECK_INTERVAL:
-            return
-        self._last_check = now
-        if not self.is_running():
-            log.warning("[health] Periodic check: Messages.app not running — relaunching")
-            self.launch()
-
-
-messages_health = MessagesAppHealth()
-
-
-def send_twilio_sms(address: str, message: str) -> bool:
-    """Send SMS via Twilio as a last-resort fallback. Returns True on success."""
-    if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
-        log.warning("[twilio] Twilio credentials not configured — cannot fall back to SMS")
-        return False
-
-    log.info("[twilio] Falling back to Twilio SMS for %s", address)
-    try:
-        import base64
-        url = "https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json" % TWILIO_ACCOUNT_SID
-
-        if len(message) > 1600:
-            message = message[:1597] + "..."
-
-        body = "To=%s&From=%s&Body=%s" % (
-            _url_encode(address),
-            _url_encode(TWILIO_FROM_NUMBER),
-            _url_encode(message),
-        )
-        auth = base64.b64encode(("%s:%s" % (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)).encode()).decode()
-        req = Request(
-            url,
-            data=body.encode("utf-8"),
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Authorization": "Basic %s" % auth,
-            },
-        )
-        resp = urlopen(req, timeout=15)
-        resp_data = json.loads(resp.read())
-        sid = resp_data.get("sid", "unknown")
-        log.info("[twilio] SMS sent successfully (SID: %s)", sid)
-        return True
-    except Exception as e:
-        log.error("[twilio] SMS send failed: %s", e)
-        return False
-
-
-def _url_encode(s: str) -> str:
-    """Minimal URL encoding for Twilio form body."""
-    from urllib.parse import quote
-    return quote(str(s), safe="")
-
-
-def _try_applescript_send(address: str, message: str) -> str:
-    """Try all AppleScript send strategies. Returns label of method that succeeded, or empty string."""
-    cmd_direct = (
-        'tell application "Messages"\n'
-        'set targetBuddy to buddy "%s" of (1st account whose service type = iMessage)\n'
-        'send "%s" to targetBuddy\n'
-        'end tell'
-    ) % (address, message)
-
-    cmd_sms = (
-        'tell application "Messages"\n'
-        'set targetService to 1st account whose service type = SMS\n'
-        'set targetBuddy to participant "%s" of targetService\n'
-        'send "%s" to targetBuddy\n'
-        'end tell'
-    ) % (address, message)
-
-    cmd_simple = (
-        'tell application "Messages"\n'
-        'send "%s" to buddy "%s"\n'
-        'end tell'
-    ) % (message, address)
-
-    for label, cmd in [("iMessage", cmd_direct), ("SMS", cmd_sms), ("auto", cmd_simple)]:
-        try:
-            result = subprocess.run(
-                ["osascript", "-e", cmd],
-                capture_output=True, text=True, timeout=15,
-            )
-            if result.returncode == 0:
-                return label
-            log.debug("[send] %s strategy failed: %s", label, result.stderr.strip())
-        except subprocess.TimeoutExpired:
-            log.warning("[send] %s strategy timed out", label)
-        except Exception as e:
-            log.warning("[send] %s strategy error: %s", label, e)
-
-    return ""
-
-
-def send_imessage(address: str, message: str) -> bool:
-    """Send a message via Messages.app with retry + backoff + Twilio fallback.
-
-    Returns True if the message was delivered by any method.
-    """
-    message = message.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
-    if len(message) > 2000:
-        message = message[:1997] + "..."
-
-    for attempt in range(SEND_RETRY_COUNT):
-        if attempt == 0:
-            messages_health.ensure_ready()
-
-        label = _try_applescript_send(address, message)
-        if label:
-            log.info("[send] Sent via %s to %s (attempt %d/%d)",
-                     label, address, attempt + 1, SEND_RETRY_COUNT)
-            return True
-
-        if attempt < SEND_RETRY_COUNT - 1:
-            backoff = SEND_RETRY_BACKOFF[attempt]
-            log.warning(
-                "[send] All AppleScript methods failed for %s (attempt %d/%d) — retrying in %ds",
-                address, attempt + 1, SEND_RETRY_COUNT, backoff,
-            )
-            time.sleep(backoff)
-
-    log.error(
-        "[send] All %d iMessage retry attempts exhausted for %s — trying Twilio SMS fallback",
-        SEND_RETRY_COUNT, address,
-    )
-
-    original_message = message.replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
-    if send_twilio_sms(address, original_message):
-        return True
-
-    log.error("[send] ALL delivery methods failed for %s (iMessage + Twilio)", address)
-    return False
-
-
-class SendQueue:
-    """Thread-safe message queue with rate limiting to prevent Apple throttling."""
-
-    def __init__(self, min_gap: float = MIN_SEND_GAP_SECONDS):
-        self._queue = deque()
-        self._lock = threading.Lock()
-        self._min_gap = min_gap
-        self._last_send_time = 0.0
-        self._running = True
-        self._worker = threading.Thread(target=self._process_loop, daemon=True)
-        self._worker.start()
-        log.info("[queue] Send queue started (min gap: %.1fs)", self._min_gap)
-
-    def enqueue(self, address: str, message: str) -> dict:
-        with self._lock:
-            entry = {
-                "address": address,
-                "message": message,
-                "queued_at": datetime.now().isoformat(),
-            }
-            self._queue.append(entry)
-            depth = len(self._queue)
-        log.info("[queue] Message queued for %s (queue depth: %d)", address, depth)
-        return {"status": "queued", "queue_depth": depth}
-
-    def _process_loop(self):
-        while self._running:
-            entry = None
-            with self._lock:
-                if self._queue:
-                    entry = self._queue.popleft()
-
-            if entry is None:
-                time.sleep(0.5)
-                continue
-
-            elapsed = time.time() - self._last_send_time
-            if elapsed < self._min_gap:
-                wait = self._min_gap - elapsed
-                log.info("[queue] Rate limiting — waiting %.1fs before next send", wait)
-                time.sleep(wait)
-
-            with self._lock:
-                depth = len(self._queue)
-            log.info("[queue] Processing send to %s (remaining: %d)", entry["address"], depth)
-
-            success = send_imessage(entry["address"], entry["message"])
-            self._last_send_time = time.time()
-
-            if success:
-                log.info("[queue] Delivered to %s", entry["address"])
-            else:
-                log.error("[queue] Failed to deliver to %s", entry["address"])
-
-    def get_status(self) -> dict:
-        with self._lock:
-            return {
-                "queue_depth": len(self._queue),
-                "last_send": datetime.fromtimestamp(self._last_send_time).isoformat() if self._last_send_time else None,
-            }
-
-
-send_queue = None
 
 
 class MessageMonitor:
@@ -418,21 +139,168 @@ class MessageMonitor:
                 _cleanup_temp(tmp_db)
 
 
+_send_failures = 0
+
+
+def send_twilio_sms(address: str, message: str) -> bool:
+    """Send SMS via Twilio as a last-resort fallback."""
+    if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
+        log.warning("[twilio] Twilio not configured — cannot fall back to SMS")
+        return False
+
+    log.info("[twilio] Falling back to Twilio SMS for %s", address)
+    try:
+        import base64
+        url = "https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json" % TWILIO_ACCOUNT_SID
+
+        if len(message) > 1600:
+            message = message[:1597] + "..."
+
+        body = "To=%s&From=%s&Body=%s" % (
+            quote(address, safe=""),
+            quote(TWILIO_FROM_NUMBER, safe=""),
+            quote(message, safe=""),
+        )
+        auth = base64.b64encode(("%s:%s" % (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)).encode()).decode()
+        req = Request(
+            url,
+            data=body.encode("utf-8"),
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": "Basic %s" % auth,
+            },
+        )
+        resp = urlopen(req, timeout=15)
+        resp_data = json.loads(resp.read())
+        log.info("[twilio] SMS sent (SID: %s)", resp_data.get("sid", "unknown"))
+        return True
+    except Exception as e:
+        log.error("[twilio] SMS send failed: %s", e)
+        return False
+
+
+def send_imessage(address: str, message: str) -> bool:
+    """Send a message via Messages.app AppleScript with retry + Twilio fallback.
+
+    Uses the exact same AppleScript format as the original working version.
+    Does NOT touch Messages.app lifecycle — no launching, no killing.
+    """
+    global _send_failures
+    message = message.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+    if len(message) > 2000:
+        message = message[:1997] + "..."
+
+    cmd_direct = '''tell application "Messages"
+set targetBuddy to buddy "%s" of (1st account whose service type = iMessage)
+send "%s" to targetBuddy
+end tell''' % (address, message)
+
+    cmd_sms = '''tell application "Messages"
+set targetService to 1st account whose service type = SMS
+set targetBuddy to participant "%s" of targetService
+send "%s" to targetBuddy
+end tell''' % (address, message)
+
+    cmd_simple = '''tell application "Messages"
+send "%s" to buddy "%s"
+end tell''' % (message, address)
+
+    for attempt in range(SEND_RETRY_COUNT):
+        for label, cmd in [("iMessage", cmd_direct), ("SMS", cmd_sms), ("auto", cmd_simple)]:
+            try:
+                result = subprocess.run(
+                    ["osascript", "-e", cmd],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode == 0:
+                    _send_failures = 0
+                    log.info("[send] Sent via %s to %s (attempt %d/%d)",
+                             label, address, attempt + 1, SEND_RETRY_COUNT)
+                    return True
+            except subprocess.TimeoutExpired:
+                continue
+            except Exception:
+                continue
+
+        if attempt < SEND_RETRY_COUNT - 1:
+            backoff = SEND_RETRY_BACKOFF[attempt]
+            log.warning("[send] All methods failed for %s (attempt %d/%d) — retrying in %ds",
+                        address, attempt + 1, SEND_RETRY_COUNT, backoff)
+            time.sleep(backoff)
+
+    log.error("[send] All %d iMessage attempts failed for %s — trying Twilio",
+              SEND_RETRY_COUNT, address)
+
+    original_message = message.replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
+    if send_twilio_sms(address, original_message):
+        _send_failures = 0
+        return True
+
+    _send_failures += 1
+    if _send_failures <= 3:
+        log.error("[send] ALL delivery methods failed for %s (iMessage + Twilio)", address)
+    return False
+
+
+class SendQueue:
+    """Thread-safe message queue with rate limiting."""
+
+    def __init__(self, min_gap: float = MIN_SEND_GAP_SECONDS):
+        self._queue = deque()
+        self._lock = threading.Lock()
+        self._min_gap = min_gap
+        self._last_send_time = 0.0
+        self._running = True
+        self._worker = threading.Thread(target=self._process_loop, daemon=True)
+        self._worker.start()
+        log.info("[queue] Send queue started (min gap: %.1fs)", self._min_gap)
+
+    def enqueue(self, address: str, message: str) -> dict:
+        with self._lock:
+            self._queue.append({"address": address, "message": message})
+            depth = len(self._queue)
+        log.info("[queue] Queued for %s (depth: %d)", address, depth)
+        return {"status": "queued", "queue_depth": depth}
+
+    def _process_loop(self):
+        while self._running:
+            entry = None
+            with self._lock:
+                if self._queue:
+                    entry = self._queue.popleft()
+
+            if entry is None:
+                time.sleep(0.5)
+                continue
+
+            elapsed = time.time() - self._last_send_time
+            if elapsed < self._min_gap:
+                time.sleep(self._min_gap - elapsed)
+
+            send_imessage(entry["address"], entry["message"])
+            self._last_send_time = time.time()
+
+    @property
+    def depth(self):
+        with self._lock:
+            return len(self._queue)
+
+
+send_queue = None
+
+
 def _fetch_tweet_text(url: str) -> str:
     """Extract tweet text via Twitter's oEmbed API (no auth needed)."""
     import re as _re
-    from urllib.request import Request as _Req, urlopen as _urlopen
-    from urllib.parse import quote
 
     if not _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
         return ""
 
     clean_url = _re.sub(r'[?#].*$', '', url)
-
     try:
         oembed_url = "https://publish.twitter.com/oembed?url=%s&omit_script=true" % quote(clean_url, safe="")
-        req = _Req(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = _urlopen(req, timeout=10)
+        req = Request(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = urlopen(req, timeout=10)
         data = json.loads(resp.read())
 
         html = data.get("html", "")
@@ -441,84 +309,71 @@ def _fetch_tweet_text(url: str) -> str:
 
         author = data.get("author_name", "")
         if author and text:
-            return f"Tweet by @{author}: {text}"
+            return "Tweet by @%s: %s" % (author, text)
         return text
     except Exception as e:
         log.warning("[research] oEmbed failed for %s: %s", url, e)
         return ""
 
 
-def _fetch_page_text(url: str) -> str:
-    """Fetch and extract readable text from a URL."""
-    import re as _re
-    from urllib.request import Request as _Req, urlopen as _urlopen
-
-    if _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
-        tweet_text = _fetch_tweet_text(url)
-        if tweet_text:
-            return tweet_text
-        log.warning("[research] Tweet fetch failed, skipping raw x.com (JS-only)")
-        return f"(Tweet from {url} — could not fetch content)"
-
-    try:
-        req = _Req(url, headers={"User-Agent": "Mozilla/5.0"})
-        resp = _urlopen(req, timeout=15)
-        content = resp.read().decode("utf-8", errors="ignore")[:8000]
-        text = _re.sub(r'<[^>]+>', ' ', content)
-        text = _re.sub(r'\s+', ' ', text).strip()[:4000]
-        return text
-    except Exception:
-        return ""
-
-
 def research_link(url: str, context: str = "") -> str:
     """Fetch a URL and provide a smart, context-aware analysis."""
+    import re as _re
     try:
-        text = _fetch_page_text(url)
+        text = ""
+
+        if _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
+            text = _fetch_tweet_text(url)
+            if not text:
+                text = "(Tweet from %s — could not fetch content)" % url
+        else:
+            try:
+                req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                resp = urlopen(req, timeout=15)
+                content = resp.read().decode("utf-8", errors="ignore")[:8000]
+                text = _re.sub(r'<[^>]+>', ' ', content)
+                text = _re.sub(r'\s+', ' ', text).strip()[:4000]
+            except Exception:
+                text = "(Could not fetch content from %s)" % url
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             if text:
-                return f"Link: {url}\n\n{text[:500]}"
-            return f"Link: {url}\nCan't analyze — no OpenAI API key configured."
+                return "Link: %s\n\n%s" % (url, text[:500])
+            return "Link: %s\nCan't analyze — no OpenAI API key." % url
 
-        if not text or len(text) < 50:
-            text = f"(Could not fetch page content from {url} — it may require JavaScript. URL was: {url})"
+        context_line = "\nAdditional context from sender: %s" % context if context else ""
+        prompt = """You are Bob, an AI assistant for a smart home business owner who also runs automated trading bots.
 
-        import json as _json
-        context_line = f"\nAdditional context from sender: {context}" if context else ""
-        prompt = f"""You are Bob, an AI assistant for a smart home business owner who also runs automated trading bots.
+Analyze this content and give a useful, natural response. Adapt to what the content is:
+- Tweet or social media: summarize what it says and why it matters
+- Trading, crypto, markets: assess relevance and actionability
+- Tool, product, or project: evaluate usefulness
+- News: key takeaway
+- Code or technical: explain what it does
 
-Analyze this content and give a useful, natural response. Adapt your analysis to what the content actually is:
-- If it's a tweet or social media post, summarize what it says and why it's interesting
-- If it's about trading, crypto, or markets, assess relevance and actionability
-- If it's a tool, product, or project, evaluate if it's useful
-- If it's news, give the key takeaway
-- If it's code or technical, explain what it does
+Be direct and conversational. 3-5 sentences max. No bullet points or numbered lists.
+%s
 
-Be direct, concise, and conversational. 3-5 sentences max. No bullet points or numbered lists — just talk like a smart colleague.
-{context_line}
+Content from %s:
+%s""" % (context_line, url, text[:3000])
 
-Content from {url}:
-{text[:3000]}"""
-
-        data = _json.dumps({
+        data = json.dumps({
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 400,
         }).encode()
 
-        from urllib.request import Request as _Req, urlopen as _urlopen
-        req = _Req(
+        req = Request(
             "https://api.openai.com/v1/chat/completions",
             data=data,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            headers={"Content-Type": "application/json", "Authorization": "Bearer %s" % api_key},
         )
-        resp = _urlopen(req, timeout=30)
-        result = _json.loads(resp.read())
+        resp = urlopen(req, timeout=30)
+        result = json.loads(resp.read())
         return result["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"Couldn't analyze link: {e}"
+        return "Couldn't analyze link: %s" % e
 
 
 def ask_openclaw(message: str) -> str:
@@ -558,7 +413,7 @@ def ask_openclaw(message: str) -> str:
             "messages": [{"role": "user", "content": message}],
         }).encode()
         req = Request(
-            f"{OPENCLAW_URL}/api/chat/completions",
+            "%s/api/chat/completions" % OPENCLAW_URL,
             data=data,
             headers={"Content-Type": "application/json"},
         )
@@ -566,7 +421,7 @@ def ask_openclaw(message: str) -> str:
         result = json.loads(resp.read())
         return result["choices"][0]["message"]["content"]
     except Exception as e:
-        return f"Error processing request: {e}"
+        return "Error processing request: %s" % e
 
 
 def get_trading_status() -> str:
@@ -578,38 +433,38 @@ def get_trading_status() -> str:
         status = json.loads(resp.read())
 
         bankroll = status.get("bankroll", 0)
-        parts.append(f"USDC Balance: ${bankroll:.2f}")
+        parts.append("USDC Balance: $%.2f" % bankroll)
 
         positions = status.get("positions", [])
         if positions:
             total_value = sum(p.get("value", 0) for p in positions)
-            parts.append(f"Open positions: {len(positions)} (${total_value:.2f})")
+            parts.append("Open positions: %d ($%.2f)" % (len(positions), total_value))
         else:
             parts.append("Open positions: 0")
 
         open_orders = status.get("open_orders", 0)
-        parts.append(f"Open orders: {open_orders}")
+        parts.append("Open orders: %s" % open_orders)
 
         category_pnl = status.get("category_pnl", {})
         if category_pnl:
             parts.append("Category P/L:")
             for cat, pnl in category_pnl.items():
-                parts.append(f"  {cat}: ${pnl:.2f}")
+                parts.append("  %s: $%.2f" % (cat, pnl))
             total_pnl = sum(category_pnl.values())
-            parts.append(f"Total P/L: ${total_pnl:.2f}")
+            parts.append("Total P/L: $%.2f" % total_pnl)
 
         recent_trades = status.get("recent_trades", status.get("total_trades", 0))
         if recent_trades:
-            parts.append(f"Recent trades: {recent_trades}")
+            parts.append("Recent trades: %s" % recent_trades)
     except Exception as e:
-        parts.append(f"Polymarket status unavailable: {e}")
+        parts.append("Polymarket status unavailable: %s" % e)
 
     try:
         resp = urlopen("http://127.0.0.1:8430/strategies", timeout=10)
         strats = json.loads(resp.read()).get("strategies", {})
         running = [name for name, s in strats.items() if s.get("state") == "running"]
-        parts.append(f"Strategies: {len(running)} running ({', '.join(running[:4])})")
-    except:
+        parts.append("Strategies: %d running (%s)" % (len(running), ", ".join(running[:4])))
+    except Exception:
         pass
 
     return "\n".join(parts) if parts else "Trading status unavailable"
@@ -619,9 +474,9 @@ def get_email_status() -> str:
     """Get email summary."""
     try:
         resp = urlopen("http://127.0.0.1:8092/emails/summary", timeout=10)
-        return f"Email: {json.loads(resp.read())}"
+        return "Email: %s" % json.loads(resp.read())
     except Exception as e:
-        return f"Email status unavailable: {e}"
+        return "Email status unavailable: %s" % e
 
 
 def get_calendar_status() -> str:
@@ -632,9 +487,9 @@ def get_calendar_status() -> str:
         events = data.get("events", [])
         if not events or (len(events) == 1 and "No events" in str(events[0])):
             return "Calendar: No events today"
-        return f"Calendar: {len(events)} events today\n" + "\n".join(str(e) for e in events[:5])
+        return "Calendar: %d events today\n%s" % (len(events), "\n".join(str(e) for e in events[:5]))
     except Exception as e:
-        return f"Calendar unavailable: {e}"
+        return "Calendar unavailable: %s" % e
 
 
 def get_weather_status() -> str:
@@ -645,14 +500,14 @@ def get_weather_status() -> str:
         category_pnl = status.get("category_pnl", {})
         weather_pnl = category_pnl.get("weather", category_pnl.get("Weather", 0))
         positions = [p for p in status.get("positions", []) if "weather" in p.get("category", "").lower()]
-        parts = [f"Weather positions: {len(positions)}"]
+        parts = ["Weather positions: %d" % len(positions)]
         if weather_pnl:
-            parts.append(f"Weather P/L: ${weather_pnl:.2f}")
+            parts.append("Weather P/L: $%.2f" % weather_pnl)
         for p in positions[:5]:
-            parts.append(f"  {p.get('title', p.get('market', 'Unknown'))}: ${p.get('value', 0):.2f}")
+            parts.append("  %s: $%.2f" % (p.get("title", p.get("market", "Unknown")), p.get("value", 0)))
         return "\n".join(parts)
     except Exception as e:
-        return f"Weather status unavailable: {e}"
+        return "Weather status unavailable: %s" % e
 
 
 def get_system_status() -> str:
@@ -673,14 +528,14 @@ def get_system_status() -> str:
     down = []
     for name, port in services.items():
         try:
-            urlopen(f"http://127.0.0.1:{port}/health", timeout=3)
+            urlopen("http://127.0.0.1:%d/health" % port, timeout=3)
             up += 1
-        except:
+        except Exception:
             down.append(name)
 
-    result = f"Systems: {up}/{len(services)} online"
+    result = "Systems: %d/%d online" % (up, len(services))
     if down:
-        result += f"\nDown: {', '.join(down)}"
+        result += "\nDown: %s" % ", ".join(down)
     else:
         result += "\nAll services healthy"
     return result
@@ -693,8 +548,6 @@ def monitor_loop():
 
     while True:
         try:
-            messages_health.periodic_check()
-
             messages = monitor.check_new_messages()
             for msg in messages:
                 text = msg["text"].strip()
@@ -706,26 +559,14 @@ def monitor_loop():
                 response = ask_openclaw(text)
 
                 log.info("[monitor] Responding: %s...", response[:100])
-                send_queue.enqueue(REPLY_TO, response)
+                if send_queue:
+                    send_queue.enqueue(REPLY_TO, response)
+                else:
+                    send_imessage(REPLY_TO, response)
         except Exception as e:
             log.error("[monitor] Error: %s", e)
 
         time.sleep(3)
-
-
-def health_check_loop():
-    """Background thread for periodic Messages.app health checks."""
-    while True:
-        time.sleep(HEALTH_CHECK_INTERVAL)
-        try:
-            messages_health.periodic_check()
-            queue_status = send_queue.get_status()
-            log.info("[health] Messages.app: running=%s | Queue depth: %d | Last send: %s",
-                     messages_health.is_running(),
-                     queue_status["queue_depth"],
-                     queue_status["last_send"] or "never")
-        except Exception as e:
-            log.error("[health] Health check error: %s", e)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -736,17 +577,18 @@ class Handler(BaseHTTPRequestHandler):
         title = body.get("title", "")
         phone = body.get("phone", REPLY_TO)
 
-        full_msg = f"{title}: {message}" if title else message
+        full_msg = "%s: %s" % (title, message) if title else message
         if full_msg:
-            queue_result = send_queue.enqueue(phone, full_msg)
+            if send_queue:
+                result = send_queue.enqueue(phone, full_msg)
+                depth = result["queue_depth"]
+            else:
+                send_imessage(phone, full_msg)
+                depth = 0
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({
-                "status": "queued",
-                "via": "imessage-queue",
-                "queue_depth": queue_result["queue_depth"],
-            }).encode())
+            self.wfile.write(json.dumps({"status": "queued", "queue_depth": depth}).encode())
         else:
             self.send_response(400)
             self.send_header("Content-Type", "application/json")
@@ -754,7 +596,6 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": "no message"}).encode())
 
     def do_GET(self):
-        queue_status = send_queue.get_status()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -762,9 +603,7 @@ class Handler(BaseHTTPRequestHandler):
             "status": "ok",
             "service": "imessage-bridge",
             "mode": "two-way",
-            "messages_app_running": messages_health.is_running(),
-            "queue_depth": queue_status["queue_depth"],
-            "last_send": queue_status["last_send"],
+            "queue_depth": send_queue.depth if send_queue else 0,
             "twilio_configured": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN),
         }).encode())
 
@@ -776,7 +615,7 @@ if __name__ == "__main__":
     import signal
     try:
         result = subprocess.run(
-            ["lsof", "-ti", f":{PORT}"],
+            ["lsof", "-ti", ":%d" % PORT],
             capture_output=True, text=True, timeout=5
         )
         for pid in result.stdout.strip().split("\n"):
@@ -788,27 +627,16 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    try:
-        messages_health.ensure_ready()
-    except Exception as e:
-        log.warning("[bridge] Initial Messages.app health check failed (non-fatal): %s", e)
-        log.warning("[bridge] Continuing startup — health check thread will retry in background")
-
     send_queue = SendQueue()
 
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
 
-    health_thread = threading.Thread(target=health_check_loop, daemon=True)
-    health_thread.start()
-
-    log.info("[bridge] iMessage bridge listening on port %d (two-way, bulletproof)", PORT)
+    log.info("[bridge] iMessage bridge listening on port %d", PORT)
     log.info("[bridge] Listening for: %s", OWNER_PHONE)
     log.info("[bridge] Replying to: %s", REPLY_TO)
     log.info("[bridge] OpenClaw: %s", OPENCLAW_URL)
     log.info("[bridge] Twilio fallback: %s", "configured" if TWILIO_ACCOUNT_SID else "not configured")
-    log.info("[bridge] Send queue min gap: %.1fs | Retry attempts: %d | Backoff: %s",
-             MIN_SEND_GAP_SECONDS, SEND_RETRY_COUNT, SEND_RETRY_BACKOFF)
 
     import socket
     class ReusableHTTPServer(HTTPServer):
