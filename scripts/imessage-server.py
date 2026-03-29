@@ -19,6 +19,7 @@ import time
 import threading
 import sqlite3
 import shutil
+import tempfile
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -38,22 +39,27 @@ CHAT_DB = Path(os.environ.get(
 if not CHAT_DB.exists():
     CHAT_DB = Path("/Users/bob/Library/Messages/chat.db")
 
-# Temp copy path — avoids WAL locking issues when reading from tmux/launchd
-TEMP_DB = Path("/tmp/chat_db_copy.db")
+def _copy_db_to_temp() -> Path:
+    """Copy live Messages DB + WAL/SHM to a unique temp dir. Returns path to temp DB. Raises on failure."""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="imsg_"))
+    tmp_db = tmp_dir / "chat.db"
+    shutil.copy2(str(CHAT_DB), str(tmp_db))
+    wal = CHAT_DB.parent / "chat.db-wal"
+    shm = CHAT_DB.parent / "chat.db-shm"
+    if wal.exists():
+        shutil.copy2(str(wal), str(tmp_dir / "chat.db-wal"))
+    if shm.exists():
+        shutil.copy2(str(shm), str(tmp_dir / "chat.db-shm"))
+    return tmp_db
 
 
-def _copy_db():
-    """Copy live Messages DB + WAL/SHM to temp location for safe reading."""
+def _cleanup_temp(tmp_db: Path):
+    """Remove the temp directory after use."""
     try:
-        shutil.copy2(str(CHAT_DB), str(TEMP_DB))
-        wal = CHAT_DB.parent / "chat.db-wal"
-        shm = CHAT_DB.parent / "chat.db-shm"
-        if wal.exists():
-            shutil.copy2(str(wal), str(TEMP_DB.parent / "chat_db_copy.db-wal"))
-        if shm.exists():
-            shutil.copy2(str(shm), str(TEMP_DB.parent / "chat_db_copy.db-shm"))
-    except Exception as e:
-        print(f"[monitor] Failed to copy chat.db: {e}")
+        tmp_dir = tmp_db.parent
+        shutil.rmtree(str(tmp_dir), ignore_errors=True)
+    except Exception:
+        pass
 
 
 class MessageMonitor:
@@ -65,21 +71,27 @@ class MessageMonitor:
 
     def _get_latest_message_id(self) -> int:
         """Get the highest ROWID from the message table."""
+        tmp_db = None
         try:
-            _copy_db()
-            conn = sqlite3.connect(str(TEMP_DB), timeout=5)
+            tmp_db = _copy_db_to_temp()
+            conn = sqlite3.connect(f"file:{tmp_db}?mode=ro", uri=True, timeout=5)
             cursor = conn.execute("SELECT MAX(ROWID) FROM message")
             result = cursor.fetchone()[0] or 0
             conn.close()
             return result
-        except Exception:
+        except Exception as e:
+            print(f"[monitor] _get_latest_message_id error: {e}")
             return 0
+        finally:
+            if tmp_db:
+                _cleanup_temp(tmp_db)
 
     def check_new_messages(self) -> list:
         """Check for new messages from the owner since last check."""
+        tmp_db = None
         try:
-            _copy_db()
-            conn = sqlite3.connect(str(TEMP_DB), timeout=5)
+            tmp_db = _copy_db_to_temp()
+            conn = sqlite3.connect(f"file:{tmp_db}?mode=ro", uri=True, timeout=5)
             # Query for new messages from the owner's phone number
             # is_from_me = 0 means incoming message
             query = """
@@ -106,6 +118,9 @@ class MessageMonitor:
         except Exception as e:
             print(f"[monitor] Error reading messages: {e}")
             return []
+        finally:
+            if tmp_db:
+                _cleanup_temp(tmp_db)
 
 
 # Track consecutive send failures to avoid log spam
