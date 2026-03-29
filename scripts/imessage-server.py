@@ -439,34 +439,34 @@ class MessageMonitor:
                 _cleanup_temp(tmp_db)
 
 
-def _fetch_twitter_via_nitter(url: str) -> str:
-    """Try to fetch tweet content via nitter instances (no JS needed)."""
+def _fetch_tweet_text(url: str) -> str:
+    """Extract tweet text via Twitter's oEmbed API (no auth needed)."""
     import re as _re
     from urllib.request import Request as _Req, urlopen as _urlopen
+    from urllib.parse import quote
 
-    tweet_match = _re.search(r'(?:twitter\.com|x\.com)/([^/]+)/status/(\d+)', url)
-    if not tweet_match:
+    if not _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
         return ""
 
-    user, tweet_id = tweet_match.group(1), tweet_match.group(2)
-    nitter_instances = [
-        f"https://nitter.privacydev.net/{user}/status/{tweet_id}",
-        f"https://nitter.poast.org/{user}/status/{tweet_id}",
-        f"https://nitter.cz/{user}/status/{tweet_id}",
-    ]
+    clean_url = _re.sub(r'[?#].*$', '', url)
 
-    for nitter_url in nitter_instances:
-        try:
-            req = _Req(nitter_url, headers={"User-Agent": "Mozilla/5.0"})
-            resp = _urlopen(req, timeout=10)
-            html = resp.read().decode("utf-8", errors="ignore")
-            text = _re.sub(r'<[^>]+>', ' ', html)
-            text = _re.sub(r'\s+', ' ', text).strip()
-            if len(text) > 200:
-                return text[:4000]
-        except Exception:
-            continue
-    return ""
+    try:
+        oembed_url = "https://publish.twitter.com/oembed?url=%s&omit_script=true" % quote(clean_url, safe="")
+        req = _Req(oembed_url, headers={"User-Agent": "Mozilla/5.0"})
+        resp = _urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+
+        html = data.get("html", "")
+        text = _re.sub(r'<[^>]+>', ' ', html)
+        text = _re.sub(r'\s+', ' ', text).strip()
+
+        author = data.get("author_name", "")
+        if author and text:
+            return f"Tweet by @{author}: {text}"
+        return text
+    except Exception as e:
+        log.warning("[research] oEmbed failed for %s: %s", url, e)
+        return ""
 
 
 def _fetch_page_text(url: str) -> str:
@@ -475,9 +475,11 @@ def _fetch_page_text(url: str) -> str:
     from urllib.request import Request as _Req, urlopen as _urlopen
 
     if _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
-        nitter_text = _fetch_twitter_via_nitter(url)
-        if nitter_text:
-            return nitter_text
+        tweet_text = _fetch_tweet_text(url)
+        if tweet_text:
+            return tweet_text
+        log.warning("[research] Tweet fetch failed, skipping raw x.com (JS-only)")
+        return f"(Tweet from {url} — could not fetch content)"
 
     try:
         req = _Req(url, headers={"User-Agent": "Mozilla/5.0"})
