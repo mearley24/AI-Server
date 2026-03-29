@@ -24,6 +24,9 @@ from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from memory import MemoryPlugin
+from agent_bus import AgentBus
+
 # ---------------------------------------------------------------------------
 # Environment & logging
 # ---------------------------------------------------------------------------
@@ -712,11 +715,13 @@ app = FastAPI(
 registry: AgentRegistry = None  # type: ignore
 llm: LLMRouter = None  # type: ignore
 orchestrator = None  # type: ignore
+memory: MemoryPlugin = None  # type: ignore
+agent_bus: AgentBus = None  # type: ignore
 
 
 @app.on_event("startup")
 async def startup():
-    global registry, llm, orchestrator
+    global registry, llm, orchestrator, memory, agent_bus
     logger.info("OpenClaw starting up...")
     registry = AgentRegistry(AGENTS_DIR)
     llm = LLMRouter()
@@ -727,9 +732,18 @@ async def startup():
     (DATA_DIR / "logs").mkdir(exist_ok=True)
     LINK_ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Start autonomous orchestration loop
+    # Initialize persistent memory
+    memory = MemoryPlugin(str(DATA_DIR / "openclaw_memory.db"))
+    logger.info("Persistent memory initialized")
+
+    # Initialize agent bus
+    agent_bus = AgentBus(redis_url=REDIS_URL)
+    await agent_bus.start()
+    logger.info("Agent bus initialized")
+
+    # Start autonomous orchestration loop (pass memory for context)
     from orchestrator import Orchestrator
-    orchestrator = Orchestrator()
+    orchestrator = Orchestrator(memory=memory)
     asyncio.create_task(orchestrator.run_loop())
     logger.info("Autonomous orchestrator started")
 
@@ -740,6 +754,10 @@ async def startup():
 async def shutdown():
     if orchestrator:
         await orchestrator.close()
+    if agent_bus:
+        await agent_bus.stop()
+    if memory:
+        memory.close()
     if llm:
         await llm.close()
     logger.info("OpenClaw shut down.")
@@ -798,6 +816,17 @@ async def chat_completions(req: ChatCompletionRequest):
 
     # Build messages list
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
+
+    # Inject memory context as a system block
+    if memory:
+        try:
+            agent_memories = memory.get_context_for_agent(agent.agent_id)
+            if agent_memories:
+                mem_lines = [f"- {m['key']}: {m['value']}" for m in agent_memories[:20]]
+                mem_block = "## Relevant Memories\n" + "\n".join(mem_lines)
+                messages.insert(0, {"role": "system", "content": mem_block})
+        except Exception as e:
+            logger.warning("memory_inject_failed: %s", e)
 
     # Optional overrides
     kwargs = {}
@@ -965,6 +994,85 @@ async def get_analyzed_links(limit: int = Query(default=50, ge=1, le=500)):
     return {"analyses": analyses}
 
 
+# ---------------------------------------------------------------------------
+# Memory endpoints
+# ---------------------------------------------------------------------------
+class MemoryRequest(BaseModel):
+    key: str
+    value: str
+    category: str = "project_context"
+    source_agent: str = "openclaw"
+
+
+@app.post("/memory/remember")
+async def memory_remember(req: MemoryRequest):
+    """Store a memory."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory plugin not initialized")
+    memory.remember(req.key, req.value, req.category, req.source_agent)
+    return {"status": "stored", "key": req.key}
+
+
+@app.get("/memory/recall")
+async def memory_recall(
+    query: str = Query(..., min_length=1),
+    category: Optional[str] = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=100),
+):
+    """Search memories by key or value."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory plugin not initialized")
+    results = memory.recall(query, category=category, limit=limit)
+    return {"results": results, "count": len(results)}
+
+
+@app.get("/memory/export")
+async def memory_export():
+    """Export all memories as markdown."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory plugin not initialized")
+    return JSONResponse(content={"markdown": memory.export_to_markdown()})
+
+
+@app.get("/memory/stats")
+async def memory_stats():
+    """Memory statistics: count by category, total, oldest/newest."""
+    if not memory:
+        raise HTTPException(status_code=503, detail="Memory plugin not initialized")
+    return memory.stats()
+
+
+# ---------------------------------------------------------------------------
+# Agent bus endpoints
+# ---------------------------------------------------------------------------
+class AgentMessageRequest(BaseModel):
+    from_agent: str
+    to_agent: str = "broadcast"
+    type: str = "request"
+    payload: dict = {}
+
+
+@app.post("/agents/message")
+async def send_agent_message(req: AgentMessageRequest):
+    """Send an inter-agent message."""
+    if not agent_bus:
+        raise HTTPException(status_code=503, detail="Agent bus not initialized")
+    await agent_bus.publish(req.from_agent, req.to_agent, req.type, req.payload)
+    return {"status": "sent", "from": req.from_agent, "to": req.to_agent}
+
+
+@app.get("/agents/messages")
+async def get_agent_messages(
+    agent_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Get recent messages for an agent."""
+    if not agent_bus:
+        raise HTTPException(status_code=503, detail="Agent bus not initialized")
+    messages = agent_bus.get_messages(agent_id=agent_id, limit=limit)
+    return {"messages": messages, "count": len(messages)}
+
+
 @app.get("/")
 async def root():
     return {
@@ -974,6 +1082,8 @@ async def root():
         "docs": "/docs",
         "health": "/health",
         "models": "/api/models",
+        "memory": "/memory/stats",
+        "agent_bus": "/agents/messages",
     }
 
 

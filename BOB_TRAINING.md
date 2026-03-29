@@ -150,6 +150,69 @@ curl -s http://localhost:8430/status | python3 -c "import sys,json; d=json.load(
 7. Trusting wallet win rates without checking for both-sides activity
 8. Seeding P/L data from buggy historical periods
 
+## Memory System
+
+Bob now has **persistent memory** that survives container restarts, backed by SQLite at `/app/data/openclaw_memory.db`.
+
+### How It Works
+- The `MemoryPlugin` (in `openclaw/memory.py`) stores key-value memories with categories, source agent, and timestamps.
+- Categories: `user_preference`, `project_context`, `trading_insight`, `business_context`, `agent_learning`
+- Before every LLM call, relevant memories are injected as system context — so agents always have access to recent learnings.
+- The orchestrator stores trading bot status, loss alerts, and health states as memories every tick (5 min).
+- Once per hour, the orchestrator consolidates trading insights and agent learnings into `AGENT_LEARNINGS_LIVE.md`.
+
+### Feedback Loop
+Trading outcomes → memory (stored by orchestrator) → AGENT_LEARNINGS_LIVE.md (hourly export) → better trade decisions
+
+### API Endpoints
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/memory/remember` | POST | Store a memory (key, value, category, source_agent) |
+| `/memory/recall?query=X&category=Y` | GET | Fuzzy search memories |
+| `/memory/export` | GET | Export all memories as markdown |
+| `/memory/stats` | GET | Count by category, total, oldest/newest |
+
+## Multi-Agent Communication
+
+Agents can now communicate via a **Redis pub/sub bus** (`openclaw/agent_bus.py`).
+
+### How It Works
+- Channel: `agents:messages`
+- Message format: `{"from": "agent_id", "to": "agent_id|broadcast", "type": "request|response|alert", "payload": {...}, "timestamp": epoch}`
+- Falls back to local-only message buffering if Redis is unavailable.
+- Recent messages are buffered in memory (last 500) for query access.
+
+### API Endpoints
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/agents/message` | POST | Send an inter-agent message |
+| `/agents/messages?agent_id=X` | GET | Get recent messages for an agent |
+
+## Auto-Start
+
+Bob's tmux workspace now **auto-starts on boot** via a macOS LaunchAgent.
+
+### Setup
+```bash
+bash ~/AI-Server/scripts/install_autostart.sh
+```
+
+This copies `bob_autostart.plist` into `~/Library/LaunchAgents/` and loads it with `launchctl`. On next login (or reboot), the workspace starts automatically.
+
+### What Starts
+The `start_bob_workspace.sh` script creates a tmux session with:
+- Pane 0: iMessage Bridge
+- Pane 1: Trading Bot Logs
+- Pane 2: Hermes Research Agent
+- Pane 3: Status Monitor
+
+### Disable
+```bash
+launchctl unload ~/Library/LaunchAgents/com.symphony.bob.workspace.plist
+```
+
+Logs at `/tmp/bob-workspace.log`.
+
 ---
 *This document auto-grows. AGENT_LEARNINGS_LIVE.md gets hourly updates from the heartbeat.*
 *CLAUDE.md provides coding-specific context.*
