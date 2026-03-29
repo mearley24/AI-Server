@@ -352,12 +352,13 @@ class PolymarketRedeemer:
 
             if user_payout == 0:
                 loser_count += 1
-                logger.debug(
-                    "redeemer_position_loser",
-                    title=pos.get("title", "")[:50],
-                    outcome_index=outcome_index,
-                    payouts=payout_nums,
-                )
+                # Redeem losers too — burns tokens and clears them from UI
+                redeemable.append({
+                    **pos,
+                    "_expected_usdc": 0,
+                    "_token_balance": token_balance_raw / 1e6,
+                    "_is_loser": True,
+                })
                 continue
 
             # This is a winning position with on-chain balance
