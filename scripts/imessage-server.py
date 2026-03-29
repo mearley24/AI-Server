@@ -627,16 +627,25 @@ if __name__ == "__main__":
     except Exception:
         pass
 
+    log.info("========================================")
+    log.info("[bridge] iMessage Bridge starting up")
+    log.info("========================================")
+    log.info("[bridge] OWNER_PHONE: %s", OWNER_PHONE)
+    log.info("[bridge] REPLY_TO: %s", REPLY_TO)
+    log.info("[bridge] CHAT_DB: %s (exists: %s)", CHAT_DB, CHAT_DB.exists())
+    log.info("[bridge] OpenClaw: %s", OPENCLAW_URL)
+    log.info("[bridge] Twilio fallback: %s", "configured" if TWILIO_ACCOUNT_SID else "not configured")
+    log.info("[bridge] OPENAI_API_KEY: %s", "set" if os.environ.get("OPENAI_API_KEY") else "NOT SET")
+
+    if not CHAT_DB.exists():
+        log.error("[bridge] CHAT_DB does not exist at %s — monitoring will fail", CHAT_DB)
+
     send_queue = SendQueue()
 
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
 
-    log.info("[bridge] iMessage bridge listening on port %d", PORT)
-    log.info("[bridge] Listening for: %s", OWNER_PHONE)
-    log.info("[bridge] Replying to: %s", REPLY_TO)
-    log.info("[bridge] OpenClaw: %s", OPENCLAW_URL)
-    log.info("[bridge] Twilio fallback: %s", "configured" if TWILIO_ACCOUNT_SID else "not configured")
+    log.info("[bridge] Listening on port %d", PORT)
 
     import socket
     class ReusableHTTPServer(HTTPServer):
