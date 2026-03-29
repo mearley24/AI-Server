@@ -44,6 +44,7 @@ import structlog
 
 from src.client import PolymarketClient, ORDER_TYPE_FOK, ORDER_TYPE_GTC
 from src.config import Settings
+from src.metar_client import METARClient
 from src.pnl_tracker import PnLTracker, Trade
 from src.signer import SIDE_BUY, SIDE_SELL
 
@@ -215,6 +216,15 @@ class PolymarketCopyTrader:
         self._last_scan_time: float = 0.0
         self._wallet_cache_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_wallets.json"
 
+        # Priority wallets — always tracked, proven profitable from research
+        # These are added to every scan regardless of leaderboard discovery
+        self._PRIORITY_WALLETS: list[str] = [
+            # @tradecraft — Tennis directional + hedging. $17K → $372K (2,139% ROI)
+            "0xde9f7f4e77a1595623ceb58e469f776257ccd43c",
+            # @coldmath — Weather specialist using aviation data. $89K+ portfolio
+            "0x594edb9112f526fa6a80b8f858a6379c8a2c1c11",
+        ]
+
         # Trade dedup
         self._seen_trades_path = Path(getattr(settings, "data_dir", "/data")) / "copytrade_seen_trades.json"
         self._seen_trade_ids: set[str] = self._load_seen_trades()
@@ -301,6 +311,9 @@ class PolymarketCopyTrader:
 
         # ── NEW: Phase 3 — LLM Trade Validation ─────────────────────
         self._llm_validator = LLMValidator()
+
+        # ── METAR aviation weather data for temperature edge ──────────
+        self._metar_client = METARClient()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -830,6 +843,19 @@ class PolymarketCopyTrader:
             stats["avg_loss_pnl"] = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
 
         # ── Log scan diversity metrics ────────────────────────────────
+        # Inject priority wallets (proven profitable from research)
+        priority_added = 0
+        for pw_addr in self._PRIORITY_WALLETS:
+            pw_lower = pw_addr.lower()
+            if pw_lower not in wallet_stats:
+                wallet_stats[pw_lower] = {
+                    "wins": 50, "losses": 5, "total_volume": 100000,
+                    "avg_win_pnl": 10.0, "avg_loss_pnl": -3.0,
+                }
+                priority_added += 1
+        if priority_added:
+            logger.info("copytrade_priority_wallets_injected", count=priority_added)
+
         logger.info(
             "copytrade_scan_diversity",
             total_wallets=len(wallet_stats),
@@ -1380,6 +1406,28 @@ class PolymarketCopyTrader:
                 return False
         else:
             trade_thesis = f"High-conviction copy: {wallet.win_rate*100:.0f}% WR on {wallet.total_resolved} trades"
+
+        # ── METAR weather enhancement for weather trades ─────────────
+        if category == "weather":
+            try:
+                city = self._metar_client.find_city_in_market(market_question)
+                if city:
+                    metar_data = await self._metar_client.get_current_temp(city)
+                    if metar_data:
+                        edge_info = self._metar_client.evaluate_weather_edge(
+                            market_question, price, metar_data["temp_c"]
+                        )
+                        metar_note = f"METAR: {city} actual {metar_data['temp_c']:.1f}°C/{metar_data['temp_f']:.1f}°F"
+                        if edge_info:
+                            metar_note += f" | Edge: {edge_info['edge']:+.2f} ({edge_info.get('confidence', 'med')})"
+                            # Boost size if METAR confirms the trade direction
+                            if edge_info["direction"] == "BUY" and edge_info["edge"] > 0.10:
+                                size_usd *= 1.3  # 30% boost for METAR-confirmed weather trades
+                                logger.info("metar_confirmed_boost", city=city, edge=edge_info["edge"], size=round(size_usd, 2))
+                        trade_thesis = f"{trade_thesis}. {metar_note}" if trade_thesis else metar_note
+                        logger.info("metar_weather_check", city=city, temp_c=metar_data["temp_c"], market=market_question[:40])
+            except Exception as exc:
+                logger.debug("metar_check_error", error=str(exc)[:80])
 
         loop = asyncio.get_event_loop()
 
