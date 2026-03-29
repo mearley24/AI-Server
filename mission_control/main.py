@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +21,7 @@ PORT = int(os.getenv("PORT", "8098"))
 STATIC_DIR = Path(__file__).parent / "static"
 TRADING_BOT_URL = "http://vpn:8430"
 COPYTRADE_WALLET_FILE = Path("/trading-data/copytrade_wallets.json")
+WALLET_ADDRESS = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
 
 # Service map: name -> (container_hostname, internal_port, external_port)
 SERVICES = [
@@ -145,7 +147,7 @@ async def api_trading():
     return result
 
 
-# Category P/L — updated 2026-03-29 after recovering $110 from 11 stuck neg risk positions
+# Category P/L seed — used as fallback when Polymarket API is unreachable
 CATEGORY_PNL_SEED = {
     "crypto": {"total_pnl": 65.48, "trades": 8, "bought": 0, "sold": 0, "redeemed": 65.48, "open_value": 0, "multiplier": 1.2, "verdict": "Top earner. 8 resolved wins, avg 105% return.", "status": "success"},
     "sports": {"total_pnl": 39.05, "trades": 10, "bought": 0, "sold": 0, "redeemed": 39.05, "open_value": 0, "multiplier": 1.3, "verdict": "Tennis + esports + soccer. 10 wins including Albacete +$4.62.", "status": "success"},
@@ -154,10 +156,133 @@ CATEGORY_PNL_SEED = {
     "other": {"total_pnl": 15.42, "trades": 40, "bought": 0, "sold": 0, "redeemed": 15.42, "open_value": 25.0, "multiplier": 1.0, "verdict": "Iowa State +$0.21, Leclerc +$0.20, Hamilton +$0.20, Austria +$4.99. Solid.", "status": "success"},
 }
 
+
+def _categorize(title: str) -> str:
+    """Assign a category to a market based on keyword matching."""
+    t = title.lower()
+    if any(k in t for k in ["bitcoin", "btc", "ethereum", "eth", "solana", "sol", "xrp", "crypto", "up or down"]):
+        return "crypto"
+    if any(k in t for k in ["temperature", "weather", "rain", "celsius", "fahrenheit", "°c", "°f"]):
+        return "weather"
+    if any(k in t for k in ["president", "election", "congress", "senate", "trump", "biden", "governor", "democrat", "republican", "prime minister"]):
+        return "politics"
+    if any(k in t for k in ["nba", "nfl", "mlb", "nhl", "soccer", "football", "basketball", "tennis", "golf", "ufc", "counter-strike", "esports", "match", "vs.", "win on"]):
+        return "sports"
+    if any(k in t for k in ["fed ", "interest rate", "inflation", "gdp", "fomc"]):
+        return "economics"
+    if any(k in t for k in ["war", "conflict", "nato", "iran", "israel", "houthi", "ceasefire", "strike"]):
+        return "geopolitics"
+    return "other"
+
+
+_categories_cache: dict = {"data": None, "fetched_at": 0}
+
+
 @app.get("/api/trading/categories")
 async def api_trading_categories():
-    """Category P/L breakdown with lessons and verdicts."""
-    return {"categories": CATEGORY_PNL_SEED, "as_of": "2026-03-27T07:00:00"}
+    """Category P/L breakdown — live from Polymarket Data API, cached 5 min."""
+    now = time.time()
+    if _categories_cache["data"] and now - _categories_cache["fetched_at"] < 300:
+        return _categories_cache["data"]
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                "https://data-api.polymarket.com/positions",
+                params={"user": WALLET_ADDRESS},
+            )
+            resp.raise_for_status()
+            positions = resp.json()
+
+        # Group by category
+        buckets: dict[str, list] = {}
+        for pos in positions:
+            cat = _categorize(pos.get("title", ""))
+            buckets.setdefault(cat, []).append(pos)
+
+        categories: dict = {}
+        total_bought = 0.0
+        total_sold_redeemed = 0.0
+        total_open = 0.0
+        total_pnl = 0.0
+        total_trades = 0
+        total_redeemable = 0.0
+
+        for cat, cat_positions in buckets.items():
+            cat_pnl = sum(p.get("cashPnl", 0) or 0 for p in cat_positions)
+            cat_trades = len(cat_positions)
+            cat_bought = sum(p.get("initialValue", 0) or 0 for p in cat_positions)
+
+            cat_sold_redeemed = 0.0
+            cat_open_value = 0.0
+            cat_redeemable = 0.0
+            for p in cat_positions:
+                cur_price = p.get("curPrice", 0) or 0
+                current_value = p.get("currentValue", 0) or 0
+                if cur_price == 1.0 or cur_price == 0:
+                    cat_sold_redeemed += current_value
+                elif 0.01 <= cur_price <= 0.99:
+                    cat_open_value += current_value
+                if p.get("redeemable"):
+                    cat_redeemable += current_value
+
+            # Pull multiplier and verdict from seed if available
+            seed = CATEGORY_PNL_SEED.get(cat, {})
+            multiplier = seed.get("multiplier", 1.0)
+            verdict = seed.get("verdict", "")
+
+            categories[cat] = {
+                "total_pnl": round(cat_pnl, 2),
+                "trades": cat_trades,
+                "bought": round(cat_bought, 2),
+                "sold_redeemed": round(cat_sold_redeemed, 2),
+                "open_value": round(cat_open_value, 2),
+                "redeemable_value": round(cat_redeemable, 2),
+                "multiplier": multiplier,
+                "verdict": verdict,
+                "status": "success" if cat_pnl >= 0 else "loss",
+            }
+
+            total_bought += cat_bought
+            total_sold_redeemed += cat_sold_redeemed
+            total_open += cat_open_value
+            total_pnl += cat_pnl
+            total_trades += cat_trades
+            total_redeemable += cat_redeemable
+
+        result = {
+            "categories": categories,
+            "summary": {
+                "total_invested": round(total_bought, 2),
+                "total_returned": round(total_sold_redeemed, 2),
+                "open_value": round(total_open, 2),
+                "net_pnl": round(total_pnl, 2),
+                "total_trades": total_trades,
+                "redeemable": round(total_redeemable, 2),
+            },
+            "as_of": datetime.now().isoformat(),
+            "source": "live",
+        }
+
+        _categories_cache["data"] = result
+        _categories_cache["fetched_at"] = now
+        return result
+
+    except Exception as exc:
+        logger.warning("Polymarket API fetch failed, using seed data: %s", exc)
+        return {
+            "categories": CATEGORY_PNL_SEED,
+            "summary": {
+                "total_invested": sum(v.get("bought", 0) for v in CATEGORY_PNL_SEED.values()),
+                "total_returned": sum(v.get("redeemed", 0) + v.get("sold", 0) for v in CATEGORY_PNL_SEED.values()),
+                "open_value": sum(v.get("open_value", 0) for v in CATEGORY_PNL_SEED.values()),
+                "net_pnl": sum(v["total_pnl"] for v in CATEGORY_PNL_SEED.values()),
+                "total_trades": sum(v["trades"] for v in CATEGORY_PNL_SEED.values()),
+                "redeemable": 0,
+            },
+            "as_of": datetime.now().isoformat(),
+            "source": "seed",
+        }
 
 
 LESSONS = [

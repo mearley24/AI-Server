@@ -625,10 +625,12 @@ footer a:hover { color: var(--teal); }
     <h1>Polymarket Trading Playbook</h1>
     <p class="subtitle" id="heroSubtitle">Loading trading data&hellip;</p>
     <div class="stat-row" id="heroStats">
-      <div class="stat-card"><div class="label">Total Redeemed</div><div class="value" id="statRedeemed">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Open Positions Value</div><div class="value" id="statOpen">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Total Invested</div><div class="value" id="statInvested">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Returned</div><div class="value" id="statReturned">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Open Value</div><div class="value" id="statOpen">&mdash;</div></div>
       <div class="stat-card"><div class="label">Net P/L</div><div class="value" id="statPnl">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Total Trades</div><div class="value" id="statTrades">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Trades</div><div class="value" id="statTrades">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Redeemable</div><div class="value" id="statRedeemable">&mdash;</div></div>
     </div>
   </div>
 </header>
@@ -755,10 +757,13 @@ const fmtSigned = (n, d=2) => {
   return prefix + Math.abs(n).toFixed(d);
 };
 const catNames = {
+  crypto: 'Crypto',
   crypto_updown: 'Crypto Up/Down',
   sports: 'Sports',
   weather: 'Weather',
   politics: 'Politics',
+  economics: 'Economics',
+  geopolitics: 'Geopolitics',
   other: 'Other'
 };
 
@@ -842,22 +847,18 @@ async function loadCategories() {
       }
     });
 
-    // Compute totals for hero stats from category data
-    let totalRedeemed = 0, totalOpen = 0, totalTrades = 0, totalPnl = 0;
-    for (const [, v] of sorted) {
-      totalRedeemed += v.redeemed || 0;
-      totalOpen += v.open_value || 0;
-      totalTrades += v.trades || 0;
-      totalPnl += v.total_pnl || 0;
-    }
-
-    $('#statRedeemed').textContent = fmt(totalRedeemed);
-    $('#statOpen').textContent = fmt(totalOpen);
+    // Hero stats from summary
+    const s = data.summary || {};
+    $('#statInvested').textContent = fmt(s.total_invested);
+    $('#statReturned').textContent = fmt(s.total_returned);
+    $('#statOpen').textContent = fmt(s.open_value);
     const pnlEl = $('#statPnl');
-    pnlEl.textContent = fmtSigned(totalPnl);
-    pnlEl.className = 'value ' + (totalPnl >= 0 ? 'positive' : 'negative');
-    $('#statTrades').textContent = totalTrades;
-    $('#heroSubtitle').textContent = `${totalTrades} trades across ${Object.keys(cats).length} categories. All P/L calculated from category data.`;
+    pnlEl.textContent = fmtSigned(s.net_pnl);
+    pnlEl.className = 'value ' + ((s.net_pnl || 0) >= 0 ? 'positive' : 'negative');
+    $('#statTrades').textContent = s.total_trades || 0;
+    $('#statRedeemable').textContent = fmt(s.redeemable);
+    const src = data.source === 'live' ? 'live Polymarket API' : 'seed data (API offline)';
+    $('#heroSubtitle').textContent = `${s.total_trades || 0} positions across ${Object.keys(cats).length} categories \u2014 ${src}.`;
 
     // Cards
     grid.innerHTML = sorted.map(([key, v]) => {
@@ -875,7 +876,7 @@ async function loadCategories() {
           <div class="cat-stats">
             <div class="cat-stat"><span class="cat-stat-label">Trades</span><br><span class="cat-stat-value">${v.trades}</span></div>
             <div class="cat-stat"><span class="cat-stat-label">Bought</span><br><span class="cat-stat-value">${fmt(v.bought)}</span></div>
-            <div class="cat-stat"><span class="cat-stat-label">Sold + Redeemed</span><br><span class="cat-stat-value">${fmt((v.sold||0) + (v.redeemed||0))}</span></div>
+            <div class="cat-stat"><span class="cat-stat-label">Returned</span><br><span class="cat-stat-value">${fmt(v.sold_redeemed || ((v.sold||0) + (v.redeemed||0)))}</span></div>
             <div class="cat-stat"><span class="cat-stat-label">Open Value</span><br><span class="cat-stat-value">${fmt(v.open_value)}</span></div>
           </div>
           <div class="cat-verdict">${esc(v.verdict)}</div>
