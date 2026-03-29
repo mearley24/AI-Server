@@ -60,50 +60,56 @@ async def list_emails(
     offset: int = Query(0, ge=0),
 ):
     """List recent emails with optional filters."""
-    conn = _get_db()
-    conditions = []
-    params = []
+    try:
+        conn = _get_db()
+        conditions = []
+        params = []
 
-    if category:
-        conditions.append("category = ?")
-        params.append(category.upper())
-    if unread is not None:
-        conditions.append("read = ?")
-        params.append(0 if unread else 1)
-    if since:
-        conditions.append("received_at >= ?")
-        params.append(since)
+        if category:
+            conditions.append("category = ?")
+            params.append(category.upper())
+        if unread is not None:
+            conditions.append("read = ?")
+            params.append(0 if unread else 1)
+        if since:
+            conditions.append("received_at >= ?")
+            params.append(since)
 
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    query = f"SELECT * FROM emails {where} ORDER BY received_at DESC LIMIT ? OFFSET ?"
-    params.extend([limit, offset])
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f"SELECT * FROM emails {where} ORDER BY received_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
 
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
+        rows = conn.execute(query, params).fetchall()
+        conn.close()
 
-    return [
-        EmailRecord(
-            id=r["id"],
-            message_id=r["message_id"],
-            sender=r["sender"],
-            sender_name=r["sender_name"],
-            subject=r["subject"],
-            category=r["category"],
-            priority=r["priority"],
-            received_at=r["received_at"],
-            stored_at=r["stored_at"],
-            read=bool(r["read"]),
-            responded=bool(r["responded"]),
-            snippet=r["snippet"] or "",
-        )
-        for r in rows
-    ]
+        return [
+            EmailRecord(
+                id=r["id"],
+                message_id=r["message_id"],
+                sender=r["sender"],
+                sender_name=r["sender_name"],
+                subject=r["subject"],
+                category=r["category"],
+                priority=r["priority"],
+                received_at=r["received_at"],
+                stored_at=r["stored_at"],
+                read=bool(r["read"]),
+                responded=bool(r["responded"]),
+                snippet=r["snippet"] or "",
+            )
+            for r in rows
+        ]
+    except Exception:
+        return []
 
 
 @app.get("/emails/summary", response_model=EmailSummary)
 async def email_summary():
     """Today's email summary with counts by category and action items."""
-    conn = _get_db()
+    try:
+        conn = _get_db()
+    except Exception:
+        return EmailSummary(total_today=0, unread=0, by_category={}, action_items=[])
     today = datetime.now(timezone.utc).date().isoformat()
 
     # Total today
