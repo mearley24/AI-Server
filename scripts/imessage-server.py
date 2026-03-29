@@ -87,9 +87,12 @@ def _cleanup_temp(tmp_db: Path):
 class MessagesAppHealth:
     """Manages Messages.app lifecycle — checks health, launches, force-quits if hung."""
 
+    CONSECUTIVE_FAILURES_BEFORE_RESTART = 3
+
     def __init__(self):
         self._last_check = 0
         self._lock = threading.Lock()
+        self._consecutive_unresponsive = 0
 
     def is_running(self) -> bool:
         try:
@@ -105,13 +108,15 @@ class MessagesAppHealth:
         try:
             result = subprocess.run(
                 ["osascript", "-e", 'tell application "System Events" to (name of processes) contains "Messages"'],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, timeout=5,
             )
             return result.returncode == 0 and "true" in result.stdout.lower()
         except subprocess.TimeoutExpired:
-            return False
+            log.warning("[health] System Events check timed out — assuming responsive (fail-open)")
+            return True
         except Exception:
-            return False
+            log.warning("[health] System Events check failed — assuming responsive (fail-open)")
+            return True
 
     def launch(self) -> bool:
         log.info("[health] Launching Messages.app...")
@@ -166,13 +171,22 @@ class MessagesAppHealth:
             return
         self._last_check = now
         if not self.is_running():
+            self._consecutive_unresponsive = 0
             log.warning("[health] Periodic check: Messages.app not running — relaunching")
             self.launch()
         elif not self.is_responsive():
-            log.warning("[health] Periodic check: Messages.app unresponsive — restarting")
-            self.force_quit()
-            time.sleep(3)
-            self.launch()
+            self._consecutive_unresponsive += 1
+            log.warning("[health] Periodic check: Messages.app unresponsive (%d/%d before restart)",
+                        self._consecutive_unresponsive, self.CONSECUTIVE_FAILURES_BEFORE_RESTART)
+            if self._consecutive_unresponsive >= self.CONSECUTIVE_FAILURES_BEFORE_RESTART:
+                log.warning("[health] %d consecutive unresponsive checks — restarting Messages.app",
+                            self._consecutive_unresponsive)
+                self.force_quit()
+                time.sleep(3)
+                self.launch()
+                self._consecutive_unresponsive = 0
+        else:
+            self._consecutive_unresponsive = 0
 
 
 messages_health = MessagesAppHealth()
@@ -366,7 +380,7 @@ class SendQueue:
             }
 
 
-send_queue = SendQueue()
+send_queue = None
 
 
 class MessageMonitor:
@@ -743,7 +757,13 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    messages_health.ensure_ready()
+    try:
+        messages_health.ensure_ready()
+    except Exception as e:
+        log.warning("[bridge] Initial Messages.app health check failed (non-fatal): %s", e)
+        log.warning("[bridge] Continuing startup — health check thread will retry in background")
+
+    send_queue = SendQueue()
 
     monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
     monitor_thread.start()
