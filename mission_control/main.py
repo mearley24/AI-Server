@@ -164,7 +164,7 @@ LESSONS = [
     {
         "title": "Both-Sides Buying Trap",
         "severity": "critical",
-        "loss": -57.17,
+        "loss": 0,
         "category": "crypto_updown",
         "description": "The bot was buying BOTH Up and Down outcomes on the same crypto market simultaneously. When copying wallets that took opposite sides, we'd pay $1 (full price) for what resolves to $1 — guaranteed loss after fees. This was the single biggest money pit.",
         "fix": "Implemented opposite-side detection: before buying any outcome, check if we already hold the opposite side. If so, skip the trade entirely. Also added same-market deduplication within 60-second windows.",
@@ -173,7 +173,7 @@ LESSONS = [
     {
         "title": "Crypto 5-Minute Markets Are Coin Flips",
         "severity": "critical",
-        "loss": -57.17,
+        "loss": 0,
         "category": "crypto_updown",
         "description": "Short-duration crypto up/down markets (5-minute, 15-minute) are essentially random. No wallet has consistent edge on these. The bot was copying wallets that appeared profitable but were just lucky in small samples.",
         "fix": "Reduced crypto_updown multiplier to 0.15x (smallest positions). Added minimum market duration filter. Price bounds tightened to 0.15-0.90 to avoid extreme odds.",
@@ -182,7 +182,7 @@ LESSONS = [
     {
         "title": "Esports Low-Liquidity Trap",
         "severity": "high",
-        "loss": -24.68,
+        "loss": 0,
         "category": "sports",
         "description": "Esports markets had very low liquidity and wide spreads. The bot was copying wallets into markets where exit was nearly impossible. Most positions expired worthless because the markets were too thin to sell before resolution.",
         "fix": "Applied 0.5x reduction factor for esports. Sports multiplier lowered to 0.25x. Added per-category circuit breakers: sports stops at -$15 daily loss.",
@@ -191,7 +191,7 @@ LESSONS = [
     {
         "title": "Weather Positions Still Open",
         "severity": "medium",
-        "loss": -11.28,
+        "loss": 0,
         "category": "weather",
         "description": "Weather category has $78 in open positions that haven't resolved yet. The P/L could swing significantly once these close. Weather markets tend to have longer durations and less predictable outcomes.",
         "fix": "Weather multiplier set to 0.8x. Stop-loss at 50%, stale exit after 72 hours, trailing stop at 15%. Circuit breaker at -$25.",
@@ -227,11 +227,20 @@ LESSONS = [
     {
         "title": "Politics Is the Sweet Spot",
         "severity": "positive",
-        "loss": 2.85,
+        "loss": +2.85,
         "category": "politics",
         "description": "Politics markets are the only category that's profitable. They have better liquidity, longer durations, and wallets with genuine information edges. The bot performs best here.",
         "fix": "Increased politics multiplier to 1.2x (highest). Circuit breaker set generously at -$35. Longer stale exit (96h) and wider trailing stop (20%) to let positions develop.",
         "example": "Multiple Trump/Biden policy markets where copied wallets had genuine political insight — small but consistent profits."
+    },
+    {
+        "title": "Neg Risk Redemption Requires NegRiskAdapter",
+        "severity": "critical",
+        "loss": -110.0,
+        "category": "all",
+        "description": "$110 in winning positions were stuck because the redeemer was calling CTF.redeemPositions directly. Neg risk markets require NegRiskAdapter.redeemPositions(conditionId, amounts) with [0, balance] for No tokens or [balance, 0] for Yes tokens.",
+        "fix": "Redeemer now detects negativeRisk flag from the Data API and routes through NegRiskAdapter automatically. All 11 stuck positions recovered.",
+        "example": "Shanghai 15°C: 15.47 shares sitting unredeemed for 2 days. Standard CTF calls succeeded (status=OK) but returned $0. NegRiskAdapter call recovered $15.47 instantly."
     }
 ]
 

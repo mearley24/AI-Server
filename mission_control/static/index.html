@@ -625,9 +625,8 @@ footer a:hover { color: var(--teal); }
     <h1>Polymarket Trading Playbook</h1>
     <p class="subtitle" id="heroSubtitle">Loading trading data&hellip;</p>
     <div class="stat-row" id="heroStats">
-      <div class="stat-card"><div class="label">Total Spent</div><div class="value" id="statSpent">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Cash Returned</div><div class="value" id="statReturned">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Open Positions</div><div class="value" id="statOpen">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Total Redeemed</div><div class="value" id="statRedeemed">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Open Positions Value</div><div class="value" id="statOpen">&mdash;</div></div>
       <div class="stat-card"><div class="label">Net P/L</div><div class="value" id="statPnl">&mdash;</div></div>
       <div class="stat-card"><div class="label">Total Trades</div><div class="value" id="statTrades">&mdash;</div></div>
     </div>
@@ -843,26 +842,22 @@ async function loadCategories() {
       }
     });
 
-    // Compute totals for hero stats
-    let totalBought = 0, totalSold = 0, totalRedeemed = 0, totalOpen = 0, totalTrades = 0, totalPnl = 0;
+    // Compute totals for hero stats from category data
+    let totalRedeemed = 0, totalOpen = 0, totalTrades = 0, totalPnl = 0;
     for (const [, v] of sorted) {
-      totalBought += v.bought || 0;
-      totalSold += v.sold || 0;
       totalRedeemed += v.redeemed || 0;
       totalOpen += v.open_value || 0;
       totalTrades += v.trades || 0;
       totalPnl += v.total_pnl || 0;
     }
-    const returned = totalSold + totalRedeemed;
 
-    $('#statSpent').textContent = fmt(totalBought);
-    $('#statReturned').textContent = fmt(returned);
+    $('#statRedeemed').textContent = fmt(totalRedeemed);
     $('#statOpen').textContent = fmt(totalOpen);
     const pnlEl = $('#statPnl');
     pnlEl.textContent = fmtSigned(totalPnl);
     pnlEl.className = 'value ' + (totalPnl >= 0 ? 'positive' : 'negative');
     $('#statTrades').textContent = totalTrades;
-    $('#heroSubtitle').textContent = `${totalTrades} trades across 5 categories. 48 hours. Every lesson learned.`;
+    $('#heroSubtitle').textContent = `${totalTrades} trades across ${Object.keys(cats).length} categories. All P/L calculated from category data.`;
 
     // Cards
     grid.innerHTML = sorted.map(([key, v]) => {
@@ -899,14 +894,20 @@ async function loadLessons() {
     const resp = await fetch('/api/trading/lessons');
     const data = await resp.json();
     list.innerHTML = data.lessons.map((l, i) => {
-      const lossClass = l.loss > 0 ? 'positive' : l.loss < 0 ? 'negative' : '';
-      const lossText = l.loss !== 0 ? fmtSigned(l.loss) : '';
+      let lossHtml = '';
+      if (l.loss === 0) {
+        lossHtml = '<span class="lesson-loss" style="color:var(--green);font-weight:700;">FIXED</span>';
+      } else if (l.loss > 0) {
+        lossHtml = `<span class="lesson-loss positive">${fmtSigned(l.loss)}</span>`;
+      } else if (l.loss < 0) {
+        lossHtml = `<span class="lesson-loss negative">${fmtSigned(l.loss)}</span>`;
+      }
       return `
         <div class="lesson-card open">
           <div class="lesson-header" onclick="this.parentElement.classList.toggle('open')">
             <span class="severity-badge severity-${l.severity}">${esc(l.severity)}</span>
             <span class="lesson-title">${esc(l.title)}</span>
-            ${lossText ? `<span class="lesson-loss ${lossClass}">${lossText}</span>` : ''}
+            ${lossHtml}
             <span class="lesson-chevron">&#x25BE;</span>
           </div>
           <div class="lesson-body">
@@ -993,6 +994,12 @@ function renderTrades() {
   });
 
   const body = $('#tradeBody');
+  if (filtered.length === 0 && allTrades.length === 0) {
+    body.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted);padding:16px;">Trade history syncs from bot logs</td></tr>';
+    $('#tableInfo').textContent = '';
+    return;
+  }
+
   body.innerHTML = filtered.map(t => {
     const side = (t.side || 'BUY').toUpperCase();
     const actionCls = side === 'SELL' ? 'action-sell' : side === 'REDEEM' ? 'action-redeem' : 'action-buy';
@@ -1025,7 +1032,33 @@ function renderPositions(positions) {
     loading.style.display = 'none';
     return;
   }
-  body.innerHTML = positions.map(p => {
+
+  // Filter out phantom positions (size=0 or value=0)
+  let filtered = positions.filter(p => {
+    const size = p.size || p.shares || 0;
+    const curPrice = p.current_price || 0;
+    const value = size * curPrice;
+    return size !== 0 && value !== 0;
+  });
+
+  // Deduplicate by market name — keep the one with non-zero size
+  const seen = new Map();
+  for (const p of filtered) {
+    const market = p.title || p.market_question || p.market || '';
+    const size = p.size || p.shares || 0;
+    if (!seen.has(market) || size > (seen.get(market).size || seen.get(market).shares || 0)) {
+      seen.set(market, p);
+    }
+  }
+  filtered = Array.from(seen.values());
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<tr><td colspan="7" style="color:var(--text-muted);padding:16px;">No open positions</td></tr>';
+    loading.style.display = 'none';
+    return;
+  }
+
+  body.innerHTML = filtered.map(p => {
     const market = p.title || p.market_question || p.market || '—';
     const outcome = p.outcome || '—';
     const size = p.size || p.shares || 0;
