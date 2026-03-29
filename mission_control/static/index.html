@@ -625,11 +625,10 @@ footer a:hover { color: var(--teal); }
     <h1>Polymarket Trading Playbook</h1>
     <p class="subtitle" id="heroSubtitle">Loading trading data&hellip;</p>
     <div class="stat-row" id="heroStats">
-      <div class="stat-card"><div class="label">Total Deployed</div><div class="value" id="statInvested">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Sold + Redeemed</div><div class="value" id="statReturned">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Open Value</div><div class="value" id="statOpen">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Net P/L</div><div class="value" id="statPnl">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Buy Orders</div><div class="value" id="statTrades">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Deposited</div><div class="value" id="statDeposited">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Returned</div><div class="value" id="statReturned">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Still Open</div><div class="value" id="statOpen">&mdash;</div></div>
+      <div class="stat-card"><div class="label">True P/L</div><div class="value" id="statPnl">&mdash;</div></div>
     </div>
   </div>
 </header>
@@ -848,15 +847,14 @@ async function loadCategories() {
 
     // Hero stats from summary
     const s = data.summary || {};
-    $('#statInvested').textContent = fmt(s.total_invested);
+    $('#statDeposited').textContent = fmt(s.estimated_deposits);
     $('#statReturned').textContent = fmt(s.total_returned);
     $('#statOpen').textContent = fmt(s.open_value);
     const pnlEl = $('#statPnl');
     pnlEl.textContent = fmtSigned(s.net_pnl);
     pnlEl.className = 'value ' + ((s.net_pnl || 0) >= 0 ? 'positive' : 'negative');
-    $('#statTrades').textContent = s.total_trades || 0;
-    const src = data.source === 'live' ? 'Live from Polymarket' : data.source === 'error' ? 'API error' : 'Cached';
-    $('#heroSubtitle').textContent = `${s.total_trades || 0} buys across ${Object.keys(cats).length} categories \u2022 ${s.activity_count || 0} total activities \u2022 ${src}`;
+    const src = data.source === 'live' ? 'Live' : data.source === 'error' ? 'API error' : 'Cached';
+    $('#heroSubtitle').textContent = `${s.total_trades || 0} buys \u2022 ${s.activity_count || 0} activities \u2022 ${Object.keys(cats).length} categories \u2022 ${src}`;
 
     // Cards
     grid.innerHTML = sorted.map(([key, v]) => {

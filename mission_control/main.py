@@ -272,6 +272,9 @@ async def api_trading_categories():
         cat_sell_count = defaultdict(int)
         cat_redeem_count = defaultdict(int)
 
+        # Sort by timestamp to compute deposits
+        activities.sort(key=lambda a: a.get("timestamp", 0))
+
         for a in activities:
             cat = _categorize(a.get("title", ""))
             usdc = a.get("usdcSize", 0) or 0
@@ -285,6 +288,23 @@ async def api_trading_categories():
             elif a["type"] == "REDEEM":
                 cat_redeemed[cat] += usdc
                 cat_redeem_count[cat] += 1
+
+        # ── Estimate total deposits by tracking when cash goes negative ──
+        running_cash = 0.0
+        min_cash = 0.0
+        estimated_deposits = 0.0
+        for a in activities:
+            usdc = a.get("usdcSize", 0) or 0
+            if a["type"] == "TRADE":
+                if a.get("side") == "BUY":
+                    running_cash -= usdc
+                elif a.get("side") == "SELL":
+                    running_cash += usdc
+            elif a["type"] == "REDEEM":
+                running_cash += usdc
+            if running_cash < min_cash:
+                estimated_deposits += min_cash - running_cash
+                min_cash = running_cash
 
         # ── Open positions from /positions endpoint ──
         cat_open_value = defaultdict(float)
@@ -341,13 +361,18 @@ async def api_trading_categories():
             total_pnl_all += pnl
             total_trades_all += cat_buy_count[cat]
 
+        # True P/L = current account value - deposits
+        account_value = total_open_all  # cash is $0
+        true_pnl = round(account_value - estimated_deposits, 2)
+
         result = {
             "categories": categories,
             "summary": {
-                "total_invested": round(total_bought_all, 2),
+                "estimated_deposits": round(estimated_deposits, 2),
+                "total_deployed": round(total_bought_all, 2),
                 "total_returned": round(total_returned_all, 2),
                 "open_value": round(total_open_all, 2),
-                "net_pnl": round(total_pnl_all, 2),
+                "net_pnl": round(true_pnl, 2),
                 "total_trades": total_trades_all,
                 "activity_count": len(activities),
             },
