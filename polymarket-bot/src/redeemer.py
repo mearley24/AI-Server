@@ -106,6 +106,21 @@ PAYOUT_DENOMINATOR_ABI = [
 # Zero bytes32 — always used as parentCollectionId for Polymarket top-level positions
 ZERO_BYTES32 = b"\x00" * 32
 
+# NegRiskAdapter for multi-outcome market redemptions
+NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
+NEG_RISK_ADAPTER_ABI = [
+    {
+        "constant": False,
+        "inputs": [
+            {"name": "_conditionId", "type": "bytes32"},
+            {"name": "_amounts", "type": "uint256[]"},
+        ],
+        "name": "redeemPositions",
+        "outputs": [],
+        "type": "function",
+    }
+]
+
 # Polygon RPC endpoints (fallback list)
 POLYGON_RPCS = [
     "https://polygon-bor-rpc.publicnode.com",
@@ -157,6 +172,12 @@ class PolymarketRedeemer:
 
         # Track already-redeemed condition IDs to avoid redundant txns
         self._redeemed_conditions: set[str] = set()
+
+        # NegRiskAdapter for neg risk market redemptions
+        self._neg_adapter = self._w3.eth.contract(
+            address=Web3.to_checksum_address(NEG_RISK_ADAPTER_ADDRESS),
+            abi=NEG_RISK_ADAPTER_ABI,
+        )
 
     @staticmethod
     def _connect_rpc(preferred_url: str = "") -> Web3:
@@ -382,7 +403,15 @@ class PolymarketRedeemer:
             value = pos.get("_expected_usdc", 0)
 
             try:
-                tx_hash = await self._redeem_single(condition_id, gas_price)
+                is_neg_risk = pos.get("negativeRisk", False)
+                outcome_index = pos.get("outcomeIndex", 0)
+                token_balance_raw = int(pos.get("_token_balance", 0) * 1e6)
+                tx_hash = await self._redeem_single(
+                    condition_id, gas_price,
+                    neg_risk=is_neg_risk,
+                    outcome_index=outcome_index,
+                    token_balance=token_balance_raw,
+                )
                 if tx_hash:
                     self._redeemed_conditions.add(condition_id)
                     redeemed_count += 1
@@ -426,44 +455,62 @@ class PolymarketRedeemer:
         }
 
     async def _redeem_single(
-        self, condition_id: str, gas_price: int
+        self, condition_id: str, gas_price: int,
+        neg_risk: bool = False, outcome_index: int = 0, token_balance: int = 0,
     ) -> Optional[str]:
-        """Call redeemPositions directly from the wallet for one condition.
+        """Call redeemPositions — routes through NegRiskAdapter for neg risk markets.
 
         Returns transaction hash string, or None on failure.
         """
         loop = asyncio.get_event_loop()
 
         def _do_redeem() -> str:
-            usdc_address = Web3.to_checksum_address(USDC_E_ADDRESS)
             cid_bytes = bytes.fromhex(condition_id[2:]) if condition_id.startswith("0x") else bytes.fromhex(condition_id)
-
-            # Estimate gas
-            try:
-                gas_estimate = self._ctf.functions.redeemPositions(
-                    usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
-                ).estimate_gas({"from": self._wallet_address})
-                gas_limit = int(gas_estimate * 1.3)
-            except Exception:
-                gas_limit = 200_000  # fallback
-
             nonce = self._w3.eth.get_transaction_count(self._wallet_address)
 
-            tx = self._ctf.functions.redeemPositions(
-                usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
-            ).build_transaction({
-                "from": self._wallet_address,
-                "nonce": nonce,
-                "gas": gas_limit,
-                "gasPrice": gas_price,
-                "chainId": 137,
-            })
+            if neg_risk and token_balance > 0:
+                # Neg risk: use NegRiskAdapter.redeemPositions(conditionId, amounts)
+                # amounts = [Yes_balance, No_balance] based on outcome_index
+                if outcome_index == 0:
+                    amounts = [token_balance, 0]
+                else:
+                    amounts = [0, token_balance]
+
+                tx = self._neg_adapter.functions.redeemPositions(
+                    cid_bytes, amounts
+                ).build_transaction({
+                    "from": self._wallet_address,
+                    "nonce": nonce,
+                    "gas": 500_000,
+                    "gasPrice": gas_price,
+                    "chainId": 137,
+                })
+            else:
+                # Standard CTF redemption
+                usdc_address = Web3.to_checksum_address(USDC_E_ADDRESS)
+                try:
+                    gas_estimate = self._ctf.functions.redeemPositions(
+                        usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
+                    ).estimate_gas({"from": self._wallet_address})
+                    gas_limit = int(gas_estimate * 1.3)
+                except Exception:
+                    gas_limit = 200_000
+
+                tx = self._ctf.functions.redeemPositions(
+                    usdc_address, ZERO_BYTES32, cid_bytes, [1, 2]
+                ).build_transaction({
+                    "from": self._wallet_address,
+                    "nonce": nonce,
+                    "gas": gas_limit,
+                    "gasPrice": gas_price,
+                    "chainId": 137,
+                })
 
             signed_tx = self._w3.eth.account.sign_transaction(tx, self._private_key)
             tx_hash = self._w3.eth.send_raw_transaction(signed_tx.raw_transaction)
             tx_hash_hex = self._w3.to_hex(tx_hash)
 
-            receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+            receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash, timeout=90)
             if receipt.status != 1:
                 raise RuntimeError(f"Transaction reverted: {tx_hash_hex}")
 
