@@ -325,6 +325,15 @@ class PolymarketCopyTrader:
         # ── Whale signal scanner (set externally via set_whale_scanner) ──
         self._whale_scanner = None
 
+        # ── Wallet quality decay — re-score every 30 minutes ──────────
+        self._last_wallet_refresh: float = 0.0
+        self._wallet_refresh_interval: float = 1800.0  # 30 minutes
+
+        # ── P/L reconciliation against on-chain — every 10 minutes ────
+        self._last_pnl_reconciliation: float = 0.0
+        self._pnl_reconciliation_interval: float = 600.0  # 10 minutes
+        self._our_wallet = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -456,6 +465,14 @@ class PolymarketCopyTrader:
                     await self._manage_positions()
 
                 # 4. Redemption handled by standalone PolymarketRedeemer module
+
+                # 5. Wallet quality decay — re-score every 30 minutes
+                if now - self._last_wallet_refresh >= self._wallet_refresh_interval:
+                    await self._refresh_wallet_scores()
+
+                # 6. P/L reconciliation against on-chain — every 10 minutes
+                if now - self._last_pnl_reconciliation >= self._pnl_reconciliation_interval:
+                    await self._reconcile_pnl()
 
                 tick_count += 1
 
@@ -1402,10 +1419,18 @@ class PolymarketCopyTrader:
         if high_conviction:
             size_usd *= 1.5
 
+        # ── Bankroll-proportional scaling ────────────────────────
+        # Scale position size proportional to bankroll.
+        # At $386 (full deposit), use full tier sizes.
+        # At $100, scale down proportionally. Minimum $1 position.
+        REFERENCE_BANKROLL = 386.0
+        bankroll_ratio = min(self._bankroll / REFERENCE_BANKROLL, 1.0)
+        size_usd = max(size_usd * bankroll_ratio, 1.0)
+
         # Hard cap: NEVER exceed $10 per position regardless of any multipliers
         size_usd = min(size_usd, 10.0)
 
-        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, tier_cap=tier_cap, esports=is_esports, high_conviction=high_conviction, category_pnl=round(self._category_pnl.get(category, 0), 2))
+        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, tier_cap=tier_cap, esports=is_esports, high_conviction=high_conviction, bankroll_ratio=round(bankroll_ratio, 3), category_pnl=round(self._category_pnl.get(category, 0), 2))
 
         # ── Correlation + category caps (SKIPPED for high conviction) ──
         if not high_conviction:
@@ -1855,6 +1880,181 @@ class PolymarketCopyTrader:
     # ── Profitable categories for whale tier 2 filtering ────────────────
     _WHALE_PROFITABLE_CATEGORIES: set[str] = {"crypto_updown", "crypto", "tennis", "esports"}
 
+    # ── Wallet quality decay — re-score periodically ─────────────────
+
+    async def _refresh_wallet_scores(self) -> None:
+        """Re-score tracked wallets every 30 minutes.
+
+        If a wallet's win rate drops below 50% (was above 55% when added),
+        remove it from the active list.
+        """
+        self._last_wallet_refresh = time.time()
+
+        if not self._scored_wallets or not self._http:
+            return
+
+        removed = []
+        updated = 0
+
+        for wallet in list(self._scored_wallets):
+            try:
+                resp = await self._http.get(
+                    "https://data-api.polymarket.com/positions",
+                    params={"user": wallet.address, "sizeThreshold": "0.1"},
+                    timeout=10.0,
+                )
+                if resp.status_code != 200:
+                    continue
+
+                positions = resp.json()
+                if not isinstance(positions, list) or not positions:
+                    continue
+
+                wins = 0
+                losses = 0
+                for pos in positions:
+                    # Resolved positions have currentValue near 0 or near full payout
+                    outcome = pos.get("outcome", "")
+                    realized = float(pos.get("realizedPnl", 0) or 0)
+                    if realized > 0:
+                        wins += 1
+                    elif realized < 0:
+                        losses += 1
+
+                total = wins + losses
+                if total < 10:
+                    continue
+
+                new_wr = wins / total if total > 0 else 0
+
+                if new_wr < 0.50 and wallet.win_rate >= 0.55:
+                    removed.append(wallet)
+                    logger.info(
+                        "wallet_quality_decay",
+                        wallet=wallet.address[:10] + "...",
+                        old_wr=round(wallet.win_rate, 3),
+                        new_wr=round(new_wr, 3),
+                        msg=f"{wallet.address[:10]} dropped to {new_wr*100:.0f}%, removing",
+                    )
+                elif abs(new_wr - wallet.win_rate) > 0.02:
+                    wallet.win_rate = new_wr
+                    wallet.wins = wins
+                    wallet.losses = losses
+                    wallet.total_resolved = total
+                    updated += 1
+
+            except Exception as exc:
+                logger.debug("wallet_refresh_error", wallet=wallet.address[:10], error=str(exc)[:80])
+                continue
+
+        for wallet in removed:
+            self._scored_wallets.remove(wallet)
+
+        if removed or updated:
+            logger.info(
+                "wallet_scores_refreshed",
+                removed=len(removed),
+                updated=updated,
+                remaining=len(self._scored_wallets),
+            )
+
+    # ── P/L reconciliation against on-chain ────────────────────────────
+
+    async def _reconcile_pnl(self) -> None:
+        """Reconcile internal state against on-chain positions every 10 minutes.
+
+        - Fetches real positions from Polymarket data API
+        - Detects orphan positions (on-chain but not tracked)
+        - Cleans up phantom positions (tracked but not on-chain)
+        - Updates bankroll if drift exceeds $5
+        """
+        self._last_pnl_reconciliation = time.time()
+
+        if not self._http:
+            return
+
+        try:
+            resp = await self._http.get(
+                "https://data-api.polymarket.com/positions",
+                params={"user": self._our_wallet, "sizeThreshold": "0.1"},
+                timeout=15.0,
+            )
+            if resp.status_code != 200:
+                logger.debug("pnl_reconciliation_api_error", status=resp.status_code)
+                return
+
+            on_chain_positions = resp.json()
+            if not isinstance(on_chain_positions, list):
+                return
+
+            # Build set of on-chain condition_ids
+            on_chain_condition_ids: set[str] = set()
+            on_chain_value = 0.0
+            for pos in on_chain_positions:
+                cid = pos.get("conditionId", pos.get("condition_id", ""))
+                if cid:
+                    on_chain_condition_ids.add(cid)
+                current_val = float(pos.get("currentValue", 0) or 0)
+                on_chain_value += current_val
+
+            # Detect orphan positions — on-chain but not in our tracker
+            our_condition_ids = {p.condition_id for p in self._positions.values() if p.condition_id}
+            orphans = on_chain_condition_ids - our_condition_ids
+            for orphan_cid in orphans:
+                logger.info("orphan_position_found", condition_id=orphan_cid[:16])
+
+            # Detect phantom positions — in our tracker but not on-chain
+            phantoms = our_condition_ids - on_chain_condition_ids
+            phantom_ids_to_remove = []
+            for pos_id, pos in self._positions.items():
+                if pos.condition_id in phantoms:
+                    logger.info(
+                        "phantom_position_cleanup",
+                        position_id=pos_id,
+                        condition_id=pos.condition_id[:16],
+                        market=pos.market_question[:40],
+                    )
+                    phantom_ids_to_remove.append(pos_id)
+
+            for pos_id in phantom_ids_to_remove:
+                pos = self._positions.pop(pos_id, None)
+                if pos:
+                    self._active_condition_ids.discard(pos.condition_id)
+                    self._active_event_slugs.discard(pos.event_slug)
+                    self._exit_engine.unregister_position(pos_id)
+                    self._correlation_tracker.remove_position(pos_id)
+
+            if phantom_ids_to_remove:
+                self._save_positions()
+
+            # Update bankroll if drift exceeds $5
+            internal_bankroll = self._bankroll
+            drift = abs(internal_bankroll - on_chain_value)
+            if drift > 5.0 and on_chain_value > 0:
+                old_bankroll = self._bankroll
+                self._bankroll = on_chain_value
+                self._correlation_tracker.bankroll = on_chain_value
+                logger.info(
+                    "pnl_reconciliation_bankroll_update",
+                    old=round(old_bankroll, 2),
+                    new=round(on_chain_value, 2),
+                    drift=round(drift, 2),
+                )
+
+            logger.info(
+                "pnl_reconciliation",
+                internal_positions=len(self._positions),
+                on_chain_positions=len(on_chain_condition_ids),
+                orphans=len(orphans),
+                phantoms=len(phantoms),
+                internal_bankroll=round(internal_bankroll, 2),
+                on_chain_value=round(on_chain_value, 2),
+                drift=round(drift, 2),
+            )
+
+        except Exception as exc:
+            logger.warning("pnl_reconciliation_error", error=str(exc)[:100])
+
     def _add_wallet_to_watchlist(self, wallet_address: str) -> None:
         """Add a whale wallet to copytrade_wallets.json for future monitoring."""
         try:
@@ -1936,6 +2136,10 @@ class PolymarketCopyTrader:
                     trade_size=round(signal.trade_size, 2),
                 )
                 _notify(
+                    "[WHALE] Tier 1 Watch",
+                    f"[WHALE] {signal.signal_type} — {market_question[:50]}\n"
+                    f"Wallet {wallet_short}, conf {conf:.0f}%",
+                )
                 continue
 
             # ── Tiers 2-4: trading — apply circuit breakers ───────────
@@ -2025,6 +2229,11 @@ class PolymarketCopyTrader:
                     size_usd = 10.0
                 else:
                     size_usd = 7.0
+
+            # Bankroll-proportional scaling for whale signals
+            REFERENCE_BANKROLL = 386.0
+            bankroll_ratio = min(self._bankroll / REFERENCE_BANKROLL, 1.0)
+            size_usd = max(size_usd * bankroll_ratio, 1.0)
 
             # Hard cap: NEVER exceed $10
             size_usd = min(size_usd, 10.0)

@@ -198,6 +198,76 @@ async def lifespan(app: FastAPI):
             copytrade.set_whale_scanner(whale_scanner)
         platform_strategies.append(("copytrade", copytrade))
 
+    # ── Activate additional autonomous strategies ──────────────────────
+    # Each strategy is wrapped in try/except so one broken strategy doesn't kill the bot.
+    # All BaseStrategy subclasses need: client, settings, scanner, orderbook, pnl_tracker.
+    scanner = None
+    try:
+        from src.market_scanner import MarketScanner
+        scanner = MarketScanner(client=client, settings=settings)
+    except Exception as exc:
+        log.warning("market_scanner_init_failed", error=str(exc))
+
+    # Weather Trader — standalone autonomous weather strategy using NOAA data
+    try:
+        from strategies.weather_trader import WeatherTraderStrategy
+        weather_trader = WeatherTraderStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        platform_strategies.append(("weather_trader", weather_trader))
+        log.info("strategy_loaded", strategy="weather_trader")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="weather_trader", error=str(exc))
+
+    # Sports Arb — zero-risk arbitrage buying both sides when combined < $0.98
+    try:
+        from strategies.sports_arb import SportsArbStrategy
+        sports_arb = SportsArbStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        platform_strategies.append(("sports_arb", sports_arb))
+        log.info("strategy_loaded", strategy="sports_arb")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="sports_arb", error=str(exc))
+
+    # Flash Crash — monitors for sudden price drops and buys the dip
+    try:
+        from strategies.flash_crash import FlashCrashStrategy
+        flash_crash = FlashCrashStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        platform_strategies.append(("flash_crash", flash_crash))
+        log.info("strategy_loaded", strategy="flash_crash")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="flash_crash", error=str(exc))
+
+    # Stink Bid — low limit orders on crypto short-duration markets
+    try:
+        from strategies.stink_bid import StinkBidStrategy
+        stink_bid = StinkBidStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        platform_strategies.append(("stink_bid", stink_bid))
+        log.info("strategy_loaded", strategy="stink_bid")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="stink_bid", error=str(exc))
+
+    # Liquidity Provider — passive market making for Polymarket rewards
+    try:
+        from strategies.liquidity_provider import LiquidityProvider
+        lp = LiquidityProvider(
+            clob_client=getattr(client, '_clob_client', None),
+            bankroll=float(os.environ.get("COPYTRADE_BANKROLL", "300")),
+        )
+        platform_strategies.append(("liquidity_provider", lp))
+        log.info("strategy_loaded", strategy="liquidity_provider")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="liquidity_provider", error=str(exc))
+
     # Polymarket position redeemer — automatically redeems resolved winning positions
     redeemer = None
     if settings.poly_private_key:
@@ -292,12 +362,14 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.error("heartbeat_scheduler_error", error=str(exc))
 
+    active_strategy_names = [n for n, _ in platform_strategies]
     log.info(
         "polymarket_bot_started",
         mode="OBSERVER (dry-run)" if settings.dry_run else "LIVE",
         port=settings.port,
         wallet=client.wallet_address or "(not configured)",
-        strategies=[n for n, _ in platform_strategies],
+        strategies=active_strategy_names,
+        strategy_count=len(active_strategy_names),
         platforms=list(platform_clients.keys()),
         max_exposure=settings.poly_max_exposure,
         default_size=settings.poly_default_size,
@@ -306,6 +378,7 @@ async def lifespan(app: FastAPI):
         security_sandbox="active",
         audit_trail="active",
         whale_scanner="active" if whale_scanner else "disabled",
+        llm_validation=os.environ.get("LLM_VALIDATION_ENABLED", "true"),
     )
 
     _print_banner(settings)
@@ -366,26 +439,39 @@ def _print_banner(settings) -> None:
     mode_line = f"  Mode:     {mode_str:<37}"
 
     wallet_addr = (getattr(deps, "client", None) and deps.client.wallet_address) or "NOT SET"
+
+    # Build active strategy list from deps
+    active_strats = list((getattr(deps, "strategies", None) or {}).keys())
+    strat_line_1 = ", ".join(active_strats[:4]) if active_strats else "none"
+    strat_line_2 = ", ".join(active_strats[4:]) if len(active_strats) > 4 else ""
+
     banner = f"""
-╔══════════════════════════════════════════════════╗
-║      POLYMARKET COPY-TRADER v4.0                 ║
-║                                                  ║
-║{mode_line}║
-║  Port:      {settings.port:<37}║
-║  Wallet:    {wallet_addr[:37]:<37}║
-║  Exposure:  ${settings.poly_max_exposure:<36}║
-║                                                  ║
-║  Strategies: copytrade + redeemer + whale-scanner ║
-║                                                  ║
-║  Endpoints:                                      ║
-║    GET  /health        — Health check            ║
-║    GET  /status        — Bot status              ║
-║    GET  /positions     — Open positions          ║
-║    GET  /pnl           — Profit & Loss           ║
-║    POST /heartbeat/run — Trigger heartbeat       ║
-║    GET  /heartbeat/status — HEARTBEAT.md         ║
-║    GET  /whale-scanner/status — Scanner health   ║
-╚══════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════╗
+║      POLYMARKET TRADING BOT v5.0 — ALL STRATEGIES    ║
+║                                                      ║
+║{mode_line}     ║
+║  Port:      {settings.port:<41}║
+║  Wallet:    {wallet_addr[:41]:<41}║
+║  Exposure:  ${settings.poly_max_exposure:<40}║
+║                                                      ║
+║  Strategies: {strat_line_1:<40}║"""
+
+    if strat_line_2:
+        banner += f"""
+║  + {strat_line_2:<49}║"""
+
+    banner += f"""
+║  + whale_scanner + LLM_validator                     ║
+║                                                      ║
+║  Endpoints:                                          ║
+║    GET  /health        — Health check                ║
+║    GET  /status        — Bot status                  ║
+║    GET  /positions     — Open positions              ║
+║    GET  /pnl           — Profit & Loss               ║
+║    POST /heartbeat/run — Trigger heartbeat           ║
+║    GET  /heartbeat/status — HEARTBEAT.md             ║
+║    GET  /whale-scanner/status — Scanner health       ║
+╚══════════════════════════════════════════════════════════╝
 """
     print(banner, flush=True)
 
