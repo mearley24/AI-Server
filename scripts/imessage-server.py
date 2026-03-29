@@ -29,7 +29,13 @@ OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
 # Path to the Messages chat database on macOS
-CHAT_DB = Path.home() / "Library" / "Messages" / "chat.db"
+# Use env var if set, otherwise Path.home(), with hardcoded fallback for launchd/tmux
+CHAT_DB = Path(os.environ.get(
+    "IMESSAGE_DB_PATH",
+    str(Path.home() / "Library" / "Messages" / "chat.db")
+))
+if not CHAT_DB.exists():
+    CHAT_DB = Path("/Users/bob/Library/Messages/chat.db")
 
 
 class MessageMonitor:

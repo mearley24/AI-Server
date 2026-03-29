@@ -7,12 +7,19 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/matt/AI-Server/scripts/start_bob_workspace.sh</string>
+        <string>/Users/bob/AI-Server/scripts/start_bob_workspace.sh</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/bob</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
     <key>StandardOutPath</key>
     <string>/tmp/bob-workspace.log</string>
     <key>StandardErrorPath</key>
