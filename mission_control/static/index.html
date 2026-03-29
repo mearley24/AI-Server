@@ -625,12 +625,11 @@ footer a:hover { color: var(--teal); }
     <h1>Polymarket Trading Playbook</h1>
     <p class="subtitle" id="heroSubtitle">Loading trading data&hellip;</p>
     <div class="stat-row" id="heroStats">
-      <div class="stat-card"><div class="label">Total Invested</div><div class="value" id="statInvested">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Returned</div><div class="value" id="statReturned">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Total Deployed</div><div class="value" id="statInvested">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Sold + Redeemed</div><div class="value" id="statReturned">&mdash;</div></div>
       <div class="stat-card"><div class="label">Open Value</div><div class="value" id="statOpen">&mdash;</div></div>
       <div class="stat-card"><div class="label">Net P/L</div><div class="value" id="statPnl">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Trades</div><div class="value" id="statTrades">&mdash;</div></div>
-      <div class="stat-card"><div class="label">Redeemable</div><div class="value" id="statRedeemable">&mdash;</div></div>
+      <div class="stat-card"><div class="label">Buy Orders</div><div class="value" id="statTrades">&mdash;</div></div>
     </div>
   </div>
 </header>
@@ -758,12 +757,12 @@ const fmtSigned = (n, d=2) => {
 };
 const catNames = {
   crypto: 'Crypto',
-  crypto_updown: 'Crypto Up/Down',
   sports: 'Sports',
   weather: 'Weather',
   politics: 'Politics',
   economics: 'Economics',
   geopolitics: 'Geopolitics',
+  entertainment: 'Entertainment',
   other: 'Other'
 };
 
@@ -856,9 +855,8 @@ async function loadCategories() {
     pnlEl.textContent = fmtSigned(s.net_pnl);
     pnlEl.className = 'value ' + ((s.net_pnl || 0) >= 0 ? 'positive' : 'negative');
     $('#statTrades').textContent = s.total_trades || 0;
-    $('#statRedeemable').textContent = fmt(s.redeemable);
-    const src = data.source === 'live' ? 'live Polymarket API' : 'seed data (API offline)';
-    $('#heroSubtitle').textContent = `${s.total_trades || 0} positions across ${Object.keys(cats).length} categories \u2014 ${src}.`;
+    const src = data.source === 'live' ? 'Live from Polymarket' : data.source === 'error' ? 'API error' : 'Cached';
+    $('#heroSubtitle').textContent = `${s.total_trades || 0} buys across ${Object.keys(cats).length} categories \u2022 ${s.activity_count || 0} total activities \u2022 ${src}`;
 
     // Cards
     grid.innerHTML = sorted.map(([key, v]) => {
@@ -874,12 +872,11 @@ async function loadCategories() {
             <div class="cat-pnl ${isPos ? 'positive' : 'negative'}">${fmtSigned(v.total_pnl)}</div>
           </div>
           <div class="cat-stats">
-            <div class="cat-stat"><span class="cat-stat-label">Trades</span><br><span class="cat-stat-value">${v.trades}</span></div>
-            <div class="cat-stat"><span class="cat-stat-label">Bought</span><br><span class="cat-stat-value">${fmt(v.bought)}</span></div>
-            <div class="cat-stat"><span class="cat-stat-label">Returned</span><br><span class="cat-stat-value">${fmt(v.sold_redeemed || ((v.sold||0) + (v.redeemed||0)))}</span></div>
-            <div class="cat-stat"><span class="cat-stat-label">Open Value</span><br><span class="cat-stat-value">${fmt(v.open_value)}</span></div>
+            <div class="cat-stat"><span class="cat-stat-label">Buys</span><br><span class="cat-stat-value">${v.trades}</span></div>
+            <div class="cat-stat"><span class="cat-stat-label">Deployed</span><br><span class="cat-stat-value">${fmt(v.bought)}</span></div>
+            <div class="cat-stat"><span class="cat-stat-label">Returned</span><br><span class="cat-stat-value">${fmt(v.returned || ((v.sold||0) + (v.redeemed||0)))}</span></div>
+            <div class="cat-stat"><span class="cat-stat-label">Open</span><br><span class="cat-stat-value">${fmt(v.open_value)}${v.open_count ? ' ('+v.open_count+')' : ''}</span></div>
           </div>
-          <div class="cat-verdict">${esc(v.verdict)}</div>
         </div>
       `;
     }).join('');
