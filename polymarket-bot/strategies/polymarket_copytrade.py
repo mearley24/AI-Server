@@ -1781,6 +1781,9 @@ class PolymarketCopyTrader:
                     pnl_usd = payout - cost_basis
                     pnl_pct = ((current_price - pos.entry_price) / pos.entry_price * 100) if pos.entry_price > 0 else 0
                     result_label = "WON" if won else "LOST"
+                    # Update bankroll: add payout back (won = shares returned as $1 each, lost = $0)
+                    # The cost was already deducted when the trade was placed
+                    self._bankroll += payout
                     # Track P/L
                     if won:
                         self._daily_wins += abs(pnl_usd) if pnl_usd > 0 else 0
@@ -1795,7 +1798,9 @@ class PolymarketCopyTrader:
                         result=result_label,
                         entry_price=pos.entry_price,
                         pnl_usd=round(pnl_usd, 2),
+                        payout=round(payout, 2),
                         hold_hours=round(hold_hours, 1),
+                        bankroll=round(self._bankroll, 2),
                     )
                     _notify(
                         f"[{result_label}]",
