@@ -66,7 +66,7 @@ class ResponseCache:
 class Orchestrator:
     MAX_PROCESSED_EMAILS = 500
 
-    def __init__(self, memory=None):
+    def __init__(self, memory=None, job_mgr=None):
         self.http = httpx.AsyncClient(timeout=30.0)
         self.last_briefing_date = None
         self.processed_emails: set[str] = set()
@@ -75,6 +75,10 @@ class Orchestrator:
         self._memory = memory
         self._last_consolidation: float = 0
         self._health_failures: dict[str, int] = {}  # service -> consecutive failure count
+        self._job_worker = None
+        if job_mgr:
+            from job_worker import JobWorker
+            self._job_worker = JobWorker(job_mgr, self.http)
 
     async def run_loop(self):
         """Main orchestration loop — runs every 5 minutes."""
@@ -94,6 +98,7 @@ class Orchestrator:
         await self.check_calendar()
         await self.check_pipeline()
         await self.check_trading()
+        await self.check_jobs()
         await self.check_health()
         await self.consolidate_memories()
         await self.maybe_send_briefing()
@@ -314,6 +319,19 @@ class Orchestrator:
         logger.info("Trading check completed: %d positions", len(positions))
 
     # ------------------------------------------------------------------
+    # Job lifecycle check
+    # ------------------------------------------------------------------
+    async def check_jobs(self):
+        """Run the job worker tick — scans emails for leads, checks active jobs."""
+        if not self._job_worker:
+            return
+        try:
+            await self._job_worker.scan_emails_for_leads()
+            await self._job_worker.tick()
+        except Exception as e:
+            logger.debug("Job worker tick failed: %s", e)
+
+    # ------------------------------------------------------------------
     # Memory consolidation (NEW) — runs once per hour
     # ------------------------------------------------------------------
     async def consolidate_memories(self):
@@ -461,6 +479,17 @@ class Orchestrator:
                     trading_mem = self._memory.recall("trading_bot_status", category="trading_insight", limit=1)
                     if trading_mem:
                         briefing_parts.append(f"Trading: {trading_mem[0]['value']}")
+                except Exception:
+                    pass
+
+            # Active jobs summary
+            if self._job_worker:
+                try:
+                    active = self._job_worker._jobs.get_active_jobs()
+                    if active:
+                        briefing_parts.append(f"Active jobs: {len(active)}")
+                        for j in active[:5]:
+                            briefing_parts.append(f"  - {j['client_name']}: {j['project_name'] or '(unnamed)'} [{j['phase']}]")
                 except Exception:
                     pass
 

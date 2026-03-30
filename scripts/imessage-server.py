@@ -427,10 +427,16 @@ def ask_openclaw(message: str) -> str:
         lower = message.lower()
 
         if any(w in lower for w in ["help", "commands", "what can you do"]):
-            return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
+            return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 jobs \u2014 active job list\n\u2022 new job [name] \u2014 create a job\n\u2022 advance [name] \u2014 advance job phase\n\u2022 [name] status \u2014 specific job details\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
 
         if any(w in lower for w in ["trade", "trading", "p&l", "pnl", "profit", "balance", "portfolio"]):
             return get_trading_status()
+
+        if lower.startswith("new job ") or lower.startswith("advance "):
+            return get_job_status(message)
+
+        if any(w in lower for w in ["jobs", "active jobs"]) or _re.search(r'\bstatus\s+on\s+\w+', lower):
+            return get_job_status(message)
 
         if any(w in lower for w in ["email", "inbox", "mail"]):
             return get_email_status(message)
@@ -620,6 +626,120 @@ def get_weather_status() -> str:
         return "\n".join(parts)
     except Exception as e:
         return "Weather status unavailable: %s" % e
+
+
+def get_job_status(query: str = "") -> str:
+    """Get job status — list active jobs or search for specific job."""
+    import re as _re
+    lower = query.lower().strip() if query else ""
+
+    # "new job <client name>" — create a new job
+    new_match = _re.search(r'new\s+job\s+(.+)', lower)
+    if new_match:
+        client_name = new_match.group(1).strip().title()
+        try:
+            data = json.dumps({"client_name": client_name}).encode()
+            req = Request(
+                "%s/jobs" % OPENCLAW_URL,
+                data=data,
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urlopen(req, timeout=10)
+            job = json.loads(resp.read())
+            return "Created job #%d for %s [%s]" % (
+                job.get("job_id", 0), client_name, job.get("phase", "LEAD")
+            )
+        except Exception as e:
+            return "Failed to create job: %s" % e
+
+    # "advance <name>" — advance a specific job
+    advance_match = _re.search(r'advance\s+(.+)', lower)
+    if advance_match:
+        search = advance_match.group(1).strip()
+        try:
+            resp = urlopen(
+                "%s/jobs/search?q=%s" % (OPENCLAW_URL, quote(search, safe="")),
+                timeout=10,
+            )
+            data = json.loads(resp.read())
+            jobs = data.get("jobs", [])
+            if not jobs:
+                return "No job found matching '%s'" % search
+            job = jobs[0]
+            # Advance it
+            req = Request(
+                "%s/jobs/%d/advance" % (OPENCLAW_URL, job["job_id"]),
+                data=json.dumps({}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urlopen(req, timeout=10)
+            result = json.loads(resp.read())
+            new_job = result.get("job", {})
+            return "Advanced %s: %s -> %s" % (
+                job.get("client_name", "?"),
+                result.get("phase_from", "?"),
+                result.get("phase_to", new_job.get("phase", "?")),
+            )
+        except Exception as e:
+            return "Failed to advance job: %s" % e
+
+    # "status on <name>" or "<name> status" — specific job search
+    status_match = _re.search(r'(?:status\s+(?:on\s+)?|(.+?)\s+status)', lower)
+    specific_search = None
+    if status_match:
+        specific_search = (status_match.group(1) or "").strip()
+        # Remove "status" from the search if it leaked in
+        specific_search = specific_search.replace("status", "").strip()
+
+    # If there's a specific search term (not just "jobs" or "active jobs")
+    clean = _re.sub(r'\b(?:jobs?|active|status|on|show|list|get|my|all)\b', '', lower).strip()
+    if specific_search or clean:
+        search = specific_search or clean
+        if search:
+            try:
+                resp = urlopen(
+                    "%s/jobs/search?q=%s" % (OPENCLAW_URL, quote(search, safe="")),
+                    timeout=10,
+                )
+                data = json.loads(resp.read())
+                jobs = data.get("jobs", [])
+                if not jobs:
+                    return "No jobs matching '%s'" % search
+                parts = ["%d job(s) matching '%s':" % (len(jobs), search)]
+                for j in jobs:
+                    line = "#%d %s — %s [%s]" % (
+                        j["job_id"],
+                        j.get("client_name", "?"),
+                        j.get("project_name", "(unnamed)"),
+                        j.get("phase", "?"),
+                    )
+                    parts.append(line)
+                return "\n".join(parts)
+            except Exception as e:
+                return "Job search failed: %s" % e
+
+    # Default: list active jobs
+    try:
+        resp = urlopen("%s/jobs" % OPENCLAW_URL, timeout=10)
+        data = json.loads(resp.read())
+        jobs = data.get("jobs", [])
+        if not jobs:
+            return "No active jobs."
+        parts = ["Active jobs (%d):" % len(jobs)]
+        for j in jobs:
+            line = "#%d %s — %s [%s]" % (
+                j["job_id"],
+                j.get("client_name", "?"),
+                j.get("project_name", "(unnamed)"),
+                j.get("phase", "?"),
+            )
+            updated = j.get("updated_at", "")
+            if updated:
+                line += " (updated: %s)" % updated[:10]
+            parts.append(line)
+        return "\n".join(parts)
+    except Exception as e:
+        return "Jobs status unavailable: %s" % e
 
 
 def get_system_status() -> str:

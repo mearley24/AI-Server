@@ -26,6 +26,8 @@ from pydantic import BaseModel, Field
 
 from memory import MemoryPlugin
 from agent_bus import AgentBus
+from job_lifecycle import JobLifecycleManager
+import job_api
 
 # ---------------------------------------------------------------------------
 # Environment & logging
@@ -712,16 +714,20 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Job lifecycle API routes
+app.include_router(job_api.router)
+
 registry: AgentRegistry = None  # type: ignore
 llm: LLMRouter = None  # type: ignore
 orchestrator = None  # type: ignore
 memory: MemoryPlugin = None  # type: ignore
 agent_bus: AgentBus = None  # type: ignore
+job_mgr: JobLifecycleManager = None  # type: ignore
 
 
 @app.on_event("startup")
 async def startup():
-    global registry, llm, orchestrator, memory, agent_bus
+    global registry, llm, orchestrator, memory, agent_bus, job_mgr
     logger.info("OpenClaw starting up...")
     registry = AgentRegistry(AGENTS_DIR)
     llm = LLMRouter()
@@ -736,14 +742,19 @@ async def startup():
     memory = MemoryPlugin(str(DATA_DIR / "openclaw_memory.db"))
     logger.info("Persistent memory initialized")
 
+    # Initialize job lifecycle manager
+    job_mgr = JobLifecycleManager(str(DATA_DIR / "jobs.db"))
+    job_api.init(job_mgr)
+    logger.info("Job lifecycle manager initialized")
+
     # Initialize agent bus
     agent_bus = AgentBus(redis_url=REDIS_URL)
     await agent_bus.start()
     logger.info("Agent bus initialized")
 
-    # Start autonomous orchestration loop (pass memory for context)
+    # Start autonomous orchestration loop (pass memory + job manager for context)
     from orchestrator import Orchestrator
-    orchestrator = Orchestrator(memory=memory)
+    orchestrator = Orchestrator(memory=memory, job_mgr=job_mgr)
     asyncio.create_task(orchestrator.run_loop())
     logger.info("Autonomous orchestrator started")
 
@@ -756,6 +767,8 @@ async def shutdown():
         await orchestrator.close()
     if agent_bus:
         await agent_bus.stop()
+    if job_mgr:
+        job_mgr.close()
     if memory:
         memory.close()
     if llm:
@@ -1084,6 +1097,7 @@ async def root():
         "models": "/api/models",
         "memory": "/memory/stats",
         "agent_bus": "/agents/messages",
+        "jobs": "/jobs",
     }
 
 
