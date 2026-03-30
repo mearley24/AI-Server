@@ -1,0 +1,27 @@
+{
+  "project_routes": {
+    "stopletz1@gmail.com": "Projects/Topletz - 84 Aspen Meadow",
+    "austinhukill@shawconstruction.net": "Projects/Shaw - Timber Ridge",
+    "samantha@meadowmountainhomes.com": "Projects/MMH - 42 Red Spruce"
+  },
+  "category_routes": {
+    "team@buildingconnected.com": "Bids/Active",
+    "cloud@d-tools.com": "Vendor",
+    "snaponeaccounting@adiglobal.com": "Vendor/Snap One",
+    "FirstBank@eFirstBank.com": "Banking",
+    "support@vyde.io": "Vendor/Accounting",
+    "message-service@sender.zohosubscriptions.com": "Vendor/Accounting"
+  },
+  "domain_routes": {
+    "snapav.com": "Vendor/Snap One",
+    "efirstbank.com": "Banking",
+    "vyde.io": "Vendor/Accounting",
+    "docusign.net": "_project_match"
+  },
+  "marketing_patterns": [
+    "unsubscribe",
+    "netlify.com",
+    "linqapp.com",
+    "gauntletai.com"
+  ]
+}

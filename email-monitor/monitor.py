@@ -606,6 +606,18 @@ class EmailMonitor:
             except Exception as e:
                 logger.error("Monitor loop error: %s", e)
 
+            # Route emails to folders after processing
+            try:
+                from router import route_inbox_async
+                routed = await route_inbox_async(
+                    self.imap_server, self.imap_port,
+                    self.email_address, self.email_password,
+                )
+                if routed > 0:
+                    logger.info("Router moved %d email(s) to folders", routed)
+            except Exception as e:
+                logger.error("Email routing error: %s", e)
+
             await asyncio.sleep(self.poll_interval)
 
     def stop(self) -> None:
