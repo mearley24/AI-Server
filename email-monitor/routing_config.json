@@ -23,5 +23,42 @@
     "netlify.com",
     "linqapp.com",
     "gauntletai.com"
-  ]
+  ],
+  "active_bids": {
+    "Nordstrom Rack - Dillon": {
+      "gc": "Signal Hill Builders",
+      "contact": "Christine Verduzco",
+      "location": "Dillon, CO",
+      "due": "2026-04-02 14:00",
+      "scope": [
+        "Window Treatment",
+        "Acoustical Ceilings",
+        "Lighting",
+        "Signage"
+      ],
+      "status": "reviewing"
+    },
+    "Loro Piana - Aspen": {
+      "gc": "Sachse Construction",
+      "contact": "Chris Kroll",
+      "location": "Aspen, CO",
+      "due": "2026-04-06 17:00",
+      "scope": [
+        "Signage"
+      ],
+      "status": "reviewing"
+    },
+    "Hideaway Park Storage - Winter Park": {
+      "gc": "Buildings By Design",
+      "contact": "Cody Holland",
+      "location": "Winter Park, CO",
+      "due": "2026-04-01",
+      "scope": [
+        "Signage",
+        "Window Coverings",
+        "Acoustical Ceilings"
+      ],
+      "status": "reviewing"
+    }
+  }
 }
