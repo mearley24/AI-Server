@@ -119,7 +119,8 @@ def draft_email(
         "ccAddress": cc,
         "subject": subject,
         "content": body_html,
-        "action": "draft",  # Save as draft, do NOT send
+        "mode": "draft",  # CRITICAL: "mode":"draft" saves as draft. Without this, Zoho SENDS the email.
+        "mailFormat": "html",
     }
 
     resp = requests.post(
