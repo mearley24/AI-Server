@@ -24,6 +24,15 @@ logger = logging.getLogger("openclaw.client_tracker")
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 
+class ClientInfo(BaseModel):
+    email: str = ""
+    phone: str = ""
+    address: str = ""
+    company: str = ""
+    notes: str = ""
+    project_type: str = ""
+
+
 class ClientPreference(BaseModel):
     preference_type: str  # preference, concern, requirement, style
     content: str
@@ -50,6 +59,21 @@ class ClientTracker:
         conn = sqlite3.connect(self._db_path)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS clients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                email TEXT DEFAULT '',
+                phone TEXT DEFAULT '',
+                address TEXT DEFAULT '',
+                company TEXT DEFAULT '',
+                notes TEXT DEFAULT '',
+                project_type TEXT DEFAULT '',
+                source TEXT DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS client_preferences (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 client_name TEXT NOT NULL,
@@ -59,11 +83,69 @@ class ClientTracker:
                 created_at TEXT NOT NULL
             )
         """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_client_prefs_name ON client_preferences(client_name)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_client_prefs_type ON client_preferences(preference_type)")
         conn.commit()
         conn.close()
         logger.info("Client tracker DB initialized at %s", self._db_path)
+
+    def upsert_client(
+        self, name: str, email: str = "", phone: str = "", address: str = "",
+        company: str = "", notes: str = "", project_type: str = "", source: str = "",
+    ) -> dict:
+        """Create or update a client contact record."""
+        now = datetime.utcnow().isoformat()
+        existing = self._conn.execute(
+            "SELECT * FROM clients WHERE name = ?", (name.lower(),)
+        ).fetchone()
+
+        if existing:
+            # Update only non-empty fields
+            updates = []
+            params = []
+            for field, val in [("email", email), ("phone", phone), ("address", address),
+                               ("company", company), ("notes", notes),
+                               ("project_type", project_type), ("source", source)]:
+                if val:
+                    updates.append(f"{field} = ?")
+                    params.append(val)
+            if updates:
+                updates.append("updated_at = ?")
+                params.append(now)
+                params.append(name.lower())
+                self._conn.execute(
+                    f"UPDATE clients SET {', '.join(updates)} WHERE name = ?", params
+                )
+                self._conn.commit()
+            return self.get_client(name)
+        else:
+            self._conn.execute(
+                "INSERT INTO clients (name, email, phone, address, company, notes, project_type, source, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (name.lower(), email, phone, address, company, notes, project_type, source, now, now),
+            )
+            self._conn.commit()
+            logger.info("Client created: %s", name)
+            return self.get_client(name)
+
+    def get_client(self, name: str) -> dict:
+        """Get a client's contact record."""
+        row = self._conn.execute(
+            "SELECT * FROM clients WHERE name = ?", (name.lower(),)
+        ).fetchone()
+        if not row:
+            return {}
+        return dict(row)
+
+    def update_client_from_email(self, client_name: str, sender_email: str, sender_name: str = ""):
+        """Auto-update client contact info when we see their email."""
+        existing = self.get_client(client_name)
+        if existing:
+            if not existing.get("email") and sender_email:
+                self.upsert_client(client_name, email=sender_email)
+        else:
+            self.upsert_client(client_name, email=sender_email, source="email")
 
     def add_preference(self, client_name: str, preference_type: str, content: str, source: str = "manual"):
         """Add a client preference/concern/requirement."""
@@ -84,7 +166,11 @@ class ClientTracker:
         logger.info("Client preference added: %s [%s] %s", client_name, preference_type, content[:60])
 
     def get_client_profile(self, client_name: str) -> dict:
-        """Return all known preferences for a client."""
+        """Return full client profile: contact info + preferences."""
+        # Contact record
+        contact = self.get_client(client_name)
+
+        # Preferences
         rows = self._conn.execute(
             "SELECT * FROM client_preferences WHERE client_name = ? ORDER BY created_at DESC",
             (client_name.lower(),),
@@ -92,6 +178,12 @@ class ClientTracker:
 
         profile = {
             "client_name": client_name,
+            "email": contact.get("email", ""),
+            "phone": contact.get("phone", ""),
+            "address": contact.get("address", ""),
+            "company": contact.get("company", ""),
+            "project_type": contact.get("project_type", ""),
+            "notes": contact.get("notes", ""),
             "preferences": [],
             "concerns": [],
             "requirements": [],
@@ -203,6 +295,18 @@ async def get_client_profile(name: str):
     if not _tracker:
         return JSONResponse(status_code=503, content={"error": "Client tracker not initialized"})
     return _tracker.get_client_profile(name)
+
+
+@router.post("/{name}/info")
+async def update_client_info(name: str, info: ClientInfo):
+    """Create or update client contact info."""
+    if not _tracker:
+        return JSONResponse(status_code=503, content={"error": "Client tracker not initialized"})
+    result = _tracker.upsert_client(
+        name, email=info.email, phone=info.phone, address=info.address,
+        company=info.company, notes=info.notes, project_type=info.project_type,
+    )
+    return {"status": "ok", "client": result}
 
 
 @router.post("/{name}/preference")

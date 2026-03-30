@@ -448,22 +448,44 @@ def get_manuals() -> str:
 
 
 def get_client_profile(name: str) -> str:
-    """Get client preferences and profile."""
+    """Get client contact info + preferences."""
     try:
         resp = urlopen("%s/clients/%s/profile" % (OPENCLAW_URL, quote(name, safe="")), timeout=10)
         data = json.loads(resp.read())
         client = data.get("client_name", name)
-        parts = ["Client profile: %s" % client.title()]
+        parts = ["Client: %s" % client.title()]
+
+        # Contact info
+        email = data.get("email", "")
+        phone = data.get("phone", "")
+        address = data.get("address", "")
+        company = data.get("company", "")
+        project_type = data.get("project_type", "")
+
+        if email:
+            parts.append("Email: %s" % email)
+        if phone:
+            parts.append("Phone: %s" % phone)
+        if address:
+            parts.append("Address: %s" % address)
+        if company:
+            parts.append("Company: %s" % company)
+        if project_type:
+            parts.append("Project: %s" % project_type)
+
+        notes = data.get("notes", "")
+        if notes:
+            parts.append("Notes: %s" % notes)
 
         for section in ["preferences", "concerns", "requirements", "style"]:
             items = data.get(section, [])
             if items:
                 parts.append("\n%s:" % section.title())
                 for item in items[:5]:
-                    parts.append("  • %s" % item.get("content", ""))
+                    parts.append("  \u2022 %s" % item.get("content", ""))
 
         if len(parts) == 1:
-            return "No preferences tracked for %s yet." % name.title()
+            return "No info tracked for %s yet." % name.title()
         return "\n".join(parts)
     except Exception as e:
         return "Client profile unavailable: %s" % e

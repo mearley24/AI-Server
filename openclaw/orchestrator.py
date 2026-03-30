@@ -263,6 +263,11 @@ class Orchestrator:
                         break
 
                 if matched_client:
+                    # Auto-capture contact info from email
+                    self._client_tracker.update_client_from_email(
+                        matched_client, sender_addr, sender_name
+                    )
+                    # Extract preferences via LLM
                     logger.info("Extracting preferences for client %s from: %s", matched_client, subject[:60])
                     self._client_tracker.extract_preferences_from_analysis(
                         client_name=matched_client,
