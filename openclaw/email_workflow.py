@@ -21,13 +21,58 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 ZOHO_ACCOUNTS_URL = "https://mail.zoho.com/api/accounts"
+ZOHO_TOKEN_URL = "https://accounts.zoho.com/oauth/v2/token"
+
+# Module-level token cache
+_access_token_cache = {"token": None, "expires_at": 0}
 
 
-def get_zoho_account_id(access_token: str) -> str:
-    """Get the primary Zoho Mail account ID."""
+def get_access_token() -> str:
+    """Get a valid Zoho access token, refreshing if expired."""
+    import time
+
+    now = time.time()
+    if _access_token_cache["token"] and now < _access_token_cache["expires_at"] - 60:
+        return _access_token_cache["token"]
+
+    refresh_token = os.environ.get("ZOHO_REFRESH_TOKEN", "")
+    client_id = os.environ.get("ZOHO_CLIENT_ID", "")
+    client_secret = os.environ.get("ZOHO_CLIENT_SECRET", "")
+
+    if not all([refresh_token, client_id, client_secret]):
+        raise ValueError("ZOHO_REFRESH_TOKEN, ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET must be set")
+
+    resp = requests.post(
+        ZOHO_TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        },
+    )
+    resp.raise_for_status()
+    data = resp.json()
+
+    token = data["access_token"]
+    expires_in = data.get("expires_in", 3600)
+    _access_token_cache["token"] = token
+    _access_token_cache["expires_at"] = now + expires_in
+
+    logger.info("Refreshed Zoho access token (expires in %ds)", expires_in)
+    return token
+
+
+def get_zoho_account_id() -> str:
+    """Get the primary Zoho Mail account ID (cached in env or fetched)."""
+    account_id = os.environ.get("ZOHO_MAIL_ACCOUNT_ID", "")
+    if account_id:
+        return account_id
+
+    token = get_access_token()
     resp = requests.get(
         ZOHO_ACCOUNTS_URL,
-        headers={"Authorization": f"Zoho-oauthtoken {access_token}"},
+        headers={"Authorization": f"Zoho-oauthtoken {token}"},
     )
     resp.raise_for_status()
     data = resp.json()
@@ -58,12 +103,13 @@ def draft_email(
     Returns:
         dict with draft_id, subject, and status
     """
-    token = access_token or os.environ.get("ZOHO_MAIL_ACCESS_TOKEN")
-    if not token:
-        logger.error("ZOHO_MAIL_ACCESS_TOKEN not set")
-        return {"status": "error", "message": "No Zoho token"}
+    try:
+        token = access_token or get_access_token()
+    except Exception as e:
+        logger.error("Failed to get Zoho token: %s", e)
+        return {"status": "error", "message": str(e)}
 
-    account_id = get_zoho_account_id(token)
+    account_id = get_zoho_account_id()
 
     # Create draft via Zoho Mail API
     draft_url = f"https://mail.zoho.com/api/accounts/{account_id}/messages"
@@ -141,11 +187,12 @@ def update_draft(
     Update an existing draft after Matthew requests changes.
     Called when Matthew replies to the iMessage with edits.
     """
-    token = access_token or os.environ.get("ZOHO_MAIL_ACCESS_TOKEN")
-    if not token:
-        return {"status": "error", "message": "No Zoho token"}
+    try:
+        token = access_token or get_access_token()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
-    account_id = get_zoho_account_id(token)
+    account_id = get_zoho_account_id()
 
     update_url = f"https://mail.zoho.com/api/accounts/{account_id}/messages/{draft_id}"
     payload = {"content": body_html, "action": "draft"}
