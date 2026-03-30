@@ -79,7 +79,27 @@ CATEGORIES = {
     },
 }
 
-HIGH_PRIORITY_CATEGORIES = {"BID_INVITE", "CLIENT_INQUIRY"}
+HIGH_PRIORITY_CATEGORIES = {"BID_INVITE", "CLIENT_INQUIRY", "ACTIVE_CLIENT"}
+
+# Active client senders loaded from routing_config.json project_routes
+_ACTIVE_CLIENT_EMAILS: set[str] = set()
+
+
+def _load_active_client_emails() -> None:
+    """Load project_routes sender emails from routing_config.json."""
+    global _ACTIVE_CLIENT_EMAILS
+    config_path = os.path.join(os.path.dirname(__file__), "routing_config.json")
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        _ACTIVE_CLIENT_EMAILS = {
+            addr.lower() for addr in config.get("project_routes", {})
+        }
+        if _ACTIVE_CLIENT_EMAILS:
+            logger.info("Loaded %d active client emails from routing_config", len(_ACTIVE_CLIENT_EMAILS))
+    except Exception as e:
+        logger.warning("Could not load routing_config for active clients: %s", e)
+
 
 DB_PATH = os.getenv("EMAIL_DB_PATH", "/data/emails.db")
 
@@ -166,6 +186,10 @@ def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple
     Returns:
         (category, priority)
     """
+    # Check active client list first (highest priority — these are project contacts)
+    if sender.lower() in _ACTIVE_CLIENT_EMAILS:
+        return "ACTIVE_CLIENT", "high"
+
     text = f"{subject} {sender} {body_snippet}".lower()
 
     for category, config in CATEGORIES.items():
@@ -552,6 +576,20 @@ class EmailMonitor:
                             except Exception as e:
                                 logger.error("Bid triage failed: %s", e)
 
+                        # Auto-respond to active client emails
+                        if category == "ACTIVE_CLIENT":
+                            try:
+                                import sys as _sys
+                                _openclaw_dir = os.path.join(os.path.dirname(__file__), "..", "openclaw")
+                                if _openclaw_dir not in _sys.path:
+                                    _sys.path.insert(0, _openclaw_dir)
+                                from auto_responder import auto_respond
+                                await asyncio.to_thread(
+                                    auto_respond, sender_email, sender_name, subject, snippet, message_id,
+                                )
+                            except Exception as e:
+                                logger.error("Auto-respond failed: %s", e)
+
                         # Publish high-priority to Redis urgent channel
                         if category in HIGH_PRIORITY_CATEGORIES:
                             await publish_urgent(redis_client, category, sender_name or sender_email, subject)
@@ -592,6 +630,7 @@ class EmailMonitor:
             )
 
         init_db()
+        _load_active_client_emails()
 
         # One-time catchup: scan last N days of ALL emails (read + unread)
         if not self._catchup_done:
