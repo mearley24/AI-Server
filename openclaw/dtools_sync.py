@@ -27,7 +27,7 @@ if DTOOLS_CLIENT_PATH not in sys.path:
 
 # Client name aliases — maps job names to D-Tools names when they differ
 CLIENT_ALIASES = {
-    "topletz": ["toplets", "topletz", "stopletz"],
+    "topletz": ["toplets", "topletz", "stopletz", "stopletz1", "steve toplets", "steve topletz"],
 }
 
 
@@ -210,10 +210,15 @@ class DToolsSync:
             return
 
         try:
-            # Search both spellings
-            results = self._client.find_client_projects("Toplets")
-            if not results.get("matches"):
-                results = self._client.find_client_projects("Topletz")
+            # Search all spelling variations
+            results = None
+            for search_term in ["Steve Toplets", "Toplets", "Topletz", "Steve Topletz"]:
+                r = self._client.find_client_projects(search_term)
+                if r.get("matches"):
+                    results = r
+                    break
+            if not results:
+                results = r  # keep last result even if empty
             if results and self._memory:
                 self._memory.remember(
                     "dtools_topletz",

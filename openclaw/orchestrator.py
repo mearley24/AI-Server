@@ -253,13 +253,27 @@ class Orchestrator:
                 snippet = em.get("snippet", "")
                 summary = em.get("summary", "")
 
-                # Match sender to a known client (fuzzy)
+                # Match sender to a known client (fuzzy + alias)
+                # Aliases handle stopletz1 -> Topletz etc.
+                _ALIASES = {
+                    "topletz": ["toplets", "topletz", "stopletz", "stopletz1", "steve toplets", "steve topletz"],
+                }
                 matched_client = None
+                s_name = sender_name.lower()
+                s_addr = sender_addr.lower().split("@")[0]  # just the username part
                 for client_lower, client_orig in client_names.items():
-                    if (client_lower in sender_name.lower()
-                            or client_lower in sender_addr.lower()
-                            or sender_name.lower() in client_lower):
+                    # Direct match
+                    if (client_lower in s_name or s_name in client_lower
+                            or client_lower in s_addr or s_addr in client_lower):
                         matched_client = client_orig
+                        break
+                    # Alias match
+                    for alias_key, aliases in _ALIASES.items():
+                        if alias_key in client_lower or any(a in client_lower for a in aliases):
+                            if any(a in s_name or a in s_addr for a in aliases):
+                                matched_client = client_orig
+                                break
+                    if matched_client:
                         break
 
                 if matched_client:
