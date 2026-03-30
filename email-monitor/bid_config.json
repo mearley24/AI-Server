@@ -1,0 +1,24 @@
+{
+  "symphony_trades": [
+    "low voltage", "low-voltage", "av", "audio visual", "audio/visual",
+    "lighting", "lighting control", "network", "networking", "data",
+    "access control", "security", "surveillance", "cameras",
+    "signage", "window coverings", "window treatment", "shades", "blinds",
+    "acoustical ceilings", "acoustical", "technology", "smart home",
+    "home automation", "structured wiring", "fire alarm", "nurse call",
+    "paging", "intercom", "sound masking", "distributed audio"
+  ],
+  "symphony_territory": [
+    "Edwards", "Vail", "Avon", "Beaver Creek", "Eagle", "Minturn", "Gypsum",
+    "Wolcott", "Eagle County",
+    "Dillon", "Silverthorne", "Frisco", "Breckenridge", "Keystone", "Summit County",
+    "Aspen", "Snowmass", "Basalt", "Carbondale", "Pitkin County",
+    "Denver", "Lakewood", "Arvada", "Westminster", "Boulder", "Golden",
+    "Winter Park", "Grand County"
+  ],
+  "pass_trades": [
+    "plumbing", "hvac", "mechanical", "electrical", "concrete", "framing",
+    "roofing", "drywall", "painting", "flooring", "tile", "masonry",
+    "excavation", "demolition", "landscaping", "irrigation"
+  ]
+}

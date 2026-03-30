@@ -544,6 +544,14 @@ class EmailMonitor:
                             logger.error("Analysis failed for %s: %s", subject[:50], e)
                             analysis = None
 
+                        # Run bid triage for BuildingConnected invites
+                        if category == "BID_INVITE":
+                            try:
+                                from bid_triage import triage_bid_email
+                                await asyncio.to_thread(triage_bid_email, sender_email, subject, snippet)
+                            except Exception as e:
+                                logger.error("Bid triage failed: %s", e)
+
                         # Publish high-priority to Redis urgent channel
                         if category in HIGH_PRIORITY_CATEGORIES:
                             await publish_urgent(redis_client, category, sender_name or sender_email, subject)
