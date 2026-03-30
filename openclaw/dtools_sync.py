@@ -58,7 +58,14 @@ class DToolsSync:
         stats = {"opportunities_checked": 0, "projects_checked": 0, "jobs_created": 0, "jobs_linked": 0}
 
         try:
-            pipeline = self._client.get_active_pipeline()
+            # Fetch both open AND won opportunities, plus all projects
+            pipeline = {
+                "timestamp": "",
+                "open_opportunities": self._client.get_opportunities(status="Open"),
+                "won_opportunities": self._client.get_opportunities(status="Won"),
+                "active_projects": self._client.get_projects(status="Active"),
+                "all_projects": self._client.get_projects(),
+            }
         except Exception as e:
             logger.warning("D-Tools pipeline fetch failed: %s", e)
             return {"status": "error", "error": str(e)}
@@ -79,10 +86,12 @@ class DToolsSync:
             except Exception:
                 pass
 
-        # Sync opportunities
+        # Sync opportunities (open + won)
         try:
-            opps_data = pipeline.get("open_opportunities", {})
-            opps = opps_data.get("Data", []) if isinstance(opps_data, dict) else []
+            opps = []
+            for key in ("open_opportunities", "won_opportunities"):
+                opps_data = pipeline.get(key, {})
+                opps.extend(opps_data.get("Data", []) if isinstance(opps_data, dict) else [])
             existing_jobs = self._jobs.get_all_jobs()
             existing_clients = {j["client_name"].lower(): j for j in existing_jobs}
 
@@ -126,10 +135,21 @@ class DToolsSync:
         except Exception as e:
             logger.warning("D-Tools opportunity sync failed: %s", e)
 
-        # Sync projects
+        # Sync projects (active + all)
         try:
-            projs_data = pipeline.get("active_projects", {})
-            projs = projs_data.get("Data", []) if isinstance(projs_data, dict) else []
+            projs = []
+            for key in ("active_projects", "all_projects"):
+                projs_data = pipeline.get(key, {})
+                projs.extend(projs_data.get("Data", []) if isinstance(projs_data, dict) else [])
+            # Deduplicate by ID
+            seen_ids = set()
+            unique_projs = []
+            for p in projs:
+                pid = str(p.get("Id", p.get("id", "")))
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    unique_projs.append(p)
+            projs = unique_projs
             # Refresh after possible job creation
             existing_jobs = self._jobs.get_all_jobs()
             existing_clients = {j["client_name"].lower(): j for j in existing_jobs}

@@ -66,7 +66,7 @@ class ResponseCache:
 class Orchestrator:
     MAX_PROCESSED_EMAILS = 500
 
-    def __init__(self, memory=None, job_mgr=None, dtools_sync=None, knowledge_base=None, linear_sync=None):
+    def __init__(self, memory=None, job_mgr=None, dtools_sync=None, knowledge_base=None, linear_sync=None, client_tracker=None):
         self.http = httpx.AsyncClient(timeout=30.0)
         self.last_briefing_date = None
         self.processed_emails: set[str] = set()
@@ -79,6 +79,8 @@ class Orchestrator:
         self._job_worker = None
         self._dtools_sync = dtools_sync
         self._knowledge_base = knowledge_base
+        self._client_tracker = client_tracker
+        self._job_mgr = job_mgr
         if job_mgr:
             from job_worker import JobWorker
             self._job_worker = JobWorker(job_mgr, self.http, linear_sync=linear_sync)
@@ -86,6 +88,10 @@ class Orchestrator:
     async def run_loop(self):
         """Main orchestration loop — runs every 5 minutes."""
         logger.info("Orchestrator starting autonomous loop")
+
+        # One-time: scan ALL existing emails for client preferences
+        await self._backfill_client_preferences()
+
         while True:
             try:
                 await self.tick()
@@ -203,8 +209,70 @@ class Orchestrator:
 
             await self.notify("email", "\n".join(summary_lines))
 
+            # Extract client preferences from emails matching active jobs
+            await self._extract_client_preferences(new_emails)
+
         except Exception as e:
             logger.debug("Email check skipped: %s", e)
+
+    async def _backfill_client_preferences(self):
+        """One-time scan of all stored emails to extract client preferences for active jobs."""
+        if not self._client_tracker or not self._job_mgr:
+            return
+
+        try:
+            resp = await self.http.get(
+                f"{SERVICES['email']}/emails",
+                params={"limit": 200},
+            )
+            if resp.status_code != 200:
+                return
+            all_emails = resp.json()
+            if isinstance(all_emails, dict):
+                all_emails = all_emails.get("emails", [])
+
+            logger.info("Backfilling client preferences from %d stored emails", len(all_emails))
+            await self._extract_client_preferences(all_emails)
+            logger.info("Client preference backfill complete")
+        except Exception as e:
+            logger.debug("Client preference backfill failed: %s", e)
+
+    async def _extract_client_preferences(self, emails: list):
+        """Match emails to active job clients and extract preferences."""
+        if not self._client_tracker or not self._job_mgr:
+            return
+
+        try:
+            active_jobs = self._job_mgr.get_active_jobs()
+            client_names = {j["client_name"].lower(): j["client_name"] for j in active_jobs}
+
+            for em in emails:
+                sender_name = (em.get("sender_name") or "").strip()
+                sender_addr = (em.get("sender") or "").strip()
+                subject = em.get("subject", "")
+                snippet = em.get("snippet", "")
+                summary = em.get("summary", "")
+
+                # Match sender to a known client (fuzzy)
+                matched_client = None
+                for client_lower, client_orig in client_names.items():
+                    if (client_lower in sender_name.lower()
+                            or client_lower in sender_addr.lower()
+                            or sender_name.lower() in client_lower):
+                        matched_client = client_orig
+                        break
+
+                if matched_client:
+                    logger.info("Extracting preferences for client %s from: %s", matched_client, subject[:60])
+                    self._client_tracker.extract_preferences_from_analysis(
+                        client_name=matched_client,
+                        sender_name=sender_name,
+                        subject=subject,
+                        snippet=snippet,
+                        analysis_summary=summary,
+                    )
+        except Exception as e:
+            logger.debug("Client preference extraction error: %s", e)
 
     # ------------------------------------------------------------------
     # Calendar check

@@ -789,7 +789,7 @@ async def startup():
     orchestrator = Orchestrator(
         memory=memory, job_mgr=job_mgr,
         dtools_sync=dtools_sync, knowledge_base=knowledge_base,
-        linear_sync=linear_sync,
+        linear_sync=linear_sync, client_tracker=client_tracker,
     )
     asyncio.create_task(orchestrator.run_loop())
     logger.info("Autonomous orchestrator started")
