@@ -496,17 +496,25 @@ def ask_openclaw(message: str) -> str:
         if lower.strip() in ("manuals", "manual", "product manuals"):
             return get_manuals()
 
-        # Client profile commands
-        client_match = _re.search(r'(?:client|profile)\s+(\w+)', lower)
+        # Client profile commands — match "client topletz" or "topletz profile"
+        client_match = _re.search(r'(?:client|profile)\s+([\w\'\-]+(?:\s+[\w\'\-]+)?)', lower)
         if not client_match:
-            client_match = _re.search(r'(\w+)\s+profile', lower)
+            client_match = _re.search(r'([\w\'\-]+(?:\s+[\w\'\-]+)?)\s+profile', lower)
         if client_match:
-            return get_client_profile(client_match.group(1).strip())
+            return get_client_profile(client_match.group(1).strip().rstrip("'").rstrip("s").rstrip("'"))
 
+        # Job commands — check BEFORE generic "status" handler
         if lower.startswith("new job ") or lower.startswith("advance "):
             return get_job_status(message)
 
-        if any(w in lower for w in ["jobs", "active jobs"]) or _re.search(r'\bstatus\s+on\s+\w+', lower):
+        # "topletz status", "status on topletz", "jobs", "active jobs"
+        job_status_match = _re.search(r'([\w\'\-]+(?:\s+[\w\'\-]+)?)\s+status', lower)
+        if job_status_match:
+            name = job_status_match.group(1).strip()
+            if name not in ("system", "service", "bot", "trading", "email"):
+                return get_job_status(message)
+
+        if any(w in lower for w in ["jobs", "active jobs"]) or _re.search(r'\bstatus\s+on\s+[\w\']+', lower):
             return get_job_status(message)
 
         if any(w in lower for w in ["email", "inbox", "mail"]):
