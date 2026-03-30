@@ -45,7 +45,7 @@ OWNER_HANDLES = os.environ.get("OWNER_HANDLES", "").split(",")
 OWNER_HANDLES = [h.strip() for h in OWNER_HANDLES if h.strip()]
 OWNER_HANDLES.append(OWNER_PHONE)
 OWNER_HANDLES.append("mearley24@me.com")
-REPLY_TO = os.environ.get("REPLY_TO", "bob@symphonysh.com")
+REPLY_TO = os.environ.get("REPLY_TO", "+19705193013")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
@@ -219,6 +219,7 @@ end tell''' % (address, message)
 send "%s" to buddy "%s"
 end tell''' % (message, address)
 
+    log.info("[send] Attempting to send to: %s", address)
     for attempt in range(SEND_RETRY_COUNT):
         for label, cmd in [("iMessage", cmd_direct), ("SMS", cmd_sms), ("auto", cmd_simple)]:
             try:
@@ -231,10 +232,12 @@ end tell''' % (message, address)
                     log.info("[send] Sent via %s to %s (attempt %d/%d)",
                              label, address, attempt + 1, SEND_RETRY_COUNT)
                     return True
+                log.warning("[send] %s failed (rc=%d): %s",
+                            label, result.returncode, result.stderr.strip()[:200])
             except subprocess.TimeoutExpired:
-                continue
-            except Exception:
-                continue
+                log.warning("[send] %s timed out", label)
+            except Exception as e:
+                log.warning("[send] %s error: %s", label, e)
 
         if attempt < SEND_RETRY_COUNT - 1:
             backoff = SEND_RETRY_BACKOFF[attempt]
