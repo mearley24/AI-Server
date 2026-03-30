@@ -558,8 +558,7 @@ def get_system_status() -> str:
 def monitor_loop():
     """Background thread that checks for new messages every 3 seconds."""
     monitor = MessageMonitor()
-    log.info("[monitor] Watching for messages from %s (clean: %s)",
-             OWNER_PHONE, monitor.owner_phone_clean)
+    log.info("[monitor] Watching for handles: %s", monitor.owner_handles_clean)
     log.info("[monitor] Starting from message ID: %d", monitor.last_message_id)
 
     while True:
