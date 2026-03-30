@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # --- API URLs ---
     clob_api_url: str = Field(default="https://clob.polymarket.com")
     gamma_api_url: str = Field(default="https://gamma-api.polymarket.com")
-    ws_url: str = Field(default="wss://ws-subscriptions-clob.polymarket.com/ws/")
+    ws_url: str = Field(default="wss://ws-subscriptions-clob.polymarket.com/ws/market")
 
     # --- Service ---
     poly_log_level: str = Field(default="info")

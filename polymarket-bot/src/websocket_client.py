@@ -132,9 +132,9 @@ class OrderbookFeed:
                     consecutive_failures = 0
                     logger.info("ws_connected", url=self._ws_url)
 
-                    # Subscribe to all tracked tokens
-                    for token_id in self._subscriptions:
-                        await self._send_subscribe(ws, token_id)
+                    # Subscribe to all tracked tokens in one batch
+                    if self._subscriptions:
+                        await self._send_subscribe_batch(ws, list(self._subscriptions))
 
                     # Process messages
                     async for raw_msg in ws:
@@ -172,14 +172,24 @@ class OrderbookFeed:
                     backoff = min(backoff * 2, _BACKOFF_CAP)
 
     async def _send_subscribe(self, ws: Any, token_id: str) -> None:
-        """Send a subscription message for a token's orderbook."""
+        """Send a subscription message for a single token."""
         msg = {
-            "type": "subscribe",
-            "channel": "book",
-            "assets_id": token_id,
+            "assets_ids": [token_id],
+            "type": "market",
+            "custom_feature_enabled": True,
         }
         await ws.send(json.dumps(msg))
         logger.debug("ws_subscribed", token_id=token_id)
+
+    async def _send_subscribe_batch(self, ws: Any, token_ids: list[str]) -> None:
+        """Send a batch subscription for multiple tokens."""
+        msg = {
+            "assets_ids": token_ids,
+            "type": "market",
+            "custom_feature_enabled": True,
+        }
+        await ws.send(json.dumps(msg))
+        logger.info("ws_subscribed_batch", count=len(token_ids))
 
     async def _handle_message(self, msg: dict[str, Any]) -> None:
         """Process an incoming WebSocket message."""
