@@ -16,7 +16,7 @@ import os
 import re
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -104,6 +104,12 @@ def init_db(db_path: str = DB_PATH) -> None:
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS scan_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_emails_category ON emails(category)
     """)
     conn.execute("""
@@ -112,6 +118,31 @@ def init_db(db_path: str = DB_PATH) -> None:
     conn.commit()
     conn.close()
     logger.info("Email database initialized at %s", db_path)
+
+
+def get_scan_state(key: str, db_path: str = DB_PATH) -> Optional[str]:
+    """Read a persisted scan state value."""
+    try:
+        conn = sqlite3.connect(db_path)
+        row = conn.execute("SELECT value FROM scan_state WHERE key = ?", (key,)).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def set_scan_state(key: str, value: str, db_path: str = DB_PATH) -> None:
+    """Persist a scan state value."""
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT OR REPLACE INTO scan_state (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error("Failed to save scan state %s: %s", key, e)
 
 
 def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple[str, str]:
@@ -225,8 +256,11 @@ class EmailMonitor:
         self.email_password = os.getenv("SYMPHONY_EMAIL_PASSWORD", "")
         self.poll_interval = int(os.getenv("EMAIL_POLL_INTERVAL", "60"))
         self.redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
+        # How many days to look back on startup for read+unread emails
+        self.catchup_days = int(os.getenv("EMAIL_CATCHUP_DAYS", "3"))
         self._redis: Optional[aioredis.Redis] = None
         self._running = False
+        self._catchup_done = False
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
@@ -238,6 +272,117 @@ class EmailMonitor:
         mail = imaplib.IMAP4_SSL(self.imap_server, self.imap_port)
         mail.login(self.email_address, self.email_password)
         return mail
+
+    async def catchup_scan(self) -> int:
+        """
+        One-time startup scan: fetch ALL emails (read or unread) since the
+        last known scan timestamp. On first ever run, looks back N days.
+        Persists its high-water mark in SQLite so restarts only scan new mail.
+        Only notifies about emails not already in the SQLite database.
+        """
+        if not self.email_address or not self.email_password:
+            return 0
+
+        new_count = 0
+        try:
+            mail = await asyncio.to_thread(self._connect_imap)
+            mail.select("INBOX")
+
+            # Determine where to scan from
+            last_scan = get_scan_state("last_catchup_date")
+            if last_scan:
+                since_date = last_scan
+                logger.info("Catchup scan: resuming from last scan date %s", since_date)
+            else:
+                since_date = (datetime.now(timezone.utc) - timedelta(days=self.catchup_days)).strftime("%d-%b-%Y")
+                logger.info("Catchup scan: first run, looking back %d days (since %s)", self.catchup_days, since_date)
+
+            _, message_numbers = mail.search(None, "SINCE", since_date)
+            if not message_numbers[0]:
+                logger.info("Catchup scan: no emails since %s", since_date)
+                # Still save the high-water mark so next restart skips this range
+                set_scan_state("last_catchup_date", datetime.now(timezone.utc).strftime("%d-%b-%Y"))
+                mail.logout()
+                return 0
+
+            msg_nums = message_numbers[0].split()
+            logger.info("Catchup scan: found %d emails since %s", len(msg_nums), since_date)
+
+            redis_client = await self._get_redis()
+
+            for num in msg_nums:
+                try:
+                    # Use BODY.PEEK so we don't mark anything as read
+                    _, msg_data = mail.fetch(num, "(RFC822.HEADER BODY.PEEK[TEXT]<0.500>)")
+                    if not msg_data or not msg_data[0]:
+                        continue
+
+                    header_data = msg_data[0][1] if isinstance(msg_data[0], tuple) else b""
+                    msg = email.message_from_bytes(header_data)
+
+                    message_id = msg.get("Message-ID", f"unknown-{time.time()}")
+                    raw_from = decode_header_value(msg.get("From", ""))
+                    subject = decode_header_value(msg.get("Subject", "(no subject)"))
+                    date_str = msg.get("Date", "")
+
+                    sender_name, sender_email_addr = email.utils.parseaddr(raw_from)
+                    if not sender_name:
+                        sender_name = sender_email_addr.split("@")[0] if sender_email_addr else "Unknown"
+
+                    received_at = ""
+                    if date_str:
+                        parsed = email.utils.parsedate_to_datetime(date_str)
+                        received_at = parsed.isoformat()
+                    if not received_at:
+                        received_at = datetime.now(timezone.utc).isoformat()
+
+                    snippet = ""
+                    if len(msg_data) > 1 and isinstance(msg_data[1], tuple):
+                        body_bytes = msg_data[1][1]
+                        if isinstance(body_bytes, bytes):
+                            snippet = body_bytes.decode("utf-8", errors="replace")[:300]
+
+                    category, priority = categorize_email(subject, raw_from, snippet)
+
+                    is_new = store_email(
+                        message_id=message_id,
+                        sender=sender_email_addr,
+                        sender_name=sender_name,
+                        subject=subject,
+                        category=category,
+                        priority=priority,
+                        received_at=received_at,
+                        snippet=snippet,
+                    )
+
+                    if is_new:
+                        new_count += 1
+                        logger.info(
+                            "Catchup: [%s] from %s: %s",
+                            category, sender_email_addr, subject[:80],
+                        )
+
+                        if category in HIGH_PRIORITY_CATEGORIES:
+                            await publish_urgent(redis_client, category, sender_name or sender_email_addr, subject)
+
+                        await publish_new_email(redis_client, category, priority, sender_name or sender_email_addr, subject)
+
+                except Exception as e:
+                    logger.error("Catchup error processing email %s: %s", num, e)
+                    continue
+
+            mail.logout()
+
+            # Save today as the high-water mark so next restart only scans from here
+            set_scan_state("last_catchup_date", datetime.now(timezone.utc).strftime("%d-%b-%Y"))
+            logger.info("Catchup scan complete — saved high-water mark")
+
+        except imaplib.IMAP4.error as e:
+            logger.error("Catchup IMAP error: %s", e)
+        except Exception as e:
+            logger.error("Catchup scan error: %s", e)
+
+        return new_count
 
     async def poll_once(self) -> int:
         """
@@ -333,6 +478,10 @@ class EmailMonitor:
 
             mail.logout()
 
+            # Update high-water mark so catchup scan knows where polling left off
+            if new_count > 0:
+                set_scan_state("last_catchup_date", datetime.now(timezone.utc).strftime("%d-%b-%Y"))
+
         except imaplib.IMAP4.error as e:
             logger.error("IMAP error: %s", e)
         except Exception as e:
@@ -353,6 +502,19 @@ class EmailMonitor:
             )
 
         init_db()
+
+        # One-time catchup: scan last N days of ALL emails (read + unread)
+        if not self._catchup_done:
+            try:
+                count = await self.catchup_scan()
+                if count > 0:
+                    logger.info("Catchup scan found %d new email(s)", count)
+                else:
+                    logger.info("Catchup scan complete — no new emails to import")
+                self._catchup_done = True
+            except Exception as e:
+                logger.error("Catchup scan failed: %s", e)
+                self._catchup_done = True  # Don't retry forever
 
         while self._running:
             try:
