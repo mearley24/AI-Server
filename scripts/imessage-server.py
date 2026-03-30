@@ -45,7 +45,7 @@ OWNER_HANDLES = os.environ.get("OWNER_HANDLES", "").split(",")
 OWNER_HANDLES = [h.strip() for h in OWNER_HANDLES if h.strip()]
 OWNER_HANDLES.append(OWNER_PHONE)
 OWNER_HANDLES.append("mearley24@me.com")
-REPLY_TO = os.environ.get("REPLY_TO", "mearley24@me.com")
+REPLY_TO = os.environ.get("REPLY_TO", "bob@symphonysh.com")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
