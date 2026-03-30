@@ -232,10 +232,12 @@ class Orchestrator:
                 all_emails = all_emails.get("emails", [])
 
             logger.info("Backfilling client preferences from %d stored emails", len(all_emails))
+            active_jobs = self._job_mgr.get_active_jobs()
+            logger.info("Active jobs for backfill: %s", [(j['job_id'], j['client_name']) for j in active_jobs])
             await self._extract_client_preferences(all_emails)
             logger.info("Client preference backfill complete")
         except Exception as e:
-            logger.debug("Client preference backfill failed: %s", e)
+            logger.error("Client preference backfill failed: %s", e, exc_info=True)
 
     async def _extract_client_preferences(self, emails: list):
         """Match emails to active job clients and extract preferences."""

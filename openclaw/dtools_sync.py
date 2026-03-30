@@ -122,6 +122,7 @@ class DToolsSync:
                     opps.extend(opps_data.get("Data", opps_data.get("opportunities", [])))
             existing_jobs = self._jobs.get_all_jobs()
 
+            logger.info("D-Tools sync: processing %d opportunities", len(opps))
             for opp in opps:
                 stats["opportunities_checked"] += 1
                 client_name = opp.get("clientName", opp.get("ClientName", opp.get("client_name", ""))).strip()
@@ -135,6 +136,8 @@ class DToolsSync:
                 matched_job = None
                 for job in existing_jobs:
                     if _names_match(job["client_name"], client_name):
+                        logger.info("D-Tools MATCH: job #%d '%s' <-> D-Tools '%s' (%s)",
+                                    job["job_id"], job["client_name"], client_name, opp_name)
                         matched_job = job
                         break
 
