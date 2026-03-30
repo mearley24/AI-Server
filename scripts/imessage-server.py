@@ -41,6 +41,10 @@ logging.basicConfig(
 log = logging.getLogger("imessage-bridge")
 
 OWNER_PHONE = os.environ.get("OWNER_PHONE_NUMBER", "+19705193013")
+OWNER_HANDLES = os.environ.get("OWNER_HANDLES", "").split(",")
+OWNER_HANDLES = [h.strip() for h in OWNER_HANDLES if h.strip()]
+OWNER_HANDLES.append(OWNER_PHONE)
+OWNER_HANDLES.append("mearley24@me.com")
 REPLY_TO = os.environ.get("REPLY_TO", OWNER_PHONE)
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
@@ -88,7 +92,12 @@ class MessageMonitor:
 
     def __init__(self):
         self.last_message_id = self._get_latest_message_id()
-        self.owner_phone_clean = OWNER_PHONE.replace("+", "").replace("-", "").replace(" ", "")
+        self.owner_handles_clean = set()
+        for h in OWNER_HANDLES:
+            self.owner_handles_clean.add(h.lower().strip())
+            cleaned = h.replace("+", "").replace("-", "").replace(" ", "").lower().strip()
+            if cleaned:
+                self.owner_handles_clean.add(cleaned)
 
     def _get_latest_message_id(self) -> int:
         tmp_db = None
@@ -125,11 +134,12 @@ class MessageMonitor:
             messages = []
             for row in cursor:
                 rowid, text, date, handle_id = row
-                phone_clean = handle_id.replace("+", "").replace("-", "").replace(" ", "")
-                is_match = self.owner_phone_clean in phone_clean or phone_clean in self.owner_phone_clean
-                log.info("[monitor] DB row %d: handle=%s clean=%s owner=%s match=%s text=%s",
-                         rowid, handle_id, phone_clean, self.owner_phone_clean, is_match,
-                         (text or "")[:50])
+                handle_lower = handle_id.lower().strip()
+                handle_clean = handle_id.replace("+", "").replace("-", "").replace(" ", "").lower().strip()
+                is_match = (handle_lower in self.owner_handles_clean
+                            or handle_clean in self.owner_handles_clean)
+                log.info("[monitor] DB row %d: handle=%s match=%s text=%s",
+                         rowid, handle_id, is_match, (text or "")[:50])
                 if is_match:
                     messages.append({"id": rowid, "text": text, "from": handle_id})
                 self.last_message_id = max(self.last_message_id, rowid)
@@ -637,6 +647,7 @@ if __name__ == "__main__":
     log.info("[bridge] iMessage Bridge starting up")
     log.info("========================================")
     log.info("[bridge] OWNER_PHONE: %s", OWNER_PHONE)
+    log.info("[bridge] OWNER_HANDLES: %s", OWNER_HANDLES)
     log.info("[bridge] REPLY_TO: %s", REPLY_TO)
     log.info("[bridge] CHAT_DB: %s (exists: %s)", CHAT_DB, CHAT_DB.exists())
     log.info("[bridge] OpenClaw: %s", OPENCLAW_URL)
