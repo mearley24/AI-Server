@@ -126,7 +126,11 @@ class MessageMonitor:
             for row in cursor:
                 rowid, text, date, handle_id = row
                 phone_clean = handle_id.replace("+", "").replace("-", "").replace(" ", "")
-                if self.owner_phone_clean in phone_clean or phone_clean in self.owner_phone_clean:
+                is_match = self.owner_phone_clean in phone_clean or phone_clean in self.owner_phone_clean
+                log.info("[monitor] DB row %d: handle=%s clean=%s owner=%s match=%s text=%s",
+                         rowid, handle_id, phone_clean, self.owner_phone_clean, is_match,
+                         (text or "")[:50])
+                if is_match:
                     messages.append({"id": rowid, "text": text, "from": handle_id})
                 self.last_message_id = max(self.last_message_id, rowid)
             conn.close()
@@ -544,7 +548,9 @@ def get_system_status() -> str:
 def monitor_loop():
     """Background thread that checks for new messages every 3 seconds."""
     monitor = MessageMonitor()
-    log.info("[monitor] Watching for messages from %s", OWNER_PHONE)
+    log.info("[monitor] Watching for messages from %s (clean: %s)",
+             OWNER_PHONE, monitor.owner_phone_clean)
+    log.info("[monitor] Starting from message ID: %d", monitor.last_message_id)
 
     while True:
         try:
