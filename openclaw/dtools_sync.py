@@ -25,6 +25,30 @@ if DTOOLS_CLIENT_PATH not in sys.path:
     sys.path.insert(0, DTOOLS_CLIENT_PATH)
 
 
+# Client name aliases — maps job names to D-Tools names when they differ
+CLIENT_ALIASES = {
+    "topletz": ["toplets", "topletz", "stopletz"],
+}
+
+
+def _names_match(job_name: str, dtools_name: str) -> bool:
+    """Fuzzy client name matching with alias support."""
+    j = job_name.lower().strip()
+    d = dtools_name.lower().strip()
+
+    # Direct match
+    if j in d or d in j:
+        return True
+
+    # Alias match
+    for alias_key, aliases in CLIENT_ALIASES.items():
+        if any(a in j for a in aliases) or alias_key in j:
+            if any(a in d for a in aliases) or alias_key in d:
+                return True
+
+    return False
+
+
 class DToolsSync:
     """Syncs D-Tools opportunities/projects into the job lifecycle system."""
 
@@ -75,8 +99,10 @@ class DToolsSync:
             try:
                 opps = pipeline.get("open_opportunities", {})
                 projs = pipeline.get("active_projects", {})
-                opp_count = len(opps.get("Data", [])) if isinstance(opps, dict) else 0
-                proj_count = len(projs.get("Data", [])) if isinstance(projs, dict) else 0
+                opp_list = opps.get("Data", opps.get("opportunities", [])) if isinstance(opps, dict) else []
+                proj_list = projs.get("Data", projs.get("projects", [])) if isinstance(projs, dict) else []
+                opp_count = len(opp_list)
+                proj_count = len(proj_list)
                 self._memory.remember(
                     "dtools_pipeline_snapshot",
                     f"opportunities={opp_count}, projects={proj_count}, synced={pipeline.get('timestamp', '')}",
@@ -91,27 +117,26 @@ class DToolsSync:
             opps = []
             for key in ("open_opportunities", "won_opportunities"):
                 opps_data = pipeline.get(key, {})
-                opps.extend(opps_data.get("Data", []) if isinstance(opps_data, dict) else [])
+                # Handle both {"Data": [...]} and {"opportunities": [...]} formats
+                if isinstance(opps_data, dict):
+                    opps.extend(opps_data.get("Data", opps_data.get("opportunities", [])))
             existing_jobs = self._jobs.get_all_jobs()
-            existing_clients = {j["client_name"].lower(): j for j in existing_jobs}
 
             for opp in opps:
                 stats["opportunities_checked"] += 1
-                client_name = opp.get("ClientName", opp.get("client_name", "")).strip()
-                opp_name = opp.get("Name", opp.get("name", "")).strip()
-                opp_id = str(opp.get("Id", opp.get("id", "")))
+                client_name = opp.get("clientName", opp.get("ClientName", opp.get("client_name", ""))).strip()
+                opp_name = opp.get("name", opp.get("Name", "")).strip()
+                opp_id = str(opp.get("id", opp.get("Id", "")))
 
                 if not client_name:
                     continue
 
-                # Check for existing job match
-                matched_job = existing_clients.get(client_name.lower())
-                if not matched_job:
-                    # Try fuzzy match on opportunity name
-                    for job_client, job in existing_clients.items():
-                        if job_client in client_name.lower() or client_name.lower() in job_client:
-                            matched_job = job
-                            break
+                # Check for existing job match using alias-aware matching
+                matched_job = None
+                for job in existing_jobs:
+                    if _names_match(job["client_name"], client_name):
+                        matched_job = job
+                        break
 
                 if matched_job:
                     # Link D-Tools ID if not already linked
@@ -140,7 +165,8 @@ class DToolsSync:
             projs = []
             for key in ("active_projects", "all_projects"):
                 projs_data = pipeline.get(key, {})
-                projs.extend(projs_data.get("Data", []) if isinstance(projs_data, dict) else [])
+                if isinstance(projs_data, dict):
+                    projs.extend(projs_data.get("Data", projs_data.get("projects", [])))
             # Deduplicate by ID
             seen_ids = set()
             unique_projs = []
@@ -152,22 +178,20 @@ class DToolsSync:
             projs = unique_projs
             # Refresh after possible job creation
             existing_jobs = self._jobs.get_all_jobs()
-            existing_clients = {j["client_name"].lower(): j for j in existing_jobs}
 
             for proj in projs:
                 stats["projects_checked"] += 1
-                client_name = proj.get("ClientName", proj.get("client_name", "")).strip()
-                proj_name = proj.get("Name", proj.get("name", "")).strip()
+                client_name = proj.get("clientName", proj.get("ClientName", proj.get("client_name", ""))).strip()
+                proj_name = proj.get("name", proj.get("Name", "")).strip()
 
                 if not client_name:
                     continue
 
-                matched_job = existing_clients.get(client_name.lower())
-                if not matched_job:
-                    for job_client, job in existing_clients.items():
-                        if job_client in client_name.lower() or client_name.lower() in job_client:
-                            matched_job = job
-                            break
+                matched_job = None
+                for job in existing_jobs:
+                    if _names_match(job["client_name"], client_name):
+                        matched_job = job
+                        break
 
                 if matched_job and not matched_job.get("d_tools_id"):
                     proj_id = str(proj.get("Id", proj.get("id", "")))
@@ -189,7 +213,10 @@ class DToolsSync:
             return
 
         try:
-            results = self._client.find_client_projects("Topletz")
+            # Search both spellings
+            results = self._client.find_client_projects("Toplets")
+            if not results.get("matches"):
+                results = self._client.find_client_projects("Topletz")
             if results and self._memory:
                 self._memory.remember(
                     "dtools_topletz",
