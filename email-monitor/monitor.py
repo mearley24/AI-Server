@@ -11,6 +11,7 @@ import email
 import email.header
 import email.utils
 import imaplib
+import json
 import logging
 import os
 import re
@@ -115,6 +116,19 @@ def init_db(db_path: str = DB_PATH) -> None:
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_emails_received ON emails(received_at)
     """)
+
+    # Add analysis columns (backwards-compatible migration)
+    for col, default in [
+        ("analysis TEXT DEFAULT ''", "''"),
+        ("summary TEXT DEFAULT ''", "''"),
+        ("action_items TEXT DEFAULT ''", "''"),
+        ("urgency TEXT DEFAULT 'fyi'", "'fyi'"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE emails ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     conn.commit()
     conn.close()
     logger.info("Email database initialized at %s", db_path)
@@ -208,6 +222,49 @@ def store_email(
         conn.close()
 
 
+def update_email_analysis(
+    message_id: str,
+    analysis: dict,
+    db_path: str = DB_PATH,
+) -> None:
+    """Store LLM analysis results for an email."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """UPDATE emails SET analysis = ?, summary = ?, action_items = ?, urgency = ?
+               WHERE message_id = ?""",
+            (
+                json.dumps(analysis),
+                analysis.get("summary", ""),
+                analysis.get("action_items", ""),
+                analysis.get("urgency", "fyi"),
+                message_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def analyze_and_store(
+    message_id: str,
+    sender: str,
+    sender_name: str,
+    subject: str,
+    snippet: str,
+    category: str,
+) -> dict:
+    """Run email analysis in a thread and store results. Returns analysis dict."""
+    from analyzer import analyze_email
+
+    analysis = await asyncio.to_thread(
+        analyze_email, sender, sender_name, subject, snippet, category
+    )
+    await asyncio.to_thread(update_email_analysis, message_id, analysis)
+    logger.info("Analysis stored for %s: urgency=%s", subject[:50], analysis.get("urgency"))
+    return analysis
+
+
 async def publish_urgent(
     redis_client: aioredis.Redis,
     category: str,
@@ -215,7 +272,6 @@ async def publish_urgent(
     subject: str,
 ) -> None:
     """Publish urgent email notification to Redis channel."""
-    import json
     message = json.dumps({
         "category": category,
         "sender": sender,
@@ -232,16 +288,21 @@ async def publish_new_email(
     priority: str,
     sender: str,
     subject: str,
+    analysis: dict | None = None,
 ) -> None:
     """Publish any new email to Redis email:new channel."""
-    import json
-    message = json.dumps({
+    payload = {
         "category": category,
         "priority": priority,
         "sender": sender,
         "subject": subject,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    }
+    if analysis:
+        payload["summary"] = analysis.get("summary", "")
+        payload["action_items"] = analysis.get("action_items", "")
+        payload["urgency"] = analysis.get("urgency", "fyi")
+    message = json.dumps(payload)
     await redis_client.publish("email:new", message)
     logger.info("Published new email to Redis: [%s/%s] from %s", category, priority, sender)
 
@@ -366,6 +427,15 @@ class EmailMonitor:
                         )
                         # No Redis publish — catchup is silent, just indexes
 
+                        # Analyze emails that don't have analysis yet
+                        try:
+                            await analyze_and_store(
+                                message_id, sender_email_addr, sender_name,
+                                subject, snippet, category,
+                            )
+                        except Exception as e:
+                            logger.error("Catchup analysis failed for %s: %s", subject[:50], e)
+
                 except Exception as e:
                     logger.error("Catchup error processing email %s: %s", num, e)
                     continue
@@ -464,12 +534,25 @@ class EmailMonitor:
                             category, sender_email, subject[:80],
                         )
 
+                        # Run LLM analysis (non-blocking — runs in thread)
+                        try:
+                            analysis = await analyze_and_store(
+                                message_id, sender_email, sender_name,
+                                subject, snippet, category,
+                            )
+                        except Exception as e:
+                            logger.error("Analysis failed for %s: %s", subject[:50], e)
+                            analysis = None
+
                         # Publish high-priority to Redis urgent channel
                         if category in HIGH_PRIORITY_CATEGORIES:
                             await publish_urgent(redis_client, category, sender_name or sender_email, subject)
 
                         # Publish ALL new emails to email:new channel
-                        await publish_new_email(redis_client, category, priority, sender_name or sender_email, subject)
+                        await publish_new_email(
+                            redis_client, category, priority,
+                            sender_name or sender_email, subject, analysis,
+                        )
 
                 except Exception as e:
                     logger.error("Error processing email %s: %s", num, e)

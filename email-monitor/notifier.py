@@ -33,15 +33,24 @@ CATEGORY_LABELS = {
 
 
 def format_notification(data: dict, *, urgent: bool = False) -> str:
-    """Format email notification message."""
+    """Format email notification message with analysis summary."""
     category = data.get("category", "UNKNOWN")
     sender = data.get("sender", "Unknown")
     subject = data.get("subject", "(no subject)")
+    summary = data.get("summary", "")
+    action_items = data.get("action_items", "")
 
-    label = CATEGORY_LABELS.get(category, f"Email ({category})")
     prefix = "[URGENT] " if urgent else ""
+    header = f"{prefix}New email from {sender}: {subject}"
 
-    return f"{prefix}{label} from {sender}: {subject}"
+    # Build rich notification with analysis if available
+    parts = [header]
+    if summary and summary not in ("Analysis unavailable", "Analysis failed (parse error)"):
+        parts.append(summary)
+    if action_items:
+        parts.append(f"\u2192 {action_items.replace(chr(10), ', ').strip('- ')}")
+
+    return "\n".join(parts)
 
 
 def _priority_for_channel(channel: str, data: dict) -> str:

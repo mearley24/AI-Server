@@ -31,6 +31,9 @@ class EmailRecord(BaseModel):
     read: bool
     responded: bool
     snippet: str
+    summary: str = ""
+    action_items: str = ""
+    urgency: str = "fyi"
 
 
 class EmailSummary(BaseModel):
@@ -44,6 +47,27 @@ def _get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _row_to_record(r: sqlite3.Row) -> EmailRecord:
+    """Convert a SQLite row to an EmailRecord, handling missing columns."""
+    return EmailRecord(
+        id=r["id"],
+        message_id=r["message_id"],
+        sender=r["sender"],
+        sender_name=r["sender_name"],
+        subject=r["subject"],
+        category=r["category"],
+        priority=r["priority"],
+        received_at=r["received_at"],
+        stored_at=r["stored_at"],
+        read=bool(r["read"]),
+        responded=bool(r["responded"]),
+        snippet=r["snippet"] or "",
+        summary=r["summary"] if "summary" in r.keys() else "",
+        action_items=r["action_items"] if "action_items" in r.keys() else "",
+        urgency=r["urgency"] if "urgency" in r.keys() else "fyi",
+    )
 
 
 @app.get("/health")
@@ -82,23 +106,7 @@ async def list_emails(
         rows = conn.execute(query, params).fetchall()
         conn.close()
 
-        return [
-            EmailRecord(
-                id=r["id"],
-                message_id=r["message_id"],
-                sender=r["sender"],
-                sender_name=r["sender_name"],
-                subject=r["subject"],
-                category=r["category"],
-                priority=r["priority"],
-                received_at=r["received_at"],
-                stored_at=r["stored_at"],
-                read=bool(r["read"]),
-                responded=bool(r["responded"]),
-                snippet=r["snippet"] or "",
-            )
-            for r in rows
-        ]
+        return [_row_to_record(r) for r in rows]
     except Exception:
         return []
 
@@ -165,23 +173,7 @@ async def list_bids(limit: int = Query(50, ge=1, le=200)):
     ).fetchall()
     conn.close()
 
-    return [
-        EmailRecord(
-            id=r["id"],
-            message_id=r["message_id"],
-            sender=r["sender"],
-            sender_name=r["sender_name"],
-            subject=r["subject"],
-            category=r["category"],
-            priority=r["priority"],
-            received_at=r["received_at"],
-            stored_at=r["stored_at"],
-            read=bool(r["read"]),
-            responded=bool(r["responded"]),
-            snippet=r["snippet"] or "",
-        )
-        for r in rows
-    ]
+    return [_row_to_record(r) for r in rows]
 
 
 @app.post("/emails/{email_id}/mark-read")
@@ -196,3 +188,54 @@ async def mark_read(email_id: int):
     if changed == 0:
         return {"status": "not_found", "id": email_id}
     return {"status": "ok", "id": email_id}
+
+
+@app.get("/emails/search", response_model=list[EmailRecord])
+async def search_emails(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(20, ge=1, le=200),
+):
+    """Search emails by sender, subject, snippet, or analysis content."""
+    try:
+        conn = _get_db()
+        like = f"%{q}%"
+        rows = conn.execute(
+            """SELECT * FROM emails
+               WHERE sender LIKE ? OR sender_name LIKE ? OR subject LIKE ?
+                     OR snippet LIKE ? OR summary LIKE ? OR analysis LIKE ?
+               ORDER BY received_at DESC LIMIT ?""",
+            (like, like, like, like, like, like, limit),
+        ).fetchall()
+        conn.close()
+        return [_row_to_record(r) for r in rows]
+    except Exception:
+        return []
+
+
+@app.get("/emails/{email_id}/analysis")
+async def get_analysis(email_id: int):
+    """Get the LLM analysis for a single email."""
+    import json as _json
+
+    conn = _get_db()
+    row = conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
+    conn.close()
+
+    if not row:
+        return {"error": "not_found"}
+
+    analysis_raw = row["analysis"] if "analysis" in row.keys() else ""
+    try:
+        analysis = _json.loads(analysis_raw) if analysis_raw else {}
+    except Exception:
+        analysis = {}
+
+    return {
+        "id": row["id"],
+        "sender": row["sender_name"] or row["sender"],
+        "subject": row["subject"],
+        "summary": row["summary"] if "summary" in row.keys() else "",
+        "action_items": row["action_items"] if "action_items" in row.keys() else "",
+        "urgency": row["urgency"] if "urgency" in row.keys() else "fyi",
+        "suggested_reply": analysis.get("suggested_reply"),
+    }

@@ -433,7 +433,7 @@ def ask_openclaw(message: str) -> str:
             return get_trading_status()
 
         if any(w in lower for w in ["email", "inbox", "mail"]):
-            return get_email_status()
+            return get_email_status(message)
 
         if any(w in lower for w in ["calendar", "schedule", "meeting"]):
             return get_calendar_status()
@@ -506,11 +506,87 @@ def get_trading_status() -> str:
     return "\n".join(parts) if parts else "Trading status unavailable"
 
 
-def get_email_status() -> str:
-    """Get email summary."""
+def get_email_status(query: str = "") -> str:
+    """Smart email handler — searches or summarizes based on query."""
+    import re as _re
+
+    lower = query.lower().strip() if query else ""
+
+    # Check for specific sender queries: "what did steve send", "emails from topletz"
+    sender_match = _re.search(
+        r'(?:from|did|by)\s+(\w[\w\s]*?)(?:\s+(?:send|sent|email|write|wrote|say)|\?|$)',
+        lower,
+    )
+    search_terms = ""
+    if sender_match:
+        search_terms = sender_match.group(1).strip()
+    elif "bid" in lower:
+        # Bid-specific query
+        try:
+            resp = urlopen("http://127.0.0.1:8092/emails?category=BID_INVITE&unread=true&limit=10", timeout=10)
+            emails = json.loads(resp.read())
+            if not emails:
+                return "No new bid invites."
+            parts = ["Bid invites (%d):" % len(emails)]
+            for e in emails[:5]:
+                line = "%s: %s" % (e.get("sender_name") or e.get("sender", "?"), e.get("subject", ""))
+                summary = e.get("summary", "")
+                if summary and summary != "Analysis unavailable":
+                    line += "\n  %s" % summary
+                parts.append(line)
+            return "\n\n".join(parts)
+        except Exception as e:
+            return "Couldn't check bids: %s" % e
+    elif lower and lower not in ("email", "inbox", "mail", "emails"):
+        # Use whatever they typed (minus the keyword "email") as search terms
+        search_terms = _re.sub(r'\b(?:email|emails|inbox|mail|check|any|new|get|show|my)\b', '', lower).strip()
+
+    # If we have search terms, hit the search endpoint
+    if search_terms:
+        try:
+            url = "http://127.0.0.1:8092/emails/search?q=%s&limit=5" % quote(search_terms, safe="")
+            resp = urlopen(url, timeout=10)
+            emails = json.loads(resp.read())
+            if not emails:
+                return "No emails matching '%s'." % search_terms
+            parts = ["Found %d email(s) matching '%s':" % (len(emails), search_terms)]
+            for e in emails:
+                sender = e.get("sender_name") or e.get("sender", "?")
+                subj = e.get("subject", "")
+                summary = e.get("summary", "")
+                action = e.get("action_items", "")
+                line = "%s: %s" % (sender, subj)
+                if summary and summary not in ("Analysis unavailable", ""):
+                    line += "\n  %s" % summary
+                if action:
+                    line += "\n  → %s" % action.replace("\n", ", ").strip("- ")
+                parts.append(line)
+            return "\n\n".join(parts)
+        except Exception as e:
+            return "Email search failed: %s" % e
+
+    # Default: smart summary
     try:
         resp = urlopen("http://127.0.0.1:8092/emails/summary", timeout=10)
-        return "Email: %s" % json.loads(resp.read())
+        data = json.loads(resp.read())
+        unread = data.get("unread", 0)
+        total = data.get("total_today", 0)
+        actions = data.get("action_items", [])
+
+        parts = []
+        if unread:
+            parts.append("You have %d unread email%s (%d today)." % (unread, "s" if unread != 1 else "", total))
+        else:
+            parts.append("Inbox clear — no unread emails. %d received today." % total)
+
+        if actions:
+            parts.append("Top priorities:")
+            for a in actions[:5]:
+                sender = a.get("sender", "?")
+                subj = a.get("subject", "")
+                parts.append("• %s — %s" % (sender, subj))
+
+        return "\n".join(parts)
     except Exception as e:
         return "Email status unavailable: %s" % e
 
