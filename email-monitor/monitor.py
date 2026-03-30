@@ -278,7 +278,10 @@ class EmailMonitor:
         One-time startup scan: fetch ALL emails (read or unread) since the
         last known scan timestamp. On first ever run, looks back N days.
         Persists its high-water mark in SQLite so restarts only scan new mail.
-        Only notifies about emails not already in the SQLite database.
+
+        SILENT — stores emails in SQLite but does NOT push notifications.
+        This prevents a flood of alerts for old mail after a restart.
+        Only poll_once() (new incoming mail) triggers notifications.
         """
         if not self.email_address or not self.email_password:
             return 0
@@ -358,14 +361,10 @@ class EmailMonitor:
                     if is_new:
                         new_count += 1
                         logger.info(
-                            "Catchup: [%s] from %s: %s",
+                            "Catchup (silent): [%s] from %s: %s",
                             category, sender_email_addr, subject[:80],
                         )
-
-                        if category in HIGH_PRIORITY_CATEGORIES:
-                            await publish_urgent(redis_client, category, sender_name or sender_email_addr, subject)
-
-                        await publish_new_email(redis_client, category, priority, sender_name or sender_email_addr, subject)
+                        # No Redis publish — catchup is silent, just indexes
 
                 except Exception as e:
                     logger.error("Catchup error processing email %s: %s", num, e)
@@ -375,7 +374,7 @@ class EmailMonitor:
 
             # Save today as the high-water mark so next restart only scans from here
             set_scan_state("last_catchup_date", datetime.now(timezone.utc).strftime("%d-%b-%Y"))
-            logger.info("Catchup scan complete — saved high-water mark")
+            logger.info("Catchup scan complete (silent) — indexed %d new email(s), saved high-water mark", new_count)
 
         except imaplib.IMAP4.error as e:
             logger.error("Catchup IMAP error: %s", e)
