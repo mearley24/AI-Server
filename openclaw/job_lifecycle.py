@@ -457,6 +457,47 @@ class JobLifecycleManager:
             "phase_to": new_phase.value,
         }
 
+    def rename_job(self, job_id: int, client_name: str = None, project_name: str = None) -> Optional[dict]:
+        """Rename a job's client or project name."""
+        job = self.get_job(job_id)
+        if not job:
+            return None
+
+        now = datetime.utcnow().isoformat()
+        updates = []
+        params = []
+        details_parts = []
+
+        if client_name:
+            updates.append("client_name = ?")
+            params.append(client_name)
+            details_parts.append(f"client: {job['client_name']} -> {client_name}")
+        if project_name:
+            updates.append("project_name = ?")
+            params.append(project_name)
+            details_parts.append(f"project: {job['project_name']} -> {project_name}")
+
+        if not updates:
+            return job
+
+        updates.append("updated_at = ?")
+        params.append(now)
+        params.append(job_id)
+
+        conn = self._get_conn()
+        conn.execute(
+            f"UPDATE jobs SET {', '.join(updates)} WHERE job_id = ?",
+            params,
+        )
+        conn.execute(
+            """INSERT INTO job_events (job_id, event_type, phase_from, phase_to, details, timestamp)
+               VALUES (?, 'rename', ?, ?, ?, ?)""",
+            (job_id, job["phase"], job["phase"], "Renamed: " + ", ".join(details_parts), now),
+        )
+        conn.commit()
+        logger.info("job_renamed id=%d %s", job_id, ", ".join(details_parts))
+        return self.get_job(job_id)
+
     def add_note(self, job_id: int, note: str) -> Optional[dict]:
         """Add a note to a job. Appends to existing notes and logs event."""
         job = self.get_job(job_id)

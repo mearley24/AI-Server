@@ -504,7 +504,7 @@ def ask_openclaw(message: str) -> str:
             return get_client_profile(client_match.group(1).strip().rstrip("'").rstrip("s").rstrip("'"))
 
         # Job commands — check BEFORE generic "status" handler
-        if lower.startswith("new job ") or lower.startswith("advance "):
+        if lower.startswith("new job ") or lower.startswith("advance ") or lower.startswith("rename "):
             return get_job_status(message)
 
         # "topletz status", "status on topletz", "jobs", "active jobs"
@@ -730,6 +730,32 @@ def get_job_status(query: str = "") -> str:
             )
         except Exception as e:
             return "Failed to create job: %s" % e
+
+    # "rename <search> to <new name>" — rename a job's client
+    rename_match = _re.search(r'rename\s+(.+?)\s+to\s+(.+)', lower)
+    if rename_match:
+        search = rename_match.group(1).strip()
+        new_name = rename_match.group(2).strip().title()
+        try:
+            resp = urlopen(
+                "%s/jobs/search?q=%s" % (OPENCLAW_URL, quote(search, safe="")),
+                timeout=10,
+            )
+            data = json.loads(resp.read())
+            jobs = data.get("jobs", [])
+            if not jobs:
+                return "No job found matching '%s'" % search
+            job = jobs[0]
+            req = Request(
+                "%s/jobs/%d/rename" % (OPENCLAW_URL, job["job_id"]),
+                data=json.dumps({"client_name": new_name}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urlopen(req, timeout=10)
+            result = json.loads(resp.read())
+            return "Renamed job #%d: %s -> %s" % (job["job_id"], job.get("client_name", "?"), new_name)
+        except Exception as e:
+            return "Failed to rename: %s" % e
 
     # "advance <name>" — advance a specific job
     advance_match = _re.search(r'advance\s+(.+)', lower)

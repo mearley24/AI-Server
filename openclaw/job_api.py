@@ -118,6 +118,16 @@ async def advance_phase(job_id: int, req: AdvanceRequest = None):
     return result
 
 
+@router.post("/{job_id}/rename")
+async def rename_job(job_id: int, req: dict):
+    """Rename a job's client or project name."""
+    mgr = _mgr()
+    job = mgr.rename_job(job_id, client_name=req.get("client_name"), project_name=req.get("project_name"))
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return job
+
+
 @router.post("/{job_id}/note")
 async def add_note(job_id: int, req: NoteRequest):
     """Add a note to a job."""
