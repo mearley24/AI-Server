@@ -391,6 +391,36 @@ class JobLifecycleManager:
             jobs.append(job)
         return jobs
 
+    def delete_job(self, job_id: int) -> bool:
+        """Delete a job and its events."""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM job_events WHERE job_id = ?", (job_id,))
+        conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+        conn.commit()
+        return conn.total_changes > 0
+
+    def cleanup_auto_created(self, keep_ids: list[int] = None) -> int:
+        """Delete all auto-created jobs except those in keep_ids."""
+        conn = self._get_conn()
+        if keep_ids:
+            placeholders = ",".join("?" for _ in keep_ids)
+            rows = conn.execute(
+                f"SELECT job_id FROM jobs WHERE job_id NOT IN ({placeholders})",
+                keep_ids,
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT job_id FROM jobs").fetchall()
+
+        count = 0
+        for row in rows:
+            jid = row["job_id"] if isinstance(row, dict) else row[0]
+            conn.execute("DELETE FROM job_events WHERE job_id = ?", (jid,))
+            conn.execute("DELETE FROM jobs WHERE job_id = ?", (jid,))
+            count += 1
+        conn.commit()
+        logger.info("Cleaned up %d auto-created jobs", count)
+        return count
+
     def search_jobs(self, query: str) -> list[dict]:
         """Search jobs by client name or project name."""
         conn = self._get_conn()

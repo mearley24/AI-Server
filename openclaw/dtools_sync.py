@@ -144,19 +144,16 @@ class DToolsSync:
                         self._jobs.link_dtools(matched_job["job_id"], opp_id)
                         stats["jobs_linked"] += 1
                         logger.info("Linked D-Tools opp %s to job #%d (%s)", opp_id, matched_job["job_id"], client_name)
-                else:
-                    # Create new job from D-Tools opportunity
-                    status = opp.get("Status", opp.get("status", ""))
-                    job = self._jobs.create_job(
-                        client_name=client_name,
-                        project_name=opp_name,
-                        phase="LEAD",
-                        d_tools_id=opp_id,
-                        notes=f"Source: D-Tools opportunity\nStatus: {status}",
-                        metadata={"source": "dtools", "dtools_status": status},
-                    )
-                    stats["jobs_created"] += 1
-                    logger.info("Created job #%d from D-Tools: %s — %s", job["job_id"], client_name, opp_name)
+                # No existing job match — log for pipeline visibility
+                # Full jobs are created manually. D-Tools entries go to Linear
+                # backlog as pipeline opportunities for the owner to review.
+                opp_status = opp.get("systemState", opp.get("status", ""))
+                opp_price = opp.get("price", 0)
+                logger.info(
+                    "D-Tools pipeline: %s — %s (%s, $%.0f) — no active job",
+                    client_name, opp_name, opp_status, opp_price or 0,
+                )
+                stats["pipeline_logged"] = stats.get("pipeline_logged", 0) + 1
         except Exception as e:
             logger.warning("D-Tools opportunity sync failed: %s", e)
 

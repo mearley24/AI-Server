@@ -87,7 +87,12 @@ class JobWorker:
     # ------------------------------------------------------------------
 
     async def scan_emails_for_leads(self):
-        """Scan recent emails for potential new client inquiries. Creates LEAD jobs."""
+        """Scan recent client inquiry emails. Notifies owner but does NOT auto-create jobs.
+
+        Jobs should be created manually ('new job <name>') to avoid spam from
+        miscategorized emails. Bob notifies about potential leads so the owner
+        can decide which ones to track.
+        """
         try:
             resp = await self._http.get(
                 f"{SERVICES['email']}/emails",
@@ -112,38 +117,15 @@ class JobWorker:
             summary = email.get("summary", "")
 
             if not sender_name:
-                # Extract name from email address
                 sender_name = sender_addr.split("@")[0].replace(".", " ").title()
 
             # Skip if we already have a job for this client
             if sender_name.lower() in existing_clients:
                 continue
 
-            # Create a new lead job
-            job = self._jobs.create_job(
-                client_name=sender_name,
-                project_name=subject[:100],
-                phase="LEAD",
-                notes=f"Source: email from {sender_addr}\nSubject: {subject}\nSummary: {summary}",
-                metadata={"source_email": sender_addr, "source_subject": subject},
-            )
-            logger.info("new_lead_created job_id=%d client=%s", job["job_id"], sender_name)
-
-            # Create Linear project for new lead
-            if self._linear_sync:
-                try:
-                    await self._linear_sync.create_phase_issues(
-                        job["job_id"], "LEAD", sender_name, subject[:100],
-                    )
-                except Exception as e:
-                    logger.debug("linear_lead_sync_failed: %s", e)
-
-            # Notify owner
-            msg = f"New lead: {sender_name} — {subject}"
-            if summary:
-                msg += f"\n{summary}"
-            msg += "\nNext: schedule consultation"
-            await self._notify("jobs", msg)
+            # Log it and notify — don't auto-create jobs.
+            # Owner creates jobs manually with 'new job <name>'.
+            logger.info("potential_lead client=%s subject=%s", sender_name, subject[:60])
 
     # ------------------------------------------------------------------
     # Phase-specific checks

@@ -118,6 +118,24 @@ async def advance_phase(job_id: int, req: AdvanceRequest = None):
     return result
 
 
+@router.post("/cleanup")
+async def cleanup_jobs(req: dict = {}):
+    """Delete all jobs except those in keep_ids list."""
+    mgr = _mgr()
+    keep = req.get("keep_ids", [])
+    count = mgr.cleanup_auto_created(keep_ids=keep if keep else None)
+    return {"deleted": count}
+
+
+@router.delete("/{job_id}")
+async def delete_job(job_id: int):
+    """Delete a single job."""
+    mgr = _mgr()
+    if mgr.delete_job(job_id):
+        return {"status": "deleted", "job_id": job_id}
+    raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+
 @router.post("/{job_id}/rename")
 async def rename_job(job_id: int, req: dict):
     """Rename a job's client or project name."""
