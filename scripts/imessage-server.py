@@ -412,6 +412,63 @@ Content from %s:
         return "Couldn't analyze link: %s" % e
 
 
+def get_proposals() -> str:
+    """List proposals from knowledge base."""
+    try:
+        resp = urlopen("%s/knowledge/proposals" % OPENCLAW_URL, timeout=10)
+        data = json.loads(resp.read())
+        proposals = data.get("proposals", [])
+        if not proposals:
+            return "No proposals found in the knowledge base."
+        parts = ["Proposals (%d):" % len(proposals)]
+        for p in proposals[:10]:
+            size_kb = p.get("size_bytes", 0) / 1024
+            parts.append("  %s (%.0f KB, modified %s)" % (
+                p.get("filename", "?"), size_kb, p.get("modified_at", "?")[:10]
+            ))
+        return "\n".join(parts)
+    except Exception as e:
+        return "Proposals unavailable: %s" % e
+
+
+def get_manuals() -> str:
+    """List available manuals from knowledge base."""
+    try:
+        resp = urlopen("%s/knowledge/manuals" % OPENCLAW_URL, timeout=10)
+        data = json.loads(resp.read())
+        manuals = data.get("manuals", [])
+        if not manuals:
+            return "No manuals found in the knowledge base."
+        parts = ["Manuals (%d):" % len(manuals)]
+        for m in manuals[:10]:
+            parts.append("  %s (%s)" % (m.get("filename", "?"), m.get("tags", "")))
+        return "\n".join(parts)
+    except Exception as e:
+        return "Manuals unavailable: %s" % e
+
+
+def get_client_profile(name: str) -> str:
+    """Get client preferences and profile."""
+    try:
+        resp = urlopen("%s/clients/%s/profile" % (OPENCLAW_URL, quote(name, safe="")), timeout=10)
+        data = json.loads(resp.read())
+        client = data.get("client_name", name)
+        parts = ["Client profile: %s" % client.title()]
+
+        for section in ["preferences", "concerns", "requirements", "style"]:
+            items = data.get(section, [])
+            if items:
+                parts.append("\n%s:" % section.title())
+                for item in items[:5]:
+                    parts.append("  • %s" % item.get("content", ""))
+
+        if len(parts) == 1:
+            return "No preferences tracked for %s yet." % name.title()
+        return "\n".join(parts)
+    except Exception as e:
+        return "Client profile unavailable: %s" % e
+
+
 def ask_openclaw(message: str) -> str:
     """Send a message to OpenClaw and get a response."""
     try:
@@ -427,10 +484,24 @@ def ask_openclaw(message: str) -> str:
         lower = message.lower()
 
         if any(w in lower for w in ["help", "commands", "what can you do"]):
-            return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 jobs \u2014 active job list\n\u2022 new job [name] \u2014 create a job\n\u2022 advance [name] \u2014 advance job phase\n\u2022 [name] status \u2014 specific job details\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
+            return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 jobs \u2014 active job list\n\u2022 new job [name] \u2014 create a job\n\u2022 advance [name] \u2014 advance job phase\n\u2022 [name] status \u2014 specific job details\n\u2022 proposals \u2014 list proposals\n\u2022 manuals \u2014 list manuals\n\u2022 client [name] \u2014 client profile\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
 
         if any(w in lower for w in ["trade", "trading", "p&l", "pnl", "profit", "balance", "portfolio"]):
             return get_trading_status()
+
+        # Knowledge base commands
+        if lower.strip() in ("proposals", "proposal", "past proposals"):
+            return get_proposals()
+
+        if lower.strip() in ("manuals", "manual", "product manuals"):
+            return get_manuals()
+
+        # Client profile commands
+        client_match = _re.search(r'(?:client|profile)\s+(\w+)', lower)
+        if not client_match:
+            client_match = _re.search(r'(\w+)\s+profile', lower)
+        if client_match:
+            return get_client_profile(client_match.group(1).strip())
 
         if lower.startswith("new job ") or lower.startswith("advance "):
             return get_job_status(message)

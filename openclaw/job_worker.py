@@ -35,10 +35,11 @@ VENDOR_KEYWORDS = [
 class JobWorker:
     """Background worker that checks job state on each orchestrator tick."""
 
-    def __init__(self, job_mgr: JobLifecycleManager, http: httpx.AsyncClient = None):
+    def __init__(self, job_mgr: JobLifecycleManager, http: httpx.AsyncClient = None, linear_sync=None):
         self._jobs = job_mgr
         self._http = http or httpx.AsyncClient(timeout=30.0)
         self._last_proposal_check: dict[int, str] = {}  # job_id -> last check timestamp
+        self._linear_sync = linear_sync
 
     async def tick(self):
         """Run one check cycle across all active jobs."""
@@ -127,6 +128,15 @@ class JobWorker:
                 metadata={"source_email": sender_addr, "source_subject": subject},
             )
             logger.info("new_lead_created job_id=%d client=%s", job["job_id"], sender_name)
+
+            # Create Linear project for new lead
+            if self._linear_sync:
+                try:
+                    await self._linear_sync.create_phase_issues(
+                        job["job_id"], "LEAD", sender_name, subject[:100],
+                    )
+                except Exception as e:
+                    logger.debug("linear_lead_sync_failed: %s", e)
 
             # Notify owner
             msg = f"New lead: {sender_name} — {subject}"
@@ -220,8 +230,11 @@ class JobWorker:
                 if opp_id == d_tools_id:
                     status = opp.get("Status", opp.get("status", ""))
                     if status.lower() == "won" and job["phase"] != Phase.WON.value:
+                        old_phase = job["phase"]
                         result = self._jobs.advance_phase(job["job_id"], f"D-Tools opportunity marked as Won")
                         if result:
+                            new_phase = result.get("job", {}).get("phase", Phase.WON.value)
+                            await self._sync_linear_phase(job, old_phase, new_phase)
                             await self._notify(
                                 "jobs",
                                 f"Job WON: {job['client_name']} — {job['project_name']}! "
@@ -346,6 +359,18 @@ class JobWorker:
             )
         except Exception as e:
             logger.debug("job_notify_failed: %s", e)
+
+    async def _sync_linear_phase(self, job: dict, old_phase: str, new_phase: str):
+        """Notify Linear sync when a job advances phase."""
+        if not self._linear_sync:
+            return
+        try:
+            await self._linear_sync.on_phase_advance(
+                job["job_id"], old_phase, new_phase,
+                job["client_name"], job.get("project_name", ""),
+            )
+        except Exception as e:
+            logger.debug("linear_sync_failed job_id=%d: %s", job["job_id"], e)
 
     async def close(self):
         await self._http.aclose()

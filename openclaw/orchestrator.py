@@ -66,7 +66,7 @@ class ResponseCache:
 class Orchestrator:
     MAX_PROCESSED_EMAILS = 500
 
-    def __init__(self, memory=None, job_mgr=None):
+    def __init__(self, memory=None, job_mgr=None, dtools_sync=None, knowledge_base=None, linear_sync=None):
         self.http = httpx.AsyncClient(timeout=30.0)
         self.last_briefing_date = None
         self.processed_emails: set[str] = set()
@@ -74,11 +74,14 @@ class Orchestrator:
         self._cache = ResponseCache(ttl_seconds=300)
         self._memory = memory
         self._last_consolidation: float = 0
+        self._last_knowledge_scan: float = 0
         self._health_failures: dict[str, int] = {}  # service -> consecutive failure count
         self._job_worker = None
+        self._dtools_sync = dtools_sync
+        self._knowledge_base = knowledge_base
         if job_mgr:
             from job_worker import JobWorker
-            self._job_worker = JobWorker(job_mgr, self.http)
+            self._job_worker = JobWorker(job_mgr, self.http, linear_sync=linear_sync)
 
     async def run_loop(self):
         """Main orchestration loop — runs every 5 minutes."""
@@ -99,6 +102,8 @@ class Orchestrator:
         await self.check_pipeline()
         await self.check_trading()
         await self.check_jobs()
+        await self.sync_dtools()
+        await self.scan_knowledge()
         await self.check_health()
         await self.consolidate_memories()
         await self.maybe_send_briefing()
@@ -330,6 +335,45 @@ class Orchestrator:
             await self._job_worker.tick()
         except Exception as e:
             logger.debug("Job worker tick failed: %s", e)
+
+    # ------------------------------------------------------------------
+    # D-Tools sync
+    # ------------------------------------------------------------------
+    async def sync_dtools(self):
+        """Sync D-Tools opportunities/projects into job lifecycle."""
+        if not self._dtools_sync:
+            return
+        try:
+            result = await self._dtools_sync.sync()
+            if result.get("status") == "ok":
+                created = result.get("jobs_created", 0)
+                linked = result.get("jobs_linked", 0)
+                if created or linked:
+                    logger.info("D-Tools sync: %d created, %d linked", created, linked)
+        except Exception as e:
+            logger.debug("D-Tools sync failed: %s", e)
+
+    # ------------------------------------------------------------------
+    # Knowledge base scan — runs once per hour
+    # ------------------------------------------------------------------
+    async def scan_knowledge(self):
+        """Scan iCloud docs folder for new/changed files. Runs once per hour."""
+        if not self._knowledge_base:
+            return
+
+        now = time.time()
+        if now - self._last_knowledge_scan < 3600:
+            return
+
+        self._last_knowledge_scan = now
+        try:
+            result = self._knowledge_base.scan()
+            if result.get("status") == "ok":
+                added = result.get("added", 0)
+                if added:
+                    logger.info("Knowledge scan: %d new documents indexed", added)
+        except Exception as e:
+            logger.debug("Knowledge scan failed: %s", e)
 
     # ------------------------------------------------------------------
     # Memory consolidation (NEW) — runs once per hour

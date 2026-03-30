@@ -28,6 +28,12 @@ from memory import MemoryPlugin
 from agent_bus import AgentBus
 from job_lifecycle import JobLifecycleManager
 import job_api
+import knowledge_base as kb_mod
+import client_tracker as ct_mod
+from knowledge_base import KnowledgeBase
+from dtools_sync import DToolsSync
+from linear_sync import LinearSync
+from client_tracker import ClientTracker
 
 # ---------------------------------------------------------------------------
 # Environment & logging
@@ -716,6 +722,10 @@ app = FastAPI(
 
 # Job lifecycle API routes
 app.include_router(job_api.router)
+# Knowledge base API routes
+app.include_router(kb_mod.router)
+# Client tracker API routes
+app.include_router(ct_mod.router)
 
 registry: AgentRegistry = None  # type: ignore
 llm: LLMRouter = None  # type: ignore
@@ -723,11 +733,15 @@ orchestrator = None  # type: ignore
 memory: MemoryPlugin = None  # type: ignore
 agent_bus: AgentBus = None  # type: ignore
 job_mgr: JobLifecycleManager = None  # type: ignore
+knowledge_base: KnowledgeBase = None  # type: ignore
+dtools_sync: DToolsSync = None  # type: ignore
+linear_sync: LinearSync = None  # type: ignore
+client_tracker: ClientTracker = None  # type: ignore
 
 
 @app.on_event("startup")
 async def startup():
-    global registry, llm, orchestrator, memory, agent_bus, job_mgr
+    global registry, llm, orchestrator, memory, agent_bus, job_mgr, knowledge_base, dtools_sync, linear_sync, client_tracker
     logger.info("OpenClaw starting up...")
     registry = AgentRegistry(AGENTS_DIR)
     llm = LLMRouter()
@@ -747,14 +761,36 @@ async def startup():
     job_api.init(job_mgr)
     logger.info("Job lifecycle manager initialized")
 
+    # Initialize knowledge base (iCloud folder scanner)
+    knowledge_base = KnowledgeBase(str(DATA_DIR / "knowledge_base.db"))
+    kb_mod.init(knowledge_base)
+    logger.info("Knowledge base initialized")
+
+    # Initialize client tracker
+    client_tracker = ClientTracker(str(DATA_DIR / "jobs.db"))
+    ct_mod.init(client_tracker)
+    logger.info("Client tracker initialized")
+
+    # Initialize D-Tools sync
+    dtools_sync = DToolsSync(job_mgr, memory=memory)
+    logger.info("D-Tools sync initialized")
+
+    # Initialize Linear sync
+    linear_sync = LinearSync(job_mgr)
+    logger.info("Linear sync initialized")
+
     # Initialize agent bus
     agent_bus = AgentBus(redis_url=REDIS_URL)
     await agent_bus.start()
     logger.info("Agent bus initialized")
 
-    # Start autonomous orchestration loop (pass memory + job manager for context)
+    # Start autonomous orchestration loop (pass memory + job manager + new services)
     from orchestrator import Orchestrator
-    orchestrator = Orchestrator(memory=memory, job_mgr=job_mgr)
+    orchestrator = Orchestrator(
+        memory=memory, job_mgr=job_mgr,
+        dtools_sync=dtools_sync, knowledge_base=knowledge_base,
+        linear_sync=linear_sync,
+    )
     asyncio.create_task(orchestrator.run_loop())
     logger.info("Autonomous orchestrator started")
 
@@ -773,6 +809,22 @@ async def shutdown():
         memory.close()
     if llm:
         await llm.close()
+    # Close new services
+    try:
+        if linear_sync:
+            await linear_sync.close()
+    except Exception:
+        pass
+    try:
+        if knowledge_base:
+            knowledge_base.close()
+    except Exception:
+        pass
+    try:
+        if client_tracker:
+            client_tracker.close()
+    except Exception:
+        pass
     logger.info("OpenClaw shut down.")
 
 

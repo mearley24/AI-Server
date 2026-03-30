@@ -361,11 +361,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - AGENTS_DIR=/app/agents
       - DATA_DIR=/app/data
+      - DTOOLS_API_KEY=${DTOOLS_API_KEY:-}
+      - LINEAR_API_KEY=${LINEAR_API_KEY:-}
+      - SYMPHONY_DOCS_PATH=${SYMPHONY_DOCS_PATH:-}
     ports:
       - "127.0.0.1:8099:3000"
     volumes:
       - ./agents:/app/agents:ro
       - ./data/openclaw:/app/data
+      - ./integrations/dtools:/app/integrations/dtools:ro
+      - "${SYMPHONY_DOCS_PATH:-/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/SymphonySH}:/data/symphony_docs:ro"
     depends_on:
       - redis
     healthcheck:

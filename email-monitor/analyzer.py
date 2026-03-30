@@ -109,3 +109,57 @@ def analyze_email(
             "urgency": "fyi",
             "suggested_reply": None,
         }
+
+
+def extract_client_preferences(
+    sender_name: str,
+    subject: str,
+    snippet: str,
+    analysis_summary: str,
+) -> list[dict]:
+    """Extract client preferences/concerns from an email via GPT-4o-mini.
+
+    Returns a list of {"type": "preference|concern|requirement|style", "content": "..."}.
+    Keeps it cheap: 100 token max. Returns [] if no preferences found or on error.
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        return []
+
+    prompt = (
+        f"Extract client preferences, concerns, or requirements from this email.\n\n"
+        f"From: {sender_name}\nSubject: {subject}\n"
+        f"Summary: {analysis_summary}\nPreview: {snippet[:300]}\n\n"
+        f"Return JSON array of objects with 'type' (preference/concern/requirement/style) "
+        f"and 'content'. Return [] if none. Max 3 items. Be specific.\n"
+        f"Focus on: scheduling, product preferences, budget, communication style, worries."
+    )
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0.2,
+        )
+
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+
+        prefs = json.loads(content)
+        if not isinstance(prefs, list):
+            return []
+        return [
+            {"type": p.get("type", "preference"), "content": p.get("content", "")}
+            for p in prefs[:3]
+            if p.get("content")
+        ]
+
+    except Exception as e:
+        logger.debug("Client preference extraction failed: %s", e)
+        return []
