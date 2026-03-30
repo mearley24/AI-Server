@@ -195,6 +195,26 @@ async def publish_urgent(
     logger.info("Published urgent email to Redis: %s from %s", category, sender)
 
 
+async def publish_new_email(
+    redis_client: aioredis.Redis,
+    category: str,
+    priority: str,
+    sender: str,
+    subject: str,
+) -> None:
+    """Publish any new email to Redis email:new channel."""
+    import json
+    message = json.dumps({
+        "category": category,
+        "priority": priority,
+        "sender": sender,
+        "subject": subject,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    await redis_client.publish("email:new", message)
+    logger.info("Published new email to Redis: [%s/%s] from %s", category, priority, sender)
+
+
 class EmailMonitor:
     """IMAP email monitoring loop."""
 
@@ -300,9 +320,12 @@ class EmailMonitor:
                             category, sender_email, subject[:80],
                         )
 
-                        # Publish high-priority to Redis
+                        # Publish high-priority to Redis urgent channel
                         if category in HIGH_PRIORITY_CATEGORIES:
                             await publish_urgent(redis_client, category, sender_name or sender_email, subject)
+
+                        # Publish ALL new emails to email:new channel
+                        await publish_new_email(redis_client, category, priority, sender_name or sender_email, subject)
 
                 except Exception as e:
                     logger.error("Error processing email %s: %s", num, e)

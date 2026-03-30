@@ -64,10 +64,13 @@ class ResponseCache:
 
 
 class Orchestrator:
+    MAX_PROCESSED_EMAILS = 500
+
     def __init__(self, memory=None):
         self.http = httpx.AsyncClient(timeout=30.0)
         self.last_briefing_date = None
-        self.processed_emails = set()
+        self.processed_emails: set[str] = set()
+        self._processed_emails_order: list[str] = []  # FIFO for eviction
         self._cache = ResponseCache(ttl_seconds=300)
         self._memory = memory
         self._last_consolidation: float = 0
@@ -114,38 +117,82 @@ class Orchestrator:
     # ------------------------------------------------------------------
     # Email check
     # ------------------------------------------------------------------
-    async def check_emails(self):
-        """Check for new urgent emails. Zero LLM calls."""
-        try:
-            # Bid invites
-            data = await self._cached_get(
-                "email_bid_invite",
-                f"{SERVICES['email']}/emails",
-                {"category": "BID_INVITE", "limit": 10},
-            )
-            if data:
-                emails = data if isinstance(data, list) else data.get("emails", [])
-                for email in emails:
-                    email_id = email.get("id", "")
-                    if email_id and email_id not in self.processed_emails:
-                        logger.info("New bid invite: %s — %s", email.get("sender", "unknown"), email.get("subject", ""))
-                        await self.notify("email", f"New bid invite from {email.get('sender', 'unknown')}: {email.get('subject', '')}")
-                        self.processed_emails.add(email_id)
 
-            # Client inquiries
-            data = await self._cached_get(
-                "email_client_inquiry",
-                f"{SERVICES['email']}/emails",
-                {"category": "CLIENT_INQUIRY", "limit": 10},
-            )
-            if data:
-                emails = data if isinstance(data, list) else data.get("emails", [])
-                for email in emails:
-                    email_id = email.get("id", "")
-                    if email_id and email_id not in self.processed_emails:
-                        logger.info("Client inquiry: %s — %s", email.get("sender", "unknown"), email.get("subject", ""))
-                        await self.notify("email", f"Client inquiry from {email.get('sender', 'unknown')}: {email.get('subject', '')}")
-                        self.processed_emails.add(email_id)
+    def _track_processed_email(self, email_id: str) -> None:
+        """Add email ID to processed set, evicting oldest if over cap."""
+        self.processed_emails.add(email_id)
+        self._processed_emails_order.append(email_id)
+        while len(self.processed_emails) > self.MAX_PROCESSED_EMAILS:
+            oldest = self._processed_emails_order.pop(0)
+            self.processed_emails.discard(oldest)
+
+    async def check_emails(self):
+        """Check for ALL new unread emails and send a summary. Zero LLM calls.
+
+        Uses direct HTTP (no response cache) to ensure fresh data every tick.
+        """
+        try:
+            # Fetch all recent emails directly (bypass cache for freshness)
+            try:
+                resp = await self.http.get(
+                    f"{SERVICES['email']}/emails",
+                    params={"limit": 25},
+                )
+                if resp.status_code != 200:
+                    logger.debug("Email service returned %d", resp.status_code)
+                    return
+                data = resp.json()
+            except Exception as e:
+                logger.debug("Email check skipped (fetch failed): %s", e)
+                return
+
+            all_emails = data if isinstance(data, list) else data.get("emails", [])
+
+            # Filter to only new (unprocessed) emails
+            new_emails = []
+            for em in all_emails:
+                email_id = em.get("id", em.get("message_id", ""))
+                if email_id and email_id not in self.processed_emails:
+                    new_emails.append(em)
+                    self._track_processed_email(email_id)
+
+            if not new_emails:
+                return
+
+            logger.info("Found %d new email(s) this tick", len(new_emails))
+
+            # Send individual alerts for high-priority and medium-priority emails
+            high_priority_cats = {"BID_INVITE", "CLIENT_INQUIRY"}
+            medium_priority_cats = {"FOLLOW_UP_NEEDED", "SCHEDULING"}
+
+            for em in new_emails:
+                category = em.get("category", "GENERAL")
+                priority = em.get("priority", "low")
+                sender = em.get("sender_name") or em.get("sender", "unknown")
+                subject = em.get("subject", "(no subject)")
+
+                if category in high_priority_cats or priority == "high":
+                    label = "New bid invite" if category == "BID_INVITE" else \
+                            "Client inquiry" if category == "CLIENT_INQUIRY" else \
+                            f"High-priority email ({category})"
+                    await self.notify("email", f"{label} from {sender}: {subject}")
+
+                elif category in medium_priority_cats or priority == "medium":
+                    label = "Follow-up needed" if category == "FOLLOW_UP_NEEDED" else \
+                            "Scheduling" if category == "SCHEDULING" else \
+                            f"Email ({category})"
+                    await self.notify("email", f"{label} from {sender}: {subject}")
+
+            # Send a summary digest of ALL new emails
+            summary_lines = [f"You have {len(new_emails)} new email(s):"]
+            for em in new_emails:
+                sender = em.get("sender_name") or em.get("sender", "unknown")
+                subject = em.get("subject", "(no subject)")
+                category = em.get("category", "GENERAL")
+                summary_lines.append(f"  - [{category}] {sender}: {subject}")
+
+            await self.notify("email", "\n".join(summary_lines))
+
         except Exception as e:
             logger.debug("Email check skipped: %s", e)
 

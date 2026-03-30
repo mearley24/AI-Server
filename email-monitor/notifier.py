@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-notifier.py — Notification dispatcher for urgent emails.
+notifier.py — Notification dispatcher for emails.
 
-Subscribes to Redis `email:urgent` channel, formats notifications,
-and publishes them to `notifications:email` for notification-hub dispatch.
+Subscribes to Redis `email:urgent` and `email:new` channels, formats
+notifications, and publishes them to `notifications:email` for
+notification-hub dispatch.
 """
 
 import asyncio
@@ -20,47 +21,82 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 
+CATEGORY_LABELS = {
+    "BID_INVITE": "New bid invite",
+    "CLIENT_INQUIRY": "Client inquiry",
+    "FOLLOW_UP_NEEDED": "Follow-up needed",
+    "SCHEDULING": "Scheduling",
+    "INVOICE": "Invoice",
+    "VENDOR": "Vendor update",
+    "GENERAL": "Email",
+}
 
-def format_notification(data: dict) -> str:
+
+def format_notification(data: dict, *, urgent: bool = False) -> str:
     """Format email notification message."""
     category = data.get("category", "UNKNOWN")
     sender = data.get("sender", "Unknown")
     subject = data.get("subject", "(no subject)")
 
-    labels = {
-        "BID_INVITE": "New bid invite",
-        "CLIENT_INQUIRY": "Client inquiry",
-    }
-    label = labels.get(category, f"Urgent email ({category})")
+    label = CATEGORY_LABELS.get(category, f"Email ({category})")
+    prefix = "[URGENT] " if urgent else ""
 
-    return f"{label} from {sender}: {subject}"
+    return f"{prefix}{label} from {sender}: {subject}"
 
 
-async def dispatch(redis_client: aioredis.Redis, message: str) -> None:
+def _priority_for_channel(channel: str, data: dict) -> str:
+    """Determine notification priority based on source channel."""
+    if channel == "email:urgent":
+        return "high"
+    priority = data.get("priority", "low")
+    if priority == "medium":
+        return "normal"
+    return "low"
+
+
+async def dispatch(redis_client: aioredis.Redis, message: str, priority: str = "high") -> None:
     """Publish notification to notifications:email for notification-hub."""
-    payload = json.dumps({"title": "Email Alert", "body": message, "priority": "high"})
+    payload = json.dumps({"title": "Email Alert", "body": message, "priority": priority})
     await redis_client.publish("notifications:email", payload)
-    logger.info("Published to notifications:email: %s", message[:80])
+    logger.info("Published to notifications:email [%s]: %s", priority, message[:80])
 
 
 async def run_subscriber() -> None:
-    """Subscribe to Redis email:urgent channel and dispatch notifications."""
-    logger.info("Notifier subscribing to email:urgent")
+    """Subscribe to Redis email:urgent and email:new channels and dispatch notifications."""
+    logger.info("Notifier subscribing to email:urgent and email:new")
 
     while True:
         try:
             redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
             pubsub = redis_client.pubsub()
-            await pubsub.subscribe("email:urgent")
+            await pubsub.subscribe("email:urgent", "email:new")
+
+            # Track message IDs from urgent to avoid duplicate dispatch
+            recent_urgent = set()
 
             async for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
 
                 try:
+                    channel = message["channel"]
                     data = json.loads(message["data"])
-                    notification = format_notification(data)
-                    await dispatch(redis_client, notification)
+
+                    # De-duplicate: if we already sent an urgent notification
+                    # for this email, skip the email:new one
+                    dedup_key = f"{data.get('sender', '')}:{data.get('subject', '')}"
+                    if channel == "email:urgent":
+                        recent_urgent.add(dedup_key)
+                        # Cap the set to prevent unbounded growth
+                        if len(recent_urgent) > 200:
+                            recent_urgent.clear()
+                    elif channel == "email:new" and dedup_key in recent_urgent:
+                        continue
+
+                    urgent = channel == "email:urgent"
+                    priority = _priority_for_channel(channel, data)
+                    notification = format_notification(data, urgent=urgent)
+                    await dispatch(redis_client, notification, priority)
                 except Exception as e:
                     logger.error("Notifier error: %s", e)
 
