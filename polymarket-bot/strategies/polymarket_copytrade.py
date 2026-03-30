@@ -56,6 +56,27 @@ from strategies.llm_validator import LLMValidator, detect_anti_patterns
 
 logger = structlog.get_logger(__name__)
 
+# ── Orphan position persistence ──────────────────────────────────────────────
+ORPHAN_FILE = "/data/orphan_positions.json"
+
+
+def _save_orphans(orphans: list[dict]) -> None:
+    """Persist orphan positions so the redeemer can track them across restarts."""
+    try:
+        with open(ORPHAN_FILE, "w") as f:
+            json.dump(orphans, f, indent=2)
+    except OSError as exc:
+        logger.warning("orphan_save_error", error=str(exc)[:100])
+
+
+def _load_orphans() -> list[dict]:
+    """Load previously detected orphan positions."""
+    try:
+        with open(ORPHAN_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
 
 def _notify(title: str, body: str) -> None:
     """Best-effort push notification via Redis → notification-hub → iMessage."""
@@ -431,18 +452,25 @@ class PolymarketCopyTrader:
                 # 0. Reset daily spend at midnight UTC
                 self._maybe_reset_daily_spend(now)
 
-                # 0b. Refresh bankroll from on-chain balance every hour
+                # 0b. Log on-chain USDC balance periodically (informational only).
+                # The internal bankroll tracker is the source of truth — it is
+                # debited on trade and credited on exit/resolution. Overwriting
+                # it with the on-chain USDC balance caused oscillation because
+                # USDC cash != total portfolio value.
                 if now - self._last_bankroll_refresh >= self._bankroll_refresh_interval:
                     try:
                         wallet_addr = self._client.wallet_address
                         if wallet_addr:
-                            new_bankroll = await fetch_onchain_bankroll(wallet_addr)
-                            if new_bankroll > 0:
-                                old = self._bankroll
-                                self._bankroll = new_bankroll
-                                self._correlation_tracker.bankroll = new_bankroll
-                                if abs(old - new_bankroll) > 1:
-                                    logger.info("bankroll_synced", old=round(old, 2), new=round(new_bankroll, 2), source="onchain")
+                            onchain_usdc = await fetch_onchain_bankroll(wallet_addr)
+                            if onchain_usdc > 0:
+                                drift = round(self._bankroll - onchain_usdc, 2)
+                                logger.info(
+                                    "bankroll_onchain_check",
+                                    internal=round(self._bankroll, 2),
+                                    onchain_usdc=round(onchain_usdc, 2),
+                                    drift=drift,
+                                    note="informational only — internal tracker is source of truth",
+                                )
                         self._last_bankroll_refresh = now
                     except Exception as exc:
                         logger.warning("bankroll_refresh_error", error=str(exc)[:100])
@@ -1422,15 +1450,17 @@ class PolymarketCopyTrader:
         # ── Bankroll-proportional scaling ────────────────────────
         # Scale position size proportional to bankroll.
         # At $386 (full deposit), use full tier sizes.
-        # At $100, scale down proportionally. Minimum $1 position.
+        # Below $100, floor the ratio at 0.5 so Kelly sizing isn't crushed
+        # to the $1 minimum on every trade.
         REFERENCE_BANKROLL = 386.0
         bankroll_ratio = min(self._bankroll / REFERENCE_BANKROLL, 1.0)
+        bankroll_ratio = max(bankroll_ratio, 0.5)  # floor: at least half Kelly size
         size_usd = max(size_usd * bankroll_ratio, 1.0)
 
         # Hard cap: NEVER exceed $10 per position regardless of any multipliers
         size_usd = min(size_usd, 10.0)
 
-        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, tier_cap=tier_cap, esports=is_esports, high_conviction=high_conviction, bankroll_ratio=round(bankroll_ratio, 3), category_pnl=round(self._category_pnl.get(category, 0), 2))
+        logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, tier_cap=tier_cap, esports=is_esports, high_conviction=high_conviction, bankroll_ratio=round(bankroll_ratio, 3), pre_scale_size=round(size_usd, 2), category_pnl=round(self._category_pnl.get(category, 0), 2))
 
         # ── Correlation + category caps (SKIPPED for high conviction) ──
         if not high_conviction:
@@ -2005,8 +2035,35 @@ class PolymarketCopyTrader:
             # Detect orphan positions — on-chain but not in our tracker
             our_condition_ids = {p.condition_id for p in self._positions.values() if p.condition_id}
             orphans = on_chain_condition_ids - our_condition_ids
-            for orphan_cid in orphans:
-                logger.info("orphan_position_found", condition_id=orphan_cid[:16])
+            if orphans:
+                orphan_records = _load_orphans()
+                known_orphan_cids = {o["condition_id"] for o in orphan_records}
+                for orphan_cid in orphans:
+                    # Find the on-chain position data for this orphan
+                    orphan_pos = next(
+                        (p for p in on_chain_positions
+                         if (p.get("conditionId") or p.get("condition_id", "")) == orphan_cid),
+                        None,
+                    )
+                    orphan_value = float(orphan_pos.get("currentValue", 0) or 0) if orphan_pos else 0.0
+                    orphan_token = orphan_pos.get("tokenId", orphan_pos.get("token_id", "")) if orphan_pos else ""
+                    logger.info(
+                        "orphan_position_found",
+                        condition_id=orphan_cid[:16],
+                        token_id=str(orphan_token)[:16],
+                        estimated_value=round(orphan_value, 2),
+                    )
+                    # Persist orphan if not already tracked
+                    if orphan_cid not in known_orphan_cids:
+                        orphan_records.append({
+                            "condition_id": orphan_cid,
+                            "token_id": str(orphan_token),
+                            "estimated_value": round(orphan_value, 2),
+                            "detected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        })
+                        known_orphan_cids.add(orphan_cid)
+                _save_orphans(orphan_records)
+                logger.info("orphan_positions_persisted", total=len(orphan_records), new=len(orphans - known_orphan_cids))
 
             # Detect phantom positions — in our tracker but not on-chain
             phantoms = our_condition_ids - on_chain_condition_ids
@@ -2032,18 +2089,18 @@ class PolymarketCopyTrader:
             if phantom_ids_to_remove:
                 self._save_positions()
 
-            # Update bankroll if drift exceeds $5
+            # Log bankroll drift (informational only — do NOT overwrite internal bankroll).
+            # on_chain_value includes open position value, but the internal bankroll
+            # tracks only CASH available for new trades. Overwriting caused oscillation.
             internal_bankroll = self._bankroll
             drift = abs(internal_bankroll - on_chain_value)
             if drift > 5.0 and on_chain_value > 0:
-                old_bankroll = self._bankroll
-                self._bankroll = on_chain_value
-                self._correlation_tracker.bankroll = on_chain_value
                 logger.info(
-                    "pnl_reconciliation_bankroll_update",
-                    old=round(old_bankroll, 2),
-                    new=round(on_chain_value, 2),
+                    "pnl_reconciliation_bankroll_drift",
+                    internal=round(internal_bankroll, 2),
+                    on_chain_total=round(on_chain_value, 2),
                     drift=round(drift, 2),
+                    note="informational only — internal tracker is source of truth",
                 )
 
             logger.info(
@@ -2233,6 +2290,7 @@ class PolymarketCopyTrader:
             # Bankroll-proportional scaling for whale signals
             REFERENCE_BANKROLL = 386.0
             bankroll_ratio = min(self._bankroll / REFERENCE_BANKROLL, 1.0)
+            bankroll_ratio = max(bankroll_ratio, 0.5)  # floor: at least half Kelly size
             size_usd = max(size_usd * bankroll_ratio, 1.0)
 
             # Hard cap: NEVER exceed $10
