@@ -1775,8 +1775,8 @@ class PolymarketCopyTrader:
                     hold_hours = (time.time() - pos.copied_at) / 3600
                     won = current_price >= 0.99
                     # Calculate actual P/L
-                    size_shares = pos.size if hasattr(pos, 'size') and pos.size else 0
-                    cost_basis = pos.entry_price * size_shares if size_shares else pos.cost_usd if hasattr(pos, 'cost_usd') else 0
+                    size_shares = pos.size_shares if hasattr(pos, 'size_shares') and pos.size_shares else 0
+                    cost_basis = pos.size_usd if hasattr(pos, 'size_usd') and pos.size_usd else (pos.entry_price * size_shares)
                     payout = size_shares if won else 0  # $1 per share if won, $0 if lost
                     pnl_usd = payout - cost_basis
                     pnl_pct = ((current_price - pos.entry_price) / pos.entry_price * 100) if pos.entry_price > 0 else 0
