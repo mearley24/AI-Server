@@ -377,7 +377,7 @@ class EmailMonitor:
             for num in msg_nums:
                 try:
                     # Use BODY.PEEK so we don't mark anything as read
-                    _, msg_data = mail.fetch(num, "(RFC822.HEADER BODY.PEEK[TEXT]<0.500>)")
+                    _, msg_data = mail.fetch(num, "(RFC822.HEADER BODY.PEEK[TEXT]<0.4000>)")
                     if not msg_data or not msg_data[0]:
                         continue
 
@@ -404,7 +404,7 @@ class EmailMonitor:
                     if len(msg_data) > 1 and isinstance(msg_data[1], tuple):
                         body_bytes = msg_data[1][1]
                         if isinstance(body_bytes, bytes):
-                            snippet = body_bytes.decode("utf-8", errors="replace")[:300]
+                            snippet = body_bytes.decode("utf-8", errors="replace")[:2000]
 
                     category, priority = categorize_email(subject, raw_from, snippet)
 
@@ -479,7 +479,7 @@ class EmailMonitor:
 
             for num in msg_nums:
                 try:
-                    _, msg_data = mail.fetch(num, "(RFC822.HEADER BODY.PEEK[TEXT]<0.500>)")
+                    _, msg_data = mail.fetch(num, "(RFC822.HEADER BODY.PEEK[TEXT]<0.4000>)")
                     if not msg_data or not msg_data[0]:
                         continue
 
@@ -510,7 +510,7 @@ class EmailMonitor:
                     if len(msg_data) > 1 and isinstance(msg_data[1], tuple):
                         body_bytes = msg_data[1][1]
                         if isinstance(body_bytes, bytes):
-                            snippet = body_bytes.decode("utf-8", errors="replace")[:300]
+                            snippet = body_bytes.decode("utf-8", errors="replace")[:2000]
 
                     # Categorize
                     category, priority = categorize_email(subject, raw_from, snippet)
