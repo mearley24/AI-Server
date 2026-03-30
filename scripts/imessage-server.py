@@ -156,6 +156,13 @@ class MessageMonitor:
 _send_failures = 0
 
 
+def _cleanup_msg_file(path: str):
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+
+
 def send_twilio_sms(address: str, message: str) -> bool:
     """Send SMS via Twilio as a last-resort fallback."""
     if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
@@ -196,28 +203,38 @@ def send_twilio_sms(address: str, message: str) -> bool:
 def send_imessage(address: str, message: str) -> bool:
     """Send a message via Messages.app AppleScript with retry + Twilio fallback.
 
-    Uses the exact same AppleScript format as the original working version.
-    Does NOT touch Messages.app lifecycle — no launching, no killing.
+    Writes message to a temp file and has AppleScript read it, avoiding
+    all string escaping issues with smart quotes, Unicode, etc.
     """
     global _send_failures
-    message = message.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
     if len(message) > 2000:
         message = message[:1997] + "..."
 
-    cmd_direct = '''tell application "Messages"
-set targetBuddy to buddy "%s" of (1st account whose service type = iMessage)
-send "%s" to targetBuddy
-end tell''' % (address, message)
+    tmp_file = os.path.join(tempfile.gettempdir(), "bob_msg_%d.txt" % os.getpid())
+    try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            f.write(message)
+    except Exception as e:
+        log.error("[send] Failed to write temp file: %s", e)
+        return False
 
-    cmd_sms = '''tell application "Messages"
+    cmd_direct = """set msgText to (read POSIX file "%s" as «class utf8»)
+tell application "Messages"
+set targetBuddy to buddy "%s" of (1st account whose service type = iMessage)
+send msgText to targetBuddy
+end tell""" % (tmp_file, address)
+
+    cmd_sms = """set msgText to (read POSIX file "%s" as «class utf8»)
+tell application "Messages"
 set targetService to 1st account whose service type = SMS
 set targetBuddy to participant "%s" of targetService
-send "%s" to targetBuddy
-end tell''' % (address, message)
+send msgText to targetBuddy
+end tell""" % (tmp_file, address)
 
-    cmd_simple = '''tell application "Messages"
-send "%s" to buddy "%s"
-end tell''' % (message, address)
+    cmd_simple = """set msgText to (read POSIX file "%s" as «class utf8»)
+tell application "Messages"
+send msgText to buddy "%s"
+end tell""" % (tmp_file, address)
 
     log.info("[send] Attempting to send to: %s", address)
     for attempt in range(SEND_RETRY_COUNT):
@@ -231,6 +248,7 @@ end tell''' % (message, address)
                     _send_failures = 0
                     log.info("[send] Sent via %s to %s (attempt %d/%d)",
                              label, address, attempt + 1, SEND_RETRY_COUNT)
+                    _cleanup_msg_file(tmp_file)
                     return True
                 log.warning("[send] %s failed (rc=%d): %s",
                             label, result.returncode, result.stderr.strip()[:200])
@@ -248,14 +266,15 @@ end tell''' % (message, address)
     log.error("[send] All %d iMessage attempts failed for %s — trying Twilio",
               SEND_RETRY_COUNT, address)
 
-    original_message = message.replace("\\\\", "\\").replace('\\"', '"').replace("\\'", "'")
-    if send_twilio_sms(address, original_message):
+    if send_twilio_sms(address, message):
         _send_failures = 0
+        _cleanup_msg_file(tmp_file)
         return True
 
     _send_failures += 1
     if _send_failures <= 3:
         log.error("[send] ALL delivery methods failed for %s (iMessage + Twilio)", address)
+    _cleanup_msg_file(tmp_file)
     return False
 
 
