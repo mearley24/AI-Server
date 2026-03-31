@@ -1,0 +1,41 @@
+project:
+  name: "Topletz Residence"
+  address: "84 Aspen Meadow Drive, Edwards, CO 81632"
+  client: "Steve Topletz"
+  quote: "Q-196"
+  gc: "Rocky Mountain Construction Group (RMCG)"
+  architect: "TAB Associates"
+
+scope:
+  control4: true
+  lighting_platform: "control4"
+  distributed_audio: true
+  network: true
+  shade_prewire: true
+  camera_prewire: true
+  camera_locations:
+    - "front entry"
+    - "rear"
+    - "garage"
+    - "driveway"
+  security_panel_prewire: true
+  security_panel_model: "Qolsys IQ Panel 4"
+  security_panel_location: "garage entry"
+  security_keypad_location: "master bedroom"
+  security_sensor_prewire: false  # pending Superior plan
+  security_provider: "Superior Alarm"
+  qolsys_integration: true
+  touchscreen_type: "ipad"
+  ipad_locations:
+    - "Kitchen/TV Room"
+    - "Master Bedroom"
+  conduit_future: true
+  dual_cat6_tv: true
+
+exclusions:
+  - "Sonos"
+  - "distributed TV audio"
+  - "video matrix"
+  - "HDMI distribution"
+  - "CORE5"
+  - "10G switching"
