@@ -16,13 +16,15 @@
     "snapav.com": "Vendor/Snap One",
     "efirstbank.com": "Banking",
     "vyde.io": "Vendor/Accounting",
-    "docusign.net": "_project_match"
+    "docusign.net": "_project_match",
+    "carfax.com": "Personal/Auto"
   },
   "marketing_patterns": [
     "unsubscribe",
     "netlify.com",
     "linqapp.com",
-    "gauntletai.com"
+    "gauntletai.com",
+    "carfax.com"
   ],
   "active_bids": {
     "Nordstrom Rack - Dillon": {
