@@ -127,11 +127,14 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
     for item in folder_list:
         if isinstance(item, bytes):
             # Parse folder name from IMAP LIST response
-            match = re.search(r'"([^"]+)"\s*$|\s(\S+)\s*$', item.decode("utf-8", errors="replace"))
+            decoded = item.decode("utf-8", errors="replace")
+            match = re.search(r'"([^"]+)"\s*$|\s(\S+)\s*$', decoded)
             if match:
                 folder_name = match.group(1) or match.group(2)
-                if folder_name and folder_name.upper() not in ("INBOX", "DRAFTS", "SENT", "TRASH", "JUNK"):
+                if folder_name and folder_name.upper() not in ("INBOX", "DRAFTS", "SENT", "TRASH", "JUNK", "OUTBOX"):
                     folders.append(folder_name)
+    if folders:
+        logger.info("Learn-from-moves: scanning %d folders: %s", len(folders), ", ".join(folders[:20]))
 
     for msg_id in moved_ids:
         sender = old_snapshot.get(msg_id, "")
@@ -154,16 +157,17 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
         # Search by FROM sender in each folder — more reliable than Message-ID on Zoho
         for folder in folders:
             try:
-                status, _ = mail.select(f'"{folder}"')
+                status, data = mail.select(f'"{folder}"')
                 if status != "OK":
                     continue
                 # Search for emails from this sender in this folder
                 status, found = mail.search(None, f'FROM "{sender}"')
-                if status == "OK" and found[0]:
+                if status == "OK" and found[0] and found[0].strip():
                     dest_folder = folder
                     logger.info("Learn-from-moves: found %s in folder %s", sender, folder)
                     break
-            except Exception:
+            except Exception as e:
+                logger.debug("Learn-from-moves: error searching %s: %s", folder, e)
                 continue
 
         if not dest_folder:
