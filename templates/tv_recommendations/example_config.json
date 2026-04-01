@@ -1,0 +1,245 @@
+{
+  "project_name": "84 Aspen Meadow",
+  "project_address": "84_Aspen_Meadow",
+  "client_name": "Steve Topletz",
+  "client_first_name": "Steve",
+  "date": "March 31, 2026",
+  "version": 2,
+
+  "intro_paragraph": "Steve \u2014 these recommendations are not meant to replace your selections. You\u2019ve done solid research and picked TVs with excellent picture quality at strong price points. This document highlights considerations specific to an integrated Control4 smart home \u2014 native IP control, dealer warranty support, mount serviceability, and long-term firmware commitment \u2014 that aren\u2019t always visible on a spec sheet. We will support whatever you choose.",
+
+  "key_takeaway": "<b>Key Takeaway:</b> We can deliver an all-Samsung package with native Control4 integration across every TV, dealer warranty support, included installation, and pricing in the same range as your current selections \u2014 with the added benefit of locked pricing and a single point of contact for everything.",
+
+  "c4_warning_text": "<b>Your current selections:</b> 2\u00d7 Hisense need 3rd-party Chowmain drivers ($100\u2013200 total), 2\u00d7 TCL 65\" need IR flashers + wire runs, and 3\u00d7 TCL 55\" 4-Series have <b>no C4 driver at all</b>. That\u2019s 5 of 7 TVs that cannot be natively controlled from your iPads. Based on our experience, third-party drivers and IR control create support issues that are difficult to resolve and compromise the integrated experience this system is designed to deliver. We strongly recommend native integration for every TV in the home.",
+
+  "packages_intro": "All three packages use Samsung TVs with native Control4 SDDP integration, available through our dealer network. All packages include Sanus VLT7 mounts. Installation, mounting, Control4 programming, streaming setup, and menu optimization billed at standard service rates per the agreement. Pricing reflects current Samsung availability.",
+
+  "client_tv_schedule": [
+    {
+      "location": "Hearth Room",
+      "model": "Hisense 100\" U8",
+      "brand": "Hisense",
+      "size": "100\"",
+      "c4_integration": "3rd-Party Driver",
+      "price_low": "$2,999 (Best Buy sale)",
+      "price_high": "$4,998 (Walmart)",
+      "price_swing": "$1,999 per unit"
+    },
+    {
+      "location": "Lower Level",
+      "model": "Hisense 100\" U8",
+      "brand": "Hisense",
+      "size": "100\"",
+      "c4_integration": "3rd-Party Driver",
+      "price_low": "$2,999 (Best Buy sale)",
+      "price_high": "$4,998 (Walmart)",
+      "price_swing": "$1,999 per unit"
+    },
+    {
+      "location": "Great Room",
+      "model": "TCL 65\" QM6K",
+      "brand": "TCL",
+      "size": "65\"",
+      "c4_integration": "IR",
+      "price_low": "$530 (Costco)",
+      "price_high": "$998 (MSRP)",
+      "price_swing": "$468 per unit"
+    },
+    {
+      "location": "Master Bedroom",
+      "model": "TCL 65\" QM6K",
+      "brand": "TCL",
+      "size": "65\"",
+      "c4_integration": "IR",
+      "price_low": "$530 (Costco)",
+      "price_high": "$998 (MSRP)",
+      "price_swing": "$468 per unit"
+    },
+    {
+      "location": "Bedroom 2",
+      "model": "TCL 55\" 4-Series",
+      "brand": "TCL",
+      "size": "55\"",
+      "c4_integration": "None",
+      "price_low": "$228 (clearance)",
+      "price_high": "$320+ (limited stock)",
+      "price_swing": "Discontinued \u2014 2018 model"
+    },
+    {
+      "location": "Bedroom 3",
+      "model": "TCL 55\" 4-Series",
+      "brand": "TCL",
+      "size": "55\"",
+      "c4_integration": "None",
+      "price_low": "$228 (clearance)",
+      "price_high": "$320+ (limited stock)",
+      "price_swing": "Discontinued \u2014 2018 model"
+    },
+    {
+      "location": "Bedroom 4",
+      "model": "TCL 55\" 4-Series",
+      "brand": "TCL",
+      "size": "55\"",
+      "c4_integration": "None",
+      "price_low": "$228 (clearance)",
+      "price_high": "$320+ (limited stock)",
+      "price_swing": "Discontinued \u2014 2018 model"
+    }
+  ],
+
+  "packages": [
+    {
+      "name": "Option 1 \u2014 Essential",
+      "description": "Samsung QLED across the board. Native C4, dealer support, best value.",
+      "locations": [
+        { "location": "Hearth Room",    "model": "Samsung QN80F 100\"", "type": "Neo QLED Mini LED", "price": "$4,999" },
+        { "location": "Lower Level",    "model": "Samsung QN80F 100\"", "type": "Neo QLED Mini LED", "price": "$4,999" },
+        { "location": "Great Room",     "model": "Samsung Q8F 65\"",    "type": "QLED",              "price": "$699" },
+        { "location": "Master Bedroom", "model": "Samsung Q8F 65\"",    "type": "QLED",              "price": "$699" },
+        { "location": "Bedroom 2",      "model": "Samsung Q8F 55\"",    "type": "QLED",              "price": "$599" },
+        { "location": "Bedroom 3",      "model": "Samsung Q8F 55\"",    "type": "QLED",              "price": "$599" },
+        { "location": "Bedroom 4",      "model": "Samsung Q8F 55\"",    "type": "QLED",              "price": "$599" }
+      ],
+      "total": "$13,193"
+    },
+    {
+      "name": "Option 2 \u2014 Recommended",
+      "description": "QD-OLED where you\u2019ll notice it most (living areas), QLED in the bedrooms.",
+      "locations": [
+        { "location": "Hearth Room",    "model": "Samsung QN80F 100\"", "type": "Neo QLED Mini LED", "price": "$4,999" },
+        { "location": "Lower Level",    "model": "Samsung QN80F 100\"", "type": "Neo QLED Mini LED", "price": "$4,999" },
+        { "location": "Great Room",     "model": "Samsung S85F 65\"",   "type": "QD-OLED",           "price": "$1,299" },
+        { "location": "Master Bedroom", "model": "Samsung S85F 65\"",   "type": "QD-OLED",           "price": "$1,299" },
+        { "location": "Bedroom 2",      "model": "Samsung Q8F 55\"",    "type": "QLED",              "price": "$599" },
+        { "location": "Bedroom 3",      "model": "Samsung Q8F 55\"",    "type": "QLED",              "price": "$599" },
+        { "location": "Bedroom 4",      "model": "Samsung Q8F 55\"",    "type": "QLED",              "price": "$599" }
+      ],
+      "total": "$14,393"
+    },
+    {
+      "name": "Option 3 \u2014 Premium",
+      "description": "QD-OLED in every room. Best picture quality across the board.",
+      "locations": [
+        { "location": "Hearth Room",    "model": "Samsung QN80F 100\"", "type": "Neo QLED Mini LED", "price": "$4,999" },
+        { "location": "Lower Level",    "model": "Samsung QN80F 100\"", "type": "Neo QLED Mini LED", "price": "$4,999" },
+        { "location": "Great Room",     "model": "Samsung S85F 65\"",   "type": "QD-OLED",           "price": "$1,299" },
+        { "location": "Master Bedroom", "model": "Samsung S85F 65\"",   "type": "QD-OLED",           "price": "$1,299" },
+        { "location": "Bedroom 2",      "model": "Samsung S85F 55\"",   "type": "QD-OLED",           "price": "$999" },
+        { "location": "Bedroom 3",      "model": "Samsung S85F 55\"",   "type": "QD-OLED",           "price": "$999" },
+        { "location": "Bedroom 4",      "model": "Samsung S85F 55\"",   "type": "QD-OLED",           "price": "$999" }
+      ],
+      "total": "$15,295"
+    }
+  ],
+
+  "comparison_rows": {
+    "tv_totals":           ["$13,193",              "$14,393",              "$15,295"],
+    "c4_integration":      ["Native SDDP \u2014 all 7", "Native SDDP \u2014 all 7", "Native SDDP \u2014 all 7"],
+    "ir_flashers":         ["None",                 "None",                 "None"],
+    "third_party_drivers": ["None",                 "None",                 "None"],
+    "install_programming": ["Standard rates",       "Standard rates",       "Standard rates"],
+    "dealer_warranty":     ["All 7 TVs",            "All 7 TVs",            "All 7 TVs"],
+    "firmware_support":    ["7 years (Samsung)",    "7 years (Samsung)",    "7 years (Samsung)"]
+  },
+
+  "packages_footnote": "TV pricing is based on current Samsung availability and is subject to change. To lock in these prices, full payment for TV equipment is required at time of package selection. Symphony will purchase, receive, and store all units until the installation date. Installation, C4 programming, streaming setup, and Samsung menu optimization billed at standard service rates per the agreement. All packages include Sanus VLT7 mounts.",
+
+  "recommended_brand": "Samsung",
+
+  "consumer_brands_compared": ["TCL", "Hisense"],
+
+  "consumer_brand_rows": {
+    "warranty":           ["1 year",             "1\u20132 years",          "1 year (extendable)"],
+    "service_channel":    ["Consumer hotline",   "Consumer hotline",    "Dealer network + consumer"],
+    "wall_mount_service": ["Some providers refuse", "BBB complaints of refusal", "Standard \u2014 no restrictions"],
+    "integrator_parts":   ["None \u2014 retail only", "None \u2014 retail only", "Snap One, Mountain West"],
+    "five_year_failure":  ["~12%",               "~15%",                "~5%"],
+    "firmware_updates":   ["No commitment (US)", "No commitment (US)",  "7 years confirmed"]
+  },
+
+  "consumer_brand_warning": "<b>What this means for you:</b> Every TV in this house will be wall-mounted. If a consumer-brand panel fails, getting service may require removing the TV and shipping it \u2014 or the service partner may decline entirely. With Samsung, Symphony handles warranty claims through our dealer network, on-site.",
+
+  "mount_recommendation": {
+    "model": "Sanus VLT7 Tilt 4D",
+    "collapsed_depth": "2.1\"",
+    "extension": "6.8\"",
+    "tilt": "+7\u00b0/-12\u00b0",
+    "swivel": "15\u00b0",
+    "weight_capacity": "150 lb",
+    "warranty": "10-year",
+    "source_url": "https://www.sanus.com/en_GB/products/tv-mounts/vlt7/"
+  },
+
+  "client_mounts": [
+    {
+      "name": "Mount-It MI-3447 (your 65\" pick)",
+      "wall_profile": "0.5\u20130.7\"",
+      "plug_clearance": "Plugs contact TV",
+      "tilt": "None",
+      "service_access": "Remove TV"
+    },
+    {
+      "name": "Sanus MLL11 (your 55\" pick)",
+      "wall_profile": "~0.5\"",
+      "plug_clearance": "Plugs contact TV",
+      "tilt": "None",
+      "service_access": "Remove TV"
+    }
+  ],
+
+  "recessed_box": {
+    "model": "Legrand TV2MW",
+    "plug_protrusion_inches": "1\u20132\"",
+    "source_url": "https://www.legrand.us/wiring-devices/electrical-boxes/wall-boxes/two-gang-commercial-metal-recessed-tv-box-white/p/tv2mw"
+  },
+
+  "ceiling_mount_note": "The Peerless-AV PLCM-2 ceiling mount for the Hearth Room remains as specified.",
+
+  "summary_callout": "<b>These are recommendations, not requirements.</b> We will fully support whichever TVs and mounts you choose. However, based on our experience with third-party drivers and IR control in integrated homes, we strongly recommend native C4 integration for every TV to ensure the system performs as designed. If you\u2019d like to keep your current selections, we will install them \u2014 but want to be transparent that Control4 controllability may be limited or inconsistent on non-native models.",
+
+  "next_steps": [
+    "Review this document and let us know your preference or questions.",
+    "Select a package \u2014 or let us know if you\u2019d like to adjust.",
+    "To lock current pricing, full payment for TV equipment is required at time of selection.",
+    "Symphony will purchase, receive, and store all units until the installation date.",
+    "Mount selection finalized during the lighting walkthrough with RMGC."
+  ],
+
+  "payment_terms": "full payment for TV equipment is required at time of package selection",
+  "service_rates_language": "billed at standard service rates per the agreement",
+
+  "sources": [
+    {
+      "name": "Hisense, TCL, Samsung pricing observed via Best Buy, Walmart, Costco, Amazon \u2014 March 2026",
+      "url": "https://www.bestbuy.com"
+    },
+    {
+      "name": "Control4 SDDP Auto Discovery Documentation",
+      "url": "https://docs.control4.com/help/c4/software/cpro/dealer-composer-help/content/composerpro_userguide/auto_discovery_sddp.htm"
+    },
+    {
+      "name": "Samsung US \u2014 Current TV Pricing",
+      "url": "https://www.samsung.com/us/televisions-home-theater/tvs/"
+    },
+    {
+      "name": "Legrand TV2MW Recessed TV Box \u2014 Product Specifications",
+      "url": "https://www.legrand.us/wiring-devices/electrical-boxes/wall-boxes/two-gang-commercial-metal-recessed-tv-box-white/p/tv2mw"
+    },
+    {
+      "name": "Sanus VLT7 Advanced Tilt 4D \u2014 Product Specifications",
+      "url": "https://www.sanus.com/en_GB/products/tv-mounts/vlt7/"
+    },
+    {
+      "name": "TV Repair Technician Reliability Data",
+      "url": "https://www.youtube.com/watch?v=TKnfBZlBwv8"
+    },
+    {
+      "name": "TCL USA Warranty Information",
+      "url": "https://support.tclusa.com/tcl-tv-warranty-information"
+    },
+    {
+      "name": "Samsung 7-Year Update Commitment \u2014 TechRadar",
+      "url": "https://www.techradar.com/televisions/hisense-promises-that-itll-keep-your-tv-updated-and-useful-even-longer-than-lg-and-samsung-have-committed-to-well-sort-of"
+    }
+  ]
+}

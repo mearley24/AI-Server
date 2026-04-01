@@ -1,0 +1,362 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TV & Mount Recommendations Config",
+  "description": "Configuration schema for Symphony Smart Homes TV & Mount Recommendations PDF generator",
+  "type": "object",
+  "required": [
+    "project_name",
+    "project_address",
+    "client_name",
+    "date",
+    "client_tv_schedule",
+    "packages",
+    "comparison_rows",
+    "mount_recommendation",
+    "recessed_box",
+    "payment_terms",
+    "service_rates_language",
+    "version"
+  ],
+  "properties": {
+    "project_name": {
+      "type": "string",
+      "description": "Short project identifier, e.g. '84 Aspen Meadow'"
+    },
+    "project_address": {
+      "type": "string",
+      "description": "Full address used in the filename and footer, e.g. '84_Aspen_Meadow'"
+    },
+    "client_name": {
+      "type": "string",
+      "description": "Client's name as it will appear in the document, e.g. 'Steve Topletz'"
+    },
+    "client_first_name": {
+      "type": "string",
+      "description": "Client's first name used in direct address, e.g. 'Steve'. Falls back to client_name if omitted."
+    },
+    "date": {
+      "type": "string",
+      "description": "Document date string, e.g. 'March 31, 2026'"
+    },
+    "intro_paragraph": {
+      "type": "string",
+      "description": "Custom introductory paragraph text. If omitted, a generic paragraph is generated."
+    },
+    "key_takeaway": {
+      "type": "string",
+      "description": "Bold callout box text for the key takeaway on the intro page."
+    },
+    "c4_warning_text": {
+      "type": "string",
+      "description": "Custom text for the orange warning callout box about the client's current selections and C4 integration issues."
+    },
+    "packages_intro": {
+      "type": "string",
+      "description": "Introductory paragraph for the packages section. If omitted, a generic paragraph is generated."
+    },
+    "client_tv_schedule": {
+      "type": "array",
+      "description": "The client's original TV selections, used in the price volatility table",
+      "items": {
+        "type": "object",
+        "required": ["location", "model", "brand", "size", "c4_integration", "price_low", "price_high"],
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "Room/location name, e.g. 'Hearth Room'"
+          },
+          "model": {
+            "type": "string",
+            "description": "TV model name, e.g. 'Hisense 100\" U8'"
+          },
+          "brand": {
+            "type": "string",
+            "description": "Brand name, e.g. 'Hisense'"
+          },
+          "size": {
+            "type": "string",
+            "description": "Screen size, e.g. '100\"'"
+          },
+          "c4_integration": {
+            "type": "string",
+            "description": "C4 integration method: 'Native SDDP', '3rd-Party Driver', 'IR', or 'None'"
+          },
+          "price_low": {
+            "type": "string",
+            "description": "Lowest observed price string, e.g. '$2,999 (Best Buy sale)'"
+          },
+          "price_high": {
+            "type": "string",
+            "description": "Highest observed price string, e.g. '$4,998 (Walmart)'"
+          },
+          "price_swing": {
+            "type": "string",
+            "description": "Price swing description, e.g. '$1,999 per unit'. Auto-calculated if omitted."
+          },
+          "mount_model": {
+            "type": "string",
+            "description": "Client's specified mount model for this location"
+          },
+          "mount_profile_inches": {
+            "type": "string",
+            "description": "Wall profile of client's specified mount"
+          }
+        }
+      }
+    },
+    "packages": {
+      "type": "array",
+      "description": "Array of exactly 3 package options (Essential, Recommended, Premium)",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "locations", "total"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Package name, e.g. 'Option 1 — Essential'"
+          },
+          "description": {
+            "type": "string",
+            "description": "One-line descriptor shown below the package heading"
+          },
+          "locations": {
+            "type": "array",
+            "description": "List of TVs in this package",
+            "items": {
+              "type": "object",
+              "required": ["location", "model", "type", "price"],
+              "properties": {
+                "location": {
+                  "type": "string",
+                  "description": "Room/location name"
+                },
+                "model": {
+                  "type": "string",
+                  "description": "TV model name"
+                },
+                "type": {
+                  "type": "string",
+                  "description": "Display technology, e.g. 'Neo QLED Mini LED', 'QD-OLED', 'QLED'"
+                },
+                "price": {
+                  "type": "string",
+                  "description": "Unit price string, e.g. '$4,999'"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "string",
+            "description": "Total price string for this package, e.g. '$13,193'"
+          }
+        }
+      }
+    },
+    "comparison_rows": {
+      "type": "object",
+      "description": "Data for the comparison summary table across the three packages",
+      "required": ["tv_totals", "c4_integration", "ir_flashers", "third_party_drivers", "install_programming", "dealer_warranty", "firmware_support"],
+      "properties": {
+        "tv_totals": {
+          "type": "array",
+          "description": "TV totals for [Essential, Recommended, Premium]",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "c4_integration": {
+          "type": "array",
+          "description": "C4 integration summary for each package",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "ir_flashers": {
+          "type": "array",
+          "description": "IR flashers needed for each package",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "third_party_drivers": {
+          "type": "array",
+          "description": "Third-party drivers needed for each package",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "install_programming": {
+          "type": "array",
+          "description": "Install and programming notes for each package",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "dealer_warranty": {
+          "type": "array",
+          "description": "Dealer warranty coverage for each package",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "firmware_support": {
+          "type": "array",
+          "description": "Firmware support commitment for each package",
+          "items": { "type": "string" },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "packages_footnote": {
+      "type": "string",
+      "description": "Italicized footnote below the packages comparison table. Uses a default if omitted."
+    },
+    "consumer_brands_compared": {
+      "type": "array",
+      "description": "The two consumer brands to compare against the recommended brand in the warranty/service table. Array of exactly 2 strings.",
+      "items": { "type": "string" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "consumer_brand_rows": {
+      "type": "object",
+      "description": "Data for the consumer brand comparison table. Each key is an array of [brand1_val, brand2_val, samsung_val].",
+      "properties": {
+        "warranty": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+        "service_channel": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+        "wall_mount_service": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+        "integrator_parts": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+        "five_year_failure": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 },
+        "firmware_updates": { "type": "array", "items": { "type": "string" }, "minItems": 3, "maxItems": 3 }
+      }
+    },
+    "consumer_brand_warning": {
+      "type": "string",
+      "description": "Text for the orange warning callout box under the consumer brand comparison table."
+    },
+    "recommended_brand": {
+      "type": "string",
+      "description": "The brand being recommended (used in section heading), e.g. 'Samsung'"
+    },
+    "mount_recommendation": {
+      "type": "object",
+      "description": "Recommended mount specifications",
+      "required": ["model", "collapsed_depth", "extension", "tilt", "swivel", "weight_capacity", "warranty"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Mount model name, e.g. 'Sanus VLT7 Tilt 4D'"
+        },
+        "collapsed_depth": {
+          "type": "string",
+          "description": "Collapsed wall profile, e.g. '2.1\"'"
+        },
+        "extension": {
+          "type": "string",
+          "description": "Maximum extension for service access, e.g. '6.8\"'"
+        },
+        "tilt": {
+          "type": "string",
+          "description": "Tilt range, e.g. '+7°/-12°'"
+        },
+        "swivel": {
+          "type": "string",
+          "description": "Swivel range, e.g. '15°'"
+        },
+        "weight_capacity": {
+          "type": "string",
+          "description": "Weight capacity, e.g. '150 lb'"
+        },
+        "warranty": {
+          "type": "string",
+          "description": "Warranty duration, e.g. '10-year'"
+        },
+        "source_url": {
+          "type": "string",
+          "description": "Product page URL for mount specifications"
+        }
+      }
+    },
+    "client_mounts": {
+      "type": "array",
+      "description": "Client's originally specified mounts for the clearance problem table",
+      "items": {
+        "type": "object",
+        "required": ["name", "wall_profile"],
+        "properties": {
+          "name": { "type": "string" },
+          "wall_profile": { "type": "string" },
+          "plug_clearance": { "type": "string" },
+          "tilt": { "type": "string" },
+          "service_access": { "type": "string" }
+        }
+      }
+    },
+    "recessed_box": {
+      "type": "object",
+      "description": "Recessed TV box specifications",
+      "required": ["model", "plug_protrusion_inches"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Recessed box model, e.g. 'Legrand TV2MW'"
+        },
+        "plug_protrusion_inches": {
+          "type": "string",
+          "description": "How far plugs protrude past the wall surface, e.g. '1–2\"'"
+        },
+        "source_url": {
+          "type": "string",
+          "description": "Product page URL for the recessed box"
+        }
+      }
+    },
+    "ceiling_mount_note": {
+      "type": "string",
+      "description": "Optional note about a ceiling mount for specific locations, e.g. 'Peerless-AV PLCM-2 ceiling mount for the Hearth Room remains as specified.'"
+    },
+    "summary_callout": {
+      "type": "string",
+      "description": "Text for the teal callout box in the Summary section. Uses a default if omitted."
+    },
+    "next_steps": {
+      "type": "array",
+      "description": "Ordered list of next step strings (auto-numbered). Uses defaults if omitted.",
+      "items": { "type": "string" }
+    },
+    "payment_terms": {
+      "type": "string",
+      "description": "Payment terms text for the packages footnote, e.g. 'full payment for TV equipment is required at time of package selection'"
+    },
+    "service_rates_language": {
+      "type": "string",
+      "description": "Language describing how installation/programming is billed, e.g. 'billed at standard service rates per the agreement'"
+    },
+    "sources": {
+      "type": "array",
+      "description": "Source citations list. Each item is displayed as a numbered footnote.",
+      "items": {
+        "type": "object",
+        "required": ["name", "url"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name for the source"
+          },
+          "url": {
+            "type": "string",
+            "description": "Hyperlink URL for the source"
+          }
+        }
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Document version number, used in filename as V[#]",
+      "minimum": 1
+    }
+  }
+}
