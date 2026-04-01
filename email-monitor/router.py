@@ -98,13 +98,14 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
     """
     global _inbox_snapshot
     if not _inbox_snapshot:
-        # First run — just take a snapshot, nothing to compare
-        _inbox_snapshot = _snapshot_inbox(mail)
+        # First run — no previous snapshot to compare against, skip
+        logger.info("Learn-from-moves: no previous snapshot, skipping")
         return 0
 
     old_snapshot = _inbox_snapshot
     new_snapshot = _snapshot_inbox(mail)
-    _inbox_snapshot = new_snapshot
+    # Don't update _inbox_snapshot here — route_inbox does it after routing
+    logger.info("Learn-from-moves: old=%d, new=%d", len(old_snapshot), len(new_snapshot))
 
     # Find message IDs that were in INBOX but are gone now
     moved_ids = set(old_snapshot.keys()) - set(new_snapshot.keys())
@@ -341,7 +342,7 @@ def route_inbox(
                 logger.info("Learned %d new routing rule(s) from manual moves", learned)
                 config = _load_config()  # Reload with new rules
         except Exception as e:
-            logger.debug("Learn-from-moves error: %s", e)
+            logger.warning("Learn-from-moves error: %s", e)
 
         mail.select("INBOX")
 
@@ -402,6 +403,15 @@ def route_inbox(
         if moved > 0:
             mail.expunge()
             logger.info("Router: moved %d email(s), expunged from INBOX", moved)
+
+        # Take snapshot AFTER routing for next cycle's learn_from_moves
+        try:
+            global _inbox_snapshot
+            mail.select("INBOX")
+            _inbox_snapshot = _snapshot_inbox(mail)
+            logger.info("Inbox snapshot: %d messages tracked", len(_inbox_snapshot))
+        except Exception as e:
+            logger.warning("Snapshot error: %s", e)
 
         mail.logout()
 
