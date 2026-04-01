@@ -23,6 +23,9 @@ CONFIG_PATH = os.getenv(
 # Cache for folders we've already verified/created this session
 _verified_folders: set[str] = set()
 
+# Snapshot of INBOX message IDs → sender for learn-from-moves detection
+_inbox_snapshot: dict[str, str] = {}  # {message_id: sender_email}
+
 
 def _load_config() -> dict:
     """Load routing config from JSON file."""
@@ -35,6 +38,153 @@ def _load_config() -> dict:
     except json.JSONDecodeError as e:
         logger.error("Invalid routing config JSON: %s", e)
         return {}
+
+
+def _save_config(config: dict) -> bool:
+    """Save routing config back to JSON file."""
+    try:
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config, f, indent=2)
+        logger.info("Routing config saved to %s", CONFIG_PATH)
+        return True
+    except Exception as e:
+        logger.error("Failed to save routing config: %s", e)
+        return False
+
+
+def _snapshot_inbox(mail: imaplib.IMAP4_SSL) -> dict[str, str]:
+    """Take a snapshot of current INBOX: {message_id: sender_email}."""
+    snapshot = {}
+    try:
+        mail.select("INBOX")
+        status, msg_nums = mail.search(None, "ALL")
+        if status != "OK" or not msg_nums[0]:
+            return snapshot
+        for num in msg_nums[0].split():
+            try:
+                status, data = mail.fetch(num, "(BODY.PEEK[HEADER.FIELDS (FROM MESSAGE-ID)])")
+                if status != "OK" or not data or not data[0]:
+                    continue
+                header = b""
+                for part in data:
+                    if isinstance(part, tuple):
+                        header = part[1]
+                        break
+                decoded = header.decode("utf-8", errors="replace")
+                msg_id = ""
+                sender = ""
+                for line in decoded.splitlines():
+                    if line.lower().startswith("message-id:"):
+                        msg_id = line[11:].strip()
+                    elif line.lower().startswith("from:"):
+                        sender = _extract_email_addr(line[5:].strip())
+                if msg_id and sender:
+                    snapshot[msg_id] = sender
+            except Exception:
+                continue
+    except Exception as e:
+        logger.debug("Snapshot error: %s", e)
+    return snapshot
+
+
+def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
+    """Detect emails manually moved out of INBOX and learn the routing rule.
+
+    Compares current INBOX against the previous snapshot. If a message
+    disappeared from INBOX, scan all folders to find where it went,
+    then add the sender's domain to routing config for that folder.
+
+    Returns the number of new rules learned.
+    """
+    global _inbox_snapshot
+    if not _inbox_snapshot:
+        # First run — just take a snapshot, nothing to compare
+        _inbox_snapshot = _snapshot_inbox(mail)
+        return 0
+
+    old_snapshot = _inbox_snapshot
+    new_snapshot = _snapshot_inbox(mail)
+    _inbox_snapshot = new_snapshot
+
+    # Find message IDs that were in INBOX but are gone now
+    moved_ids = set(old_snapshot.keys()) - set(new_snapshot.keys())
+    if not moved_ids:
+        return 0
+
+    config = _load_config()
+    learned = 0
+
+    # Get list of all folders
+    try:
+        status, folder_list = mail.list()
+        if status != "OK":
+            return 0
+    except Exception:
+        return 0
+
+    folders = []
+    for item in folder_list:
+        if isinstance(item, bytes):
+            # Parse folder name from IMAP LIST response
+            match = re.search(r'"([^"]+)"\s*$|\s(\S+)\s*$', item.decode("utf-8", errors="replace"))
+            if match:
+                folder_name = match.group(1) or match.group(2)
+                if folder_name and folder_name.upper() not in ("INBOX", "DRAFTS", "SENT", "TRASH", "JUNK"):
+                    folders.append(folder_name)
+
+    for msg_id in moved_ids:
+        sender = old_snapshot.get(msg_id, "")
+        if not sender:
+            continue
+
+        domain = _extract_domain(sender)
+        if not domain:
+            continue
+
+        # Skip if domain is already routed
+        existing_domains = config.get("domain_routes", {})
+        if domain in existing_domains:
+            continue
+
+        # Search each folder for this message ID
+        dest_folder = None
+        for folder in folders:
+            try:
+                mail.select(f'"{folder}"')
+                status, found = mail.search(None, f'HEADER Message-ID "{msg_id}"')
+                if status == "OK" and found[0]:
+                    dest_folder = folder
+                    break
+            except Exception:
+                continue
+
+        if dest_folder:
+            # Learn the rule: add domain → folder
+            if "domain_routes" not in config:
+                config["domain_routes"] = {}
+            config["domain_routes"][domain] = dest_folder
+
+            # Also add to marketing_patterns if it went to Marketing
+            if "marketing" in dest_folder.lower():
+                if "marketing_patterns" not in config:
+                    config["marketing_patterns"] = []
+                if domain not in config["marketing_patterns"]:
+                    config["marketing_patterns"].append(domain)
+
+            _save_config(config)
+            learned += 1
+            logger.info(
+                "Learned routing rule: %s → %s (from manual move of %s)",
+                domain, dest_folder, sender,
+            )
+
+    # Switch back to INBOX
+    try:
+        mail.select("INBOX")
+    except Exception:
+        pass
+
+    return learned
 
 
 def _ensure_folder(mail: imaplib.IMAP4_SSL, folder: str) -> bool:
@@ -183,6 +333,16 @@ def route_inbox(
     try:
         mail = imaplib.IMAP4_SSL(imap_server, imap_port)
         mail.login(email_address, email_password)
+
+        # Learn from manual moves before routing
+        try:
+            learned = learn_from_moves(mail)
+            if learned:
+                logger.info("Learned %d new routing rule(s) from manual moves", learned)
+                config = _load_config()  # Reload with new rules
+        except Exception as e:
+            logger.debug("Learn-from-moves error: %s", e)
+
         mail.select("INBOX")
 
         # Fetch ALL messages in INBOX (read and unread)
