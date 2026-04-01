@@ -2591,7 +2591,11 @@ class PolymarketCopyTrader:
         if not pos:
             return
 
-        sell_shares = round(pos.size_shares * signal.sell_fraction, 2)
+        # Haircut sell size by 0.5% to avoid 'not enough balance' errors from
+        # CTF token rounding — on-chain balance can be slightly less than recorded
+        sell_shares = round(pos.size_shares * signal.sell_fraction * 0.995, 2)
+        if sell_shares < 1:
+            sell_shares = 1.0
         sell_usd = pos.size_usd * signal.sell_fraction
         current_price = signal.current_price
         pnl_pct = signal.pnl_pct
