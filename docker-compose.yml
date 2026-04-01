@@ -446,6 +446,32 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  intel-feeds:
+    build:
+      context: ./integrations/intel_feeds
+    container_name: intel-feeds
+    restart: unless-stopped
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - TZ=America/Denver
+    ports:
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - ./data/intel_feeds:/data
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 networks:
   default:
     ipam:
