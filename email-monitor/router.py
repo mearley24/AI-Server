@@ -147,20 +147,27 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
         if domain in existing_domains:
             continue
 
-        # Search each folder for this message ID
+        # Search each folder for this email (try multiple IMAP search methods)
         dest_folder = None
+        from email.utils import formatdate
+        import time as _time
+        # Search by FROM sender in each folder — more reliable than Message-ID on Zoho
         for folder in folders:
             try:
-                mail.select(f'"{folder}"')
-                status, found = mail.search(None, f'HEADER Message-ID "{msg_id}"')
+                status, _ = mail.select(f'"{folder}"')
+                if status != "OK":
+                    continue
+                # Search for emails from this sender in this folder
+                status, found = mail.search(None, f'FROM "{sender}"')
                 if status == "OK" and found[0]:
                     dest_folder = folder
+                    logger.info("Learn-from-moves: found %s in folder %s", sender, folder)
                     break
             except Exception:
                 continue
 
         if not dest_folder:
-            # Couldn't determine destination — notify via Redis so Bob can ask
+            # Still couldn't find it — notify via Redis so Bob can ask
             try:
                 import redis as _redis
                 r = _redis.from_url(
@@ -169,15 +176,12 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
                 )
                 r.publish("notifications:email", json.dumps({
                     "title": "New sender moved from Inbox",
-                    "body": f"You moved an email from {sender} ({domain}). Reply with the folder name and I'll route all future emails from {domain} there.",
+                    "body": f"You moved an email from {sender} ({domain}). Reply with the folder name to auto-route future emails from {domain}.",
                 }))
             except Exception:
                 pass
-            logger.info(
-                "Learn-from-moves: asked owner for folder for %s",
-                sender,
-            )
-            continue  # Skip — don't guess, ask
+            logger.info("Learn-from-moves: couldn't locate %s, asked via iMessage", sender)
+            continue
 
         if dest_folder:
             # Learn the rule: add domain → folder
