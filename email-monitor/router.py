@@ -159,6 +159,15 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
             except Exception:
                 continue
 
+        if not dest_folder:
+            # Couldn't find where it went — default to Marketing-Ignore
+            # Most manual moves are marketing/junk
+            dest_folder = "Marketing-Ignore"
+            logger.info(
+                "Learn-from-moves: couldn't locate folder for %s, defaulting to %s",
+                sender, dest_folder,
+            )
+
         if dest_folder:
             # Learn the rule: add domain → folder
             if "domain_routes" not in config:
