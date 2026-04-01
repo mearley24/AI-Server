@@ -33,6 +33,7 @@ import asyncio
 import json
 import math
 import os
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -55,6 +56,95 @@ from strategies.correlation_tracker import CorrelationTracker, categorize_market
 from strategies.llm_validator import LLMValidator, detect_anti_patterns
 
 logger = structlog.get_logger(__name__)
+
+# ── Temperature cluster dedup (P0) ───────────────────────────────────────────
+# Matches "Will the highest temperature in Shanghai be 17°C on April 3?"
+# or "Will Shanghai high temperature be 15°C on March 28?"
+_TEMP_CELSIUS_PATTERN = re.compile(
+    r"(?:high(?:est)?|low(?:est)?)\s+temp(?:erature)?\s+(?:in\s+)?"
+    r"([\w\s]+?)\s+be\s+(\d+)\s*°?\s*C\s+(?:on|for)\s+([\w\s,]+)",
+    re.IGNORECASE,
+)
+
+# Broader fallback: "Shanghai ... 17°C ... April 3"
+_TEMP_CELSIUS_FALLBACK = re.compile(
+    r"([\w\s]+?)\s+.*?(\d+)\s*°\s*C\s+.*?(?:on|for)\s+([\w\s,]+\d+)",
+    re.IGNORECASE,
+)
+
+# Date normalization for cluster keys
+_DATE_PATTERN = re.compile(
+    r"(january|february|march|april|may|june|july|august|september|october|november|december)"
+    r"\s+(\d{1,2})",
+    re.IGNORECASE,
+)
+
+
+def _extract_temp_cluster_key(market_question: str) -> tuple[str, str, int] | None:
+    """Extract (city_normalized, date_str, temp_celsius) from a temperature market title.
+
+    Returns None if this is not a recognizable temperature bracket market.
+    Example: "Will Shanghai high temperature be 17°C on April 3?" → ("shanghai", "april-3", 17)
+    """
+    for pattern in (_TEMP_CELSIUS_PATTERN, _TEMP_CELSIUS_FALLBACK):
+        m = pattern.search(market_question)
+        if m:
+            city = m.group(1).strip().lower()
+            temp = int(m.group(2))
+            date_raw = m.group(3).strip().lower()
+            # Normalize date to "month-day" format
+            dm = _DATE_PATTERN.search(date_raw)
+            if dm:
+                date_str = f"{dm.group(1)}-{dm.group(2)}"
+            else:
+                # Fallback: use raw string cleaned of whitespace
+                date_str = re.sub(r"\s+", "-", date_raw.strip(" ,?."))
+            return (city, date_str, temp)
+    return None
+
+
+# ── Crypto binary short-window filter (P1) ───────────────────────────────────
+_SHORT_WINDOW_TITLE_PATTERNS = [
+    re.compile(r"(\d{1,2}:\d{2}\s*[AP]M)\s*[-–]\s*(\d{1,2}:\d{2}\s*[AP]M)", re.IGNORECASE),
+    re.compile(r"next\s+\d+\s+minutes?", re.IGNORECASE),
+    re.compile(r"\bup\s+or\s+down\b", re.IGNORECASE),
+]
+
+_TIME_WINDOW_PATTERN = re.compile(
+    r"(\d{1,2}):(\d{2})\s*([AP]M)\s*[-–]\s*(\d{1,2}):(\d{2})\s*([AP]M)",
+    re.IGNORECASE,
+)
+
+
+def _parse_resolution_window_minutes(market_question: str) -> int | None:
+    """Parse time window from market title and return duration in minutes.
+
+    E.g. "9:00AM-9:15AM" → 15, "2:00PM-2:05PM" → 5.
+    Returns None if no parseable time window found.
+    """
+    m = _TIME_WINDOW_PATTERN.search(market_question)
+    if not m:
+        return None
+
+    def _to_minutes(h: int, mi: int, ampm: str) -> int:
+        ampm = ampm.upper()
+        if ampm == "PM" and h != 12:
+            h += 12
+        elif ampm == "AM" and h == 12:
+            h = 0
+        return h * 60 + mi
+
+    start = _to_minutes(int(m.group(1)), int(m.group(2)), m.group(3))
+    end = _to_minutes(int(m.group(4)), int(m.group(5)), m.group(6))
+    if end <= start:
+        end += 24 * 60  # crosses midnight
+    return end - start
+
+
+# ── Category blacklist (P1) ──────────────────────────────────────────────────
+CATEGORY_BLACKLIST: set[str] = {"politics", "geopolitics"}
+BLACKLIST_LLM_OVERRIDE_THRESHOLD = 0.9
+
 
 # ── Orphan position persistence ──────────────────────────────────────────────
 ORPHAN_FILE = "/data/orphan_positions.json"
@@ -162,7 +252,7 @@ class PolymarketCopyTrader:
         # Config from settings
         self._size_usd: float = getattr(settings, "copytrade_size_usd", 3.0)
         self._max_positions: int = getattr(settings, "copytrade_max_positions", 100)
-        self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.55)
+        self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.65)
         self._min_trades: int = getattr(settings, "copytrade_min_trades", 20)
         self._scan_interval_hours: float = getattr(settings, "copytrade_scan_interval_hours", 6.0)
         self._check_interval: float = getattr(settings, "copytrade_check_interval", 30.0)
@@ -287,6 +377,11 @@ class PolymarketCopyTrader:
         # Redemption tracking
         self._last_redemption_check: float = 0.0
         self._redemption_interval: float = 300.0
+
+        # ── Temperature cluster dedup (P0) ─────────────────────────
+        # Maps (city, date) → {temp_celsius: condition_id} for entered brackets.
+        # Max 2 adjacent brackets per city+date allowed.
+        self._temp_cluster_positions: dict[tuple[str, str], list[tuple[int, str]]] = {}
 
         # ── NEW: Phase 1 — Smart Exit Engine ─────────────────────────
         self._exit_engine = ExitEngine(
@@ -669,6 +764,36 @@ class PolymarketCopyTrader:
 
                 # Skip wallets flagged by red flag filters
                 if analysis.is_filtered and total_resolved < 50:
+                    continue
+
+                # ── Wallet Quality Floor (P1) ─────────────────────────
+                # Remove any wallet with pl_ratio < 1.5 (unless very high sample)
+                pl_ratio = analysis.pl_ratio
+                is_priority = address in self._PRIORITY_WALLETS
+                if not is_priority and pl_ratio < 1.5 and total_resolved < 100:
+                    if win_rate < 0.80:
+                        logger.debug(
+                            "wallet_filtered_pl_ratio",
+                            address=address[:12],
+                            pl_ratio=round(pl_ratio, 2),
+                            win_rate=round(win_rate, 3),
+                        )
+                        continue
+
+                # Tiered quality gate:
+                #   Tier A: win_rate >= 0.70 with >= 20 resolved trades
+                #   Tier B: win_rate >= 0.60 with pl_ratio >= 3.0
+                # Priority wallets always pass.
+                tier_a = win_rate >= 0.70 and total_resolved >= 20
+                tier_b = win_rate >= 0.60 and pl_ratio >= 3.0
+                if not (tier_a or tier_b or is_priority):
+                    logger.debug(
+                        "wallet_filtered_quality_tier",
+                        address=address[:12],
+                        win_rate=round(win_rate, 3),
+                        pl_ratio=round(pl_ratio, 2),
+                        total_resolved=total_resolved,
+                    )
                     continue
 
                 # Prefer category-adjusted score if available
@@ -1386,8 +1511,111 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="no_clob_client")
             return False
 
+        # ── P1: Crypto binary short-window filter ─────────────────
+        # Block markets with resolution window < 30 minutes (e.g. "ETH Up or Down 9:00AM-9:15AM").
+        window_minutes = _parse_resolution_window_minutes(market_question)
+        if window_minutes is not None and window_minutes < 30:
+            logger.info(
+                "copytrade_skip_short_window",
+                market=market_question[:60],
+                window_minutes=window_minutes,
+            )
+            return False
+        # Also catch generic "up or down" short-window titles without explicit times
+        if any(p.search(market_question) for p in _SHORT_WINDOW_TITLE_PATTERNS):
+            if window_minutes is None:
+                # Title matches short-window pattern but has no parseable times —
+                # likely a short binary; block it.
+                logger.info(
+                    "copytrade_skip_short_window",
+                    market=market_question[:60],
+                    reason="title_pattern_match",
+                )
+                return False
+
+        # ── P0: Temperature cluster dedup ─────────────────────────
+        cluster_key = _extract_temp_cluster_key(market_question)
+        if cluster_key is not None:
+            city, date_str, temp = cluster_key
+            existing = self._temp_cluster_positions.get((city, date_str), [])
+            if len(existing) >= 2:
+                # Already hold 2 brackets for this city+date — block unconditionally
+                logger.info(
+                    "copytrade_skip",
+                    reason="temp_cluster_capped",
+                    city=city,
+                    date=date_str,
+                    temp=temp,
+                    existing=[t for t, _ in existing],
+                    market=market_question[:60],
+                )
+                return False
+            if len(existing) == 1:
+                # Allow only if adjacent (±1°C) to the existing bracket
+                existing_temp = existing[0][0]
+                if abs(temp - existing_temp) > 1:
+                    logger.info(
+                        "copytrade_skip",
+                        reason="temp_cluster_not_adjacent",
+                        city=city,
+                        date=date_str,
+                        new_temp=temp,
+                        existing_temp=existing_temp,
+                        market=market_question[:60],
+                    )
+                    return False
+
         # ── Detect category ─────────────────────────────────────
         category = categorize_market(market_question)
+
+        # ── P1: Category blacklist ────────────────────────────────
+        # Block politics/geopolitics unless LLM validation score > 0.9.
+        # LLM score is computed later, so we do a pre-check here and
+        # allow a bypass path via LLM validation below.
+        if category in CATEGORY_BLACKLIST:
+            # Run a quick LLM validation to check if score > 0.9
+            try:
+                bot_positions_ctx = [
+                    {"market_question": p.market_question, "condition_id": p.condition_id}
+                    for p in self._positions.values()
+                ]
+                blacklist_validation = await self._llm_validator.validate_trade(
+                    market_question=market_question,
+                    current_price=price,
+                    trade_direction="BUY",
+                    wallet_win_rate=wallet.win_rate,
+                    category=category,
+                    category_pnl=self._category_pnl.get(category, 0),
+                    source_wallet=wallet.address,
+                    bot_positions=bot_positions_ctx,
+                )
+                llm_score = blacklist_validation.llm_probability
+                if llm_score is None or llm_score < BLACKLIST_LLM_OVERRIDE_THRESHOLD:
+                    logger.info(
+                        "copytrade_skip_blacklisted_category",
+                        category=category,
+                        llm_score=round(llm_score, 3) if llm_score is not None else None,
+                        threshold=BLACKLIST_LLM_OVERRIDE_THRESHOLD,
+                        market=market_question[:60],
+                    )
+                    return False
+                else:
+                    logger.info(
+                        "copytrade_blacklist_llm_override",
+                        category=category,
+                        llm_score=round(llm_score, 3),
+                        market=market_question[:60],
+                    )
+            except Exception as exc:
+                # If LLM validation fails, block the blacklisted category
+                logger.info(
+                    "copytrade_skip_blacklisted_category",
+                    category=category,
+                    reason="llm_validation_error",
+                    error=str(exc)[:80],
+                    market=market_question[:60],
+                )
+                return False
 
         # ── HIGH-CONVICTION BYPASS ─────────────────────────────
         # Wallets with 90%+ win rate on 20+ trades are proven winners.
@@ -1721,6 +1949,14 @@ class PolymarketCopyTrader:
         if event_slug:
             self._active_event_slugs.add(event_slug)
 
+        # Register temperature bracket for cluster dedup (P0)
+        cluster_key = _extract_temp_cluster_key(market_question)
+        if cluster_key:
+            city, date_str, temp = cluster_key
+            self._temp_cluster_positions.setdefault((city, date_str), []).append(
+                (temp, market)
+            )
+
         # Record in PnL tracker
         pnl_trade = Trade(
             trade_id=order_id or position_id,
@@ -1904,6 +2140,7 @@ class PolymarketCopyTrader:
                 self._active_event_slugs.discard(pos.event_slug)
             self._exit_engine.unregister_position(pos_id)
             self._correlation_tracker.remove_position(pos_id)
+            self._remove_temp_cluster_entry(pos.market_question, pos.condition_id)
             wallet_sells = self._source_sells.get(pos.source_wallet, set())
             wallet_sells.discard(pos.token_id)
         if positions_to_remove:
@@ -2085,6 +2322,7 @@ class PolymarketCopyTrader:
                     self._active_event_slugs.discard(pos.event_slug)
                     self._exit_engine.unregister_position(pos_id)
                     self._correlation_tracker.remove_position(pos_id)
+                    self._remove_temp_cluster_entry(pos.market_question, pos.condition_id)
 
             if phantom_ids_to_remove:
                 self._save_positions()
@@ -2801,8 +3039,22 @@ class PolymarketCopyTrader:
             self._active_event_slugs.discard(pos.event_slug)
         self._exit_engine.unregister_position(position_id)
         self._correlation_tracker.remove_position(position_id)
+        self._remove_temp_cluster_entry(pos.market_question, pos.condition_id)
         wallet_sells = self._source_sells.get(pos.source_wallet, set())
         wallet_sells.discard(pos.token_id)
+
+    def _remove_temp_cluster_entry(self, market_question: str, condition_id: str) -> None:
+        """Remove a temperature bracket from the cluster registry on position exit."""
+        cluster_key = _extract_temp_cluster_key(market_question)
+        if cluster_key:
+            city, date_str, temp = cluster_key
+            key = (city, date_str)
+            entries = self._temp_cluster_positions.get(key, [])
+            self._temp_cluster_positions[key] = [
+                (t, cid) for t, cid in entries if cid != condition_id
+            ]
+            if not self._temp_cluster_positions[key]:
+                del self._temp_cluster_positions[key]
 
     # ── 5. Position Redemption ───────────────────────────────────────────
 
