@@ -33,7 +33,9 @@
     "margex.com": "Personal/Crypto",
     "con.sonos.com": "Vendor/Marketing",
     "toolup.com": "Vendor/Marketing",
-    "avproglobal.com": "Industry/Training"
+    "avproglobal.com": "Industry/Training",
+    "d-tools.com": "Vendor",
+    "autodesk.com": "Notes"
   },
   "marketing_patterns": [
     "unsubscribe",

@@ -160,13 +160,24 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
                 continue
 
         if not dest_folder:
-            # Couldn't find where it went — default to Marketing-Ignore
-            # Most manual moves are marketing/junk
-            dest_folder = "Marketing-Ignore"
+            # Couldn't determine destination — notify via Redis so Bob can ask
+            try:
+                import redis as _redis
+                r = _redis.from_url(
+                    os.environ.get("REDIS_URL", "redis://redis:6379"),
+                    decode_responses=True, socket_timeout=2,
+                )
+                r.publish("notifications:email", json.dumps({
+                    "title": "New sender moved from Inbox",
+                    "body": f"You moved an email from {sender} ({domain}). Reply with the folder name and I'll route all future emails from {domain} there.",
+                }))
+            except Exception:
+                pass
             logger.info(
-                "Learn-from-moves: couldn't locate folder for %s, defaulting to %s",
-                sender, dest_folder,
+                "Learn-from-moves: asked owner for folder for %s",
+                sender,
             )
+            continue  # Skip — don't guess, ask
 
         if dest_folder:
             # Learn the rule: add domain → folder
