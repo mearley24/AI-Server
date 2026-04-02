@@ -335,7 +335,7 @@ class PaperTradingRunner:
 async def main():
     import argparse
     parser = argparse.ArgumentParser(description="Paper Trading Runner")
-    parser.add_argument("--bankroll", type=float, default=50000.0)
+    parser.add_argument("--bankroll", type=float, default=1000000.0)
     parser.add_argument("--hours", type=float, default=24.0)
     args = parser.parse_args()
 
