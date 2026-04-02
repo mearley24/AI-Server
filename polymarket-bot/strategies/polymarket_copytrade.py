@@ -1465,20 +1465,40 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="low_bankroll", bankroll=round(self._bankroll, 2))
             return False
 
-        # Guard: entry price filters — avoid extreme odds (lottery tickets and near-certainties)
-        # Data: <40¢ entries have 35% WR vs 83% for >80¢ — raise floor to 0.40
-        # Exception: wallets with >90% WR and >30 resolved trades bypass to 0.10 floor
+        # Guard: category-specific entry price caps
+        # Research (neobrother, Hans323, @crptAtlas, Binance analysis):
+        # - Weather: buy CHEAP brackets (0.2-15¢), one 800%+ hit covers all misses
+        # - Sports: moderate pricing, edge comes from domain knowledge
+        # - Crypto: only longer-window markets, avoid near-certainties
+        # - General: avoid paying >80¢ for any binary outcome
+        # Top traders buy LOW and let winners pay for losers.
+        # Buying at 90¢+ risks $9 to make $1 — terrible risk/reward.
+        CATEGORY_MAX_ENTRY = {
+            "weather": 0.25,     # Buy cheap temperature brackets only
+            "us_sports": 0.75,  # Sports have real edge with domain knowledge
+            "crypto": 0.60,     # Only longer windows, moderate pricing
+            "politics": 0.50,   # Only if it passes blacklist (LLM > 0.9)
+            "geopolitics": 0.50,
+            "science": 0.60,
+            "other": 0.70,
+        }
+        CATEGORY_MIN_ENTRY = {
+            "weather": 0.01,     # Cheap brackets are the strategy
+            "us_sports": 0.10,
+            "crypto": 0.05,
+            "politics": 0.05,
+            "geopolitics": 0.05,
+            "science": 0.05,
+            "other": 0.05,
+        }
+        max_entry_price = CATEGORY_MAX_ENTRY.get(category, 0.70)
+        min_entry_price = CATEGORY_MIN_ENTRY.get(category, 0.05)
         high_conviction_entry = wallet.win_rate >= 0.90 and wallet.total_resolved >= 30
-        min_entry_price = float(os.environ.get(
-            "COPYTRADE_MIN_ENTRY_PRICE",
-            "0.10" if high_conviction_entry else "0.40",
-        ))
-        max_entry_price = float(os.environ.get("COPYTRADE_MAX_ENTRY_PRICE", "0.97"))
         if price < min_entry_price:
             logger.info("copytrade_skip", reason="below_min_entry_price", price=price, min=min_entry_price, high_conviction=high_conviction_entry, market=market_question[:40])
             return False
         if price > max_entry_price:
-            logger.info("copytrade_skip", reason="above_max_entry_price", price=price, max=max_entry_price, market=market_question[:40])
+            logger.info("copytrade_skip", reason="above_max_entry_price", price=price, max=max_entry_price, category=category, market=market_question[:40])
             return False
 
         # Guard: already have position in this market
