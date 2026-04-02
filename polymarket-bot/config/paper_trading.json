@@ -1,0 +1,62 @@
+{
+  "paper_trading": {
+    "enabled": true,
+    "initial_bankroll": 50000.00,
+    "description": "Realistic paper trading with worst-case fees from live data",
+    
+    "fees": {
+      "gas_per_trade": 0.05,
+      "winner_tax_pct": 0.02,
+      "slippage_pct": 0.005,
+      "description": "Gas based on 131+ gwei Polygon peak. Winner tax is Polymarket's 2%. Slippage conservative 0.5%."
+    },
+    
+    "strategies": {
+      "weather_cheap_bracket": {
+        "bankroll_pct": 0.40,
+        "bankroll_usd": 20000.00,
+        "max_entry_price": 0.25,
+        "max_per_bracket": 50.00,
+        "max_per_city_date": 200.00,
+        "description": "Neobrother strategy - buy cheap brackets under 25¢, METAR/NOAA edge"
+      },
+      "copytrade_filtered": {
+        "bankroll_pct": 0.35,
+        "bankroll_usd": 17500.00,
+        "min_wallet_wr": 0.80,
+        "min_wallet_trades": 20,
+        "max_entry_price_weather": 0.25,
+        "max_entry_price_sports": 0.75,
+        "max_entry_price_crypto": 0.60,
+        "max_entry_price_other": 0.70,
+        "category_blacklist": ["politics", "geopolitics"],
+        "description": "Domain specialist wallets only, research-backed entry caps"
+      },
+      "spread_arb": {
+        "bankroll_pct": 0.25,
+        "bankroll_usd": 12500.00,
+        "min_spread_pct": 0.02,
+        "complement_arb": true,
+        "negative_risk_arb": true,
+        "contrarian_bounce": true,
+        "max_position_size": 500.00,
+        "description": "Complement arb (YES+NO<$1), negative risk on multi-outcome, contrarian bounce on mispricing"
+      }
+    },
+    
+    "risk_management": {
+      "max_single_position_pct": 0.02,
+      "max_category_exposure_pct": 0.30,
+      "max_correlated_positions": 3,
+      "stop_loss_default_pct": 0.50,
+      "correlation_alert_threshold": 0.30,
+      "daily_loss_limit_pct": 0.05,
+      "description": "No more than 2% in one position, 30% in one category, 5% daily loss limit"
+    },
+    
+    "scaling_analysis": {
+      "test_bankrolls": [1000, 5000, 10000, 25000, 50000, 100000],
+      "description": "Run paper trades at each level to find minimum viable bankroll for each strategy"
+    }
+  }
+}
