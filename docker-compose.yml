@@ -193,6 +193,7 @@ services:
       - "127.0.0.1:8092:8092"
     volumes:
       - ./data/email-monitor:/data
+      - ./openclaw:/app/openclaw
     depends_on:
       - redis
     healthcheck:
