@@ -27,8 +27,10 @@ logger = structlog.get_logger(__name__)
 MIN_COMPLEMENT_SPREAD = float(os.environ.get("ARB_MIN_COMPLEMENT_SPREAD", "0.015"))  # 1.5% minimum
 MIN_NEGATIVE_RISK_EDGE = float(os.environ.get("ARB_MIN_NEG_RISK_EDGE", "0.02"))  # 2%
 CONTRARIAN_DROP_PCT = float(os.environ.get("ARB_CONTRARIAN_DROP", "0.15"))  # 15% price drop
-MAX_POSITION_USD = float(os.environ.get("ARB_MAX_POSITION", "100"))
-SCAN_INTERVAL = int(os.environ.get("ARB_SCAN_INTERVAL", "60"))
+MAX_POSITION_USD = float(os.environ.get("ARB_MAX_POSITION", "50"))
+MAX_DAILY_TRADES = int(os.environ.get("ARB_MAX_DAILY_TRADES", "10"))
+MAX_TOTAL_EXPOSURE = float(os.environ.get("ARB_MAX_EXPOSURE", "2000"))
+SCAN_INTERVAL = int(os.environ.get("ARB_SCAN_INTERVAL", "300"))  # 5 min between scans
 
 # Fee assumptions for profitability calc
 GAS_FEE = 0.05  # per trade
@@ -76,6 +78,15 @@ class SpreadArbScanner:
 
     async def scan_once(self) -> list[ArbOpportunity]:
         """Run a single scan across all three sub-strategies."""
+        # Guard: daily trade limit and total exposure
+        total_exposure = sum(p.get("cost", 0) for p in self._positions.values())
+        if self._trades_count >= MAX_DAILY_TRADES:
+            logger.info("arb_daily_limit_reached", trades=self._trades_count, limit=MAX_DAILY_TRADES)
+            return []
+        if total_exposure >= MAX_TOTAL_EXPOSURE:
+            logger.info("arb_max_exposure_reached", exposure=total_exposure, limit=MAX_TOTAL_EXPOSURE)
+            return []
+
         opps = []
         async with httpx.AsyncClient(timeout=30) as client:
             # Fetch markets

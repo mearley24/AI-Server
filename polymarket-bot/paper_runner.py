@@ -239,7 +239,7 @@ class PaperTradingRunner:
         while time.time() < end_time:
             try:
                 opps = await scanner.scan_once()
-                for opp in opps[:3]:  # Max 3 trades per scan
+                for opp in opps[:1]:  # Max 1 trade per scan — conservative
                     if self._arb.bankroll_current < opp.cost_usd:
                         continue
                     pos = PaperPosition(
