@@ -261,14 +261,8 @@ class PaperTradingRunner:
                                 market=opp.market_title[:40],
                                 cost=opp.cost_usd,
                                 expected_profit=opp.expected_profit_pct)
-                    _paper_notify(
-                        f"[PAPER] {opp.opp_type}",
-                        f"{opp.market_title[:55]}\n\n"
-                        f"${opp.cost_usd:.2f} cost\n"
-                        f"{opp.expected_profit_pct:.1f}% expected return\n\n"
-                        f"Bankroll: ${self._arb.bankroll_current:.0f}\n"
-                        f"Trades: {self._arb.trades}",
-                    )
+                    # Per-trade notifications disabled — hourly dashboard only
+                    # Data logs to /tmp/paper.log for analysis
             except Exception as e:
                 logger.error("paper_arb_error", error=str(e)[:100])
 
