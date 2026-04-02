@@ -293,10 +293,23 @@ class PaperTradingRunner:
             print(f"{'='*60}\n")
 
             # Send hourly dashboard to iMessage
-            lines = [f"Hour {elapsed_hours:.0f} | P/L: ${total_pnl:+,.2f} | Bank: ${total_bankroll:,.0f}"]
+            lines = [f"Hour {elapsed_hours:.0f} | P/L: ${total_pnl:+,.2f}"]
+            lines.append("")
             for ledger in self._ledgers:
                 s = ledger.snapshot()
-                lines.append(f"  {ledger.name[:15]}: ${s['total_pnl']:+.2f} ({s['trades']}t, {s['win_rate']}% WR)")
+                lines.append(f"{ledger.name[:12]}")
+                lines.append(f"  {s['trades']} trades | {s['win_rate']}% WR | ${s['total_pnl']:+.2f}")
+                # Top winner and loser
+                if ledger.closed_positions:
+                    winners = [p for p in ledger.closed_positions if p.pnl and p.pnl > 0]
+                    losers = [p for p in ledger.closed_positions if p.pnl and p.pnl < 0]
+                    if winners:
+                        best = max(winners, key=lambda p: p.pnl)
+                        lines.append(f"  Best: ${best.pnl:+.2f} {best.market[:30]}")
+                    if losers:
+                        worst = min(losers, key=lambda p: p.pnl)
+                        lines.append(f"  Worst: ${worst.pnl:+.2f} {worst.market[:30]}")
+                lines.append("")
             _paper_notify("[PAPER] Hourly", "\n".join(lines))
 
     def _final_report(self) -> dict:
