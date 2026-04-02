@@ -1,0 +1,35 @@
+IDEA: MeanReversion — fade extreme overnight moves
+DATE: 2026-04-01
+DESCRIPTION: When a market moves from 50¢ to 85¢ overnight with low volume, fade it back to 65¢
+HYPOTHESIS: Thin overnight orderbooks allow manipulation, price reverts to fair value by morning. Track 24h price change + volume ratio. If move > 30¢ on volume < 1000 shares, fade it.
+STATUS: pending
+NOTES: Check copytrade P/L on overnight positions — if whales consistently profit on AM reversal, this is confirmed
+---
+IDEA: PresolutionScalp — buy cheap side 2 hours before resolution
+DATE: 2026-04-01
+DESCRIPTION: If a market hasn't resolved and is at 95¢ with 2 hours left, buy the 5¢ side
+HYPOTHESIS: Tail risk is consistently underpriced near resolution. Resolution is never 100% certain — smart contract bugs, data source delays, ambiguous question wording. Paying 5¢ for a small tail is good EV.
+STATUS: pending
+NOTES: Need to filter for markets where resolution source is clear (price feeds, government data) vs subjective (panel judgment)
+---
+IDEA: BracketLadder — systematic cheap bracket buying (neobrother strategy)
+DATE: 2026-04-02
+DESCRIPTION: Buy multiple cheap temperature brackets around the NOAA forecast rather than the likely bracket. Enter at 0.2-15¢, let 400-1000%+ wins cover all small losses.
+HYPOTHESIS: NOAA has ~3.5°F RMSE on Day-1 forecasts. If we buy ±15°F from the forecast center at 1-15¢ each, one 800%+ hit covers 8-20 rungs. Top traders (neobrother: $20K+, Hans323: $1.1M) use this exact approach.
+STATUS: implementing
+NOTES: See weather_trader.py CheapBracketStrategy class. Running in dry-run first. Track hit rate per city.
+---
+IDEA: KalshiVsPolymarket — cross-platform bracket arbitrage
+DATE: 2026-04-02
+DESCRIPTION: Same temperature bracket priced differently on Kalshi and Polymarket. Buy cheap side, short expensive side (or just buy the cheap one).
+HYPOTHESIS: Markets lag each other by 1-4 hours during active trading periods. Same NYC high-temp bracket trading at 15¢ on Kalshi but 22¢ on Polymarket = buy Kalshi.
+STATUS: pending
+NOTES: Need to build bracket-matching logic across platforms (same city + date + temp range = same bet). Spread must exceed transaction costs.
+---
+IDEA: EnsembleForecastEdge — use multiple weather models instead of just NOAA GFS
+DATE: 2026-04-02
+DESCRIPTION: Combine NOAA GFS, ECMWF (European model), and NAM (North American Mesoscale) for a consensus forecast. When all three agree, buy the bracket aggressively.
+HYPOTHESIS: Ensemble agreement reduces sigma from 3.5°F to ~1.5°F. This dramatically reprices adjacent brackets. A 10°F bracket that should be 8¢ based on GFS alone should be 3¢ if all models agree it's 12°F off. Market rarely prices in ensemble consensus.
+STATUS: pending
+NOTES: ECMWF requires paid API ($50/month for ensemble data). Open-Meteo has ECMWF for free but with 1-day lag. Check if lag matters for 24h weather markets.
+---
