@@ -174,8 +174,9 @@ class ScannerEngine:
                 self._all_signals.append(record)
                 self._signals_today += 1
 
-                # Notify on high-confidence signals (tier 2+)
-                if record.confidence_score >= 65:
+                # Whale signals are now tagged on [NEW TRADE] cards instead of
+                # separate notifications. Only notify for extreme signals (90+).
+                if record.confidence_score >= 90:
                     self._notify_signal(record)
 
         # 6. Expire old active signals

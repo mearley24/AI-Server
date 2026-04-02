@@ -2001,11 +2001,16 @@ class PolymarketCopyTrader:
         lifecycle = f"Trail@: {tp1_price:.2f} | SL: {sl_price:.2f}"
         cat_pnl = self._category_pnl.get(category, 0)
         daily_net = self._daily_wins - self._daily_realized_losses
+        # Enriched trade notification
+        pos_count = len(self._positions) + 1
+        daily_pnl = round(self._daily_wins - self._daily_realized_losses, 2)
+        whale_tag = " [WHALE]" if size_usd >= 50 or (hasattr(wallet, 'total_volume') and wallet.total_volume >= 5000) else ""
         _notify(
-            "[NEW TRADE]",
-            f"[NEW TRADE] {market_question[:50]}\n"
-            f"${size_usd:.2f} @ {price:.2f} | {wallet.win_rate*100:.0f}% WR wallet\n"
-            f"SL: {sl_price:.2f} | Cat: {category}",
+            f"[NEW TRADE]{whale_tag}",
+            f"{market_question[:55]}\n"
+            f"${size_usd:.2f} @ {price:.2f}c | {wallet.win_rate*100:.0f}% WR ({wallet.total_resolved} trades)\n"
+            f"SL: {sl_price:.2f} | Cat: {category}\n"
+            f"Bankroll: ${self._bankroll:.0f} | Positions: {pos_count} | Day P/L: ${daily_pnl:+.2f}",
         )
         return True
 
@@ -2828,10 +2833,10 @@ class PolymarketCopyTrader:
         self._pnl_tracker.record_trade(pnl_trade)
 
         _notify(
-            "[NEW TRADE] Re-entry",
-            f"[NEW TRADE] {market_question[:50]}\n"
-            f"${size_usd:.2f} @ {current_price:.2f} | prev exit {exit_price:.2f}\n"
-            f"Cat: {category}",
+            "[RE-ENTRY]",
+            f"{market_question[:55]}\n"
+            f"${size_usd:.2f} @ {current_price:.2f}c | prev exit {exit_price:.2f}\n"
+            f"Cat: {category} | Bankroll: ${self._bankroll:.0f}",
         )
 
         logger.info(
