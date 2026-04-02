@@ -1465,6 +1465,9 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="low_bankroll", bankroll=round(self._bankroll, 2))
             return False
 
+        # Detect category early — needed for entry price caps and blacklist
+        category = categorize_market(market_question)
+
         # Guard: category-specific entry price caps
         # Research (neobrother, Hans323, @crptAtlas, Binance analysis):
         # - Weather: buy CHEAP brackets (0.2-15¢), one 800%+ hit covers all misses
@@ -2003,13 +2006,17 @@ class PolymarketCopyTrader:
         # Enriched trade notification
         pos_count = len(self._positions) + 1
         daily_pnl = round(self._daily_wins - self._daily_realized_losses, 2)
-        whale_tag = " [WHALE]" if size_usd >= 50 or (hasattr(wallet, 'total_volume') and wallet.total_volume >= 5000) else ""
+        whale_tag = " WHALE" if size_usd >= 50 or (hasattr(wallet, 'total_volume') and wallet.total_volume >= 5000) else ""
         _notify(
-            f"[NEW TRADE]{whale_tag}",
-            f"{market_question[:55]}\n"
-            f"${size_usd:.2f} @ {price:.2f}c | {wallet.win_rate*100:.0f}% WR ({wallet.total_resolved} trades)\n"
-            f"SL: {sl_price:.2f} | Cat: {category}\n"
-            f"Bankroll: ${self._bankroll:.0f} | Positions: {pos_count} | Day P/L: ${daily_pnl:+.2f}",
+            f"[REAL]{whale_tag}",
+            f"{market_question[:55]}\n\n"
+            f"${size_usd:.2f} @ {price:.2f}c\n"
+            f"{wallet.win_rate*100:.0f}% WR ({wallet.total_resolved} trades)\n"
+            f"SL: {sl_price:.2f}\n"
+            f"Cat: {category}\n\n"
+            f"Bankroll: ${self._bankroll:.0f}\n"
+            f"Positions: {pos_count}\n"
+            f"Day P/L: ${daily_pnl:+.2f}",
         )
         return True
 

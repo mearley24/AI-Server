@@ -26,12 +26,23 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import redis as _redis
 import structlog
 
 logger = structlog.get_logger(__name__)
 
 # Fee structure from live data
 GAS_PER_TRADE = 0.05
+
+
+def _paper_notify(title: str, body: str) -> None:
+    """Send paper trading notification via Redis -> iMessage."""
+    try:
+        url = os.environ.get("REDIS_URL", "redis://redis:6379")
+        r = _redis.from_url(url, decode_responses=True, socket_timeout=2)
+        r.publish("notifications:trading", json.dumps({"title": title, "body": body}))
+    except Exception:
+        pass
 WINNER_TAX_PCT = 0.02
 SLIPPAGE_PCT = 0.005
 
@@ -250,6 +261,14 @@ class PaperTradingRunner:
                                 market=opp.market_title[:40],
                                 cost=opp.cost_usd,
                                 expected_profit=opp.expected_profit_pct)
+                    _paper_notify(
+                        f"[PAPER] {opp.opp_type}",
+                        f"{opp.market_title[:55]}\n\n"
+                        f"${opp.cost_usd:.2f} cost\n"
+                        f"{opp.expected_profit_pct:.1f}% expected return\n\n"
+                        f"Bankroll: ${self._arb.bankroll_current:.0f}\n"
+                        f"Trades: {self._arb.trades}",
+                    )
             except Exception as e:
                 logger.error("paper_arb_error", error=str(e)[:100])
 
@@ -274,9 +293,17 @@ class PaperTradingRunner:
                 print(f"    Trades: {snap['trades']} | W/L: {snap['wins']}/{snap['losses']} ({snap['win_rate']}%)")
                 print(f"    P/L: ${snap['total_pnl']:+,.2f} (fees: ${snap['fees_paid']:,.2f})")
 
+            total_bankroll = sum(l.bankroll_current for l in self._ledgers)
             print(f"\n  TOTAL P/L: ${total_pnl:+,.2f}")
-            print(f"  TOTAL BANKROLL: ${sum(l.bankroll_current for l in self._ledgers):,.2f}")
+            print(f"  TOTAL BANKROLL: ${total_bankroll:,.2f}")
             print(f"{'='*60}\n")
+
+            # Send hourly dashboard to iMessage
+            lines = [f"Hour {elapsed_hours:.0f} | P/L: ${total_pnl:+,.2f} | Bank: ${total_bankroll:,.0f}"]
+            for ledger in self._ledgers:
+                s = ledger.snapshot()
+                lines.append(f"  {ledger.name[:15]}: ${s['total_pnl']:+.2f} ({s['trades']}t, {s['win_rate']}% WR)")
+            _paper_notify("[PAPER] Hourly", "\n".join(lines))
 
     def _final_report(self) -> dict:
         """Generate final report."""
