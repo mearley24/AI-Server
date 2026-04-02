@@ -580,9 +580,10 @@ class EmailMonitor:
                         if category == "ACTIVE_CLIENT":
                             try:
                                 import sys as _sys
-                                _openclaw_dir = os.path.join(os.path.dirname(__file__), "..", "openclaw")
-                                if _openclaw_dir not in _sys.path:
-                                    _sys.path.insert(0, _openclaw_dir)
+                                # Try both possible mount paths
+                                for _odir in ["/app/openclaw", os.path.join(os.path.dirname(__file__), "..", "openclaw"), "/app/../openclaw"]:
+                                    if os.path.isdir(_odir) and _odir not in _sys.path:
+                                        _sys.path.insert(0, _odir)
                                 from auto_responder import auto_respond
                                 await asyncio.to_thread(
                                     auto_respond, sender_email, sender_name, subject, snippet, message_id,
