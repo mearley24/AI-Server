@@ -218,7 +218,7 @@ class PaperTradingRunner:
         # Import strategies
         from strategies.spread_arb import SpreadArbScanner
 
-        arb_scanner = SpreadArbScanner(bankroll=self._arb.bankroll_current, dry_run=True)
+        arb_scanner = SpreadArbScanner(bankroll=self._arb.bankroll_current, dry_run=True, paper_mode=True)
 
         # Run strategies concurrently
         tasks = [
@@ -239,7 +239,7 @@ class PaperTradingRunner:
         while time.time() < end_time:
             try:
                 opps = await scanner.scan_once()
-                for opp in opps[:1]:  # Max 1 trade per scan — conservative
+                for opp in opps:  # Paper mode — take every opportunity, data tells us what works
                     if self._arb.bankroll_current < opp.cost_usd:
                         continue
                     pos = PaperPosition(

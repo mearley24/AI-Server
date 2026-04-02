@@ -63,9 +63,10 @@ class PriceSnapshot:
 class SpreadArbScanner:
     """Scans Polymarket for arbitrage and spread opportunities."""
 
-    def __init__(self, bankroll: float = 12500.0, dry_run: bool = True):
+    def __init__(self, bankroll: float = 12500.0, dry_run: bool = True, paper_mode: bool = False):
         self._bankroll = bankroll
         self._dry_run = dry_run
+        self._paper_mode = paper_mode
         self._opportunities: list[ArbOpportunity] = []
         self._price_history: dict[str, list[PriceSnapshot]] = {}  # condition_id -> snapshots
         self._positions: dict[str, dict] = {}  # active arb positions
@@ -78,14 +79,15 @@ class SpreadArbScanner:
 
     async def scan_once(self) -> list[ArbOpportunity]:
         """Run a single scan across all three sub-strategies."""
-        # Guard: daily trade limit and total exposure
-        total_exposure = sum(p.get("cost", 0) for p in self._positions.values())
-        if self._trades_count >= MAX_DAILY_TRADES:
-            logger.info("arb_daily_limit_reached", trades=self._trades_count, limit=MAX_DAILY_TRADES)
-            return []
-        if total_exposure >= MAX_TOTAL_EXPOSURE:
-            logger.info("arb_max_exposure_reached", exposure=total_exposure, limit=MAX_TOTAL_EXPOSURE)
-            return []
+        # Guard: daily trade limit and total exposure (skip in paper mode)
+        if not self._paper_mode:
+            total_exposure = sum(p.get("cost", 0) for p in self._positions.values())
+            if self._trades_count >= MAX_DAILY_TRADES:
+                logger.info("arb_daily_limit_reached", trades=self._trades_count, limit=MAX_DAILY_TRADES)
+                return []
+            if total_exposure >= MAX_TOTAL_EXPOSURE:
+                logger.info("arb_max_exposure_reached", exposure=total_exposure, limit=MAX_TOTAL_EXPOSURE)
+                return []
 
         opps = []
         async with httpx.AsyncClient(timeout=30) as client:
