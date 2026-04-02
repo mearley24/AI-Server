@@ -1585,8 +1585,7 @@ class PolymarketCopyTrader:
                     )
                     return False
 
-        # ── Detect category ─────────────────────────────────────
-        category = categorize_market(market_question)
+        # ── Category already detected above for entry price caps ──
 
         # ── P1: Category blacklist ────────────────────────────────
         # Block politics/geopolitics unless LLM validation score > 0.9.
