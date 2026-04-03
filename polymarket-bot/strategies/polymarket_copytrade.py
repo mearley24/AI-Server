@@ -280,12 +280,16 @@ class PolymarketCopyTrader:
         self._daily_category_losses: dict[str, float] = {}
         self._halted_categories: set[str] = set()
         self._CATEGORY_LOSS_LIMITS: dict[str, float] = {
-            "crypto_updown": 15.0,
-            "sports": 20.0,
-            "weather": 40.0,
-            "politics": 50.0,
-            "other": 35.0,
+            "crypto_updown": 10.0,
+            "crypto_binary": 0.0,
+            "sports": 30.0,
+            "weather": 50.0,
+            "politics": 5.0,
+            "geopolitics": 5.0,
+            "science": 10.0,
+            "other": 25.0,
         }
+        self._min_resolution_hours = float(os.environ.get("MIN_RESOLUTION_HOURS", "0.5"))
 
         # API base URLs
         self._gamma_url = settings.gamma_api_url.rstrip("/")
@@ -1263,6 +1267,43 @@ class PolymarketCopyTrader:
             return True
         return False
 
+    def _is_short_window_market(self, market_question: str) -> bool:
+        """Fast title-based short-window detector."""
+        if not market_question:
+            return False
+        return any(pattern.search(market_question) for pattern in _SHORT_WINDOW_TITLE_PATTERNS)
+
+    def _check_resolution_window(
+        self,
+        market_data: dict[str, Any],
+        market_question: str,
+    ) -> tuple[bool, str]:
+        """Block markets resolving too soon (< MIN_RESOLUTION_HOURS)."""
+        if self._is_short_window_market(market_question):
+            return False, "short_window_market"
+
+        end_date_str = (
+            market_data.get("endDate")
+            or market_data.get("end_date_iso")
+            or market_data.get("endDateIso")
+            or ""
+        )
+        if not end_date_str:
+            return True, ""
+
+        try:
+            from datetime import datetime, timezone
+
+            end_dt = datetime.fromisoformat(str(end_date_str).replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            hours_remaining = (end_dt - now).total_seconds() / 3600
+            if hours_remaining < self._min_resolution_hours:
+                return False, f"resolution_window_too_short_{hours_remaining:.1f}h"
+        except (ValueError, TypeError):
+            return True, ""
+
+        return True, ""
+
     # ── 2. Trade Monitoring ──────────────────────────────────────────────
 
     async def _monitor_trades(self) -> None:
@@ -1534,27 +1575,18 @@ class PolymarketCopyTrader:
             logger.info("copytrade_skip", reason="no_clob_client")
             return False
 
-        # ── P1: Crypto binary short-window filter ─────────────────
-        # Block markets with resolution window < 30 minutes (e.g. "ETH Up or Down 9:00AM-9:15AM").
-        window_minutes = _parse_resolution_window_minutes(market_question)
-        if window_minutes is not None and window_minutes < 30:
+        # ── P0: Resolution-window filter for crypto binaries ─────────
+        allowed_resolution, resolution_reason = self._check_resolution_window(
+            market_data=trade,
+            market_question=market_question,
+        )
+        if not allowed_resolution:
             logger.info(
-                "copytrade_skip_short_window",
+                "copytrade_skip",
+                reason=resolution_reason or "short_window_market",
                 market=market_question[:60],
-                window_minutes=window_minutes,
             )
             return False
-        # Also catch generic "up or down" short-window titles without explicit times
-        if any(p.search(market_question) for p in _SHORT_WINDOW_TITLE_PATTERNS):
-            if window_minutes is None:
-                # Title matches short-window pattern but has no parseable times —
-                # likely a short binary; block it.
-                logger.info(
-                    "copytrade_skip_short_window",
-                    market=market_question[:60],
-                    reason="title_pattern_match",
-                )
-                return False
 
         # ── P0: Temperature cluster dedup ─────────────────────────
         cluster_key = _extract_temp_cluster_key(market_question)

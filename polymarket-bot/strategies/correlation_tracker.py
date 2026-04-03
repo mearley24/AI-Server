@@ -60,6 +60,9 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
         "blockchain", "token", "coin", "defi", "nft", "altcoin", "binance",
         "coinbase", "halvening", "halving", "memecoin", "up or down",
     ],
+    "crypto_binary": [
+        "up or down", "up-or-down", "pump or dump",
+    ],
     "sports": [
         "soccer", "football", "golf", "ufc", "mma", "boxing",
         "world cup", "championship", "playoff",
