@@ -34,14 +34,27 @@ async def scrape_bookmarks(max_bookmarks: int = 500, output_path: str = "bookmar
     seen_ids = set()
 
     async with async_playwright() as p:
-        # Use persistent context to keep cookies/login
+        # Use Brave browser with your existing profile (already logged into X)
+        brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+        if not os.path.exists(brave_path):
+            brave_path = None  # Fall back to Chromium
+
         if not profile_dir:
-            profile_dir = os.path.expanduser("~/.x_profile")
+            if brave_path:
+                profile_dir = os.path.expanduser("~/Library/Application Support/BraveSoftware/Brave-Browser/Default")
+            else:
+                profile_dir = os.path.expanduser("~/.x_profile")
+
+        launch_args = {
+            "headless": False,
+            "viewport": {"width": 1280, "height": 900},
+        }
+        if brave_path:
+            launch_args["executable_path"] = brave_path
 
         browser = await p.chromium.launch_persistent_context(
             profile_dir,
-            headless=False,  # Needs to be visible first time for login
-            viewport={"width": 1280, "height": 900},
+            **launch_args,
         )
 
         page = browser.pages[0] if browser.pages else await browser.new_page()
