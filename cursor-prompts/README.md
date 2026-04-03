@@ -25,7 +25,8 @@ Run in order within each tier. DONE items were completed by Cursor already.
 | 5 | Auto-1-cross-platform-arb.md | Auto | P1 — Kalshi vs Polymarket bracket arb |
 | 6 | Auto-5-docker-health-startup.md | Auto | P0 — health checks + startup orchestration |
 | 7 | Auto-8-risk-management-hardening.md | Auto | P0 — volume filter, whale gate, bankroll sync, redemption audit |
-| 8 | Auto-10-intel-feeds-deploy.md | Auto | P1 — deploy the trading cortex |
+| 8 | Auto-21-position-reconciliation.md | Auto | P0 — on-chain position sync, true portfolio value, startup recovery |
+| 9 | Auto-10-intel-feeds-deploy.md | Auto | P1 — deploy the trading cortex |
 
 ## Tier 2 — New Strategies (run after Tier 1)
 
