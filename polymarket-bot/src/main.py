@@ -165,6 +165,9 @@ async def lifespan(app: FastAPI):
     # ── Platform initialization (Polymarket only) ──────────────────────
     platform_clients: dict[str, Any] = {}
     platform_strategies: list[Any] = []  # strategies with start/stop lifecycle
+    managed_strategies: list[tuple[str, Any]] = []
+    strategy_manager = None
+    strategy_manager_enabled = os.environ.get("STRATEGY_MANAGER_ENABLED", "true").lower() in {"1", "true", "yes"}
 
     # Log any platform import failures
     for pname, perr in _PLATFORM_IMPORT_ERRORS.items():
@@ -196,7 +199,10 @@ async def lifespan(app: FastAPI):
         )
         if whale_scanner:
             copytrade.set_whale_scanner(whale_scanner)
-        platform_strategies.append(("copytrade", copytrade))
+        if strategy_manager_enabled:
+            managed_strategies.append(("copytrade", copytrade))
+        else:
+            platform_strategies.append(("copytrade", copytrade))
 
     # ── Activate additional autonomous strategies ──────────────────────
     # Each strategy is wrapped in try/except so one broken strategy doesn't kill the bot.
@@ -215,10 +221,28 @@ async def lifespan(app: FastAPI):
             client=client, settings=settings, scanner=scanner,
             orderbook=orderbook, pnl_tracker=pnl_tracker,
         )
-        platform_strategies.append(("weather_trader", weather_trader))
+        if strategy_manager_enabled:
+            managed_strategies.append(("weather_trader", weather_trader))
+        else:
+            platform_strategies.append(("weather_trader", weather_trader))
         log.info("strategy_loaded", strategy="weather_trader")
     except Exception as exc:
         log.warning("strategy_load_failed", strategy="weather_trader", error=str(exc))
+
+    # CVD/Arb Combined — order-flow divergence plus spread opportunities
+    try:
+        from strategies.cvd_detector import CVDDetectorStrategy
+        cvd_arb = CVDDetectorStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        if strategy_manager_enabled:
+            managed_strategies.append(("cvd_arb", cvd_arb))
+        else:
+            platform_strategies.append(("cvd_arb", cvd_arb))
+        log.info("strategy_loaded", strategy="cvd_arb")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="cvd_arb", error=str(exc))
 
     # Sports Arb — zero-risk arbitrage buying both sides when combined < $0.98
     try:
@@ -295,6 +319,7 @@ async def lifespan(app: FastAPI):
     deps.strategies = {}
     for name, strat in platform_strategies:
         deps.strategies[name] = strat
+    deps.strategy_manager = None
 
     # Register kill switch callback to stop all strategies
     async def _on_kill(reason: str) -> None:
@@ -335,6 +360,26 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.error("platform_strategy_start_failed", strategy=name, error=str(exc))
 
+    # Start StrategyManager for the 3-strategy architecture (weather/copytrade/cvd_arb)
+    if strategy_manager_enabled and managed_strategies:
+        try:
+            from strategies.strategy_manager import StrategyManager
+            strategy_manager = StrategyManager(
+                total_bankroll=float(os.environ.get("COPYTRADE_BANKROLL", "1000")),
+                dry_run=settings.dry_run,
+            )
+            for name, strat in managed_strategies:
+                strategy_manager.register_strategy(name, strat)
+                deps.strategies[name] = strat
+            await strategy_manager.start()
+            deps.strategy_manager = strategy_manager
+            log.info(
+                "strategy_manager_started",
+                managed_strategies=[name for name, _ in managed_strategies],
+            )
+        except Exception as exc:
+            log.error("strategy_manager_start_failed", error=str(exc))
+
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
 
@@ -362,7 +407,7 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.error("heartbeat_scheduler_error", error=str(exc))
 
-    active_strategy_names = [n for n, _ in platform_strategies]
+    active_strategy_names = [n for n, _ in platform_strategies] + [n for n, _ in managed_strategies]
     log.info(
         "polymarket_bot_started",
         mode="OBSERVER (dry-run)" if settings.dry_run else "LIVE",
@@ -410,6 +455,12 @@ async def lifespan(app: FastAPI):
             pass
 
     # Stop platform-specific strategies (copytrade + redeemer)
+    if strategy_manager:
+        try:
+            await strategy_manager.stop()
+        except Exception:
+            pass
+
     for name, strat in platform_strategies:
         try:
             await strat.stop()
