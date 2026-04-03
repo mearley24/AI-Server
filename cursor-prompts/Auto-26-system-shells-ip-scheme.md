@@ -48,7 +48,7 @@ VLAN 20 — Control (192.168.20.0/24)
   .1          Gateway
   .2-.15      Controllers (EA-5, EA-3, EA-1, CORE3, CORE5 — room for 14)
   .16-.45     Control endpoints (keypads w/ IP, touchscreens, iPads — room for 30)
-  .46-.75     Audio distribution (AMS-16, amps, Sonos, streaming bridges — room for 30)
+  .46-.75     Audio distribution (AMS-8, AMS-16, DSP amps, Sonos ports, streaming bridges — room for 30. Note: traditional amps are NOT networked, only the matrix/DSP units that route audio)
   .76-.95     Lighting processors (Lutron RA3 processors, repeaters, panels — room for 20)
   .96-.115    Shade controllers (Lutron, Somfy, QMotion — room for 20)
   .116-.130   Climate / HVAC interfaces (thermostats, zone controllers — room for 15)
