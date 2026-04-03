@@ -157,11 +157,6 @@ def _parse_resolution_window_minutes(market_question: str) -> int | None:
     return end - start
 
 
-# ── Category blacklist (P1) ──────────────────────────────────────────────────
-CATEGORY_BLACKLIST: set[str] = {"politics", "geopolitics"}
-BLACKLIST_LLM_OVERRIDE_THRESHOLD = 0.9
-
-
 # ── Orphan position persistence ──────────────────────────────────────────────
 ORPHAN_FILE = "/data/orphan_positions.json"
 
@@ -254,6 +249,23 @@ class CopiedPosition:
 
 class PolymarketCopyTrader:
     """Copy-trades top-performing Polymarket wallets with smart exits and Kelly sizing."""
+
+    CATEGORY_TIERS: dict[str, str] = {
+        "weather": "whitelist",
+        "us_sports": "whitelist",
+        "sports": "whitelist",
+        "esports": "whitelist",
+        "tennis": "whitelist",
+        "crypto": "graylist",
+        "crypto_updown": "graylist",
+        "economics": "graylist",
+        "other": "graylist",
+        "politics": "blacklist",
+        "geopolitics": "blacklist",
+        "science": "blacklist",
+        "entertainment": "blacklist",
+        "soccer_intl": "blacklist",
+    }
 
     def __init__(
         self,
@@ -1326,6 +1338,39 @@ class PolymarketCopyTrader:
 
         return True, ""
 
+    def _check_category_tier(
+        self,
+        category: str,
+        llm_score: float | None,
+        market_question: str,
+    ) -> tuple[bool, str]:
+        """Apply whitelist/graylist/blacklist admission gates."""
+        tier = self.CATEGORY_TIERS.get(category, "graylist")
+
+        if tier == "whitelist":
+            return True, ""
+
+        if tier == "graylist":
+            if not self._llm_validator.enabled:
+                return True, ""
+            if llm_score is not None and llm_score >= float(os.environ.get("CATEGORY_GRAYLIST_LLM_THRESHOLD", "0.75")):
+                return True, ""
+            return False, f"graylist_low_llm_score_{(llm_score or 0.0):.2f}"
+
+        if tier == "blacklist":
+            threshold = float(os.environ.get("CATEGORY_BLACKLIST_LLM_THRESHOLD", "0.90"))
+            if llm_score is not None and llm_score >= threshold:
+                logger.info(
+                    "blacklist_category_llm_override",
+                    category=category,
+                    llm_score=llm_score,
+                    market=market_question[:60],
+                )
+                return True, "blacklist_llm_override"
+            return False, f"blacklist_category_{category}"
+
+        return True, ""
+
     @staticmethod
     def _parse_cluster_target_date(date_str: str) -> Any:
         """Convert 'april-3' style keys into a date object."""
@@ -1732,60 +1777,9 @@ class PolymarketCopyTrader:
             )
             return False
 
-        # ── Category already detected above for entry price caps ──
-
-        # ── P1: Category blacklist ────────────────────────────────
-        # Block politics/geopolitics unless LLM validation score > 0.9.
-        # LLM score is computed later, so we do a pre-check here and
-        # allow a bypass path via LLM validation below.
-        if category in CATEGORY_BLACKLIST:
-            # Run a quick LLM validation to check if score > 0.9
-            try:
-                bot_positions_ctx = [
-                    {"market_question": p.market_question, "condition_id": p.condition_id}
-                    for p in self._positions.values()
-                ]
-                blacklist_validation = await self._llm_validator.validate_trade(
-                    market_question=market_question,
-                    current_price=price,
-                    trade_direction="BUY",
-                    wallet_win_rate=wallet.win_rate,
-                    category=category,
-                    category_pnl=self._category_pnl.get(category, 0),
-                    source_wallet=wallet.address,
-                    bot_positions=bot_positions_ctx,
-                )
-                llm_score = blacklist_validation.llm_probability
-                if llm_score is None or llm_score < BLACKLIST_LLM_OVERRIDE_THRESHOLD:
-                    logger.info(
-                        "copytrade_skip_blacklisted_category",
-                        category=category,
-                        llm_score=round(llm_score, 3) if llm_score is not None else None,
-                        threshold=BLACKLIST_LLM_OVERRIDE_THRESHOLD,
-                        market=market_question[:60],
-                    )
-                    return False
-                else:
-                    logger.info(
-                        "copytrade_blacklist_llm_override",
-                        category=category,
-                        llm_score=round(llm_score, 3),
-                        market=market_question[:60],
-                    )
-            except Exception as exc:
-                # If LLM validation fails, block the blacklisted category
-                logger.info(
-                    "copytrade_skip_blacklisted_category",
-                    category=category,
-                    reason="llm_validation_error",
-                    error=str(exc)[:80],
-                    market=market_question[:60],
-                )
-                return False
-
         # ── HIGH-CONVICTION BYPASS ─────────────────────────────
         # Wallets with 90%+ win rate on 20+ trades are proven winners.
-        # Skip correlation limits, category caps, and LLM validation.
+        # Skip correlation limits and category caps.
         high_conviction = wallet.win_rate >= 0.90 and wallet.total_resolved >= 20
 
         # ── Per-category circuit breaker (skip for high conviction) ──
@@ -1900,9 +1894,14 @@ class PolymarketCopyTrader:
                 market=market_question[:40],
             )
 
-        # ── LLM Validation (SKIPPED for high conviction) ──────────────
+        # ── LLM Validation + category tier gating ─────────────────────
         trade_thesis = ""
-        if not high_conviction:
+        llm_score: float | None = None
+        tier = self.CATEGORY_TIERS.get(category, "graylist")
+        requires_tier_score = tier != "whitelist"
+        run_llm_validation = self._llm_validator.enabled and (requires_tier_score or not high_conviction)
+
+        if run_llm_validation:
             bot_positions_ctx = [
                 {"market_question": p.market_question, "condition_id": p.condition_id}
                 for p in self._positions.values()
@@ -1917,8 +1916,9 @@ class PolymarketCopyTrader:
                 source_wallet=wallet.address,
                 bot_positions=bot_positions_ctx,
             )
+            llm_score = validation.llm_probability
             trade_thesis = validation.thesis
-            if not validation.approved:
+            if not high_conviction and not validation.approved:
                 logger.info(
                     "copytrade_rejected",
                     market=market_question[:40],
@@ -1930,8 +1930,23 @@ class PolymarketCopyTrader:
                     thesis=trade_thesis[:80],
                 )
                 return False
-        else:
+        elif high_conviction:
             trade_thesis = f"High-conviction copy: {wallet.win_rate*100:.0f}% WR on {wallet.total_resolved} trades"
+
+        allowed_tier, tier_reason = self._check_category_tier(
+            category=category,
+            llm_score=llm_score,
+            market_question=market_question,
+        )
+        if not allowed_tier:
+            logger.info(
+                "copytrade_skip",
+                reason=tier_reason,
+                category=category,
+                llm_score=round(llm_score, 3) if llm_score is not None else None,
+                market=market_question[:60],
+            )
+            return False
 
         # ── METAR weather enhancement for weather trades ─────────────
         if category == "weather":
