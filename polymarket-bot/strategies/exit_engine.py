@@ -18,12 +18,12 @@ logger = structlog.get_logger(__name__)
 
 
 CATEGORY_EXIT_PARAMS: dict[str, dict[str, float]] = {
-    "crypto_updown": {"sl": 0.25, "time_hours": 8, "trailing": 0.10},
-    "sports": {"sl": 0.30, "time_hours": 24, "trailing": 0.12},
-    "weather": {"sl": 0.35, "time_hours": 48, "trailing": 0.15},
-    "politics": {"sl": 0.30, "time_hours": 48, "trailing": 0.20},
-    "geopolitics": {"sl": 0.30, "time_hours": 48, "trailing": 0.20},
-    "other": {"sl": 0.35, "time_hours": 48, "trailing": 0.18},
+    "crypto_updown": {"sl": 0.35, "time_hours": 12, "trailing": 0.10},
+    "sports": {"sl": 0.40, "time_hours": 24, "trailing": 0.12},
+    "weather": {"sl": 0.50, "time_hours": 72, "trailing": 0.15},
+    "politics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
+    "geopolitics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
+    "other": {"sl": 0.50, "time_hours": 72, "trailing": 0.18},
 }
 
 
@@ -71,7 +71,7 @@ class ExitEngine:
         self,
         take_profit_1_pct: float = 0.30,
         take_profit_2_pct: float = 9.99,
-        stop_loss_pct: float = 0.30,
+        stop_loss_pct: float = 0.50,
         trailing_stop_pct: float = 0.15,
         time_exit_hours: float = 48.0,
         time_exit_min_move_pct: float = 0.05,

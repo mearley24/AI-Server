@@ -420,7 +420,7 @@ class PolymarketCopyTrader:
         self._exit_engine = ExitEngine(
             take_profit_1_pct=float(os.environ.get("EXIT_TP1_PCT", "0.30")),
             take_profit_2_pct=float(os.environ.get("EXIT_TP2_PCT", "9.99")),
-            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.30")),
+            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.50")),
             trailing_stop_pct=float(os.environ.get("EXIT_TRAILING_PCT", "0.15")),
             time_exit_hours=float(os.environ.get("EXIT_TIME_HOURS", "48")),
             time_exit_min_move_pct=float(os.environ.get("EXIT_TIME_MIN_MOVE", "0.05")),
