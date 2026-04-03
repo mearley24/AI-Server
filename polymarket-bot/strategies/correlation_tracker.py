@@ -97,6 +97,16 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
 # This ensures "NBA spread" → us_sports, not generic "sports"
 _PRIORITY_CATEGORIES = ["us_sports", "soccer_intl", "esports", "tennis"]
 
+_CORRELATED_KEYWORD_GROUPS: list[list[str]] = [
+    [
+        "fed rate", "interest rate", "fomc", "rate hike", "rate cut", "rate hold",
+        "basis points", "bps", "federal funds",
+    ],
+    ["cpi", "inflation", "pce", "core inflation", "consumer prices"],
+    ["houthi", "red sea", "yemen", "hamas", "gaza", "hezbollah"],
+    ["trump approval", "biden approval", "presidential poll"],
+]
+
 
 def categorize_market(question: str, tags: list[str] | None = None) -> str:
     """Categorize a market based on its question text and optional tags.
@@ -155,6 +165,7 @@ class CorrelationTracker:
 
         # Track positions: position_id -> (category, size_usd)
         self._positions: dict[str, tuple[str, float]] = {}
+        self._position_questions: dict[str, str] = {}
 
     @property
     def bankroll(self) -> float:
@@ -174,11 +185,39 @@ class CorrelationTracker:
         """Register a position and return its category."""
         category = categorize_market(market_question, tags)
         self._positions[position_id] = (category, size_usd)
+        self._position_questions[position_id] = market_question
         return category
 
     def remove_position(self, position_id: str) -> None:
         """Remove a position from tracking."""
         self._positions.pop(position_id, None)
+        self._position_questions.pop(position_id, None)
+
+    def check_semantic_correlation(
+        self,
+        market_question: str,
+        max_correlated_positions: int = 1,
+    ) -> tuple[bool, str, list[str]]:
+        """Block economically equivalent positions by semantic keyword groups."""
+        q_lower = (market_question or "").lower()
+        if not q_lower:
+            return False, "", []
+
+        for group in _CORRELATED_KEYWORD_GROUPS:
+            if not any(keyword in q_lower for keyword in group):
+                continue
+
+            correlated_ids: list[str] = []
+            for pos_id in self._positions:
+                pos_question = self._position_questions.get(pos_id, "").lower()
+                if pos_question and any(keyword in pos_question for keyword in group):
+                    correlated_ids.append(pos_id)
+
+            if len(correlated_ids) >= max_correlated_positions:
+                reason = f"semantic_correlation_{group[0][:20]}"
+                return True, reason, correlated_ids
+
+        return False, "", []
 
     def would_exceed_limit(
         self,

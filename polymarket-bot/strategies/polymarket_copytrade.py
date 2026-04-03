@@ -420,7 +420,7 @@ class PolymarketCopyTrader:
         self._exit_engine = ExitEngine(
             take_profit_1_pct=float(os.environ.get("EXIT_TP1_PCT", "0.30")),
             take_profit_2_pct=float(os.environ.get("EXIT_TP2_PCT", "9.99")),
-            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.50")),
+            stop_loss_pct=float(os.environ.get("EXIT_SL_PCT", "0.30")),
             trailing_stop_pct=float(os.environ.get("EXIT_TRAILING_PCT", "0.15")),
             time_exit_hours=float(os.environ.get("EXIT_TIME_HOURS", "48")),
             time_exit_min_move_pct=float(os.environ.get("EXIT_TIME_MIN_MOVE", "0.05")),
@@ -1871,6 +1871,19 @@ class PolymarketCopyTrader:
                     )
                     return False
 
+            correlated, corr_reason, corr_ids = self._correlation_tracker.check_semantic_correlation(
+                market_question=market_question,
+                max_correlated_positions=1,
+            )
+            if correlated:
+                logger.info(
+                    "copytrade_skipped_correlated",
+                    reason=corr_reason,
+                    existing_positions=corr_ids[:3],
+                    market=market_question[:60],
+                )
+                return False
+
             category_position_count = sum(
                 1 for p in self._positions.values() if p.category == category
             )
@@ -3181,6 +3194,8 @@ class PolymarketCopyTrader:
             "trailing_stop": "Trail Stop",
             "stop_loss": "Stop Loss",
             "time_exit_stale": "Timed Out",
+            "time_exit_deteriorating": "Deteriorating",
+            "near_resolution_takeprofit": "Near Resolution TP",
             "market_resolved": "Resolved",
             "source_wallet_exit": "Wallet Sold",
             "force_stale_cleanup": "Force Cleaned",
