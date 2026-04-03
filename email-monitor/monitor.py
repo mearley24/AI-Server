@@ -673,6 +673,23 @@ class EmailMonitor:
             except Exception as e:
                 logger.error("Email routing error: %s", e)
 
+            # Follow-up tracker: alert on overdue client responses.
+            try:
+                import sys as _sys
+                _openclaw_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "openclaw"))
+                if os.path.isdir(_openclaw_dir) and _openclaw_dir not in _sys.path:
+                    _sys.path.insert(0, _openclaw_dir)
+                from follow_up_tracker import run_cycle as follow_up_run_cycle
+                follow_up_result = await asyncio.to_thread(
+                    follow_up_run_cycle,
+                    os.environ.get("FOLLOW_UP_DB_PATH", "/data/email-monitor/follow_ups.db"),
+                    DB_PATH,
+                )
+                if (follow_up_result or {}).get("overdue_alerts", 0) or (follow_up_result or {}).get("followup_alerts", 0):
+                    logger.info("Follow-up tracker alerts: %s", follow_up_result)
+            except Exception as e:
+                logger.error("Follow-up tracker error: %s", e)
+
             await asyncio.sleep(self.poll_interval)
 
     def stop(self) -> None:
