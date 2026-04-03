@@ -87,3 +87,4 @@ Run in order within each tier. DONE items were completed by Cursor already.
 | 36 | Auto-23-cost-optimization.md | Auto | P1 — LLM router, caching, local fallbacks, $50/month target |
 | 37 | Auto-24-portfolio-website.md | Auto | P3 — auto-generated portfolio from project photos |
 | 38 | Auto-25-apple-notes-indexer.md | Auto | P1 — index, categorize, flag for cleanup, extract codes + photos |
+| 39 | Auto-27-x-twitter-autoposter.md | Auto | P3 — Bob posts to @symphonysmart with approval queue |
