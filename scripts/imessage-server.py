@@ -371,7 +371,12 @@ def research_link(url: str, context: str = "") -> str:
                 # Extract author from URL
                 author_match = _re.search(r'(?:twitter\.com|x\.com)/([^/]+)/status/', url)
                 author = author_match.group(1) if author_match else ""
-                result = process_x_video(url, author=author, post_text=context)
+                result = process_x_video(
+                    url,
+                    author=author,
+                    post_text=context,
+                    openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+                )
                 if "error" not in result and result.get("summary"):
                     log.info("[research] Video transcribed for %s", url)
                     return result["summary"]

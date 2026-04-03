@@ -18,10 +18,12 @@ Flag system:
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
+from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,202 @@ logger = logging.getLogger(__name__)
 
 TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", os.path.expanduser("~/AI-Server/data/transcripts")))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+DOWNLOAD_TIMEOUT_SECONDS = 600
+MIN_VALID_AUDIO_BYTES = 10 * 1024
+
+
+def _extract_x_status_id(post_url: str) -> str:
+    match = re.search(r"/status/(\d+)", post_url)
+    return match.group(1) if match else ""
+
+
+def _extract_x_author(post_url: str) -> str:
+    match = re.search(r"(?:twitter\.com|x\.com)/([^/]+)/status/", post_url)
+    return match.group(1) if match else ""
+
+
+def _run_command_with_progress(cmd: list[str], timeout: int, stage: str) -> tuple[int, str]:
+    """Run a command and stream periodic progress logs from stdout/stderr."""
+    logger.info("%s_started: %s", stage, " ".join(cmd[:4]))
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        universal_newlines=True,
+    )
+    output_lines: list[str] = []
+    last_pct_logged = -1
+    try:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            output_lines.append(line)
+            pct_match = re.search(r"(\d{1,3}(?:\.\d+)?)%", line)
+            if pct_match:
+                pct = int(float(pct_match.group(1)))
+                if pct >= last_pct_logged + 10:
+                    last_pct_logged = pct
+                    logger.info("%s_progress: %s%%", stage, pct)
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        logger.error("%s_timeout_after_%ss", stage, timeout)
+        return 124, "".join(output_lines)
+    except Exception as exc:
+        proc.kill()
+        logger.error("%s_error: %s", stage, str(exc)[:200])
+        return 1, "".join(output_lines)
+    return proc.returncode, "".join(output_lines)
+
+
+def _ffprobe_duration_seconds(media_path: str) -> float:
+    """Return media duration in seconds (0 when not readable)."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                media_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if result.returncode != 0:
+            return 0.0
+        return float((result.stdout or "0").strip() or "0")
+    except Exception:
+        return 0.0
+
+
+def _is_valid_audio_file(audio_path: str) -> bool:
+    if not os.path.exists(audio_path):
+        return False
+    size_bytes = os.path.getsize(audio_path)
+    duration = _ffprobe_duration_seconds(audio_path)
+    logger.info("audio_validation: size=%d duration=%.2fs", size_bytes, duration)
+    return size_bytes >= MIN_VALID_AUDIO_BYTES and duration > 0
+
+
+def _extract_audio_from_video(video_path: str, audio_path: str) -> bool:
+    rc, output = _run_command_with_progress(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-vn",
+            "-acodec",
+            "aac",
+            audio_path,
+        ],
+        timeout=180,
+        stage="ffmpeg_audio_extract",
+    )
+    if rc != 0:
+        logger.error("ffmpeg_audio_extract_failed: %s", output[-300:])
+        return False
+    return _is_valid_audio_file(audio_path)
+
+
+def _collect_media_urls(node: object, urls: list[str]) -> None:
+    """Recursively collect image/video URLs from arbitrary API JSON."""
+    if isinstance(node, dict):
+        for value in node.values():
+            _collect_media_urls(value, urls)
+    elif isinstance(node, list):
+        for item in node:
+            _collect_media_urls(item, urls)
+    elif isinstance(node, str):
+        lower = node.lower()
+        if any(ext in lower for ext in (".mp4", ".m3u8", ".mov", ".webm", ".jpg", ".jpeg", ".png", ".webp")):
+            if node.startswith("http"):
+                urls.append(node)
+
+
+def _fetch_x_media_urls(post_url: str) -> tuple[list[str], list[str]]:
+    """Fetch media URLs from vxtwitter/fxtwitter APIs (videos, images)."""
+    post_id = _extract_x_status_id(post_url)
+    author = _extract_x_author(post_url)
+    if not post_id or not author:
+        return [], []
+
+    candidate_apis = [
+        f"https://api.vxtwitter.com/{author}/status/{post_id}",
+        f"https://api.fxtwitter.com/{author}/status/{post_id}",
+    ]
+    urls: list[str] = []
+    for api_url in candidate_apis:
+        try:
+            req = Request(api_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urlopen(req, timeout=20) as resp:
+                payload = json.loads(resp.read())
+            _collect_media_urls(payload, urls)
+            if urls:
+                logger.info("x_media_api_success: %s urls=%d", api_url, len(urls))
+                break
+        except Exception as exc:
+            logger.info("x_media_api_failed: %s err=%s", api_url, str(exc)[:120])
+
+    deduped = []
+    seen = set()
+    for url in urls:
+        if url not in seen:
+            deduped.append(url)
+            seen.add(url)
+    videos = [u for u in deduped if any(ext in u.lower() for ext in (".mp4", ".m3u8", ".mov", ".webm"))]
+    images = [u for u in deduped if any(ext in u.lower() for ext in (".jpg", ".jpeg", ".png", ".webp"))]
+    return videos, images
+
+
+def _download_with_gallery_dl(post_url: str, output_dir: str) -> Optional[str]:
+    """Fallback downloader using gallery-dl, returns downloaded video path if found."""
+    rc, output = _run_command_with_progress(
+        ["gallery-dl", "-d", output_dir, post_url],
+        timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        stage="gallery_dl_download",
+    )
+    if rc != 0:
+        logger.error("gallery_dl_failed: %s", output[-300:])
+        return None
+
+    candidates = []
+    for root, _, files in os.walk(output_dir):
+        for name in files:
+            if name.lower().endswith((".mp4", ".mov", ".webm", ".mkv")):
+                path = os.path.join(root, name)
+                candidates.append((os.path.getsize(path), path))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    return candidates[0][1]
+
+
+def _download_direct_media(video_url: str, output_video_path: str) -> bool:
+    """Download direct media URL to MP4 file with yt-dlp then ffmpeg fallback."""
+    rc, output = _run_command_with_progress(
+        ["yt-dlp", "--newline", "-o", output_video_path, video_url],
+        timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        stage="direct_media_download",
+    )
+    if rc == 0 and os.path.exists(output_video_path) and os.path.getsize(output_video_path) > MIN_VALID_AUDIO_BYTES:
+        return True
+
+    rc_ffmpeg, ffmpeg_out = _run_command_with_progress(
+        ["ffmpeg", "-y", "-i", video_url, "-c", "copy", output_video_path],
+        timeout=DOWNLOAD_TIMEOUT_SECONDS,
+        stage="direct_media_ffmpeg_download",
+    )
+    if rc_ffmpeg != 0:
+        logger.error("direct_media_download_failed: %s | %s", output[-180:], ffmpeg_out[-180:])
+        return False
+    return os.path.exists(output_video_path) and os.path.getsize(output_video_path) > MIN_VALID_AUDIO_BYTES
 
 
 def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
@@ -40,42 +238,65 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
         output_dir = tempfile.mkdtemp()
 
     output_path = os.path.join(output_dir, "audio.m4a")
+    video_path = os.path.join(output_dir, "video.mp4")
 
     try:
-        result = subprocess.run(
+        logger.info("download_started: %s", post_url)
+
+        # Primary path: yt-dlp audio extraction.
+        rc, output = _run_command_with_progress(
             [
                 "yt-dlp",
+                "--newline",
                 "--extract-audio",
-                "--audio-format", "m4a",
-                "--audio-quality", "0",
-                "-o", output_path,
+                "--audio-format",
+                "m4a",
+                "--audio-quality",
+                "0",
+                "-o",
+                output_path,
                 post_url,
             ],
-            capture_output=True, text=True, timeout=600,  # 10 min for long videos
+            timeout=DOWNLOAD_TIMEOUT_SECONDS,
+            stage="yt_dlp_audio_download",
         )
-        if result.returncode == 0 and os.path.exists(output_path):
+        if rc == 0 and _is_valid_audio_file(output_path):
             logger.info("video_downloaded: %s (%d bytes)", output_path, os.path.getsize(output_path))
             return output_path
+
+        logger.warning("yt_dlp_audio_failed_or_invalid: %s", output[-300:])
+
+        # Secondary: download video via yt-dlp and extract audio with ffmpeg.
+        rc_video, output_video = _run_command_with_progress(
+            ["yt-dlp", "--newline", "-o", video_path, post_url],
+            timeout=DOWNLOAD_TIMEOUT_SECONDS,
+            stage="yt_dlp_video_download",
+        )
+        if rc_video == 0 and os.path.exists(video_path):
+            if _extract_audio_from_video(video_path, output_path):
+                return output_path
+            logger.warning("video_downloaded_but_audio_invalid")
         else:
-            # Try downloading as video then extract audio
-            video_path = os.path.join(output_dir, "video.mp4")
-            result2 = subprocess.run(
-                ["yt-dlp", "-o", video_path, post_url],
-                capture_output=True, text=True, timeout=600,
-            )
-            if result2.returncode == 0 and os.path.exists(video_path):
-                # Extract audio with ffmpeg
-                subprocess.run(
-                    ["ffmpeg", "-i", video_path, "-vn", "-acodec", "aac", output_path, "-y"],
-                    capture_output=True, timeout=120,
-                )
-                if os.path.exists(output_path):
-                    return output_path
-            
-            logger.error("video_download_failed: %s", result.stderr[:200])
-            return None
+            logger.warning("yt_dlp_video_failed: %s", output_video[-300:])
+
+        # Tertiary fallback: gallery-dl.
+        fallback_video = _download_with_gallery_dl(post_url, output_dir)
+        if fallback_video:
+            logger.info("gallery_dl_video_found: %s", fallback_video)
+            if _extract_audio_from_video(fallback_video, output_path):
+                return output_path
+
+        # Final fallback: vxtwitter/fxtwitter media URL extraction.
+        media_videos, _ = _fetch_x_media_urls(post_url)
+        for media_url in media_videos:
+            logger.info("trying_direct_media_url: %s", media_url[:120])
+            if _download_direct_media(media_url, video_path) and _extract_audio_from_video(video_path, output_path):
+                return output_path
+
+        logger.error("video_download_failed_all_fallbacks")
+        return None
     except FileNotFoundError:
-        logger.error("yt-dlp not installed")
+        logger.error("downloader_not_installed (yt-dlp/gallery-dl/ffmpeg missing)")
         return None
     except subprocess.TimeoutExpired:
         logger.error("video_download_timeout")
@@ -85,18 +306,21 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
         return None
 
 
-def transcribe_audio(audio_path: str) -> Optional[str]:
+def transcribe_audio(audio_path: str, openai_api_key: str = "") -> Optional[str]:
     """Transcribe audio using OpenAI Whisper API.
     
     Cost: ~$0.006/minute. A 10-minute video costs ~$0.06.
     """
-    if not OPENAI_API_KEY:
+    api_key = openai_api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
         logger.error("OPENAI_API_KEY not set")
         return None
 
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=api_key)
+
+        logger.info("transcription_started: %s", audio_path)
 
         with open(audio_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
@@ -112,7 +336,7 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
         return None
 
 
-def analyze_transcript(transcript: str, author: str = "", post_text: str = "") -> dict:
+def analyze_transcript(transcript: str, author: str = "", post_text: str = "", openai_api_key: str = "") -> dict:
     """Analyze transcript with GPT-4o-mini for flags and summary.
     
     Returns dict with:
@@ -121,12 +345,14 @@ def analyze_transcript(transcript: str, author: str = "", post_text: str = "") -
         - strategies: extracted actionable strategies
         - full_flagged: complete transcript with inline flags
     """
-    if not OPENAI_API_KEY:
+    api_key = openai_api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
         return {"error": "OPENAI_API_KEY not set"}
 
     try:
         from openai import OpenAI
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=api_key)
+        logger.info("analysis_started: transcript_chars=%d", len(transcript))
 
         prompt = f"""Analyze this video transcript from @{author} about trading/prediction markets.
 
@@ -173,6 +399,49 @@ Only include flags that are genuinely present in the transcript. Be specific —
     except Exception as e:
         logger.error("analysis_error: %s", str(e)[:200])
         return {"error": str(e)}
+
+
+def analyze_images(image_urls: list[str], author: str = "", post_text: str = "", openai_api_key: str = "") -> dict:
+    """Analyze image-only posts with GPT-4o vision."""
+    api_key = openai_api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        return {"error": "OPENAI_API_KEY not set"}
+    if not image_urls:
+        return {"error": "No images to analyze"}
+
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=api_key)
+        logger.info("analysis_started: image_count=%d", len(image_urls))
+
+        prompt = (
+            f"Analyze these images from @{author}'s X post for actionable insights. "
+            f"Post text context: {post_text[:500]}\n\n"
+            "Return strict JSON with keys: summary, flags, strategies, key_quotes.\n"
+            "flags should be [{type, text}] using: 🔨 💡 📊 🔧 ⚠️."
+        )
+
+        content = [{"type": "text", "text": prompt}]
+        for image_url in image_urls[:8]:
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": content}],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        analysis = json.loads(response.choices[0].message.content)
+        logger.info(
+            "image_analysis_complete: %d flags, %d strategies",
+            len(analysis.get("flags", [])),
+            len(analysis.get("strategies", [])),
+        )
+        return analysis
+    except Exception as exc:
+        logger.error("image_analysis_error: %s", str(exc)[:200])
+        return {"error": str(exc)}
 
 
 def save_transcript(post_id: str, author: str, transcript: str, analysis: dict) -> str:
@@ -249,31 +518,67 @@ def format_imessage_summary(author: str, analysis: dict) -> str:
     return "\n".join(lines)
 
 
-def process_x_video(post_url: str, post_id: str = "", author: str = "", post_text: str = "") -> dict:
+def process_x_video(
+    post_url: str,
+    post_id: str = "",
+    author: str = "",
+    post_text: str = "",
+    openai_api_key: str = "",
+) -> dict:
     """Full pipeline: download → transcribe → analyze → save → format.
     
     Returns dict with summary, flags, and transcript path.
     """
     # Extract post_id from URL if not provided
     if not post_id:
-        import re
-        match = re.search(r'/status/(\d+)', post_url)
-        post_id = match.group(1) if match else "unknown"
+        post_id = _extract_x_status_id(post_url) or "unknown"
+    if not author:
+        author = _extract_x_author(post_url)
 
     logger.info("processing_video: %s @%s", post_id, author)
 
-    # 1. Download
+    # 1. Download / extract media
+    logger.info("download_stage_start: post_id=%s", post_id)
     audio_path = download_video(post_url)
     if not audio_path:
+        video_urls, image_urls = _fetch_x_media_urls(post_url)
+        if image_urls and not video_urls:
+            logger.info("no_video_found_using_image_vision: images=%d", len(image_urls))
+            analysis = analyze_images(
+                image_urls=image_urls,
+                author=author,
+                post_text=post_text,
+                openai_api_key=openai_api_key,
+            )
+            if "error" in analysis:
+                return {"error": "Failed to analyze image-only post", "post_id": post_id}
+            imessage_summary = format_imessage_summary(author, analysis)
+            return {
+                "post_id": post_id,
+                "author": author,
+                "summary": imessage_summary,
+                "analysis": analysis,
+                "transcript_path": "",
+                "transcript_length": 0,
+                "mode": "image_vision",
+            }
         return {"error": "Failed to download video", "post_id": post_id}
 
     # 2. Transcribe
-    transcript = transcribe_audio(audio_path)
+    transcript = transcribe_audio(audio_path, openai_api_key=openai_api_key)
     if not transcript:
         return {"error": "Failed to transcribe audio", "post_id": post_id}
+    if len(transcript.strip()) <= 1:
+        logger.error("transcription_too_short: %d chars", len(transcript.strip()))
+        return {"error": "Transcription too short; likely bad audio extraction", "post_id": post_id}
 
     # 3. Analyze
-    analysis = analyze_transcript(transcript, author, post_text)
+    analysis = analyze_transcript(
+        transcript=transcript,
+        author=author,
+        post_text=post_text,
+        openai_api_key=openai_api_key,
+    )
 
     # 4. Save (best-effort — don't fail if directory doesn't exist)
     transcript_path = ""
