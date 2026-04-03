@@ -1,0 +1,64 @@
+{
+  "components": [
+    {
+      "component_type": "TV",
+      "manufacturer": "Samsung",
+      "model": "QN90F",
+      "specs": {
+        "vesa": "400x400",
+        "weight_lbs": 75,
+        "power_draw_w": 280,
+        "protocol": "IP",
+        "c4_integration": "Native SDDP (IP)"
+      }
+    },
+    {
+      "component_type": "TV",
+      "manufacturer": "Sony",
+      "model": "XR90",
+      "specs": {
+        "vesa": "400x400",
+        "weight_lbs": 80,
+        "power_draw_w": 300,
+        "protocol": "IP",
+        "c4_integration": "Native SDDP (IP)"
+      }
+    },
+    {
+      "component_type": "TV",
+      "manufacturer": "LG",
+      "model": "C5 OLED",
+      "specs": {
+        "vesa": "300x200",
+        "weight_lbs": 55,
+        "power_draw_w": 220,
+        "protocol": "IP",
+        "c4_integration": "Native SDDP (IP)"
+      }
+    },
+    {
+      "component_type": "TV",
+      "manufacturer": "TCL",
+      "model": "QM8K",
+      "specs": {
+        "vesa": "400x300",
+        "weight_lbs": 72,
+        "power_draw_w": 260,
+        "protocol": "IP",
+        "c4_integration": "3rd-Party IP Driver"
+      }
+    },
+    {
+      "component_type": "TV",
+      "manufacturer": "Hisense",
+      "model": "100 U8",
+      "specs": {
+        "vesa": "800x400",
+        "weight_lbs": 160,
+        "power_draw_w": 380,
+        "protocol": "IP",
+        "c4_integration": "3rd-Party IP Driver"
+      }
+    }
+  ]
+}

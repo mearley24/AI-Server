@@ -1,0 +1,37 @@
+{
+  "components": [
+    {
+      "component_type": "Mount",
+      "manufacturer": "Sanus",
+      "model": "VLT7",
+      "specs": {
+        "supported_vesa": ["200x100", "300x200", "400x400", "600x400"],
+        "weight_capacity_lbs": 150,
+        "profile_in": 2.1,
+        "tilt": true
+      }
+    },
+    {
+      "component_type": "Mount",
+      "manufacturer": "Strong",
+      "model": "SM-CB-T",
+      "specs": {
+        "supported_vesa": ["200x100", "300x200", "400x400", "600x400"],
+        "weight_capacity_lbs": 132,
+        "profile_in": 2.6,
+        "tilt": true
+      }
+    },
+    {
+      "component_type": "Mount",
+      "manufacturer": "Peerless",
+      "model": "PLCM-2",
+      "specs": {
+        "supported_vesa": ["200x200", "400x400", "600x400"],
+        "weight_capacity_lbs": 200,
+        "profile_in": 1.8,
+        "tilt": false
+      }
+    }
+  ]
+}

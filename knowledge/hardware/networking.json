@@ -1,0 +1,35 @@
+{
+  "components": [
+    {
+      "component_type": "Network_Switch",
+      "manufacturer": "Araknis",
+      "model": "AN-820-24P",
+      "specs": {
+        "poe_budget_w": 190,
+        "port_count": 24,
+        "vlan_capable": true
+      }
+    },
+    {
+      "component_type": "Network_Switch",
+      "manufacturer": "Araknis",
+      "model": "AN-820-48P",
+      "specs": {
+        "poe_budget_w": 370,
+        "port_count": 48,
+        "vlan_capable": true
+      }
+    },
+    {
+      "component_type": "Access_Point",
+      "manufacturer": "Araknis",
+      "model": "AN-510-AP-I-AC",
+      "specs": {
+        "power_draw_w": 15,
+        "power_type": "poe",
+        "wifi_band": "2.4/5GHz",
+        "coverage_sqft": 2500
+      }
+    }
+  ]
+}
