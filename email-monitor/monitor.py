@@ -690,6 +690,24 @@ class EmailMonitor:
             except Exception as e:
                 logger.error("Follow-up tracker error: %s", e)
 
+            # Payment tracker: monitor agreement/deposit/payment status.
+            try:
+                import sys as _sys
+                _openclaw_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "openclaw"))
+                if os.path.isdir(_openclaw_dir) and _openclaw_dir not in _sys.path:
+                    _sys.path.insert(0, _openclaw_dir)
+                from payment_tracker import run_cycle as payment_run_cycle
+                payment_result = await asyncio.to_thread(
+                    payment_run_cycle,
+                    os.environ.get("PAYMENT_DB_PATH", "/data/email-monitor/payments.db"),
+                    DB_PATH,
+                    os.environ.get("EMAIL_ROUTING_CONFIG", os.path.join(os.path.dirname(__file__), "routing_config.json")),
+                )
+                if any((payment_result or {}).get(k, 0) for k in ("signed_updates", "paid_updates", "due_alerts")):
+                    logger.info("Payment tracker updates: %s", payment_result)
+            except Exception as e:
+                logger.error("Payment tracker error: %s", e)
+
             await asyncio.sleep(self.poll_interval)
 
     def stop(self) -> None:
