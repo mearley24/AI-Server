@@ -353,12 +353,31 @@ def _fetch_tweet_text(url: str) -> str:
 
 
 def research_link(url: str, context: str = "") -> str:
-    """Fetch a URL and provide a smart, context-aware analysis."""
+    """Fetch a URL and provide a smart, context-aware analysis.
+    
+    For X/Twitter posts with video, downloads and transcribes the video
+    using the video_transcriber module for deep analysis with emoji flags.
+    """
     import re as _re
     try:
         text = ""
 
         if _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
+            # Try video transcription first
+            try:
+                import sys as _sys
+                _sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'integrations', 'x_intake'))
+                from video_transcriber import process_x_video
+                # Extract author from URL
+                author_match = _re.search(r'(?:twitter\.com|x\.com)/([^/]+)/status/', url)
+                author = author_match.group(1) if author_match else ""
+                result = process_x_video(url, author=author, post_text=context)
+                if "error" not in result and result.get("summary"):
+                    log.info("[research] Video transcribed for %s", url)
+                    return result["summary"]
+            except Exception as ve:
+                log.info("[research] Video transcription unavailable (%s), falling back to text", ve)
+
             text = _fetch_tweet_text(url)
             if not text:
                 text = "(Tweet from %s — could not fetch content)" % url
