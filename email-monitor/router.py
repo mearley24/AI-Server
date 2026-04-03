@@ -152,19 +152,32 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
 
         # Search each folder for this email (try multiple IMAP search methods)
         dest_folder = None
-        from email.utils import formatdate
-        import time as _time
         # Search by FROM sender in each folder — more reliable than Message-ID on Zoho
         for folder in folders:
             try:
                 status, data = mail.select(f'"{folder}"')
+                logger.info("Learn-from-moves: select folder='%s' status=%s", folder, status)
                 if status != "OK":
                     continue
-                # Search for emails from this sender in this folder
-                status, found = mail.search(None, f'FROM "{sender}"')
-                if status == "OK" and found[0] and found[0].strip():
-                    dest_folder = folder
-                    logger.info("Learn-from-moves: found %s in folder %s", sender, folder)
+
+                # Search for emails from this sender in this folder.
+                # Try exact sender first, then fallback to just the domain.
+                search_queries = [f'FROM "{sender}"']
+                if domain:
+                    search_queries.append(f'FROM "{domain}"')
+
+                for query in search_queries:
+                    status, found = mail.search(None, query)
+                    found_raw = found[0].decode("utf-8", errors="replace") if found and found[0] else ""
+                    logger.info(
+                        "Learn-from-moves: folder='%s' query=%s status=%s found='%s'",
+                        folder, query, status, found_raw[:120],
+                    )
+                    if status == "OK" and found and found[0] and found[0].strip():
+                        dest_folder = folder
+                        logger.info("Learn-from-moves: found sender=%s in folder=%s via query=%s", sender, folder, query)
+                        break
+                if dest_folder:
                     break
             except Exception as e:
                 logger.debug("Learn-from-moves: error searching %s: %s", folder, e)
@@ -175,7 +188,7 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
             try:
                 import redis as _redis
                 r = _redis.from_url(
-                    os.environ.get("REDIS_URL", "redis://redis:6379"),
+                    os.environ.get("REDIS_URL", "redis://172.18.0.100:6379"),
                     decode_responses=True, socket_timeout=2,
                 )
                 r.publish("notifications:email", json.dumps({

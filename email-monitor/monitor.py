@@ -580,10 +580,17 @@ class EmailMonitor:
                         if category == "ACTIVE_CLIENT":
                             try:
                                 import sys as _sys
-                                # Try both possible mount paths
-                                for _odir in ["/app/openclaw", os.path.join(os.path.dirname(__file__), "..", "openclaw"), "/app/../openclaw"]:
-                                    if os.path.isdir(_odir) and _odir not in _sys.path:
-                                        _sys.path.insert(0, _odir)
+                                # Try all expected mount paths for auto_responder.
+                                _openclaw_paths = [
+                                    "/app/openclaw",
+                                    "/app/../openclaw",
+                                    os.path.join(os.path.dirname(__file__), "..", "openclaw"),
+                                ]
+                                for _odir in _openclaw_paths:
+                                    _resolved = os.path.abspath(_odir)
+                                    if os.path.isdir(_resolved) and _resolved not in _sys.path:
+                                        _sys.path.insert(0, _resolved)
+                                logger.info("Auto-responder sys.path paths checked: %s", _openclaw_paths)
                                 from auto_responder import auto_respond
                                 await asyncio.to_thread(
                                     auto_respond, sender_email, sender_name, subject, snippet, message_id,
