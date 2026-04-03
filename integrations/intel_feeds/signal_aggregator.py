@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -44,6 +45,7 @@ DB_PATH = Path("/data/intel_feeds/signals.db")
 CRITICAL_THRESHOLD = 80     # score >= this → immediate alert
 MEDIUM_THRESHOLD = 40       # score >= this → persist to SQLite
 CONTEXT_WINDOW_HOURS = 24   # rolling context window
+RBI_IDEAS_PATH = os.environ.get("RBI_IDEAS_PATH", "/app/polymarket-bot/ideas.txt")
 
 # ---------------------------------------------------------------------------
 # Database
@@ -247,6 +249,11 @@ class SignalAggregator:
         # In-memory cache of recent signals (last N) for fast queries
         self._recent: list[dict] = []
         self._max_recent = 500
+        self._ideas_path_candidates = [
+            Path(RBI_IDEAS_PATH),
+            Path("/data/intel_feeds/ideas.txt"),
+            Path("/Users/bob/AI-Server/polymarket-bot/ideas.txt"),
+        ]
 
     # -----------------------------------------------------------------------
     # Routing
@@ -293,6 +300,7 @@ class SignalAggregator:
             await self._redis_pub.publish(
                 NOTIFICATIONS_CHANNEL, json.dumps(notification)
             )
+            self._append_pending_idea(signal)
             logger.warning(
                 "CRITICAL ALERT published: relevance=%d summary=%s",
                 relevance,
@@ -306,6 +314,64 @@ class SignalAggregator:
                 signal.get("source", ""),
                 summary[:80],
             )
+
+    def _resolve_ideas_path(self) -> Path:
+        """Pick the first usable ideas.txt path."""
+        for path in self._ideas_path_candidates:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if path.exists() and path.is_file():
+                    return path
+                if not path.exists():
+                    return path
+            except Exception:
+                continue
+        return self._ideas_path_candidates[0]
+
+    def _append_pending_idea(self, signal: dict) -> None:
+        """Auto-create RBI pending idea from critical intel signal."""
+        summary = (signal.get("summary") or "").strip()
+        if not summary:
+            return
+        source = (signal.get("source") or "intel").strip()
+        category = (signal.get("category") or "general").strip()
+        title = re.sub(r"\s+", " ", summary)[:72]
+        title = re.sub(r"[^A-Za-z0-9 _\-\u2014]", "", title).strip() or "IntelSignalIdea"
+        description = summary
+        hypothesis = (
+            f"Critical intel signal from {source} (category={category}, "
+            f"relevance={signal.get('relevance_score', 0)}) indicates tradable edge."
+        )
+        notes = (
+            f"Auto-generated from intel feed at {datetime.now(timezone.utc).isoformat()} | "
+            f"markets={','.join(signal.get('markets_affected', [])[:5])}"
+        )
+
+        path = self._resolve_ideas_path()
+        existing = ""
+        try:
+            existing = path.read_text() if path.exists() else ""
+        except Exception:
+            existing = ""
+        if f"IDEA: {title}" in existing:
+            logger.info("RBI idea already exists, skipping auto-add: %s", title)
+            return
+
+        entry = (
+            f"\nIDEA: {title}\n"
+            f"DATE: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n"
+            f"DESCRIPTION: {description}\n"
+            f"HYPOTHESIS: {hypothesis}\n"
+            f"STATUS: pending\n"
+            f"NOTES: {notes}\n"
+            "---\n"
+        )
+        try:
+            with open(path, "a") as f:
+                f.write(entry)
+            logger.info("Auto-added pending RBI idea from intel signal: %s (%s)", title, path)
+        except Exception as exc:
+            logger.warning("Failed to append RBI idea: %s", str(exc)[:200])
 
     # -----------------------------------------------------------------------
     # Subscription loop
