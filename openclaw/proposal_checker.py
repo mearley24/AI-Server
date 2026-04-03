@@ -10,6 +10,11 @@ When a new proposal PDF appears (via iCloud watcher or email attachment), Bob:
 Usage:
     from proposal_checker import check_proposal
     check_proposal("/path/to/proposal.pdf", project="topletz")
+
+Decision sources:
+    "dtool"     — hardware/labor items that SHOULD appear in the D-Tools proposal
+    "email"     — items agreed via email/conversation; won't appear in a D-Tools export
+    "agreement" — items captured in the legal agreement, not the proposal
 """
 
 import json
@@ -31,24 +36,101 @@ CONFIRMED_DECISIONS = {
         "gc": "RMGC (Rocky Mountain Construction Group)",
         "gc_contact": "David",
         "decisions": [
-            {"item": "Lighting", "decision": "C4 native — no Lutron RA3"},
-            {"item": "Shade prewire", "decision": "In scope"},
-            {"item": "Security prewire", "decision": "Symphony runs alongside AV prewire"},
-            {"item": "Cameras", "decision": "Prewire only — no Luma hardware"},
-            {"item": "Touchscreens", "decision": "iPads at Kitchen/TV Room + Master Bedroom, replacing C4 T5"},
-            {"item": "Tuning period", "decision": "60 days post-commissioning"},
-            {"item": "Security panel", "decision": "Qolsys IQ Panel 4, hardwired Cat6, VLAN 40, garage entry primary, master bed secondary"},
-            {"item": "Panel integration", "decision": "Cindev DriverCentral driver, SDDP auto-discovery on VLAN 40"},
-            {"item": "Switches", "decision": "18 switches, all C4, code-required. Few in master suite optional for bedside control"},
-            {"item": "TV install", "decision": "Symphony handles mounting, wiring, C4 integration at standard rates. Client supplies TVs"},
-            {"item": "TV mounts", "decision": "Mounts as reviewed and approved by Matt. VLT7 recommended for service access"},
-            {"item": "Art walls", "decision": "Cancelled"},
-            {"item": "Lower Level Family TV", "decision": "Wall mounted"},
-            {"item": "IR flashers", "decision": "Required for non-native C4 TVs"},
-            {"item": "Post-install support", "decision": "90 days for installation-related issues"},
-            {"item": "Wire management", "decision": "Strong VersaBox (SM-RBX-14-WH or SM-RBX-8-WH) recommended at each TV location"},
-            {"item": "Security coordination", "decision": "Symphony coordinates with Superior Alarm on all security prewire"},
-            {"item": "Conduit", "decision": "Rack to attic for future expansion"},
+            # ── D-Tools items: hardware/labor that SHOULD be in the proposal ──
+            {
+                "item": "Lighting",
+                "decision": "C4 native — no Lutron RA3",
+                "source": "dtool",
+            },
+            {
+                "item": "Shade prewire",
+                "decision": "In scope",
+                "source": "dtool",
+            },
+            {
+                "item": "Security prewire",
+                "decision": "Symphony runs alongside AV prewire",
+                "source": "dtool",
+            },
+            {
+                "item": "Cameras",
+                "decision": "Prewire only — no Luma hardware",
+                "source": "dtool",
+            },
+            {
+                "item": "Touchscreens",
+                "decision": "iPads at Kitchen/TV Room + Master Bedroom, replacing C4 T5",
+                "source": "dtool",
+            },
+            {
+                "item": "Security panel",
+                "decision": "Qolsys IQ Panel 4, hardwired Cat6, VLAN 40, garage entry primary, master bed secondary",
+                "source": "dtool",
+            },
+            {
+                "item": "Switches",
+                "decision": "18 switches, all C4, code-required. Few in master suite optional for bedside control",
+                "source": "dtool",
+            },
+            {
+                "item": "Conduit",
+                "decision": "Rack to attic for future expansion",
+                "source": "dtool",
+            },
+
+            # ── Email-agreed items: won't appear in a D-Tools export ──
+            {
+                "item": "TV install",
+                "decision": "Symphony handles mounting, wiring, C4 integration at standard rates. Client supplies TVs",
+                "source": "email",
+            },
+            {
+                "item": "TV mounts",
+                "decision": "Mounts as reviewed and approved by Matt. VLT7 recommended for service access",
+                "source": "email",
+            },
+            {
+                "item": "Art walls",
+                "decision": "Cancelled",
+                "source": "email",
+            },
+            {
+                "item": "Lower Level Family TV",
+                "decision": "Wall mounted",
+                "source": "email",
+            },
+            {
+                "item": "IR flashers",
+                "decision": "Required for non-native C4 TVs",
+                "source": "email",
+            },
+            {
+                "item": "Wire management",
+                "decision": "Strong VersaBox (SM-RBX-14-WH or SM-RBX-8-WH) recommended at each TV location",
+                "source": "email",
+            },
+            {
+                "item": "Security coordination",
+                "decision": "Symphony coordinates with Superior Alarm on all security prewire",
+                "source": "email",
+            },
+
+            # ── Agreement items: captured in legal agreement, not the proposal ──
+            {
+                "item": "Post-install support",
+                "decision": "90 days for installation-related issues",
+                "source": "agreement",
+            },
+            {
+                "item": "Tuning period",
+                "decision": "60 days post-commissioning",
+                "source": "agreement",
+            },
+            {
+                "item": "Panel integration",
+                "decision": "Cindev DriverCentral driver, SDDP auto-discovery on VLAN 40",
+                "source": "agreement",
+            },
         ],
         "exclusions": [
             "No Sonos",
@@ -109,13 +191,19 @@ def extract_proposal_text(pdf_path: str) -> str:
 
 def check_proposal(pdf_path: str, project: str = "topletz") -> dict:
     """Check a proposal PDF against confirmed decisions.
-    
+
+    Only decisions with source="dtool" are checked against the proposal text
+    and flagged as missing if not found.  Email-agreed and agreement items are
+    collected separately so they never appear as false positives.
+
     Returns a dict with:
-        - matches: list of confirmed items found in the proposal
-        - missing: list of confirmed items NOT found
-        - concerns: list of potential inconsistencies
-        - pricing: pricing comparison
-        - summary: human-readable summary
+        - matches:          confirmed dtool items found in the proposal
+        - missing:          confirmed dtool items NOT found in the proposal
+        - email_confirmed:  items agreed via email (not expected in D-Tools export)
+        - agreement_items:  items captured in the legal agreement
+        - concerns:         potential inconsistencies
+        - pricing:          pricing comparison
+        - summary:          human-readable summary
     """
     known = CONFIRMED_DECISIONS.get(project)
     if not known:
@@ -129,6 +217,8 @@ def check_proposal(pdf_path: str, project: str = "topletz") -> dict:
     results = {
         "matches": [],
         "missing": [],
+        "email_confirmed": [],
+        "agreement_items": [],
         "concerns": [],
         "pricing": {},
         "summary": "",
@@ -138,8 +228,17 @@ def check_proposal(pdf_path: str, project: str = "topletz") -> dict:
     for decision in known["decisions"]:
         item = decision["item"]
         detail = decision["decision"]
+        source = decision.get("source", "dtool")
 
-        # Build search patterns based on the item
+        # Email and agreement items are never checked against proposal text
+        if source == "email":
+            results["email_confirmed"].append(f"{item}: {detail}")
+            continue
+        if source == "agreement":
+            results["agreement_items"].append(f"{item}: {detail}")
+            continue
+
+        # source == "dtool" — verify presence in proposal
         found = False
         patterns = _build_search_patterns(item, detail)
         for pattern in patterns:
@@ -162,7 +261,6 @@ def check_proposal(pdf_path: str, project: str = "topletz") -> dict:
     pricing = known.get("pricing", {})
     if pricing:
         total = pricing.get("total", 0)
-        # Look for the total in the text
         total_str = f"${total:,.2f}"
         total_str_no_comma = f"${total:.2f}"
         if total_str in text or total_str_no_comma in text:
@@ -183,23 +281,39 @@ def check_proposal(pdf_path: str, project: str = "topletz") -> dict:
         results["concerns"].append(f"GC ({gc}) not referenced in proposal")
 
     # Build summary
-    total_items = len(known["decisions"])
+    dtool_total = len([d for d in known["decisions"] if d.get("source", "dtool") == "dtool"])
     matched = len(results["matches"])
     missing = len(results["missing"])
     concerns = len(results["concerns"])
+    email_count = len(results["email_confirmed"])
+    agreement_count = len(results["agreement_items"])
 
     lines = [
         f"Proposal Check: {known['project_name']} ({project})",
         f"",
-        f"Matched: {matched}/{total_items} confirmed decisions found",
-        f"Missing: {missing} items not found in proposal text",
+        f"D-Tools items matched: {matched}/{dtool_total} confirmed decisions found in proposal",
+        f"D-Tools items missing: {missing}",
+        f"Email-confirmed items (not expected in proposal): {email_count}",
+        f"Agreement items (not expected in proposal): {agreement_count}",
         f"Concerns: {concerns}",
     ]
 
     if results["missing"]:
         lines.append("")
-        lines.append("MISSING ITEMS:")
+        lines.append("MISSING FROM PROPOSAL (D-Tools items):")
         for item in results["missing"]:
+            lines.append(f"  - {item}")
+
+    if results["email_confirmed"]:
+        lines.append("")
+        lines.append("EMAIL-CONFIRMED (not checked against proposal):")
+        for item in results["email_confirmed"]:
+            lines.append(f"  - {item}")
+
+    if results["agreement_items"]:
+        lines.append("")
+        lines.append("AGREEMENT ITEMS (not checked against proposal):")
+        for item in results["agreement_items"]:
             lines.append(f"  - {item}")
 
     if results["concerns"]:
@@ -271,12 +385,12 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python proposal_checker.py <pdf_path> [project]")
         sys.exit(1)
-    
+
     pdf_path = sys.argv[1]
     project = sys.argv[2] if len(sys.argv) > 2 else "topletz"
-    
+
     results = check_proposal(pdf_path, project)
     print(results["summary"])
-    
+
     if "--notify" in sys.argv:
         notify_findings(results)
