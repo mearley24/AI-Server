@@ -34,59 +34,96 @@ First, parse all existing proposal data to determine typical device counts per c
 
 Based on the analysis, define permanent IP ranges per VLAN. Use .1-.254 space wisely with room to grow:
 
-The scheme uses consistent 10-address blocks per category. Same pattern on every VLAN so any tech instantly knows where a device lives by its last octet. The block pattern (.1-.15 networking, .16-.25 control, .26-.35 audio, etc.) is the standard — Cursor should analyze past proposals to validate block sizes and adjust if needed, but this is the starting framework.
+The scheme uses two key principles:
+
+**1. Client-numbered subnets** — Each client gets a unique second octet so VPN/remote monitoring never has subnet collisions. You can VPN into every client site simultaneously.
+
+**2. Consistent 10-address blocks** — Same block pattern on every subnet. .1-.15 is always networking, .16-.25 is always the first device category, etc. A tech sees .20 and instantly knows that's a control/distribution device regardless of which client or VLAN.
+
+#### Client Numbering (10.X.Y.0/24)
+
+- Second octet (X) = client number (assigned sequentially, permanent)
+- Third octet (Y) = VLAN ID (1, 10, 20, 30, 40, 50)
+- Fourth octet = device address within the 10-block scheme
 
 ```
-VLAN 1 — Management (192.168.1.0/24)
+Client 001 (Topletz):    10.1.1.0/24, 10.1.10.0/24, 10.1.20.0/24, 10.1.30.0/24, 10.1.40.0/24, 10.1.50.0/24
+Client 002 (Next):       10.2.1.0/24, 10.2.10.0/24, 10.2.20.0/24, 10.2.30.0/24, 10.2.40.0/24, 10.2.50.0/24
+Client 003 (Next):       10.3.1.0/24, ...
+```
+
+Even clients with a flat network (no VLANs) get a unique subnet: 10.3.1.0/24. If they add VLANs later, the scheme is already waiting.
+
+Maintain a client registry in `knowledge/network/client_registry.json`:
+```json
+{"001": "Topletz - 84 Aspen Meadow", "002": "...", ...}
+```
+
+#### 10-Address Block Standard (same on every subnet)
+
+```
+.1-.15      Networking (gateway, router, switches, NVRs, fiber uplinks)
+.16-.25     Category A (varies by VLAN — see below)
+.26-.35     Category B
+.36-.45     Category C
+.46-.55     Category D
+.56-.65     Category E
+.66-.75     Category F
+.76-.254    DHCP pool (new devices land here, get assigned a static later)
+```
+
+#### Per-VLAN Category Assignments
+
+```
+VLAN 1 — Management (10.X.1.0/24)
   .1-.15      Networking (gateway, router, switches, fiber uplinks)
   .16-.25     Access points — indoor
   .26-.35     Access points — outdoor
   .36-.45     UPS / WattBox / PDUs / power management
-  .46-.55     Reserved
-  .200-.254   DHCP pool (for discovery)
+  .46-.75     Reserved
+  .76-.254    DHCP pool
 
-VLAN 20 — Control (192.168.20.0/24)
+VLAN 20 — Control (10.X.20.0/24)
   .1-.15      Networking (gateway, VLAN interface)
-  .16-.25     Control / distribution (EA-5, EA-3, EA-1, CORE3, CORE5, audio matrix AMS-8/AMS-16, DSP amps — anything that routes signals. Traditional amps are NOT networked)
+  .16-.25     Control / distribution (EA-5, EA-3, CORE3, audio matrix AMS-8/AMS-16, DSP amps — anything that routes signals. Traditional amps are NOT networked)
   .26-.35     Touchscreens / iPads / control surfaces
   .36-.45     Lighting processors (Lutron RA3 processors, repeaters)
   .46-.55     Shade controllers (Lutron, Somfy, QMotion processors)
   .56-.65     Climate / HVAC interfaces (thermostats, zone controllers)
   .66-.75     Security panels & keypads (Qolsys, 2GIG, DSC)
-  .76-.99     Reserved for expansion
-  .200-.254   DHCP pool (for discovery/commissioning)
+  .76-.254    DHCP pool
 
-VLAN 30 — IoT (192.168.30.0/24)
+VLAN 30 — IoT (10.X.30.0/24)
   .1-.15      Networking (gateway, VLAN interface)
   .16-.25     Smart TVs / displays
   .26-.35     Streaming devices (Apple TV, Roku, Shield, Fire)
   .36-.45     Voice assistants (Alexa, Google Home)
   .46-.55     Smart locks / smart appliances
-  .56-.65     Thermostats / climate (if not on Control VLAN)
-  .66-.75     Pool / spa / outdoor automation
-  .76-.99     Reserved for expansion
-  .200-.254   DHCP pool
+  .56-.65     Pool / spa / outdoor automation
+  .66-.75     Misc IoT
+  .76-.254    DHCP pool
 
-VLAN 40 — Guest (192.168.40.0/24)
+VLAN 40 — Guest (10.X.40.0/24)
   .1-.15      Networking (gateway)
-  .100-.254   DHCP only (no static assignments)
+  .76-.254    DHCP only (no static assignments)
 
-VLAN 50 — Surveillance (192.168.50.0/24)
+VLAN 50 — Surveillance (10.X.50.0/24)
   .1-.15      Networking (gateway, NVRs)
   .16-.25     Cameras — exterior
   .26-.35     Cameras — interior
   .36-.45     Doorbell cameras / video intercoms
   .46-.55     Access control (gate controllers, door stations)
   .56-.75     Camera expansion (large estates)
-  .76-.99     Reserved
-  .200-.254   DHCP pool (for camera discovery)
+  .76-.254    DHCP pool
 
-VLAN 10 — Trusted Devices (192.168.10.0/24)
+VLAN 10 — Trusted Devices (10.X.10.0/24)
   .1-.15      Networking (gateway)
-  .100-.254   DHCP only (client phones, laptops, tablets)
+  .76-.254    DHCP only (client phones, laptops, tablets)
 ```
 
-Every VLAN follows the same block pattern. Small projects use a subset — the scheme never changes per project, only gets filled in. Cursor should analyze past proposals (Gates, Hernaiz, Kelly, Topletz) to validate that 10-address blocks are sufficient per category and flag any category that needs more.
+VLANs are optional but always pre-planned. A flat-network client still uses the 10-block standard on their single subnet — if they upgrade later, VLANs snap in without re-addressing anything.
+
+Cursor should analyze past proposals (Gates, Hernaiz, Kelly, Topletz) to validate that 10-address blocks are sufficient per category and flag any that need more.
 
 ### 3. System Shell Generator (`tools/system_shell.py`)
 
