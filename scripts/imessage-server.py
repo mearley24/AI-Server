@@ -25,9 +25,10 @@ import sqlite3
 import shutil
 import tempfile
 import os
+import sys
 import logging
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -515,6 +516,159 @@ def get_client_profile(name: str) -> str:
         return "Client profile unavailable: %s" % e
 
 
+def _ensure_openclaw_path():
+    openclaw_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "openclaw"))
+    if os.path.isdir(openclaw_dir) and openclaw_dir not in sys.path:
+        sys.path.insert(0, openclaw_dir)
+
+
+def _load_project_routes() -> dict:
+    try:
+        path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "email-monitor", "routing_config.json"))
+        with open(path) as f:
+            return json.load(f).get("project_routes", {})
+    except Exception:
+        return {}
+
+
+def _resolve_client_email(client_ref: str) -> str:
+    routes = _load_project_routes()
+    ref = client_ref.lower().strip()
+    for email_addr, folder in routes.items():
+        if ref in email_addr.lower() or ref in str(folder).lower():
+            return email_addr
+    return ""
+
+
+def get_follow_up_status() -> str:
+    try:
+        _ensure_openclaw_path()
+        from follow_up_tracker import list_overdue
+        overdue = list_overdue()
+        if not overdue:
+            return "No overdue follow-ups right now."
+        lines = ["Overdue follow-ups:"]
+        for row in overdue[:15]:
+            lines.append("- %s — %s" % (row.get("client_email", "?"), row.get("last_client_subject", "(no subject)")))
+        return "\n".join(lines)
+    except Exception as e:
+        return "Follow-up status unavailable: %s" % e
+
+
+def get_payment_status() -> str:
+    try:
+        _ensure_openclaw_path()
+        from payment_tracker import get_status_summary
+        return get_status_summary()
+    except Exception as e:
+        return "Payment status unavailable: %s" % e
+
+
+def summarize_latest_from_client(client_ref: str) -> str:
+    client_ref = client_ref.strip()
+    if not client_ref:
+        return "Tell me which client to look up."
+    try:
+        q = quote(client_ref, safe="")
+        resp = urlopen("http://127.0.0.1:8092/emails/search?q=%s&limit=5" % q, timeout=10)
+        emails = json.loads(resp.read())
+        if not emails:
+            return "No emails found for %s." % client_ref
+        latest = emails[0]
+        sender = latest.get("sender_name") or latest.get("sender", "?")
+        subject = latest.get("subject", "")
+        summary = latest.get("summary", "") or latest.get("snippet", "")[:300]
+        return "Latest from %s\nSubject: %s\n%s" % (sender, subject, summary)
+    except Exception as e:
+        return "Couldn't retrieve latest client email: %s" % e
+
+
+def _create_walkthrough_event(contact: str) -> tuple[bool, str]:
+    now = datetime.now()
+    start = (now + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0)
+    end = start + timedelta(hours=1)
+    payload = {
+        "title": "Walkthrough with %s" % contact,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "notes": "Auto-created from iMessage command.",
+    }
+    try:
+        req = Request(
+            "http://127.0.0.1:8094/calendar/events",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        resp = urlopen(req, timeout=15)
+        data = json.loads(resp.read())
+        return True, "Walkthrough scheduled for %s." % start.strftime("%Y-%m-%d %I:%M %p")
+    except Exception as e:
+        return False, "Failed to schedule walkthrough: %s" % e
+
+
+def _draft_walkthrough_email(contact: str, contact_email: str) -> str:
+    try:
+        _ensure_openclaw_path()
+        from email_workflow import draft_email
+        subject = "Walkthrough Scheduling — Symphony Smart Homes"
+        body = (
+            "<p>Hi %s,</p>"
+            "<p>I'd like to schedule our walkthrough and confirm project details.</p>"
+            "<p>Please let me know if this time works for you.</p>"
+            "<p>Best regards,<br>Matt</p>"
+        ) % contact
+        result = draft_email(to=contact_email, subject=subject, body_html=body, notify_matthew=False)
+        if result.get("status") == "draft_created":
+            return "Drafted walkthrough email to %s in Zoho." % contact_email
+        return "Could not draft walkthrough email: %s" % result.get("message", "unknown error")
+    except Exception as e:
+        return "Walkthrough email draft failed: %s" % e
+
+
+def handle_draft_to_command(message: str) -> str:
+    import re as _re
+    m = _re.search(r"draft to\s+(.+?)(?:\s*:\s*(.+))?$", message, _re.IGNORECASE)
+    if not m:
+        return "Use: draft to [client] : [what to say]"
+    client_ref = (m.group(1) or "").strip()
+    draft_text = (m.group(2) or "").strip()
+    if not draft_text:
+        return "What should I say to %s? Send: draft to %s : [message]" % (client_ref, client_ref)
+    client_email = _resolve_client_email(client_ref)
+    if not client_email:
+        return "I couldn't match %s to an email. Use sender email directly." % client_ref
+    try:
+        _ensure_openclaw_path()
+        from email_workflow import draft_email
+        result = draft_email(
+            to=client_email,
+            subject="RE: %s" % client_ref.title(),
+            body_html="<p>%s</p><p>Best regards,<br>Matt</p>" % draft_text,
+            notify_matthew=False,
+        )
+        if result.get("status") == "draft_created":
+            return "Draft created for %s — review in Zoho." % client_email
+        return "Draft failed: %s" % result.get("message", "unknown")
+    except Exception as e:
+        return "Draft error: %s" % e
+
+
+def handle_schedule_walkthrough(message: str) -> str:
+    import re as _re
+    m = _re.search(r"schedule walkthrough with\s+(.+)$", message, _re.IGNORECASE)
+    if not m:
+        return "Use: schedule walkthrough with [contact]"
+    contact = m.group(1).strip()
+    ok, schedule_msg = _create_walkthrough_event(contact)
+    if not ok:
+        return schedule_msg
+    contact_email = _resolve_client_email(contact)
+    if contact_email:
+        draft_msg = _draft_walkthrough_email(contact, contact_email)
+        return "%s\n%s" % (schedule_msg, draft_msg)
+    return "%s\nNo client email match found for %s." % (schedule_msg, contact)
+
+
 def ask_openclaw(message: str) -> str:
     """Send a message to OpenClaw and get a response."""
     try:
@@ -528,6 +682,23 @@ def ask_openclaw(message: str) -> str:
             return "\n\n---\n\n".join(results)
 
         lower = message.lower()
+
+        if lower.startswith("draft to "):
+            return handle_draft_to_command(message)
+
+        if lower.strip() in ("follow ups", "followups", "overdue follow ups"):
+            return get_follow_up_status()
+
+        if lower.strip() in ("payments", "payment status", "deposits"):
+            return get_payment_status()
+
+        if lower.startswith("what did "):
+            m = _re.search(r"what did\s+(.+?)\s+say", lower)
+            if m:
+                return summarize_latest_from_client(m.group(1).strip())
+
+        if lower.startswith("schedule walkthrough with "):
+            return handle_schedule_walkthrough(message)
 
         if any(w in lower for w in ["help", "commands", "what can you do"]):
             return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 jobs \u2014 active job list\n\u2022 new job [name] \u2014 create a job\n\u2022 advance [name] \u2014 advance job phase\n\u2022 [name] status \u2014 specific job details\n\u2022 proposals \u2014 list proposals\n\u2022 manuals \u2014 list manuals\n\u2022 client [name] \u2014 client profile\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
