@@ -1313,7 +1313,10 @@ class PolymarketCopyTrader:
         market_question: str,
     ) -> tuple[bool, str]:
         """Block markets resolving too soon (< MIN_RESOLUTION_HOURS)."""
-        if self._is_short_window_market(market_question):
+        window_minutes = _parse_resolution_window_minutes(market_question)
+        if window_minutes is not None and window_minutes < 30:
+            return False, "short_window_market"
+        if window_minutes is None and self._is_short_window_market(market_question):
             return False, "short_window_market"
 
         end_date_str = (
