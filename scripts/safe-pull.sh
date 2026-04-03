@@ -37,21 +37,22 @@ VPN_CONFIG_SRC="${REPO_ROOT}/polymarket-bot/vpn"
 ENV_FILE="${REPO_ROOT}/.env"
 
 # Build-context directories mapped to their compose service names.
-# Derived from docker-compose-ref.yml; update here if services are added.
-declare -A SERVICE_CONTEXTS=(
-  [remediator]="remediator"
-  [polymarket-bot]="polymarket-bot"
-  [proposals]="proposals"
-  [email-monitor]="email-monitor"
-  [voice-receptionist]="voice_receptionist"
-  [calendar-agent]="calendar-agent"
-  [notification-hub]="notification-hub"
-  [dtools-bridge]="integrations/dtools"
-  [clawwork]="clawwork"
-  [openclaw]="openclaw"
-  [knowledge-scanner]="knowledge-scanner"
-  [mission-control]="mission_control"
-  [intel-feeds]="integrations/intel_feeds"
+# Format: "service_name:build_context" — parsed with simple string ops (bash 3.x safe)
+SERVICE_CONTEXT_LIST=(
+  "remediator:remediator"
+  "polymarket-bot:polymarket-bot"
+  "proposals:proposals"
+  "email-monitor:email-monitor"
+  "voice-receptionist:voice_receptionist"
+  "calendar-agent:calendar-agent"
+  "notification-hub:notification-hub"
+  "dtools-bridge:integrations/dtools"
+  "clawwork:clawwork"
+  "openclaw:openclaw"
+  "knowledge-scanner:knowledge-scanner"
+  "mission-control:mission_control"
+  "intel-feeds:integrations/intel_feeds"
+  "context-preprocessor:context-preprocessor"
 )
 
 # ---------------------------------------------------------------------------
@@ -144,16 +145,15 @@ restore_env_file() {
 # Detect which services need a rebuild based on changed files in the pull
 # ---------------------------------------------------------------------------
 detect_changed_services() {
-  # $1 = space-separated list of files that changed (from git diff)
+  # $1 = newline-separated list of files that changed (from git diff)
   local changed_files="$1"
-  local -n out_services=$2   # nameref to output array
-
-  for service in "${!SERVICE_CONTEXTS[@]}"; do
-    local context="${SERVICE_CONTEXTS[${service}]}"
+  # Uses SERVICE_CONTEXT_LIST (bash 3.x compatible — no associative arrays)
+  for entry in "${SERVICE_CONTEXT_LIST[@]}"; do
+    local service="${entry%%:*}"
+    local context="${entry#*:}"
     for f in ${changed_files}; do
-      # If the changed file is inside the service's build context directory
       if [[ "${f}" == "${context}/"* || "${f}" == "${context}" ]]; then
-        out_services+=("${service}")
+        SERVICES_TO_REBUILD+=("${service}")
         break
       fi
     done
@@ -275,10 +275,17 @@ if (( REBUILD_ALL )); then
 else
   # Detect which services have changes
   SERVICES_TO_REBUILD=()
-  detect_changed_services "${CHANGED_FILES}" SERVICES_TO_REBUILD
+  detect_changed_services "${CHANGED_FILES}"
 
-  # Deduplicate
-  mapfile -t SERVICES_TO_REBUILD < <(printf '%s\n' "${SERVICES_TO_REBUILD[@]}" | sort -u)
+  # Deduplicate (bash 3.x compatible — no mapfile)
+  if (( ${#SERVICES_TO_REBUILD[@]} > 0 )); then
+    local deduped
+    deduped=$(printf '%s\n' "${SERVICES_TO_REBUILD[@]}" | sort -u)
+    SERVICES_TO_REBUILD=()
+    while IFS= read -r svc; do
+      [[ -n "${svc}" ]] && SERVICES_TO_REBUILD+=("${svc}")
+    done <<< "${deduped}"
+  fi
 
   if (( ${#SERVICES_TO_REBUILD[@]} == 0 )); then
     ok "No build contexts changed — no container rebuilds needed"

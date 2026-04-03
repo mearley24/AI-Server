@@ -133,26 +133,24 @@ section_overview() {
   log "  $(printf '%-30s %-12s %-30s %s' 'CONTAINER' 'STATUS' 'UPTIME' 'CPU / MEM')"
   log "  $(printf '%-30s %-12s %-30s %s' '─────────────────────────────' '──────────' '─────────────────────────────' '────────────────')"
 
-  # Collect stats in one shot (no-stream) to avoid repeated calls
-  declare -A CPU_MAP MEM_MAP
-  while IFS= read -r line; do
-    local cname cpu mem
-    cname=$(echo "${line}" | awk '{print $2}')
-    cpu=$(echo "${line}"   | awk '{print $3}')
-    mem=$(echo "${line}"   | awk '{print $4}')
-    CPU_MAP["${cname}"]="${cpu}"
-    MEM_MAP["${cname}"]="${mem}"
-  done < <(docker stats --no-stream --format "table {{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null | tail -n +2)
+  # Collect stats + status in one pass (compatible with bash 3.x / macOS)
+  # Write stats to a temp file for lookup
+  local stats_tmp
+  stats_tmp=$(mktemp /tmp/audit_stats.XXXXXX)
+  docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null > "${stats_tmp}" || true
 
   # Iterate all containers (running + stopped) for status / uptime
   docker ps -a --format "{{.Names}}\t{{.Status}}" 2>/dev/null | sort | \
   while IFS=$'\t' read -r cname status; do
-    local cpu="${CPU_MAP[${cname}]:-—}"
-    local mem="${MEM_MAP[${cname}]:-—}"
-    # Trim mem to just used/limit for brevity
-    local usage="${cpu} / ${mem}"
+    local cpu mem usage
+    cpu=$(grep "^${cname}" "${stats_tmp}" 2>/dev/null | cut -f2 || echo "—")
+    mem=$(grep "^${cname}" "${stats_tmp}" 2>/dev/null | cut -f3 || echo "—")
+    [[ -z "${cpu}" ]] && cpu="—"
+    [[ -z "${mem}" ]] && mem="—"
+    usage="${cpu} / ${mem}"
     printf "  %-30s %-12s %-30s %s\n" "${cname}" "running" "${status}" "${usage}"
   done
+  rm -f "${stats_tmp}"
 }
 
 section_should_run() {
