@@ -280,7 +280,7 @@ class PolymarketCopyTrader:
         # Config from settings
         self._size_usd: float = getattr(settings, "copytrade_size_usd", 3.0)
         self._max_positions: int = getattr(settings, "copytrade_max_positions", 100)
-        self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.65)
+        self._min_win_rate: float = getattr(settings, "copytrade_min_win_rate", 0.60)
         self._min_trades: int = getattr(settings, "copytrade_min_trades", 20)
         self._scan_interval_hours: float = getattr(settings, "copytrade_scan_interval_hours", 6.0)
         self._check_interval: float = getattr(settings, "copytrade_check_interval", 30.0)
