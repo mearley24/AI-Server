@@ -59,6 +59,8 @@ SHOULD_RUN=(
   mission-control
   knowledge-scanner
   intel-feeds
+  context-preprocessor
+  openwebui
 )
 
 SHOULD_STOP=(
