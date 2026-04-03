@@ -8,11 +8,11 @@ Pipeline:
 5. Return summary with flags for iMessage delivery
 
 Flag system:
-  [ACTION] — specific strategy or code that can be implemented
-  [EDGE]   — a trading edge, alpha, or insight worth testing
-  [DATA]   — specific numbers, thresholds, or backtested results
-  [TOOL]   — a tool, library, or resource mentioned
-  [RISK]   — warnings, pitfalls, or things to avoid
+  🔨 — something we can build/implement
+  💡 — trading edge or alpha insight
+  📊 — specific number, threshold, or backtested result
+  🔧 — tool, library, or resource
+  ⚠️ — warning or pitfall
 """
 
 import json
@@ -137,11 +137,11 @@ Respond in this exact JSON format:
 {{
     "summary": "2-3 sentence overview of the key message",
     "flags": [
-        {{"type": "ACTION", "text": "specific actionable item"}},
-        {{"type": "EDGE", "text": "trading edge or alpha insight"}},
-        {{"type": "DATA", "text": "specific number, threshold, or backtested result"}},
-        {{"type": "TOOL", "text": "tool, library, or resource mentioned"}},
-        {{"type": "RISK", "text": "warning or pitfall to avoid"}}
+        {{"type": "🔨", "text": "specific actionable item"}},
+        {{"type": "💡", "text": "trading edge or alpha insight"}},
+        {{"type": "📊", "text": "specific number, threshold, or backtested result"}},
+        {{"type": "🔧", "text": "tool, library, or resource mentioned"}},
+        {{"type": "⚠️", "text": "warning or pitfall to avoid"}}
     ],
     "strategies": [
         {{
@@ -178,7 +178,15 @@ def save_transcript(post_id: str, author: str, transcript: str, analysis: dict) 
     """Save flagged transcript to /data/transcripts/."""
     TRANSCRIPT_DIR.mkdir(parents=True, exist_ok=True)
     
-    output_path = TRANSCRIPT_DIR / f"{post_id}.md"
+    # Clean filename: @author — topic — date.md
+    import datetime
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+    topic = analysis.get("summary", "")[:50].strip().rstrip(".")
+    if not topic:
+        topic = post_id
+    safe_topic = "".join(c if c.isalnum() or c in " -" else "" for c in topic).strip()[:50]
+    filename = f"@{author} \u2014 {safe_topic} \u2014 {date_str}.md"
+    output_path = TRANSCRIPT_DIR / filename
     
     lines = [
         f"# Video Transcript: @{author}",
@@ -191,7 +199,7 @@ def save_transcript(post_id: str, author: str, transcript: str, analysis: dict) 
     ]
 
     for flag in analysis.get("flags", []):
-        lines.append(f"- **[{flag['type']}]** {flag['text']}")
+        lines.append(f"- {flag['type']} {flag['text']}")
 
     lines.append("")
     lines.append("## Strategies")
@@ -229,7 +237,7 @@ def format_imessage_summary(author: str, analysis: dict) -> str:
         lines.append("")
 
     for flag in analysis.get("flags", []):
-        lines.append(f"[{flag['type']}] {flag['text']}")
+        lines.append(f"{flag['type']} {flag['text']}")
 
     if analysis.get("strategies"):
         lines.append("")
