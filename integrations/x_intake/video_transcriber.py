@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Use standard logging instead of structlog to avoid conflicts with imessage-server
 
-TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "/data/transcripts"))
+TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", os.path.expanduser("~/AI-Server/data/transcripts")))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 
@@ -275,8 +275,12 @@ def process_x_video(post_url: str, post_id: str = "", author: str = "", post_tex
     # 3. Analyze
     analysis = analyze_transcript(transcript, author, post_text)
 
-    # 4. Save
-    transcript_path = save_transcript(post_id, author, transcript, analysis)
+    # 4. Save (best-effort — don't fail if directory doesn't exist)
+    transcript_path = ""
+    try:
+        transcript_path = save_transcript(post_id, author, transcript, analysis)
+    except Exception as e:
+        logger.error("save_transcript_failed: %s", str(e)[:100])
 
     # 5. Format for iMessage
     imessage_summary = format_imessage_summary(author, analysis)
