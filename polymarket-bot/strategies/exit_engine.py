@@ -18,12 +18,12 @@ logger = structlog.get_logger(__name__)
 
 
 CATEGORY_EXIT_PARAMS: dict[str, dict[str, float]] = {
-    "crypto_updown": {"sl": 0.35, "time_hours": 12, "trailing": 0.10},
-    "sports": {"sl": 0.40, "time_hours": 24, "trailing": 0.12},
-    "weather": {"sl": 0.50, "time_hours": 72, "trailing": 0.15},
-    "politics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
-    "geopolitics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
-    "other": {"sl": 0.50, "time_hours": 72, "trailing": 0.18},
+    "crypto_updown": {"sl": 0.25, "time_hours": 8, "trailing": 0.10},
+    "sports": {"sl": 0.30, "time_hours": 24, "trailing": 0.12},
+    "weather": {"sl": 0.35, "time_hours": 48, "trailing": 0.15},
+    "politics": {"sl": 0.30, "time_hours": 48, "trailing": 0.20},
+    "geopolitics": {"sl": 0.30, "time_hours": 48, "trailing": 0.20},
+    "other": {"sl": 0.35, "time_hours": 48, "trailing": 0.18},
 }
 
 
@@ -71,7 +71,7 @@ class ExitEngine:
         self,
         take_profit_1_pct: float = 0.30,
         take_profit_2_pct: float = 9.99,
-        stop_loss_pct: float = 0.50,
+        stop_loss_pct: float = 0.30,
         trailing_stop_pct: float = 0.15,
         time_exit_hours: float = 48.0,
         time_exit_min_move_pct: float = 0.05,
@@ -178,11 +178,32 @@ class ExitEngine:
             )
             return None  # Don't sell — just activate trailing
 
-        # 4. Time-based exit: category-specific stale timer with <5% absolute move
-        if hold_hours >= effective_time_hours and abs(pnl_pct) < self._time_min_move:
+        # 3b. Near-resolution take profit: lock gains near $1 outcomes
+        near_resolution_price = 0.92
+        if current_price >= near_resolution_price and entry < 0.80:
             return ExitSignal(
                 position_id=position_id,
-                reason="time_exit_stale",
+                reason="near_resolution_takeprofit",
+                sell_fraction=0.75,
+                current_price=current_price,
+                entry_price=entry,
+                pnl_pct=pnl_pct,
+                hold_time_hours=hold_hours,
+                peak_price=tracker.peak_price,
+            )
+
+        # 4. Time-based exit: stale OR deteriorating trade quality
+        stale = hold_hours >= effective_time_hours and abs(pnl_pct) < self._time_min_move
+        deteriorating = (
+            hold_hours >= effective_time_hours * 0.5
+            and pnl_pct <= -0.20
+            and tracker.peak_price <= entry * 1.05
+        )
+        if stale or deteriorating:
+            reason = "time_exit_stale" if stale else "time_exit_deteriorating"
+            return ExitSignal(
+                position_id=position_id,
+                reason=reason,
                 sell_fraction=1.0,
                 current_price=current_price,
                 entry_price=entry,
