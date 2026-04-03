@@ -34,57 +34,59 @@ First, parse all existing proposal data to determine typical device counts per c
 
 Based on the analysis, define permanent IP ranges per VLAN. Use .1-.254 space wisely with room to grow:
 
+The scheme uses consistent 10-address blocks per category. Same pattern on every VLAN so any tech instantly knows where a device lives by its last octet. The block pattern (.1-.15 networking, .16-.25 control, .26-.35 audio, etc.) is the standard — Cursor should analyze past proposals to validate block sizes and adjust if needed, but this is the starting framework.
+
 ```
 VLAN 1 — Management (192.168.1.0/24)
-  .1          Gateway (router/firewall)
-  .2-.10      Switches (primary, secondary, PoE, fiber — room for 9)
-  .11-.25     Access points (indoor + outdoor — room for 15)
-  .26-.35     UPS / WattBox / power management / PDUs
-  .36-.49     Reserved (future management devices)
-  .50-.99     Infrastructure expansion
+  .1-.15      Networking (gateway, router, switches, fiber uplinks)
+  .16-.25     Access points — indoor
+  .26-.35     Access points — outdoor
+  .36-.45     UPS / WattBox / PDUs / power management
+  .46-.55     Reserved
   .200-.254   DHCP pool (for discovery)
 
 VLAN 20 — Control (192.168.20.0/24)
-  .1          Gateway
-  .2-.15      Controllers (EA-5, EA-3, EA-1, CORE3, CORE5 — room for 14)
-  .16-.45     Control endpoints (keypads w/ IP, touchscreens, iPads — room for 30)
-  .46-.55     Audio matrix / DSP (AMS-8, AMS-16, DSP amps, Sonos ports — room for 10. Traditional amps are NOT networked)
-  .56-.75     Lighting processors (Lutron RA3 processors, repeaters, panels — room for 20)
-  .76-.95     Shade controllers (Lutron, Somfy, QMotion — room for 20)
-  .96-.110    Climate / HVAC interfaces (thermostats, zone controllers — room for 15)
-  .111-.125   Security panels & keypads (Qolsys, 2GIG, DSC — room for 15)
-  .126-.199   Reserved for expansion
+  .1-.15      Networking (gateway, VLAN interface)
+  .16-.25     Control / distribution (EA-5, EA-3, EA-1, CORE3, CORE5, audio matrix AMS-8/AMS-16, DSP amps — anything that routes signals. Traditional amps are NOT networked)
+  .26-.35     Touchscreens / iPads / control surfaces
+  .36-.45     Lighting processors (Lutron RA3 processors, repeaters)
+  .46-.55     Shade controllers (Lutron, Somfy, QMotion processors)
+  .56-.65     Climate / HVAC interfaces (thermostats, zone controllers)
+  .66-.75     Security panels & keypads (Qolsys, 2GIG, DSC)
+  .76-.99     Reserved for expansion
   .200-.254   DHCP pool (for discovery/commissioning)
 
 VLAN 30 — IoT (192.168.30.0/24)
-  .1          Gateway
-  .2-.30      Smart TVs / displays (room for 29 — covers largest estates)
-  .31-.55     Streaming devices (Apple TV, Roku, Shield, Fire — room for 25)
-  .56-.80     Voice assistants (Alexa, Google Home — room for 25)
-  .81-.120    Thermostats, smart locks, smart appliances, misc IoT (room for 40)
-  .121-.150   Motorized furniture, fireplaces, pool/spa controllers
-  .151-.199   Reserved for expansion
+  .1-.15      Networking (gateway, VLAN interface)
+  .16-.25     Smart TVs / displays
+  .26-.35     Streaming devices (Apple TV, Roku, Shield, Fire)
+  .36-.45     Voice assistants (Alexa, Google Home)
+  .46-.55     Smart locks / smart appliances
+  .56-.65     Thermostats / climate (if not on Control VLAN)
+  .66-.75     Pool / spa / outdoor automation
+  .76-.99     Reserved for expansion
   .200-.254   DHCP pool
 
 VLAN 40 — Guest (192.168.40.0/24)
-  .1          Gateway
+  .1-.15      Networking (gateway)
   .100-.254   DHCP only (no static assignments)
 
 VLAN 50 — Surveillance (192.168.50.0/24)
-  .1          Gateway
-  .2-.6       NVR(s) (room for 5 — multi-NVR estates)
-  .10-.59     Cameras (room for 50 — large estates with 30+ cameras)
-  .60-.74     Doorbell cameras / video intercoms (room for 15)
-  .75-.89     Access control (gate controllers, door stations — room for 15)
-  .90-.99     Reserved
+  .1-.15      Networking (gateway, NVRs)
+  .16-.25     Cameras — exterior
+  .26-.35     Cameras — interior
+  .36-.45     Doorbell cameras / video intercoms
+  .46-.55     Access control (gate controllers, door stations)
+  .56-.75     Camera expansion (large estates)
+  .76-.99     Reserved
   .200-.254   DHCP pool (for camera discovery)
 
 VLAN 10 — Trusted Devices (192.168.10.0/24)
-  .1          Gateway
+  .1-.15      Networking (gateway)
   .100-.254   DHCP only (client phones, laptops, tablets)
 ```
 
-These ranges are sized for large custom homes (8+ bedrooms, 30+ cameras, 40+ speaker zones, multiple buildings). Small projects just use a subset. Validate ranges against the device count analysis — the scheme should never need to be modified per project, only filled in.
+Every VLAN follows the same block pattern. Small projects use a subset — the scheme never changes per project, only gets filled in. Cursor should analyze past proposals (Gates, Hernaiz, Kelly, Topletz) to validate that 10-address blocks are sufficient per category and flag any category that needs more.
 
 ### 3. System Shell Generator (`tools/system_shell.py`)
 
