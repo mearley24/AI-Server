@@ -59,12 +59,20 @@ Run in order within each tier. DONE items were completed by Cursor already.
 | 23 | Auto-18-dropbox-icloud-sync.md | Auto | P2 — file pipeline fix |
 | 24 | Auto-20-performance-analytics.md | Auto | P1 — trade database + backtester + self-tuning |
 
-## Tier 5 — Revenue & Product (run when ready)
+## Tier 5 — The Brain & The Flywheel (the glue)
 
 | # | File | Type | Priority |
 |---|------|------|----------|
-| 25 | API-8-voice-receptionist-v2.md | API | P2 — Twilio + OpenAI Realtime phone answering |
-| 26 | API-9-client-ai-concierge-deploy.md | API | P2 — first customer AI appliance |
-| 27 | API-10-trading-mobile-app.md | API | P2 — iOS trading app API |
-| 28 | Auto-12-clawwork-activation.md | Auto | P3 — Bob's freelance side hustle |
-| 29 | Auto-4-bookmark-processor.md | Auto | P3 — X bookmark processing |
+| 25 | API-11-bobs-brain-unified-context.md | API | P0 — event bus + context store + decision engine |
+| 26 | API-12-profit-reinvestment-loop.md | API | P1 — treasury, auto-scaling bankroll, financial dashboard |
+| 27 | API-13-symphony-client-lifecycle.md | API | P1 — zero-touch project management, lead to handoff |
+
+## Tier 6 — Revenue & Product (run when ready)
+
+| # | File | Type | Priority |
+|---|------|------|----------|
+| 28 | API-8-voice-receptionist-v2.md | API | P2 — Twilio + OpenAI Realtime phone answering |
+| 29 | API-9-client-ai-concierge-deploy.md | API | P2 — first customer AI appliance |
+| 30 | API-10-trading-mobile-app.md | API | P2 — iOS trading app API |
+| 31 | Auto-12-clawwork-activation.md | Auto | P3 — Bob's freelance side hustle |
+| 32 | Auto-4-bookmark-processor.md | Auto | P3 — X bookmark processing |
