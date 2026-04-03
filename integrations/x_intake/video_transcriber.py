@@ -25,6 +25,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Use standard logging instead of structlog to avoid conflicts with imessage-server
+
 TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "/data/transcripts"))
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
@@ -52,7 +54,7 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode == 0 and os.path.exists(output_path):
-            logger.info("video_downloaded", path=output_path, size=os.path.getsize(output_path))
+            logger.info("video_downloaded: %s (%d bytes)", output_path, os.path.getsize(output_path))
             return output_path
         else:
             # Try downloading as video then extract audio
@@ -70,7 +72,7 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
                 if os.path.exists(output_path):
                     return output_path
             
-            logger.error("video_download_failed", stderr=result.stderr[:200])
+            logger.error("video_download_failed: %s", result.stderr[:200])
             return None
     except FileNotFoundError:
         logger.error("yt-dlp not installed")
@@ -79,7 +81,7 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
         logger.error("video_download_timeout")
         return None
     except Exception as e:
-        logger.error("video_download_error", error=str(e)[:200])
+        logger.error("video_download_error: %s", str(e)[:200])
         return None
 
 
@@ -103,10 +105,10 @@ def transcribe_audio(audio_path: str) -> Optional[str]:
                 response_format="text",
             )
 
-        logger.info("transcription_complete", length=len(transcript))
+        logger.info("transcription_complete: %d chars", len(transcript))
         return transcript
     except Exception as e:
-        logger.error("transcription_error", error=str(e)[:200])
+        logger.error("transcription_error: %s", str(e)[:200])
         return None
 
 
@@ -166,11 +168,10 @@ Only include flags that are genuinely present in the transcript. Be specific —
         )
 
         analysis = json.loads(response.choices[0].message.content)
-        logger.info("analysis_complete", flags=len(analysis.get("flags", [])),
-                     strategies=len(analysis.get("strategies", [])))
+        logger.info("analysis_complete: %d flags, %d strategies", len(analysis.get("flags", [])), len(analysis.get("strategies", [])))
         return analysis
     except Exception as e:
-        logger.error("analysis_error", error=str(e)[:200])
+        logger.error("analysis_error: %s", str(e)[:200])
         return {"error": str(e)}
 
 
@@ -224,7 +225,7 @@ def save_transcript(post_id: str, author: str, transcript: str, analysis: dict) 
     with open(output_path, "w") as f:
         f.write("\n".join(lines))
 
-    logger.info("transcript_saved", path=str(output_path))
+    logger.info("transcript_saved: %s", output_path)
     return str(output_path)
 
 
@@ -259,7 +260,7 @@ def process_x_video(post_url: str, post_id: str = "", author: str = "", post_tex
         match = re.search(r'/status/(\d+)', post_url)
         post_id = match.group(1) if match else "unknown"
 
-    logger.info("processing_video", post_id=post_id, author=author)
+    logger.info("processing_video: %s @%s", post_id, author)
 
     # 1. Download
     audio_path = download_video(post_url)
