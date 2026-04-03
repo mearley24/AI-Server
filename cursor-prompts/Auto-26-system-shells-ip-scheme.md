@@ -48,12 +48,12 @@ VLAN 20 — Control (192.168.20.0/24)
   .1          Gateway
   .2-.15      Controllers (EA-5, EA-3, EA-1, CORE3, CORE5 — room for 14)
   .16-.45     Control endpoints (keypads w/ IP, touchscreens, iPads — room for 30)
-  .46-.75     Audio distribution (AMS-8, AMS-16, DSP amps, Sonos ports, streaming bridges — room for 30. Note: traditional amps are NOT networked, only the matrix/DSP units that route audio)
-  .76-.95     Lighting processors (Lutron RA3 processors, repeaters, panels — room for 20)
-  .96-.115    Shade controllers (Lutron, Somfy, QMotion — room for 20)
-  .116-.130   Climate / HVAC interfaces (thermostats, zone controllers — room for 15)
-  .131-.145   Security panels & keypads (Qolsys, 2GIG, DSC — room for 15)
-  .146-.199   Reserved for expansion
+  .46-.55     Audio matrix / DSP (AMS-8, AMS-16, DSP amps, Sonos ports — room for 10. Traditional amps are NOT networked)
+  .56-.75     Lighting processors (Lutron RA3 processors, repeaters, panels — room for 20)
+  .76-.95     Shade controllers (Lutron, Somfy, QMotion — room for 20)
+  .96-.110    Climate / HVAC interfaces (thermostats, zone controllers — room for 15)
+  .111-.125   Security panels & keypads (Qolsys, 2GIG, DSC — room for 15)
+  .126-.199   Reserved for expansion
   .200-.254   DHCP pool (for discovery/commissioning)
 
 VLAN 30 — IoT (192.168.30.0/24)
