@@ -76,3 +76,13 @@ Run in order within each tier. DONE items were completed by Cursor already.
 | 30 | API-10-trading-mobile-app.md | API | P2 — iOS trading app API |
 | 31 | Auto-12-clawwork-activation.md | Auto | P3 — Bob's freelance side hustle |
 | 32 | Auto-4-bookmark-processor.md | Auto | P3 — X bookmark processing |
+
+## Tier 7 — Dreamland (the endgame)
+
+| # | File | Type | Priority |
+|---|------|------|----------|
+| 33 | API-14-system-design-graph.md | API | P1 — compatibility intelligence, design validation, wiring diagrams |
+| 34 | API-15-symphony-ops-web-dashboard.md | API | P1 — business ops GUI (product catalog, SOW builder, project tracker) |
+| 35 | Auto-22-multi-agent-learning.md | Auto | P2 — employee chit-chat, cortex curator, overnight learning |
+| 36 | Auto-23-cost-optimization.md | Auto | P1 — LLM router, caching, local fallbacks, $50/month target |
+| 37 | Auto-24-portfolio-website.md | Auto | P3 — auto-generated portfolio from project photos |
