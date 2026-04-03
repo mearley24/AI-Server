@@ -47,14 +47,16 @@ async def scrape_bookmarks(max_bookmarks: int = 500, output_path: str = "bookmar
         page = browser.pages[0] if browser.pages else await browser.new_page()
 
         print("Navigating to X bookmarks...")
-        await page.goto("https://x.com/i/bookmarks", wait_until="networkidle", timeout=30000)
+        print("If the login page appears, log in manually in the browser window.")
+        await page.goto("https://x.com/i/bookmarks", wait_until="domcontentloaded", timeout=60000)
+        await asyncio.sleep(5)  # Let JS render
 
         # Check if we need to log in
-        if "login" in page.url.lower():
-            print("\n⚠️  You need to log in to X first.")
-            print("The browser window is open — log in manually, then press Enter here.")
-            input("Press Enter after logging in...")
-            await page.goto("https://x.com/i/bookmarks", wait_until="networkidle", timeout=30000)
+        if "login" in page.url.lower() or "auth" in page.url.lower():
+            print("\n⚠️  Log in to X in the browser window, then press Enter here.")
+            input("Press Enter after logging in and seeing your bookmarks...")
+            await page.goto("https://x.com/i/bookmarks", wait_until="domcontentloaded", timeout=60000)
+            await asyncio.sleep(5)
 
         print("Scrolling and collecting bookmarks...")
         last_count = 0
