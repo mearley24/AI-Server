@@ -89,3 +89,4 @@ Run in order within each tier. DONE items were completed by Cursor already.
 | 38 | Auto-25-apple-notes-indexer.md | Auto | P1 — index, categorize, flag for cleanup, extract codes + photos |
 | 39 | Auto-27-x-twitter-autoposter.md | Auto | P3 — Bob posts to @symphonysmart with approval queue |
 | 40 | Auto-28-context-preprocessor.md | Auto | P1 — credit-saving middleware, session manager, clipboard compressor |
+| 41 | Auto-29-verify-all-implementations.md | Auto | P0 — verify API-1/2/3 + all DONEs, fix broken imports, integration test |
