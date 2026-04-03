@@ -107,6 +107,10 @@ class SpreadArbScanner:
             contrarian = self._scan_contrarian(markets)
             opps.extend(contrarian)
 
+            # 4. Consolidation breakout (MoonDev extreme consolidation)
+            consolidation = self._scan_consolidation(markets)
+            opps.extend(consolidation)
+
             # Update price history
             self._update_price_history(markets)
 
@@ -187,7 +191,14 @@ class SpreadArbScanner:
         return opps
 
     def _scan_negative_risk(self, events: list[dict]) -> list[ArbOpportunity]:
-        """Find multi-outcome events where buying all NOs is profitable."""
+        """Find multi-outcome events where buying ALL NOs is profitable.
+        
+        Key: must buy EVERY NO in the event for this to be an arb.
+        If you miss even one, it's just a bet. The arb works because
+        exactly one outcome resolves YES (its NO loses), but all other
+        NOs resolve at $1. Cost = sum(all NO prices). Payout = (n-1) * $1.
+        Profit if cost < payout after fees.
+        """
         opps = []
         for evt in events:
             markets = evt.get("markets", [])
@@ -195,18 +206,31 @@ class SpreadArbScanner:
                 continue
 
             no_prices = []
+            all_have_prices = True
             for m in markets:
                 op = m.get("outcomePrices", "")
                 if not op:
-                    continue
+                    all_have_prices = False
+                    break
                 try:
                     prices = json.loads(op) if isinstance(op, str) else op
                     no_p = float(prices[1]) if len(prices) > 1 else None
                     if no_p and no_p > 0:
-                        no_prices.append({"price": no_p, "market": m.get("question", "")[:50]})
+                        no_prices.append({
+                            "price": no_p,
+                            "market": m.get("question", "")[:50],
+                            "condition_id": m.get("conditionId", ""),
+                        })
+                    else:
+                        all_have_prices = False
+                        break
                 except (json.JSONDecodeError, ValueError, IndexError):
-                    continue
+                    all_have_prices = False
+                    break
 
+            # Must have prices for ALL markets — can't arb with missing data
+            if not all_have_prices or len(no_prices) != len(markets):
+                continue
             if len(no_prices) < 3:
                 continue
 
@@ -214,28 +238,40 @@ class SpreadArbScanner:
             total_no_cost = sum(p["price"] for p in no_prices)
             payout = n - 1  # All NOs win except the actual winner
 
-            # Account for fees
+            # Account for fees: gas per trade (n trades), slippage on total, winner tax on profit
             fee_cost = GAS_FEE * n + total_no_cost * SLIPPAGE
-            net_profit = payout - total_no_cost - fee_cost
+            gross_profit = payout - total_no_cost
+            winner_tax = gross_profit * WINNER_TAX if gross_profit > 0 else 0
+            net_profit = gross_profit - fee_cost - winner_tax
 
-            if total_no_cost <= 0:
+            if total_no_cost <= 0 or net_profit <= 0:
                 continue
             profit_pct = (net_profit / total_no_cost) * 100
 
             if profit_pct < MIN_NEGATIVE_RISK_EDGE * 100:
                 continue
 
+            # Size: scale proportionally — buy all NOs at once
             size = min(MAX_POSITION_USD, self._bankroll * 0.03)
             scale = size / total_no_cost if total_no_cost > 0 else 0
 
             opps.append(ArbOpportunity(
                 opp_type="negative_risk",
                 market_title=evt.get("title", "")[:80],
-                condition_id=evt.get("slug", ""),
+                condition_id=evt.get("slug", ""),  # Event slug as the composite ID
                 expected_profit_pct=round(profit_pct, 2),
                 expected_profit_usd=round(net_profit * scale, 2),
                 cost_usd=round(total_no_cost * scale, 2),
-                metadata={"outcomes": n, "total_no_cost": round(total_no_cost, 4), "payout": payout},
+                tokens=[{"condition_id": p["condition_id"], "no_price": p["price"], "market": p["market"]} for p in no_prices],
+                metadata={
+                    "outcomes": n,
+                    "total_no_cost": round(total_no_cost, 4),
+                    "payout": payout,
+                    "gross_profit": round(gross_profit, 4),
+                    "fees": round(fee_cost + winner_tax, 4),
+                    "net_profit": round(net_profit, 4),
+                    "all_nos_required": True,
+                },
             ))
 
         if opps:
@@ -304,10 +340,81 @@ class SpreadArbScanner:
                         best_drop=max(o.metadata.get("drop_pct", 0) for o in opps))
         return opps
 
+    def _scan_consolidation(self, markets: list[dict]) -> list[ArbOpportunity]:
+        """Detect markets in extreme consolidation — price flat within 2% for 6+ hours.
+        
+        MoonDev's extreme consolidation: when a market has been flat, it's about to explode.
+        These are high-probability setups for buying cheap before a big move.
+        """
+        opps = []
+        now = time.time()
+        six_hours_ago = now - 21600
+
+        for m in markets:
+            cid = m.get("conditionId", "")
+            op = m.get("outcomePrices", "")
+            if not cid or not op:
+                continue
+            try:
+                prices = json.loads(op) if isinstance(op, str) else op
+                current_price = float(prices[0])
+            except (json.JSONDecodeError, ValueError, IndexError):
+                continue
+
+            # Need 6+ hours of history
+            history = self._price_history.get(cid, [])
+            recent = [s for s in history if s.timestamp >= six_hours_ago]
+            if len(recent) < 20:  # Need enough data points
+                continue
+
+            prices_list = [s.price for s in recent]
+            high = max(prices_list)
+            low = min(prices_list)
+            mid = (high + low) / 2
+
+            if mid <= 0:
+                continue
+
+            # Consolidation = range < 2% of midpoint
+            range_pct = (high - low) / mid
+            if range_pct > 0.02:
+                continue
+
+            # Only interesting if price is in the 20-80% range (not near-certain)
+            if current_price < 0.20 or current_price > 0.80:
+                continue
+
+            # Hours consolidated
+            hours_flat = (now - recent[0].timestamp) / 3600
+
+            size = min(MAX_POSITION_USD * 0.3, self._bankroll * 0.01)
+
+            opps.append(ArbOpportunity(
+                opp_type="consolidation_breakout",
+                market_title=m.get("question", "")[:80],
+                condition_id=cid,
+                expected_profit_pct=round((1.0 / current_price - 1) * 100 * 0.3, 2),  # Conservative 30% of max
+                expected_profit_usd=round(size * 0.3, 2),
+                cost_usd=round(size, 2),
+                tokens=[{"outcome": "Yes", "price": current_price}],
+                metadata={
+                    "hours_flat": round(hours_flat, 1),
+                    "range_pct": round(range_pct * 100, 2),
+                    "high": round(high, 3),
+                    "low": round(low, 3),
+                    "current": round(current_price, 3),
+                },
+            ))
+
+        if opps:
+            logger.info("arb_consolidation_found", count=len(opps),
+                        best_hours=max(o.metadata.get("hours_flat", 0) for o in opps))
+        return opps
+
     def _update_price_history(self, markets: list[dict]) -> None:
         """Store current prices for contrarian detection."""
         now = time.time()
-        cutoff = now - 7200  # Keep 2 hours of history
+        cutoff = now - 28800  # Keep 8 hours of history for consolidation detection
 
         for m in markets:
             cid = m.get("conditionId", "")
