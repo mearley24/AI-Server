@@ -13,7 +13,12 @@ Requires:
 """
 
 import json
+import logging
 import os
+import re
+import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -29,6 +34,12 @@ WATCH_DIR = os.environ.get(
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 REDIS_CHANNEL = "events:file_change"
 NOTIFICATION_CHANNEL = "notifications:trading"
+DROPBOX_PROJECTS_DIR = os.environ.get(
+    "DROPBOX_PROJECTS_DIR",
+    os.path.expanduser("~/Dropbox/Projects"),
+)
+
+logger = logging.getLogger(__name__)
 
 # Ignore patterns
 IGNORE_EXTENSIONS = {".tmp", ".ds_store", ".icloud", ".partial"}
@@ -41,6 +52,7 @@ class ProjectFileHandler(FileSystemEventHandler):
     def __init__(self):
         self._redis = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=2)
         self._last_events: dict[str, float] = {}  # debounce
+        self._repo_root = Path(__file__).resolve().parents[1]
 
     def _should_ignore(self, path: str) -> bool:
         """Ignore temp files, hidden files, etc."""
@@ -95,22 +107,113 @@ class ProjectFileHandler(FileSystemEventHandler):
                     "body": f"New/updated: {filename}\n\nPath: {rel_path}",
                 }))
         except Exception as e:
-            print(f"Redis publish error: {e}")
+            logger.error("Redis publish error: %s", e)
+
+    def _is_proposal_pdf(self, path: str) -> bool:
+        """Detect proposal PDFs by extension/name."""
+        p = Path(path)
+        if p.suffix.lower() != ".pdf":
+            return False
+        name = p.name.lower()
+        return "proposal" in name
+
+    def _normalize_address(self, raw: str) -> str:
+        """Create a readable address/token for naming."""
+        cleaned = re.sub(r"\s+", " ", raw).strip(" -_")
+        cleaned = re.sub(r"[^\w\s\-&,]", "", cleaned).strip()
+        return cleaned or "Unknown Address"
+
+    def _infer_address(self, path: str, project: str | None) -> str:
+        """Infer address from project folder or PDF filename."""
+        if project:
+            base = project.split(" - ")[0].strip()
+            return self._normalize_address(base)
+        stem = Path(path).stem
+        stem = re.sub(r"(?i)\bproposal\b", "", stem).strip(" -_")
+        return self._normalize_address(stem)
+
+    def _copy_proposal_to_dropbox(self, src_path: str, project: str | None) -> Path | None:
+        """Copy proposal PDF into Dropbox Projects/[project]/Client/ with canonical naming."""
+        project_name = (project or "Unsorted Project").strip() or "Unsorted Project"
+        address = self._infer_address(src_path, project_name)
+        dest_dir = Path(DROPBOX_PROJECTS_DIR) / project_name / "Client"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_name = f"Symphony Smart Homes — {address} — Proposal.pdf"
+        dest_path = dest_dir / dest_name
+        shutil.copy2(src_path, dest_path)
+        logger.info("Copied proposal to Dropbox: %s", dest_path)
+        return dest_path
+
+    def _run_proposal_checker(self, pdf_path: str, project: str | None) -> None:
+        """Run openclaw proposal_checker.py for proposal PDFs."""
+        openclaw_paths = [
+            self._repo_root / "openclaw",
+            Path("/app/openclaw"),
+        ]
+        for openclaw_path in openclaw_paths:
+            resolved = str(openclaw_path.resolve()) if openclaw_path.exists() else str(openclaw_path)
+            if os.path.isdir(resolved) and resolved not in sys.path:
+                sys.path.insert(0, resolved)
+
+        try:
+            from proposal_checker import check_proposal  # type: ignore
+        except Exception as exc:
+            logger.error("Could not import proposal_checker: %s", exc)
+            return
+
+        project_key = (project or "").strip().lower()
+        if not project_key:
+            project_key = "topletz"
+        try:
+            results = check_proposal(pdf_path, project=project_key)
+            if results.get("error"):
+                logger.info("Proposal checker project '%s' not found, falling back to default", project_key)
+                results = check_proposal(pdf_path, project="topletz")
+            logger.info("Proposal checker summary: %s", results.get("summary", "")[:300])
+        except Exception as exc:
+            logger.error("Proposal checker failed for %s: %s", pdf_path, exc)
+
+    def _notify_new_proposal(self, filename: str) -> None:
+        """Send iMessage notification via Redis trading channel."""
+        body = f"[FILE] New proposal detected: {filename}"
+        try:
+            self._redis.publish(
+                NOTIFICATION_CHANNEL,
+                json.dumps({"title": "[FILE]", "body": body}),
+            )
+            logger.info("Published proposal notification: %s", body)
+        except Exception as exc:
+            logger.error("Failed to publish proposal notification: %s", exc)
+
+    def _handle_new_pdf(self, path: str) -> None:
+        """Run proposal workflow for new proposal PDFs."""
+        if not self._is_proposal_pdf(path):
+            return
+        project = self._extract_project(path)
+        filename = os.path.basename(path)
+        logger.info("New proposal PDF detected: %s (project=%s)", filename, project or "unknown")
+        self._run_proposal_checker(path, project)
+        try:
+            self._copy_proposal_to_dropbox(path, project)
+        except Exception as exc:
+            logger.error("Failed to copy proposal to Dropbox: %s", exc)
+        self._notify_new_proposal(filename)
 
     def on_created(self, event):
         if event.is_directory or self._should_ignore(event.src_path):
             return
         if self._debounce(event.src_path):
             return
-        print(f"[NEW] {os.path.relpath(event.src_path, WATCH_DIR)}")
+        logger.info("[NEW] %s", os.path.relpath(event.src_path, WATCH_DIR))
         self._publish("created", event.src_path)
+        self._handle_new_pdf(event.src_path)
 
     def on_modified(self, event):
         if event.is_directory or self._should_ignore(event.src_path):
             return
         if self._debounce(event.src_path):
             return
-        print(f"[MOD] {os.path.relpath(event.src_path, WATCH_DIR)}")
+        logger.info("[MOD] %s", os.path.relpath(event.src_path, WATCH_DIR))
         self._publish("modified", event.src_path)
 
     def on_moved(self, event):
@@ -118,19 +221,67 @@ class ProjectFileHandler(FileSystemEventHandler):
             return
         if self._should_ignore(event.dest_path):
             return
-        print(f"[MOV] {os.path.relpath(event.src_path, WATCH_DIR)} -> {os.path.relpath(event.dest_path, WATCH_DIR)}")
+        logger.info(
+            "[MOV] %s -> %s",
+            os.path.relpath(event.src_path, WATCH_DIR),
+            os.path.relpath(event.dest_path, WATCH_DIR),
+        )
         self._publish("moved", event.dest_path)
+        self._handle_new_pdf(event.dest_path)
+
+
+def _count_files(path: str) -> int:
+    """Count files in a directory recursively."""
+    root = Path(path)
+    return sum(1 for p in root.rglob("*") if p.is_file())
+
+
+def _run_sync_command(command: list[str]) -> None:
+    """Run a sync command and log result."""
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        logger.info(
+            "Sync command '%s' exit=%s stdout='%s' stderr='%s'",
+            " ".join(command),
+            result.returncode,
+            (result.stdout or "").strip()[:300],
+            (result.stderr or "").strip()[:300],
+        )
+    except FileNotFoundError:
+        logger.warning("Sync command not found: %s", command[0])
+    except Exception as exc:
+        logger.warning("Sync command failed (%s): %s", " ".join(command), exc)
+
+
+def _ensure_icloud_synced() -> None:
+    """Startup check: if watch dir appears empty, force iCloud sync."""
+    file_count = _count_files(WATCH_DIR)
+    logger.info("Startup iCloud content check: %s file(s) found", file_count)
+    if file_count > 0:
+        return
+
+    logger.warning("iCloud watch folder is empty, forcing sync for %s", WATCH_DIR)
+    _run_sync_command(["brctl", "download", WATCH_DIR])
+    _run_sync_command(["bird", "-c", "com.apple.cloudd"])
+    time.sleep(5)
+    post_count = _count_files(WATCH_DIR)
+    logger.info("Post-sync iCloud content check: %s file(s) found", post_count)
 
 
 def main():
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
     if not os.path.isdir(WATCH_DIR):
-        print(f"Watch directory not found: {WATCH_DIR}")
-        print("Set ICLOUD_WATCH_DIR environment variable to the correct path.")
+        logger.error("Watch directory not found: %s", WATCH_DIR)
+        logger.error("Set ICLOUD_WATCH_DIR environment variable to the correct path.")
         return
 
-    print(f"Watching: {WATCH_DIR}")
-    print(f"Redis: {REDIS_URL}")
-    print("Press Ctrl+C to stop.\n")
+    _ensure_icloud_synced()
+    logger.info("Watching: %s", WATCH_DIR)
+    logger.info("Redis: %s", REDIS_URL)
+    logger.info("Press Ctrl+C to stop.")
 
     handler = ProjectFileHandler()
     observer = Observer()
