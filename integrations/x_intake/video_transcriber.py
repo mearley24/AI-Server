@@ -51,7 +51,7 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
                 "-o", output_path,
                 post_url,
             ],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=600,  # 10 min for long videos
         )
         if result.returncode == 0 and os.path.exists(output_path):
             logger.info("video_downloaded: %s (%d bytes)", output_path, os.path.getsize(output_path))
@@ -61,13 +61,13 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
             video_path = os.path.join(output_dir, "video.mp4")
             result2 = subprocess.run(
                 ["yt-dlp", "-o", video_path, post_url],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=600,
             )
             if result2.returncode == 0 and os.path.exists(video_path):
                 # Extract audio with ffmpeg
                 subprocess.run(
                     ["ffmpeg", "-i", video_path, "-vn", "-acodec", "aac", output_path, "-y"],
-                    capture_output=True, timeout=60,
+                    capture_output=True, timeout=120,
                 )
                 if os.path.exists(output_path):
                     return output_path
