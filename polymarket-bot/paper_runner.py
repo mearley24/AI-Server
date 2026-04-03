@@ -236,37 +236,102 @@ class PaperTradingRunner:
 
     async def _run_arb(self, scanner: SpreadArbScanner, end_time: float) -> None:
         """Run arb scanner until end time."""
+        # Track held condition_ids to prevent duplicate entries
+        held_markets: set[str] = set()
+        entry_count = 0
+
         while time.time() < end_time:
             try:
                 opps = await scanner.scan_once()
-                for opp in opps:  # Paper mode — take every opportunity, data tells us what works
+                new_entries = 0
+                for opp in opps:
+                    # Skip if already holding this market
+                    if opp.condition_id in held_markets:
+                        continue
                     if self._arb.bankroll_current < opp.cost_usd:
                         continue
                     pos = PaperPosition(
-                        position_id=f"arb-{int(time.time())}-{self._arb.trades}",
+                        position_id=f"arb-{entry_count}",
                         strategy="spread_arb",
                         market=opp.market_title,
                         condition_id=opp.condition_id,
                         side="BUY",
                         entry_price=opp.cost_usd,
                         size_usd=opp.cost_usd,
-                        size_shares=opp.cost_usd,  # Simplified
+                        size_shares=opp.cost_usd,
                         entered_at=time.time(),
                         category=opp.opp_type,
                         metadata=opp.metadata,
                     )
                     self._arb.record_entry(pos)
+                    held_markets.add(opp.condition_id)
+                    entry_count += 1
+                    new_entries += 1
                     logger.info("paper_arb_entry",
                                 type=opp.opp_type,
                                 market=opp.market_title[:40],
                                 cost=opp.cost_usd,
-                                expected_profit=opp.expected_profit_pct)
-                    # Per-trade notifications disabled — hourly dashboard only
-                    # Data logs to /tmp/paper.log for analysis
+                                expected_profit=opp.expected_profit_pct,
+                                total_positions=len(held_markets))
+
+                # Check for resolved positions and record P/L
+                resolved = await self._check_resolutions(scanner, held_markets)
+                if resolved:
+                    for cid, won in resolved:
+                        held_markets.discard(cid)
+
+                if new_entries or resolved:
+                    logger.info("paper_arb_tick",
+                                new=new_entries,
+                                resolved=len(resolved) if resolved else 0,
+                                held=len(held_markets),
+                                bankroll=round(self._arb.bankroll_current, 2),
+                                pnl=round(self._arb.total_pnl, 2))
+
             except Exception as e:
                 logger.error("paper_arb_error", error=str(e)[:100])
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(300)  # 5 min between scans
+
+    async def _check_resolutions(self, scanner, held_markets: set) -> list[tuple[str, bool]]:
+        """Check if any held markets have resolved."""
+        import httpx
+        resolved = []
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                for cid in list(held_markets):
+                    # Find the position
+                    pos = None
+                    for p in self._arb.positions:
+                        if p.condition_id == cid:
+                            pos = p
+                            break
+                    if not pos:
+                        continue
+
+                    # Check if market price has moved to near 0 or 1 (resolved)
+                    # Use the scanner's price history
+                    history = scanner._price_history.get(cid, [])
+                    if not history:
+                        continue
+                    latest_price = history[-1].price
+
+                    if latest_price >= 0.95:  # Won
+                        pnl = self._arb.record_exit(pos.position_id, latest_price, won=True)
+                        resolved.append((cid, True))
+                        logger.info("paper_arb_resolved", market=pos.market[:40], won=True, pnl=round(pnl, 2))
+                    elif latest_price <= 0.05:  # Lost
+                        pnl = self._arb.record_exit(pos.position_id, latest_price, won=False)
+                        resolved.append((cid, False))
+                        logger.info("paper_arb_resolved", market=pos.market[:40], won=False, pnl=round(pnl, 2))
+                    elif time.time() - pos.entered_at > 86400:  # 24h stale — exit at current price
+                        won = latest_price > pos.entry_price / pos.size_usd
+                        pnl = self._arb.record_exit(pos.position_id, latest_price, won=won)
+                        resolved.append((cid, won))
+                        logger.info("paper_arb_stale_exit", market=pos.market[:40], price=latest_price, pnl=round(pnl, 2))
+        except Exception as e:
+            logger.debug("paper_resolution_check_error", error=str(e)[:100])
+        return resolved
 
     async def _dashboard_loop(self, end_time: float) -> None:
         """Print hourly dashboard."""
