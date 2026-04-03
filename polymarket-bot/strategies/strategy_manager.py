@@ -36,7 +36,8 @@ logger = structlog.get_logger(__name__)
 STRATEGY_ALLOCATIONS: dict[str, float] = {
     "weather_trader": 0.40,   # 40% — cheap bracket ladder
     "copytrade": 0.35,        # 35% — whale wallet following
-    "arb": 0.25,              # 25% — cross-market arbitrage
+    "cvd_arb": 0.25,          # 25% — CVD divergence + cross-market arbitrage
+    "arb": 0.25,              # backward-compatible alias
 }
 
 # ── Correlation alert threshold ────────────────────────────────────────────────
@@ -502,6 +503,11 @@ class StrategyManager:
 
         self._strategies[name] = strategy
         self._pnl[name] = StrategyPnL(strategy=name, bankroll=bankroll)
+        if hasattr(strategy, "set_bankroll"):
+            try:
+                strategy.set_bankroll(bankroll)
+            except Exception:
+                pass
 
         logger.info(
             "strategy_registered",
@@ -811,13 +817,14 @@ class StrategyManager:
             await asyncio.sleep(300)  # 5 minutes
             try:
                 for name, strategy in self._strategies.items():
-                    if strategy.state == StrategyState.ERROR:
+                    strategy_state = getattr(strategy, "state", None)
+                    if strategy_state == StrategyState.ERROR:
                         self._alert(
                             f"[CRASH] Strategy '{name}' is in ERROR state — needs restart",
                             priority="HIGH",
                         )
                         logger.error("strategy_health_crash", name=name)
-                    elif strategy.state == StrategyState.IDLE and self._running:
+                    elif strategy_state == StrategyState.IDLE and self._running:
                         logger.warning("strategy_unexpected_idle", name=name)
             except Exception as exc:
                 logger.error("health_monitor_error", error=str(exc))
