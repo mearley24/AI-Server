@@ -428,7 +428,7 @@ class PolymarketCopyTrader:
 
         # ── NEW: Phase 1 — Enhanced Wallet Scoring ───────────────────
         self._wallet_scorer = WalletScorer(
-            min_closed_positions=int(os.environ.get("WALLET_MIN_CLOSED", "50")),
+            min_closed_positions=int(os.environ.get("WALLET_MIN_CLOSED", "20")),
         )
 
         # ── NEW: Expanded scan configuration ─────────────────────────
@@ -754,6 +754,9 @@ class PolymarketCopyTrader:
     async def _scan_and_score_wallets(self) -> None:
         """Discover active wallets and score by composite metrics."""
         logger.info("copytrade_wallet_scan", status="starting")
+        min_pl_ratio = float(os.environ.get("WALLET_MIN_PL_RATIO", "1.5"))
+        min_trades_high_wr = int(os.environ.get("WALLET_MIN_TRADES_HIGH_WR", "20"))
+        min_trades_med_wr = int(os.environ.get("WALLET_MIN_TRADES_MED_WR", "30"))
 
         try:
             wallet_stats, markets_scored = await self._collect_wallet_activity()
@@ -793,7 +796,7 @@ class PolymarketCopyTrader:
                 # Remove any wallet with pl_ratio < 1.5 (unless very high sample)
                 pl_ratio = analysis.pl_ratio
                 is_priority = address in self._PRIORITY_WALLETS
-                if not is_priority and pl_ratio < 1.5 and total_resolved < 100:
+                if not is_priority and pl_ratio < min_pl_ratio and total_resolved < 100:
                     if win_rate < 0.80:
                         logger.debug(
                             "wallet_filtered_pl_ratio",
@@ -807,8 +810,8 @@ class PolymarketCopyTrader:
                 #   Tier A: win_rate >= 0.70 with >= 20 resolved trades
                 #   Tier B: win_rate >= 0.60 with pl_ratio >= 3.0
                 # Priority wallets always pass.
-                tier_a = win_rate >= 0.70 and total_resolved >= 20
-                tier_b = win_rate >= 0.60 and pl_ratio >= 3.0
+                tier_a = win_rate >= 0.70 and total_resolved >= min_trades_high_wr
+                tier_b = win_rate >= 0.60 and pl_ratio >= 3.0 and total_resolved >= min_trades_med_wr
                 if not (tier_a or tier_b or is_priority):
                     logger.debug(
                         "wallet_filtered_quality_tier",

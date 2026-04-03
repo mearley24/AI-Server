@@ -188,6 +188,11 @@ class WalletScorer:
         elif analysis.avg_profit_per_win > 0:
             analysis.pl_ratio = 10.0  # no losses → cap at 10
 
+        min_pl_ratio_hard = 1.5
+        if analysis.pl_ratio < min_pl_ratio_hard and analysis.total_closed >= 20:
+            analysis.red_flags.append(f"low_pl_ratio_{analysis.pl_ratio:.2f}")
+            analysis.is_filtered = True
+
         # Normalize P/L ratio to 0-1 (cap at ratio of 5)
         analysis.pl_ratio_normalized = min(analysis.pl_ratio / 5.0, 1.0)
 
