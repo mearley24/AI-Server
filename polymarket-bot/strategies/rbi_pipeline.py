@@ -212,6 +212,7 @@ class RBIPipeline:
         self._backtest_hours = backtest_hours
         self._running = False
         self._active: set[str] = set()
+        self._validation_streak: dict[str, int] = {}
 
     async def run_forever(self) -> None:
         self._running = True
@@ -241,6 +242,7 @@ class RBIPipeline:
         name = idea.get("IDEA", "").strip()
         if not name:
             return
+        key = name.lower()
 
         self._ideas.update_status(name, "backtesting", notes=f"RBI started {time.strftime('%Y-%m-%d %H:%M:%S')}")
         result = await evaluate_idea(name, hours=self._backtest_hours, idea=idea)
@@ -251,9 +253,18 @@ class RBIPipeline:
         )
 
         if result.validated:
-            self._ideas.update_status(name, "validated", notes=notes)
-            _notify_validated(name, result.pnl_usd, result.hours)
+            streak = self._validation_streak.get(key, 0) + 1
+            self._validation_streak[key] = streak
+            notes = f"{notes}, streak={streak}/3"
+            if streak >= 3:
+                self._ideas.update_status(name, "live", notes=f"{notes}, auto-promoted to live")
+                _notify_validated(name, result.pnl_usd, result.hours)
+                logger.info("rbi_auto_promoted_live: idea=%s streak=%d", name, streak)
+            else:
+                self._ideas.update_status(name, "validated", notes=notes)
+                _notify_validated(name, result.pnl_usd, result.hours)
         else:
+            self._validation_streak[key] = 0
             self._ideas.update_status(name, "rejected", notes=notes)
             logger.info("rbi_idea_rejected: %s", notes)
 
