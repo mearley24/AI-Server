@@ -13,6 +13,7 @@ Safety controls:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from dataclasses import dataclass, field
@@ -22,6 +23,12 @@ import httpx
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+ALLOWED_CATEGORIES = {"weather", "sports", "crypto"}
+BLOCKED_CATEGORIES = {"politics", "geopolitics"}
+MAX_PER_SIDE_USD = 50.0
+ADVERSE_MOVE_THRESHOLD = 0.03
+MIN_ILLIQUID_SPREAD = 0.05
 
 
 @dataclass
@@ -40,6 +47,9 @@ class QuotedMarket:
     exposure_usd: float = 0.0
     category: str = ""
     rewards_daily_rate: float = 0.0
+    quote_midpoint: float = 0.0
+    yes_bid_price: float = 0.0
+    yes_ask_price: float = 0.0
 
 
 def _notify(title: str, body: str) -> None:
@@ -65,7 +75,7 @@ class LiquidityProvider:
         spread_cents: float = 2.0,
         order_size_usd: float = 10.0,
         max_exposure_pct: float = 0.05,  # 5% of bankroll per market
-        refresh_interval_seconds: float = 3600.0,  # 1 hour
+        refresh_interval_seconds: float = 120.0,  # 2 minutes
         midpoint_shift_threshold: float = 0.02,  # 2 cents
         circuit_breaker_loss: float = -20.0,
         bankroll: float = 300.0,
@@ -75,7 +85,7 @@ class LiquidityProvider:
         self._gamma_url = gamma_api_url.rstrip("/")
         self._max_markets = max_markets
         self._spread_cents = spread_cents
-        self._order_size = order_size_usd
+        self._order_size = min(order_size_usd, MAX_PER_SIDE_USD)
         self._max_exposure_pct = max_exposure_pct
         self._refresh_interval = refresh_interval_seconds
         self._midpoint_threshold = midpoint_shift_threshold
@@ -93,6 +103,8 @@ class LiquidityProvider:
         # P/L tracking for circuit breaker
         self._daily_pnl: float = 0.0
         self._halted: bool = False
+        self._pnl_notified_pos: bool = False
+        self._pnl_notified_neg: bool = False
 
     @property
     def bankroll(self) -> float:
@@ -165,7 +177,60 @@ class LiquidityProvider:
             except Exception as exc:
                 logger.error("lp_loop_error", error=str(exc))
 
-            await asyncio.sleep(min(self._refresh_interval, 300))
+            await asyncio.sleep(self._refresh_interval)
+
+    def _categorize_market(self, question: str) -> str:
+        q = (question or "").lower()
+        if any(k in q for k in ("election", "president", "senate", "congress", "approval", "vote")):
+            return "politics"
+        if any(k in q for k in ("war", "ceasefire", "ukraine", "israel", "taiwan", "houthi")):
+            return "geopolitics"
+        if any(k in q for k in ("weather", "temperature", "rain", "snow", "hurricane", "precipitation", "wind")):
+            return "weather"
+        if any(k in q for k in ("nfl", "nba", "mlb", "nhl", "super bowl", "march madness", "ufc", "soccer", "golf")):
+            return "sports"
+        if any(k in q for k in ("bitcoin", "btc", "ethereum", "eth", "crypto", "solana")):
+            return "crypto"
+        return "other"
+
+    def _extract_bid_ask(self, market: dict[str, Any]) -> tuple[float, float] | None:
+        """Try to extract best bid/ask from gamma market payload."""
+        bid_keys = ("bestBid", "best_bid", "yesBid", "yes_bid")
+        ask_keys = ("bestAsk", "best_ask", "yesAsk", "yes_ask")
+        bid = None
+        ask = None
+        for k in bid_keys:
+            if market.get(k) is not None:
+                try:
+                    bid = float(market.get(k))
+                    break
+                except (TypeError, ValueError):
+                    continue
+        for k in ask_keys:
+            if market.get(k) is not None:
+                try:
+                    ask = float(market.get(k))
+                    break
+                except (TypeError, ValueError):
+                    continue
+
+        # Normalize from cents if needed.
+        if bid is not None and bid > 1.0:
+            bid = bid / 100.0
+        if ask is not None and ask > 1.0:
+            ask = ask / 100.0
+
+        if bid is None or ask is None or bid <= 0 or ask <= 0 or ask <= bid:
+            return None
+        return (bid, ask)
+
+    async def _notify_pnl_thresholds(self) -> None:
+        if self._daily_pnl >= 50.0 and not self._pnl_notified_pos:
+            _notify("💰 LP P/L Alert", f"Liquidity provider daily P/L crossed +$50: ${self._daily_pnl:.2f}")
+            self._pnl_notified_pos = True
+        if self._daily_pnl <= -25.0 and not self._pnl_notified_neg:
+            _notify("⚠️ LP P/L Alert", f"Liquidity provider daily P/L crossed -$25: ${self._daily_pnl:.2f}")
+            self._pnl_notified_neg = True
 
     async def _discover_markets(self) -> None:
         """Find high-reward stable markets suitable for liquidity provision."""
@@ -238,6 +303,20 @@ class LiquidityProvider:
                     continue
 
                 question = m.get("question", "")
+                category = self._categorize_market(question)
+                if category in BLOCKED_CATEGORIES:
+                    continue
+                if category not in ALLOWED_CATEGORIES:
+                    continue
+
+                bid_ask = self._extract_bid_ask(m)
+                if not bid_ask:
+                    continue
+                best_bid, best_ask = bid_ask
+                observed_spread = best_ask - best_bid
+                if observed_spread < MIN_ILLIQUID_SPREAD:
+                    continue
+
                 volume_24h = float(m.get("volume24hr", 0))
 
                 # Check for rewards badge
@@ -251,6 +330,8 @@ class LiquidityProvider:
                     "midpoint": yes_price,
                     "volume_24h": volume_24h,
                     "rewards": rewards,
+                    "category": category,
+                    "observed_spread": observed_spread,
                 })
 
             # Prioritize: rewards markets first, then by volume
@@ -265,6 +346,7 @@ class LiquidityProvider:
                     token_id_no=c["token_id_no"],
                     midpoint=c["midpoint"],
                     spread_cents=self._spread_cents,
+                    category=c["category"],
                 )
                 self._quoted_markets[c["condition_id"]] = qm
                 logger.info(
@@ -272,10 +354,37 @@ class LiquidityProvider:
                     market=c["question"][:50],
                     midpoint=c["midpoint"],
                     rewards=c.get("rewards", False),
+                    category=c["category"],
+                    observed_spread=round(c["observed_spread"], 4),
                 )
 
         except Exception as exc:
             logger.error("lp_discover_error", error=str(exc))
+
+    async def _cancel_market_quotes(self, qm: QuotedMarket, reason: str) -> None:
+        """Cancel all active orders for one market and log the cancellation."""
+        if not self._clob_client:
+            return
+        loop = asyncio.get_event_loop()
+        try:
+            order_ids = [oid for oid in [qm.yes_bid_order_id, qm.no_bid_order_id] if oid]
+            if not order_ids:
+                return
+
+            # Prefer specific cancels when available.
+            if hasattr(self._clob_client, "cancel"):
+                for oid in order_ids:
+                    await loop.run_in_executor(None, lambda _oid=oid: self._clob_client.cancel(_oid))
+                    logger.info("lp_order_cancelled", order_id=oid, market=qm.question[:50], reason=reason)
+            else:
+                await loop.run_in_executor(None, lambda: self._clob_client.cancel_all())
+                logger.info("lp_market_cancelled_via_cancel_all", market=qm.question[:50], reason=reason)
+
+            qm.yes_bid_order_id = ""
+            qm.no_bid_order_id = ""
+            qm.exposure_usd = 0.0
+        except Exception as exc:
+            logger.warning("lp_market_cancel_error", market=qm.question[:40], reason=reason, error=str(exc))
 
     async def _refresh_quotes(self) -> None:
         """Post or refresh two-sided quotes on all quoted markets."""
@@ -313,6 +422,16 @@ class LiquidityProvider:
                                 # If midpoint shifted significantly, update
                                 if abs(new_mid - qm.midpoint) >= self._midpoint_threshold:
                                     qm.midpoint = new_mid
+                                # Auto-cancel if market moved >3% against quoted midpoint
+                                if qm.quote_midpoint > 0 and abs(new_mid - qm.quote_midpoint) >= ADVERSE_MOVE_THRESHOLD:
+                                    await self._cancel_market_quotes(qm, reason="adverse_move_3pct")
+                                    logger.info(
+                                        "lp_adverse_move_cancel",
+                                        market=qm.question[:50],
+                                        old_mid=round(qm.quote_midpoint, 4),
+                                        new_mid=round(new_mid, 4),
+                                    )
+                                    continue
                     except Exception:
                         pass
 
@@ -325,7 +444,7 @@ class LiquidityProvider:
                 ask_price = round(min(0.99, qm.midpoint + spread / 2), 2)
 
                 # Skip if exposure would exceed limit
-                if qm.exposure_usd + self._order_size > max_per_market:
+                if qm.exposure_usd + (self._order_size * 2) > max_per_market:
                     continue
 
                 # Post quotes using batch API if available
@@ -350,6 +469,14 @@ class LiquidityProvider:
                         lambda: self._clob_client.create_and_post_order(yes_bid_args, options),
                     )
                     qm.yes_bid_order_id = yes_resp.get("orderID", "") if isinstance(yes_resp, dict) else ""
+                    logger.info(
+                        "lp_order_placed",
+                        side="bid_yes",
+                        market=qm.question[:50],
+                        price=bid_price,
+                        size_usd=self._order_size,
+                        order_id=qm.yes_bid_order_id[:24],
+                    )
 
                     # BUY NO at (1 - ask_price) — equivalent to selling YES at ask
                     if qm.token_id_no:
@@ -365,9 +492,25 @@ class LiquidityProvider:
                             lambda: self._clob_client.create_and_post_order(no_bid_args, options),
                         )
                         qm.no_bid_order_id = no_resp.get("orderID", "") if isinstance(no_resp, dict) else ""
+                        logger.info(
+                            "lp_order_placed",
+                            side="ask_yes_via_buy_no",
+                            market=qm.question[:50],
+                            price=ask_price,
+                            size_usd=self._order_size,
+                            order_id=qm.no_bid_order_id[:24],
+                        )
 
                     qm.last_refresh = now
-                    qm.exposure_usd += self._order_size
+                    qm.exposure_usd += self._order_size * 2
+                    qm.quote_midpoint = qm.midpoint
+                    qm.yes_bid_price = bid_price
+                    qm.yes_ask_price = ask_price
+
+                    # Estimated spread capture for two-sided market making.
+                    spread_collected = max(0.0, ask_price - bid_price) * self._order_size
+                    self._daily_pnl += spread_collected
+                    await self._notify_pnl_thresholds()
 
                     logger.info(
                         "lp_quotes_posted",
@@ -375,6 +518,8 @@ class LiquidityProvider:
                         bid=bid_price,
                         ask=ask_price,
                         spread=spread,
+                        spread_collected_est=round(spread_collected, 4),
+                        daily_pnl=round(self._daily_pnl, 2),
                     )
 
                 except Exception as exc:
@@ -395,6 +540,8 @@ class LiquidityProvider:
                 lambda: self._clob_client.cancel_all(),
             )
             for qm in self._quoted_markets.values():
+                if qm.yes_bid_order_id or qm.no_bid_order_id:
+                    logger.info("lp_order_cancelled", market=qm.question[:50], reason="cancel_all")
                 qm.yes_bid_order_id = ""
                 qm.no_bid_order_id = ""
                 qm.exposure_usd = 0
