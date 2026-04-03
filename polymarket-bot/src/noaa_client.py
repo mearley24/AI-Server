@@ -9,6 +9,8 @@ Optional Visual Crossing API fallback when VISUAL_CROSSING_API_KEY is set.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
+import math
 import os
 import time
 from typing import Any
@@ -161,6 +163,42 @@ class NOAAClient:
         except Exception as exc:
             logger.error("noaa_forecast_error", station=station, error=str(exc))
             return None
+
+    async def get_best_temperature_bracket(
+        self,
+        station: str,
+        target_date: dt.date,
+        brackets: list[int],
+        sigma_c: float = 3.5,
+    ) -> tuple[int, float] | None:
+        """Return the bracket closest to NOAA mean plus rough confidence.
+
+        `brackets` are Celsius integers from market titles.
+        Confidence is a coarse normal PDF score around the forecast mean.
+        """
+        if not brackets:
+            return None
+
+        if not self._initialized:
+            await self.initialize()
+
+        forecast = await self.get_forecast_high(station)
+        if not forecast:
+            return None
+
+        forecast_high_f = forecast.get("forecast_high_f")
+        if forecast_high_f is None:
+            return None
+
+        # NOAA helper currently exposes nearest forecast window; use it as best effort.
+        _ = target_date
+        forecast_c = (float(forecast_high_f) - 32.0) * 5.0 / 9.0
+        best = min(brackets, key=lambda b: abs(b - forecast_c))
+
+        sigma = max(float(sigma_c), 0.1)
+        z = abs(best - forecast_c) / sigma
+        probability = math.exp(-(z ** 2) / 2.0)
+        return int(best), float(max(0.0, min(1.0, probability)))
 
     async def get_forecast_hourly(self, station: str, hours: int = 24) -> list[dict[str, Any]]:
         """Get hourly forecast for next N hours.

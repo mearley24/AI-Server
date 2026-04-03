@@ -46,6 +46,7 @@ import structlog
 from src.client import PolymarketClient, ORDER_TYPE_FOK, ORDER_TYPE_GTC
 from src.config import Settings
 from src.metar_client import METARClient
+from src.noaa_client import NOAAClient, KALSHI_STATIONS
 from src.pnl_tracker import PnLTracker, Trade
 from src.signer import SIDE_BUY, SIDE_SELL
 
@@ -78,6 +79,21 @@ _DATE_PATTERN = re.compile(
     r"\s+(\d{1,2})",
     re.IGNORECASE,
 )
+
+_MONTH_TO_INT = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
 
 
 def _extract_temp_cluster_key(market_question: str) -> tuple[str, str, int] | None:
@@ -385,7 +401,8 @@ class PolymarketCopyTrader:
         # ── Temperature cluster dedup (P0) ─────────────────────────
         # Maps (city, date) → {temp_celsius: condition_id} for entered brackets.
         # Max 2 adjacent brackets per city+date allowed.
-        self._temp_cluster_positions: dict[tuple[str, str], list[tuple[int, str]]] = {}
+        self._temp_cluster_registry: dict[tuple[str, str], dict[int, str]] = {}
+        self._temp_cluster_max_brackets = int(os.environ.get("TEMP_CLUSTER_MAX_BRACKETS", "2"))
 
         # ── NEW: Phase 1 — Smart Exit Engine ─────────────────────────
         self._exit_engine = ExitEngine(
@@ -441,6 +458,7 @@ class PolymarketCopyTrader:
 
         # ── METAR aviation weather data for temperature edge ──────────
         self._metar_client = METARClient()
+        self._noaa_client = NOAAClient(stations=list(KALSHI_STATIONS.keys()))
 
         # ── Whale signal scanner (set externally via set_whale_scanner) ──
         self._whale_scanner = None
@@ -536,6 +554,7 @@ class PolymarketCopyTrader:
         if self._http:
             await self._http.aclose()
             self._http = None
+        await self._noaa_client.close()
         logger.info("copytrade_stopped", open_positions=len(self._positions))
 
     # ── Main loop ────────────────────────────────────────────────────────
@@ -1304,6 +1323,115 @@ class PolymarketCopyTrader:
 
         return True, ""
 
+    @staticmethod
+    def _parse_cluster_target_date(date_str: str) -> Any:
+        """Convert 'april-3' style keys into a date object."""
+        from datetime import date
+
+        parts = (date_str or "").split("-", 1)
+        if len(parts) != 2:
+            return date.today()
+        month_raw, day_raw = parts
+        month = _MONTH_TO_INT.get(month_raw.lower())
+        if month is None:
+            return date.today()
+        try:
+            day = int(day_raw)
+            return date(date.today().year, month, day)
+        except ValueError:
+            return date.today()
+
+    @staticmethod
+    def _city_to_noaa_station(city: str) -> str | None:
+        """Map market city names to tracked NOAA station codes."""
+        city_l = (city or "").strip().lower()
+        if not city_l:
+            return None
+
+        aliases = {
+            "new york": "KNYC",
+            "nyc": "KNYC",
+            "chicago": "KORD",
+            "los angeles": "KLAX",
+            "la": "KLAX",
+            "denver": "KDEN",
+            "atlanta": "KATL",
+            "miami": "KMIA",
+            "jfk": "KJFK",
+        }
+        if city_l in aliases:
+            return aliases[city_l]
+
+        for station, meta in KALSHI_STATIONS.items():
+            station_city = str(meta.get("city", "")).lower()
+            if station_city and city_l in station_city:
+                return station
+        return None
+
+    async def _check_temperature_cluster(
+        self,
+        market_question: str,
+        condition_id: str,
+    ) -> tuple[bool, str]:
+        """Enforce max-2 temperature brackets per city/date with forecast guidance."""
+        cluster_key = _extract_temp_cluster_key(market_question)
+        if not cluster_key:
+            return True, ""
+
+        city, date_str, temp = cluster_key
+        key = (city, date_str)
+        existing = self._temp_cluster_registry.get(key, {})
+        if condition_id and condition_id in existing.values():
+            return False, "temp_cluster_duplicate_condition"
+
+        if len(existing) >= self._temp_cluster_max_brackets:
+            return False, "temp_cluster_capped"
+
+        station = self._city_to_noaa_station(city)
+        target_date = self._parse_cluster_target_date(date_str)
+
+        if not existing:
+            if station:
+                try:
+                    best = await self._noaa_client.get_best_temperature_bracket(
+                        station=station,
+                        target_date=target_date,
+                        brackets=[temp - 2, temp - 1, temp, temp + 1, temp + 2],
+                    )
+                    if best:
+                        best_temp, _prob = best
+                        if temp != best_temp:
+                            return False, "temp_cluster_not_primary_bracket"
+                except Exception:
+                    pass
+            return True, "primary_bracket"
+
+        existing_temps = sorted(existing.keys())
+        if len(existing_temps) == 1 and abs(temp - existing_temps[0]) > 1:
+            return False, "temp_cluster_not_adjacent"
+
+        if len(existing_temps) >= 2:
+            return False, "temp_cluster_capped"
+
+        if station:
+            try:
+                base_temp = existing_temps[0]
+                min_t = min(base_temp, temp)
+                max_t = max(base_temp, temp)
+                best = await self._noaa_client.get_best_temperature_bracket(
+                    station=station,
+                    target_date=target_date,
+                    brackets=[min_t, max_t],
+                )
+                if best:
+                    best_temp, _prob = best
+                    if best_temp not in (min_t, max_t):
+                        return False, "temp_cluster_outside_forecast_band"
+            except Exception:
+                pass
+
+        return True, "adjacent_bracket"
+
     # ── 2. Trade Monitoring ──────────────────────────────────────────────
 
     async def _monitor_trades(self) -> None:
@@ -1589,36 +1717,17 @@ class PolymarketCopyTrader:
             return False
 
         # ── P0: Temperature cluster dedup ─────────────────────────
-        cluster_key = _extract_temp_cluster_key(market_question)
-        if cluster_key is not None:
-            city, date_str, temp = cluster_key
-            existing = self._temp_cluster_positions.get((city, date_str), [])
-            if len(existing) >= 2:
-                # Already hold 2 brackets for this city+date — block unconditionally
-                logger.info(
-                    "copytrade_skip",
-                    reason="temp_cluster_capped",
-                    city=city,
-                    date=date_str,
-                    temp=temp,
-                    existing=[t for t, _ in existing],
-                    market=market_question[:60],
-                )
-                return False
-            if len(existing) == 1:
-                # Allow only if adjacent (±1°C) to the existing bracket
-                existing_temp = existing[0][0]
-                if abs(temp - existing_temp) > 1:
-                    logger.info(
-                        "copytrade_skip",
-                        reason="temp_cluster_not_adjacent",
-                        city=city,
-                        date=date_str,
-                        new_temp=temp,
-                        existing_temp=existing_temp,
-                        market=market_question[:60],
-                    )
-                    return False
+        allowed_temp_cluster, temp_cluster_reason = await self._check_temperature_cluster(
+            market_question=market_question,
+            condition_id=market,
+        )
+        if not allowed_temp_cluster:
+            logger.info(
+                "copytrade_skip",
+                reason=temp_cluster_reason,
+                market=market_question[:60],
+            )
+            return False
 
         # ── Category already detected above for entry price caps ──
 
@@ -2007,9 +2116,7 @@ class PolymarketCopyTrader:
         cluster_key = _extract_temp_cluster_key(market_question)
         if cluster_key:
             city, date_str, temp = cluster_key
-            self._temp_cluster_positions.setdefault((city, date_str), []).append(
-                (temp, market)
-            )
+            self._temp_cluster_registry.setdefault((city, date_str), {})[temp] = market
 
         # Record in PnL tracker
         pnl_trade = Trade(
@@ -3112,12 +3219,12 @@ class PolymarketCopyTrader:
         if cluster_key:
             city, date_str, temp = cluster_key
             key = (city, date_str)
-            entries = self._temp_cluster_positions.get(key, [])
-            self._temp_cluster_positions[key] = [
-                (t, cid) for t, cid in entries if cid != condition_id
-            ]
-            if not self._temp_cluster_positions[key]:
-                del self._temp_cluster_positions[key]
+            entries = self._temp_cluster_registry.get(key, {})
+            updated = {t: cid for t, cid in entries.items() if cid != condition_id}
+            if updated:
+                self._temp_cluster_registry[key] = updated
+            else:
+                self._temp_cluster_registry.pop(key, None)
 
     # ── 5. Position Redemption ───────────────────────────────────────────
 
