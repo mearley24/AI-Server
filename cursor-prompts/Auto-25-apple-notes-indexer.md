@@ -1,163 +1,374 @@
-# Auto-25: Apple Notes Indexer — Organize, Index, and Flag for Cleanup
+# Auto-25: Apple Notes Indexer — Organize, Index, and Extract
 
 ## The Problem
 
-104+ notes in Symphony SH, 21 in Previous Work, 11 in Work Cheats, plus Learning, My Stuff, and Incoming Tasks folders. Some are critical project references with photos and access codes. Some are stale drafts or duplicates. Nobody knows which is which without opening each one manually.
+Matt uses Apple Notes for rapid field capture: photos of job sites, WiFi passwords, alarm codes, project ideas, learning notes. Over time this creates 100+ notes across folders like "Symphony SH", "Previous Work", "Work Cheats", "Incoming Tasks" — with no organization, no search, and no connection to the project system. Critical access codes sit buried next to empty scratch notes. Nobody can find anything without opening every note manually.
 
-The notes_reader.py, notes_sync.py, and notes_watcher.py referenced in AGENTS.md were never actually built. Time to build them for real.
+`notes_reader.py`, `notes_indexer.py`, and `notes_watcher.py` are referenced in AGENTS.md but were never built. This prompt builds them.
 
 ## Context Files to Read First
-- AGENTS.md (Apple Notes Reader, Notes Sync, Notes Watcher sections)
-- tools/imessage_watcher.py (similar pattern — watches a macOS resource)
+
+- `integrations/icloud_watch.py` — pattern for macOS host integrations: how to detect file changes, run subprocesses, interface with iCloud — mirror this pattern for Notes
+- `openclaw/client_tracker.py` — how active projects are stored; used to match notes to projects by client name and address patterns
+- `knowledge/topletz/project-config.yaml` — example project config shape; used to understand what project data looks like for matching
 
 ## Prompt
 
-Build the complete Apple Notes pipeline — read, index, categorize, flag for cleanup:
+Build the complete Apple Notes pipeline: `integrations/apple_notes/notes_indexer.py` and `integrations/apple_notes/notes_parser.py`. These run on the macOS HOST (Bob, the Mac Mini) — not inside Docker — because they need access to the Notes database and `osascript`.
 
-### 1. Notes Reader (`tools/notes_reader.py`)
+### 1. Notes Parser (`integrations/apple_notes/notes_parser.py`)
 
-Read the Apple Notes SQLite database directly on macOS:
+Access Apple Notes via AppleScript. macOS exposes Notes through the `Notes` application's scripting dictionary.
 
 ```python
-DB_PATH = "~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite"
+import subprocess
+import json
+
+def run_applescript(script: str) -> str:
+    """Execute an AppleScript and return stdout."""
+    result = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"AppleScript failed: {result.stderr}")
+    return result.stdout.strip()
+
+def get_all_notes() -> list[dict]:
+    """Fetch all notes via AppleScript. Returns list of note dicts."""
+    script = """
+    tell application "Notes"
+        set output to {}
+        repeat with aNote in every note
+            set noteData to {id: id of aNote as text, name: name of aNote, body: plaintext of aNote, creation date: creation date of aNote as text, modification date: modification date of aNote as text, folder: name of container of aNote}
+            set end of output to noteData
+        end repeat
+        return output
+    end tell
+    """
 ```
 
-The NoteStore.sqlite schema uses these key tables:
-- `ZICCLOUDSYNCINGOBJECT` — main notes table (ZTITLE, ZSNIPPET, ZMODIFICATIONDATE1, ZFOLDER)
-- `ZICNOTEDATA` — note body (ZDATA is gzipped protobuf, but ZSNIPPET in the main table has plain text preview)
+Notes from AppleScript return `plaintext` — no need to decode protobuf. The `plaintext` property gives clean readable text. Images are referenced in the body text as attachments.
 
-Implement:
-- `--list-folders` — show all folders with note count
-- `--list <folder>` — list all notes in a folder (title, modified date, snippet preview)
-- `--read <note_id>` — read full note content (extract text from protobuf or use snippet)
-- `--search <query>` — full-text search across all notes
-- `--export-all` — dump everything to `data/notes_export/` as individual markdown files
-- `--stats` — total notes, notes per folder, oldest/newest, photos count
+To get folders:
+```applescript
+tell application "Notes"
+    set folderList to {}
+    repeat with aFolder in every folder
+        set end of folderList to {name of aFolder, count of notes of aFolder}
+    end repeat
+    return folderList
+end tell
+```
 
-### 2. Notes Indexer (`tools/notes_indexer.py`)
+To get note attachments (images):
+```applescript
+tell application "Notes"
+    set targetNote to first note whose id is "{note_id}"
+    set attachList to every attachment of targetNote
+    set output to {}
+    repeat with att in attachList
+        set end of output to {name: name of att, filename: filename of att}
+    end repeat
+    return output
+end tell
+```
 
-Analyze every note and build a structured index:
+Expose these as clean Python functions in `notes_parser.py`:
+- `get_all_notes() -> list[NoteRecord]`
+- `get_folders() -> list[FolderInfo]`
+- `get_note_by_id(note_id: str) -> NoteRecord`
+- `get_attachments(note_id: str) -> list[AttachmentRecord]`
 
-For each note, determine:
-- **Category**: project_reference, access_codes, configuration, photo_log, meeting_notes, idea, learning, stale_draft, duplicate, unknown
-- **Project match**: does the title or content match a known project? (address patterns, client names)
-- **Freshness**: last modified date, staleness score (>6 months = stale, >1 year = very stale)
-- **Value score** (0-100): 
-  - Has photos? +20
-  - Has access codes/passwords/IPs? +30
-  - References active project? +25
-  - Modified in last 90 days? +15
-  - Has actionable content? +10
-  - Duplicate of another note? -50
+```python
+@dataclass
+class NoteRecord:
+    note_id: str
+    title: str
+    body: str            # plain text content
+    created_at: str      # ISO date string
+    modified_at: str
+    folder: str
+    has_attachments: bool
+    attachment_count: int = 0
+```
 
-Output: `data/notes_index.json`:
+### 2. Notes Indexer (`integrations/apple_notes/notes_indexer.py`)
+
+Main module. Reads all notes, categorizes each one, and writes `data/notes_index.json`.
+
+#### Categorization
+
+Classify each note into one of these categories using keyword matching first, Ollama LLM second (for ambiguous cases):
+
+```python
+CATEGORY_RULES = {
+    "access_codes": [
+        r"wifi|ssid|password|passcode|alarm code|gate code|lock code|pin:|code:",
+        r"\b\d{4,6}\b",  # 4-6 digit codes
+        r"\b192\.168\.\d+\.\d+\b",  # IP addresses
+    ],
+    "project_reference": [
+        # matched via client_tracker project names and address patterns
+    ],
+    "photo_log": [
+        r"photo|picture|image|site photo|job site|install photo",
+    ],
+    "meeting_notes": [
+        r"meeting|call|discussed|action item|follow up|next steps",
+    ],
+    "learning": [
+        r"certification|exam|study|cedia|c4|control4|training|notes on|how to",
+    ],
+    "idea": [
+        r"idea:|concept:|what if|could we|potential|brainstorm",
+    ],
+    "stale_draft": [],   # fallback for old, short, unmatched notes
+}
+```
+
+If keyword matching is inconclusive, call Ollama with a short prompt:
+```python
+async def classify_with_llm(note: NoteRecord) -> str:
+    """Use local Ollama to classify ambiguous notes."""
+    prompt = f"""Classify this Apple Note into exactly one category.
+Title: {note.title}
+Content (first 300 chars): {note.body[:300]}
+
+Categories: access_codes, project_reference, photo_log, meeting_notes, learning, idea, stale_draft, unknown
+Reply with only the category name."""
+    
+    # POST to Ollama at http://localhost:11434 (running on same Mac as this script)
+    response = httpx.post(
+        "http://localhost:11434/api/generate",
+        json={"model": "llama3.1:8b", "prompt": prompt, "stream": False},
+        timeout=10.0,
+    )
+    return response.json()["response"].strip().lower()
+```
+
+Note: On the Mac Mini (Bob), Ollama runs on Maestro at `192.168.1.199:11434` — use that if local Ollama is not installed on Bob.
+
+#### Value Scoring
+
+```python
+def compute_value_score(note: NoteRecord, category: str, project_match: str | None) -> int:
+    """0-100 score indicating how valuable this note is to keep."""
+    score = 0
+    if note.has_attachments:
+        score += 20    # photos = high value
+    if category == "access_codes":
+        score += 30    # passwords/codes = critical
+    if project_match:
+        score += 25    # tied to active project
+    if _days_since_modified(note) < 90:
+        score += 15    # recently modified
+    if len(note.body) > 100:
+        score += 10    # has actual content
+    if _is_duplicate(note):
+        score -= 50    # duplicate = likely safe to delete
+    return max(0, min(100, score))
+```
+
+#### Project Matching
+
+Load active projects from `openclaw/client_tracker.py`'s data (or read the client JSON directly from the data directory). For each note, check if the title or body contains:
+- A known client last name (e.g., "Topletz", "Gates", "Hernaiz", "Kelly")
+- A known address pattern (e.g., "84 Aspen Meadow", "Starwood")
+- A known project keyword from project configs
+
+#### Output: `data/notes_index.json`
+
 ```json
 {
+  "generated_at": "2026-04-03T00:00:00Z",
+  "summary": {
+    "total_notes": 147,
+    "by_category": {"access_codes": 18, "project_reference": 42, ...},
+    "by_action": {"keep": 85, "archive": 31, "flag_for_deletion": 24, "needs_review": 7},
+    "notes_with_photos": 34,
+    "notes_with_codes": 18
+  },
   "notes": [
     {
-      "id": 346,
+      "note_id": "x-coredata://...",
       "title": "Topletz - 84 Aspen Meadow",
       "folder": "Symphony SH",
-      "modified": "2026-03-28",
+      "modified_at": "2026-03-28",
       "category": "project_reference",
       "project": "Topletz",
       "value_score": 85,
-      "has_photos": true,
-      "photo_count": 12,
+      "has_attachments": true,
+      "attachment_count": 12,
       "has_codes": true,
       "action": "keep",
+      "extracted_codes": ["WiFi: NetworkName / P@ssword123", "Alarm: 4521"],
       "summary": "Site photos, WiFi password, alarm code, rack location notes"
-    },
-    {
-      "id": 201,
-      "title": "Speaker wire notes",
-      "folder": "Symphony SH",
-      "modified": "2025-06-15",
-      "category": "stale_draft",
-      "project": null,
-      "value_score": 10,
-      "has_photos": false,
-      "has_codes": false,
-      "action": "flag_for_deletion",
-      "summary": "3 lines of incomplete notes about wire gauge"
     }
   ]
 }
 ```
 
-### 3. Cleanup Report (`tools/notes_cleanup.py`)
+#### Duplicate Detection
 
-Generate an actionable cleanup report:
-
-**Keep (high value):**
-- Notes with access codes, passwords, IPs, WiFi info → these are critical
-- Notes with project photos → feed into portfolio (Auto-24)
-- Notes tied to active projects → keep and index
-- Work Cheats → always keep
-
-**Archive (medium value):**
-- Previous Work notes → move to knowledge/projects/[name]/
-- Completed project notes from Symphony SH → move to Previous Work folder
-- Learning notes → index in knowledge/learning/
-
-**Flag for Deletion (low value):**
-- Empty or near-empty notes (<20 characters)
-- Duplicate notes (same title + similar content)
-- Stale drafts with no photos and no codes (>1 year old, <50 char)
-- Test notes, scratch notes
-
-**Needs Review (uncertain):**
-- Notes that might have codes but we're not sure
-- Notes with photos but no clear project match
-
-Output as iMessage to Matt:
-```
-Notes Audit Complete:
-✅ Keep: 67 notes (42 with photos, 18 with codes)
-📦 Archive: 31 notes (move to Previous Work)
-🗑️ Flag for Deletion: 24 notes (empty/stale/duplicate)
-❓ Needs Review: 13 notes
-
-Top action: 24 notes can be safely deleted. Reply YES to auto-delete, or I'll send you the full list.
+```python
+def _is_duplicate(note: NoteRecord, all_notes: list[NoteRecord]) -> bool:
+    """Flag if another note has the same title or >80% body similarity."""
+    for other in all_notes:
+        if other.note_id == note.note_id:
+            continue
+        if other.title.strip().lower() == note.title.strip().lower():
+            return True
+        # Simple Jaccard similarity on word sets for short notes
+        if len(note.body) < 200:
+            words_a = set(note.body.lower().split())
+            words_b = set(other.body.lower().split())
+            if words_a and words_b:
+                overlap = len(words_a & words_b) / len(words_a | words_b)
+                if overlap > 0.8:
+                    return True
+    return False
 ```
 
-### 4. Knowledge Extraction
+### 3. Knowledge Extraction
 
-For notes marked "keep":
-- Extract all access codes, passwords, WiFi credentials, IP addresses → save to `knowledge/projects/[project]/access_codes.md` (encrypted or at least not in git)
-- Extract all photos → save to `data/notes_photos/[project]/` for portfolio use
-- Extract configuration notes → save to `knowledge/projects/[project]/config_notes.md`
-- Extract meeting notes → save to `knowledge/projects/[project]/meeting_notes.md`
+For notes categorized as `access_codes`, extract structured data:
 
-### 5. Notes Watcher (`tools/notes_watcher.py`)
-
-Ongoing monitoring after initial cleanup:
-- Check NoteStore.sqlite every 5 minutes for new or modified notes
-- Auto-categorize new notes using the same rules
-- If a new note matches an active project → add to the project's knowledge folder
-- If a new note is in "Incoming Tasks" → parse as task, create Linear ticket
-- Launchd service: `com.symphony.notes-watcher`
-
-### 6. Notes Sync (`tools/notes_sync.py`)
-
-Bidirectional awareness:
-- `--sync-photos` — export all photos by project (for portfolio Auto-24)
-- `--sync-learning` — index learning/certification notes
-- `--sync-ideas` — extract ideas from My Stuff → create tasks or ideas.txt entries
-- `--sync-all` — full sync
-- Weekly scheduled run via launchd
-
-### 7. CLI
-
-```
-python3 tools/notes_reader.py --list-folders
-python3 tools/notes_reader.py --list "Symphony SH"
-python3 tools/notes_reader.py --search "WiFi password"
-python3 tools/notes_indexer.py --index --output data/notes_index.json
-python3 tools/notes_cleanup.py --report
-python3 tools/notes_cleanup.py --delete-flagged  (requires --confirm flag)
-python3 tools/notes_sync.py --sync-all
-python3 tools/notes_watcher.py --watch
+```python
+ACCESS_CODE_PATTERNS = {
+    "wifi_ssid":    r"(?:wifi|ssid|network)[:\s]+([^\n]+)",
+    "wifi_password": r"(?:wifi password|wpa|password)[:\s]+([^\n]+)",
+    "alarm_code":   r"(?:alarm|security|disarm)[:\s#]*(\d{4,6})",
+    "gate_code":    r"(?:gate|entry)[:\s#]*(\d{4,6})",
+    "ip_address":   r"\b(192\.168\.\d{1,3}\.\d{1,3})\b",
+    "username":     r"(?:user|username|login)[:\s]+([^\n]+)",
+}
 ```
 
-All tools run on the HOST (not Docker) since they need filesystem access to NoteStore.sqlite. Use standard logging.
+Extracted codes for project-matched notes get saved to:
+`knowledge/projects/[project_name]/access_codes.md`
+
+Format:
+```markdown
+# Access Codes — Topletz Residence
+## Last updated: 2026-04-03 (extracted from Apple Notes)
+
+| System | Credential | Value | Notes |
+|--------|-----------|-------|-------|
+| WiFi | SSID | TopletzHome | Trusted network |
+| WiFi | Password | [extracted] | |
+| Alarm | Disarm code | [extracted] | Qolsys IQ4 |
+```
+
+**Safety**: Never commit `access_codes.md` files to git. Add `knowledge/projects/*/access_codes.md` to `.gitignore`.
+
+### 4. Cleanup Report
+
+After indexing, generate a cleanup report via iMessage to Matt. Use the same iMessage sending mechanism as other tools (subprocess `osascript` or the existing notification channel):
+
+```
+Apple Notes Audit Complete — 147 notes scanned
+
+Keep (85 notes):
+  • 34 with site photos
+  • 18 with access codes/passwords
+  • 33 project references (Gates, Topletz, Hernaiz...)
+
+Archive (31 notes):
+  • 24 completed project notes → move to Previous Work
+  • 7 learning notes → indexed in knowledge/learning/
+
+Flag for Deletion (24 notes):
+  • 8 empty/near-empty (<20 chars)
+  • 11 stale drafts (>1 year old, no photos, no codes)
+  • 5 duplicates
+
+Needs Review (7 notes):
+  • Might have codes or project refs — needs human look
+
+Extracted: 18 sets of access codes saved to project folders.
+Full index: data/notes_index.json
+```
+
+### 5. Scheduled Execution
+
+Run via `launchd` on Bob (Mac Mini) daily at midnight:
+
+```xml
+<!-- ~/Library/LaunchAgents/com.symphony.notes-indexer.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.notes-indexer</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/path/to/ai-server/integrations/apple_notes/notes_indexer.py</string>
+        <string>--index</string>
+        <string>--report</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>0</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/notes-indexer.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/notes-indexer-error.log</string>
+</dict>
+</plist>
+```
+
+Install: `launchctl load ~/Library/LaunchAgents/com.symphony.notes-indexer.plist`
+
+Also expose via the OpenClaw API for on-demand runs:
+```python
+# In openclaw/main.py
+@app.post("/api/notes/index")
+async def trigger_notes_index():
+    """Trigger a notes index run on the Mac Mini host."""
+    # Publish to a host-agent channel that Bob watches
+    redis.publish("host:commands", json.dumps({"cmd": "notes_index"}))
+    return {"status": "triggered"}
+```
+
+### 6. CLI Interface
+
+```bash
+# Run from the Mac Mini host (not Docker):
+python3 integrations/apple_notes/notes_indexer.py --index
+python3 integrations/apple_notes/notes_indexer.py --index --output data/notes_index.json
+python3 integrations/apple_notes/notes_indexer.py --report          # send iMessage report
+python3 integrations/apple_notes/notes_indexer.py --extract-codes   # save codes to project folders
+python3 integrations/apple_notes/notes_indexer.py --folders         # just list folders and counts
+python3 integrations/apple_notes/notes_indexer.py --search "WiFi"   # full-text search
+python3 integrations/apple_notes/notes_indexer.py --dry-run         # index without saving or notifying
+```
+
+### 7. Integration with Auto-26 (System Shells)
+
+After `access_codes.md` files are written for each project, the system shell generator (`tools/system_shell.py`) can read them:
+
+```python
+# In system_shell.py
+codes_path = Path(f"knowledge/projects/{project_name}/access_codes.md")
+if codes_path.exists():
+    # Parse and inject into the "Access Codes & Credentials" section of the shell
+    shell["access_codes"] = parse_access_codes_md(codes_path)
+```
+
+This means an installer gets one document — the system shell — with network addresses AND extracted access codes from Matt's field notes, automatically combined.
+
+### 8. Safety Rules
+
+- **Read-only**: never delete or modify Apple Notes. Only flag notes in the JSON index.
+- **No auto-delete**: even flagged notes require explicit human confirmation (`--delete-flagged --confirm`)
+- **No git commit of codes**: `access_codes.md` files are extracted secrets; ensure `.gitignore` covers them
+- **Graceful AppleScript failures**: if Notes is not running or the script times out, log the error and continue — don't crash the indexer for one bad note
+
+Use standard Python logging (not structlog — this runs on the host, not in Docker).

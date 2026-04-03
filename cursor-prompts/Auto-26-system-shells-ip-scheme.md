@@ -253,3 +253,122 @@ Generate shells for existing projects:
 - These become reference examples for the standard
 
 Use standard logging.
+
+---
+
+## Implementation Notes
+
+These notes give Cursor concrete file locations and implementation details to complete the build without guessing at project structure.
+
+### File Locations
+
+| Artifact | Path |
+|----------|------|
+| Shell generator | `tools/system_shell.py` |
+| Port allocator | `tools/port_allocator.py` |
+| IP addressing standard | `knowledge/network/ip_addressing_standard.md` |
+| Client registry | `knowledge/network/client_registry.json` |
+| Device count analysis | `knowledge/network/device_count_analysis.md` |
+| Generated shells | `knowledge/projects/[project_slug]/system_shell.md` |
+| Device specs reference | `knowledge/hardware/networking.json` |
+
+### Input Data for Device Count Analysis
+
+Parse these files to derive the per-category device count analysis (step 1 of the prompt):
+- `knowledge/proposals/Gates_Equipment_Rollup.md` — large residential: 21 keypads, 4 TVs, 20 speakers, 16 shades, 5 cameras
+- `knowledge/proposals/Hernaiz_Equipment_Rollup.md` — medium residential: 17 keypads, 4 TVs, 14 speakers, 3 shades, 0 cameras
+- `knowledge/reports/Kelly_Proposal_Intelligence.md` — large estate networking: 3 switches, 3 APs, 3 amps
+- `knowledge/topletz/project-config.yaml` — medium-large: 18 keypads, 4 cameras, 2 iPads, 1 EA-5, 1 AMS-16
+
+From these four projects, compute average/min/max/P90 per device category and write to `knowledge/network/device_count_analysis.md`. The output should validate whether the 10-address blocks (.16-.25, .26-.35, etc.) are sufficient or need expanding.
+
+### Device Specs Reference
+
+`knowledge/hardware/networking.json` contains SKU-level specs for Araknis switches and APs. When generating a shell, look up each networking device's SKU here to get: port count, PoE budget, PoE ports count, management VLAN support. This feeds the port allocator — you can't allocate a port on a 24-port switch if the switch model only has 8 ports.
+
+### system_shell.py — Dual Mode
+
+The shell generator must work both ways:
+
+```python
+# As CLI:
+python3 tools/system_shell.py --generate topletz --config knowledge/topletz/project-config.yaml
+python3 tools/system_shell.py --generate gates --rollup knowledge/proposals/Gates_Equipment_Rollup.md
+
+# As importable module:
+from tools.system_shell import generate_shell
+shell = generate_shell(project_slug="topletz", config_path="knowledge/topletz/project-config.yaml")
+```
+
+The importable form is needed by Auto-26's integration with the client lifecycle (API-13) — when a proposal is accepted, the lifecycle system calls `generate_shell()` programmatically.
+
+### port_allocator.py — Hard Rules
+
+Implement these rules without exception:
+
+1. **Cameras → NVR PoE ports only.** Never put a camera on the main switch. The NVR has dedicated PoE ports for this. Cameras go to NVR-P1, NVR-P2, etc.
+2. **APs start at Port 1** of the main switch and fill sequentially. Port 1 is always the first AP.
+3. **20% port reserve.** On a 24-port switch: max 19 assigned ports. On an 8-port switch: max 6. Leave the rest unassigned for future expansion.
+4. **PoE budget check.** Sum the PoE draw of all connected devices. Alert if it exceeds 80% of the switch's rated PoE budget.
+5. **Port → cable label.** Every assigned port gets a cable label in the format `[ROOM_CODE]-[DEVICE_TYPE]-[##]`.
+
+Room codes to use (derive from room name if not in this list):
+```
+LR  Living Room       MBR  Master Bedroom     KIT  Kitchen
+DR  Dining Room       BR2  Bedroom 2          BR3  Bedroom 3
+OFF  Office           GAR  Garage             OUT  Outdoor
+FE   Front Entry      RK   Rack / Equipment   GYM  Gym
+THR  Theater          LAU  Laundry            UTL  Utility
+```
+
+Device type codes:
+```
+AP   Access Point     CAM  Camera             SW   Switch
+EA   Controller (C4)  NVR  NVR                AMP  Amplifier
+AMS  Audio Matrix     IPD  iPad               LUT  Lutron
+QOL  Qolsys           WB   WattBox
+```
+
+Example cable labels: `LR-AP-01`, `FE-CAM-01`, `MBR-AP-02`, `RK-NVR-01`
+
+### client_registry.json Format
+
+```json
+{
+  "001": {
+    "name": "Topletz",
+    "address": "84 Aspen Meadow Drive, Edwards, CO",
+    "slug": "topletz",
+    "assigned_at": "2026-01-01"
+  },
+  "002": {
+    "name": "Gates",
+    "address": "[address from proposal]",
+    "slug": "gates",
+    "assigned_at": "2026-04-03"
+  }
+}
+```
+
+Client numbers are permanent and sequential. Never reuse a number. The second octet in the IP scheme (`10.X.Y.0`) maps directly to this registry number. Topletz = client 001 = `10.1.Y.0` on all subnets.
+
+### Shell Output Location
+
+Generated shells go to `knowledge/projects/[project_slug]/system_shell.md`. Create the directory if it doesn't exist. For retroactive generation from existing proposals:
+- Topletz → `knowledge/projects/topletz/system_shell.md`
+- Gates → `knowledge/projects/gates/system_shell.md`
+- Hernaiz → `knowledge/projects/hernaiz/system_shell.md`
+- Kelly → `knowledge/projects/kelly/system_shell.md`
+
+### Auto-25 Integration (Access Codes)
+
+After `integrations/apple_notes/notes_indexer.py` runs, it writes `knowledge/projects/[slug]/access_codes.md` files. The shell generator should check for this file and, if present, merge the extracted codes into the "Access Codes & Credentials" section of the shell:
+
+```python
+codes_path = Path(f"knowledge/projects/{project_slug}/access_codes.md")
+if codes_path.exists():
+    shell_data["access_codes_source"] = "auto_extracted"
+    shell_data["access_codes"] = parse_access_codes_md(codes_path)
+```
+
+This is the key integration: Matt's field notes become the installer reference sheet automatically.

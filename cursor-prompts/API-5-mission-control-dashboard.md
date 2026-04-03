@@ -1,247 +1,351 @@
-# API-5: Mission Control Dashboard
+# API-5: Mission Control Dashboard — Wire Real Data Into the UI
+
+## The Problem
+
+The Mission Control container runs on port 8098 and serves a dashboard. `mission_control/main.py` (597 lines) and `event_server.py` (412 lines) define the backend API endpoints. The `dashboard/` directory has `index.html`, `app.js`, and `style.css` but the UI is basic — it does not actually display trading data, email queue status, calendar events, follow-ups, or system resources. The backend data is already flowing into Redis. The job is to build out the real dashboard UI that reads from the existing API endpoints and Redis keys, displayed in six panels on a dark-themed grid layout.
 
 ## Context Files to Read First
-- mission_control/main.py
-- mission_control/event_server.py
-- mission_control/static/app.js        ← existing dashboard JS to upgrade
-- mission_control/static/index.html    ← existing dashboard HTML to replace
-- mission_control/static/style.css     ← existing styles to upgrade
-- docker-compose.yml (all service definitions)
-- AGENTS.md (architecture overview)
-- polymarket-bot/heartbeat/runner.py
-- core/context_store.py (API-11 context store — primary data source)
+
+- `mission_control/main.py` (all 597 lines — understand every API endpoint it exposes)
+- `mission_control/event_server.py` (all 412 lines — understand the SSE/WebSocket event format)
+- `dashboard/index.html` (current UI structure — understand what is already there)
+- `dashboard/app.js` (current JS — understand what it already polls/renders)
+- `dashboard/style.css` (current styles — understand what to keep vs upgrade)
+- `docker-compose.yml` (understand how mission-control mounts the dashboard directory)
+- `AGENTS.md` (Redis key schema overview)
 
 ## Prompt
 
-Build Mission Control — a comprehensive real-time intelligence dashboard showing health, status, and business context for all services running on Bob. This replaces/upgrades the existing dashboard at `/dashboard/` (app.js, index.html, style.css).
+Read the existing code first — understand what API endpoints `main.py` already exposes, what event types `event_server.py` emits, and what the current `app.js` already renders. Do not replace working panels. Upgrade and extend what is there.
 
-**Runs on Bob's local network at port 8098.** (Not 8095 — that port is taken. Use 8098.)
+### 1. Audit Existing Endpoints and Events
 
----
+Read `main.py` and list every `@app.get` / `@app.post` route. Read `event_server.py` and list every event type it pushes. These are the data sources for the dashboard — you do not need to invent new Redis reads in the frontend if the backend already aggregates the data.
 
-### 1. Backend (`mission_control/main.py` — expand existing)
+Create a comment block at the top of `app.js` documenting the available endpoints:
 
-FastAPI server on port 8098.
-
-**REST endpoints:**
-- `GET /api/services` — all service statuses (Docker container health, uptime, restart count)
-- `GET /api/trading` — portfolio value, positions, recent trades, daily P/L
-- `GET /api/email` — unread count, pending drafts, auto-response stats
-- `GET /api/calendar` — today's events, next 3 upcoming events
-- `GET /api/followups` — follow-ups due today/overdue, from follow_up_tracker
-- `GET /api/projects` — status of each active client project
-- `GET /api/payments` — pending deposits and final payments
-- `GET /api/system` — Mac Mini CPU%, RAM%, disk%, Docker total resource usage
-- `GET /api/context` — proxy to Bob's Brain (API-11) full context store
-
-**WebSocket:**
-- `WS /ws/events` — real-time event stream; subscribe to Redis pub/sub `events:pubsub` and forward to connected browser clients
-
-**Data sources per panel (see Section 3):**
-- Primary: Bob's Brain context store via Redis (`bob:context:*` hashes)
-- Service health: Docker socket (`/var/run/docker.sock`)
-- Calendar: Zoho Calendar API
-- System resources: `psutil` + Docker stats API
-- Follow-ups / payments: Redis keys from `follow_up_tracker` and `payment_tracker`
-
-**Polling:**
-- Poll Docker socket every 10s for container states
-- Poll system resources every 15s
-- Redis keys are read on-request (fast, no polling needed)
-- WebSocket forwards Redis pub/sub events in real-time
-
-**Health endpoint:** `GET /health` → `{"status": "ok"}` for Docker healthcheck.
-
----
-
-### 2. Dashboard Panels
-
-The dashboard has 7 panels in a CSS Grid layout. Each panel polls its corresponding API endpoint every 10 seconds (configurable via `REFRESH_INTERVAL` constant).
-
-#### Panel 1: Service Health
-**Data source:** `GET /api/services` → Docker socket  
-**Shows:**
-- All running Docker containers: name, status (green = running/healthy, yellow = starting/unhealthy, red = exited/dead), uptime, restart count
-- Containers are grouped: Trading, Business, Infrastructure, Monitoring
-- Any container restarting >3x in an hour → red badge "UNSTABLE"
-- Any container unhealthy >5 minutes → yellow badge "DEGRADED"
-- Click a service name → expand to show last 20 log lines (from `docker logs --tail 20 {container}`)
-
-**Backend implementation:**
-```python
-import docker
-client = docker.from_env()  # uses /var/run/docker.sock
-
-def get_services():
-    containers = client.containers.list(all=True)
-    return [{
-        "name": c.name,
-        "status": c.status,
-        "health": c.attrs.get("State", {}).get("Health", {}).get("Status", "none"),
-        "uptime": c.attrs["State"]["StartedAt"],
-        "restart_count": c.attrs["RestartCount"]
-    } for c in containers]
-```
-
-#### Panel 2: Trading Bot P/L
-**Data source:** `GET /api/trading` → `bob:context:portfolio` Redis hash  
-**Shows:**
-- Portfolio value (large, prominent)
-- Available USDC
-- Open positions count
-- Daily P/L (green if positive, red if negative)
-- 7-day P/L sparkline (from `data/pnl_history.json` if available)
-- Last 5 trades (market, size, price, outcome)
-- Active strategies list
-- Any active trading alerts (exit engine stuck, etc.)
-
-#### Panel 3: Email Queue
-**Data source:** `GET /api/email` → `bob:context:email` Redis hash  
-**Shows:**
-- Unread emails count (badge)
-- Pending drafts (emails Bob drafted but not yet approved/sent)
-- Auto-responses sent today
-- Escalated emails (need Matt's attention — highlighted)
-- Last 3 email subjects with classification (lead, client, vendor, spam)
-
-#### Panel 4: Calendar
-**Data source:** `GET /api/calendar` → Zoho Calendar API  
-**Shows:**
-- Today's date (large)
-- Today's events in chronological order: time, title, attendees
-- Next 3 upcoming events (next 7 days)
-- "Meeting prep due" indicator: if a meeting is in <2 hours and no prep brief has been sent → yellow alert
-- Empty state: "No meetings today — Bob is focused on ClawWork and trading"
-
-#### Panel 5: Follow-Up Reminders
-**Data source:** `GET /api/followups` → Redis `followup:*` keys via follow_up_tracker  
-**Shows:**
-- Follow-ups due today: client name, project value, which day (Day 3/7/14), CTA button "Mark Sent"
-- Overdue follow-ups: any past-due not sent — highlighted red
-- Upcoming this week: next 7 days
-- Empty state: "No follow-ups due today"
-
-**CTA button "Mark Sent"** → calls `POST /api/followups/{id}/sent` → marks in tracker, logs in comms log
-
-#### Panel 6: Client Projects
-**Data source:** `GET /api/projects` → `bob:context:project` Redis hash  
-**Shows per active project:**
-- Client name + project address
-- Current phase (Lead / Proposal Sent / Deposit Pending / Pre-Wire / Install / Commission / Complete)
-- Project value
-- Last communication (date + subject, from comms log)
-- Pending payment indicator: if deposit or final payment pending, show amount + days pending
-- Linear link (if project exists in Linear)
-- Phase displayed as a horizontal progress indicator (5 steps)
-
-#### Panel 7: System Resources
-**Data source:** `GET /api/system` → psutil + Docker stats API  
-**Shows:**
-- CPU usage % (gauge)
-- RAM usage % (gauge) — with used/total GB
-- Disk usage % (gauge) — with used/total GB, yellow >75%, red >85%
-- Network I/O (bytes in/out per second)
-- Docker: total container count, total CPU/RAM consumed by Docker
-- VPN status: connected/disconnected (from `bob:context:infrastructure`)
-
----
-
-### 3. Data Source Map (Redis Keys)
-
-| Panel | Redis Key | Refresh |
-|-------|-----------|---------|
-| Trading | `bob:context:portfolio` | On event or 10s |
-| Email | `bob:context:email` | On event or 10s |
-| Projects | `bob:context:project` | On event or 30s |
-| Followups | `followup:*` | On event or 30s |
-| Payments | `payment:*` | On event or 30s |
-| Infra/VPN | `bob:context:infrastructure` | On event or 10s |
-| System | psutil (direct) | 15s |
-| Calendar | Zoho API | 5 min |
-| Services | Docker socket | 10s |
-
----
-
-### 4. Frontend (`mission_control/static/` — replace existing)
-
-**Tech: vanilla HTML/CSS/JS. No frameworks. No build step. No npm. Must load <1 second on local network.**
-
-**Files to produce:**
-- `mission_control/static/index.html` — dashboard shell, panel layout
-- `mission_control/static/style.css` — dark theme, grid layout
-- `mission_control/static/app.js` — polling logic, WebSocket, panel renderers
-
-**Design:**
-- Dark background (`#0d1117`), panel cards with subtle border (`#21262d`)
-- Status colors: green `#3fb950`, yellow `#d29922`, red `#f85149`
-- Font: system-ui (no external fonts — fast load)
-- CSS Grid: 3-column layout on wide screens, 2-column on medium, 1-column on mobile
-- Panel headers show last-updated timestamp (fades to yellow if stale >30s)
-
-**JS architecture:**
 ```javascript
-const REFRESH_INTERVAL = 10000; // ms
-
-// Each panel is a self-contained object
-const panels = {
-  serviceHealth: { endpoint: '/api/services', render: renderServiceHealth },
-  trading:       { endpoint: '/api/trading',  render: renderTrading },
-  email:         { endpoint: '/api/email',    render: renderEmail },
-  calendar:      { endpoint: '/api/calendar', render: renderCalendar },
-  followups:     { endpoint: '/api/followups',render: renderFollowUps },
-  projects:      { endpoint: '/api/projects', render: renderProjects },
-  system:        { endpoint: '/api/system',   render: renderSystem },
-};
-
-// Poll all panels
-function pollAll() {
-  Object.entries(panels).forEach(([name, panel]) => {
-    fetch(panel.endpoint)
-      .then(r => r.json())
-      .then(data => panel.render(data))
-      .catch(err => markPanelError(name, err));
-  });
-}
-setInterval(pollAll, REFRESH_INTERVAL);
-pollAll(); // immediate on load
-
-// WebSocket for real-time event feed
-const ws = new WebSocket(`ws://${location.host}/ws/events`);
-ws.onmessage = (msg) => appendActivityFeed(JSON.parse(msg.data));
+/*
+ * Mission Control Dashboard — Available Data Sources
+ * 
+ * REST Endpoints (from main.py):
+ *   GET /api/health         → service health statuses
+ *   GET /api/portfolio      → trading bot portfolio snapshot
+ *   GET /api/email/queue    → email queue stats
+ *   GET /api/calendar/today → today's events
+ *   GET /api/followups      → pending follow-ups
+ *   GET /api/system         → CPU/RAM/disk stats
+ * 
+ * SSE Stream (from event_server.py):
+ *   GET /events             → Server-Sent Events for real-time updates
+ * 
+ * Redis Keys (read by main.py, not directly by dashboard):
+ *   portfolio:snapshot, email:*, calendar:*, followup:*, system:*
+ */
 ```
 
-**Activity feed** (bottom of page, full width):
-- Real-time scrolling log of events from all services via WebSocket
-- Color-coded by priority: normal = white, high = yellow, critical = red
-- Shows: timestamp, service name, event_type, payload summary
-- Keep last 100 events in DOM (remove oldest when >100)
+Fill in the actual endpoints from the code — do not guess.
 
----
+### 2. Build the Six-Panel Layout in index.html
 
-### 5. Alerts Section
+Replace or upgrade `dashboard/index.html` with a CSS Grid layout:
 
-Persistent alert bar at top of page, hidden when no alerts:
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bob — Mission Control</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Mission Control</h1>
+    <div id="last-updated">Last updated: —</div>
+    <div id="connection-status" class="status-indicator"></div>
+  </header>
 
-| Condition | Severity | Message |
-|-----------|----------|---------|
-| Container restarts >3x in 1 hour | Red | "{service} is unstable — restarted {n} times" |
-| Service unhealthy >5 minutes | Yellow | "{service} has been unhealthy for {n} minutes" |
-| Portfolio drop >20% in 24h | Red | "Trading: portfolio down {pct}% in 24 hours" |
-| Disk usage >85% | Yellow | "Disk at {pct}% — rotation needed" |
-| Follow-up overdue | Yellow | "{client} follow-up is {n} days overdue" |
-| Payment pending >5 days | Yellow | "Payment from {client} pending {n} days — ${amount}" |
-| VPN disconnected | Red | "VPN is DOWN — trading paused" |
+  <main class="dashboard-grid">
+    <section class="panel" id="panel-services">
+      <h2>Service Health</h2>
+      <div id="service-list"></div>
+    </section>
 
-Alerts are evaluated server-side (FastAPI background task every 60s) and stored in Redis `bob:alerts`. Dashboard fetches and renders on each poll cycle.
+    <section class="panel" id="panel-trading">
+      <h2>Trading Bot</h2>
+      <div id="trading-summary"></div>
+      <div id="open-positions"></div>
+      <div id="recent-trades"></div>
+    </section>
 
----
+    <section class="panel" id="panel-email">
+      <h2>Email Queue</h2>
+      <div id="email-stats"></div>
+      <div id="pending-drafts"></div>
+      <div id="recent-responses"></div>
+    </section>
 
-### 6. Docker Service
+    <section class="panel" id="panel-calendar">
+      <h2>Today's Calendar</h2>
+      <div id="calendar-events"></div>
+    </section>
 
-Add `mission-control` service to docker-compose.yml:
-- Port 8098
-- Volume mount `/var/run/docker.sock:/var/run/docker.sock:ro` (for Docker socket access)
-- Depends on Redis, bobs-brain
-- Health endpoint at `/health`
+    <section class="panel" id="panel-followups">
+      <h2>Follow-Ups</h2>
+      <div id="followup-list"></div>
+    </section>
 
-No external CSS/JS frameworks. The dashboard must load in <1 second on local network.
+    <section class="panel" id="panel-system">
+      <h2>System Resources</h2>
+      <div id="system-stats"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
+```
+
+### 3. Build the Dashboard Logic in app.js
+
+Use vanilla JavaScript — no React, no Vue, no heavy frameworks. Write functions that fetch from the backend and render into the panel divs.
+
+**Auto-refresh every 30 seconds:**
+
+```javascript
+const REFRESH_INTERVAL = 30_000;
+
+async function refreshAll() {
+  const timestamp = new Date().toLocaleTimeString();
+  document.getElementById("last-updated").textContent = `Last updated: ${timestamp}`;
+  
+  await Promise.allSettled([
+    refreshServices(),
+    refreshTrading(),
+    refreshEmail(),
+    refreshCalendar(),
+    refreshFollowups(),
+    refreshSystem(),
+  ]);
+}
+
+refreshAll();
+setInterval(refreshAll, REFRESH_INTERVAL);
+```
+
+**Service Health panel** — call the endpoint from main.py that returns container statuses:
+
+```javascript
+async function refreshServices() {
+  const data = await fetchJSON("/api/health");
+  const container = document.getElementById("service-list");
+  container.innerHTML = data.services.map(svc => `
+    <div class="service-row">
+      <span class="status-dot ${svc.status}"></span>
+      <span class="service-name">${svc.name}</span>
+      <span class="service-uptime">${svc.uptime || ""}</span>
+    </div>
+  `).join("");
+}
+```
+
+(Use the actual response shape from main.py — read what `/api/health` actually returns and match it.)
+
+**Trading Bot panel** — read from `portfolio:snapshot` via whatever endpoint main.py exposes:
+
+```javascript
+async function refreshTrading() {
+  const data = await fetchJSON("/api/portfolio");
+  document.getElementById("trading-summary").innerHTML = `
+    <div class="stat-row">
+      <span>Available</span><span class="value">$${data.usdc_balance.toFixed(2)}</span>
+    </div>
+    <div class="stat-row">
+      <span>Positions</span><span class="value">$${data.total_position_value.toFixed(2)}</span>
+    </div>
+    <div class="stat-row">
+      <span>Portfolio</span><span class="value highlight">$${data.total_portfolio_value.toFixed(2)}</span>
+    </div>
+    <div class="stat-row">
+      <span>24h P&L</span><span class="value ${data.pnl_24h >= 0 ? 'positive' : 'negative'}">
+        ${data.pnl_24h >= 0 ? '+' : ''}$${data.pnl_24h.toFixed(2)}
+      </span>
+    </div>
+  `;
+  document.getElementById("open-positions").innerHTML = 
+    `<div class="subheader">Open Positions: ${data.positions?.length || 0}</div>` +
+    (data.positions || []).slice(0, 5).map(p => `
+      <div class="position-row">
+        <span>${p.market_title?.substring(0, 40) || p.condition_id}</span>
+        <span>${p.side} ${p.shares?.toFixed(1)} shares</span>
+      </div>
+    `).join("");
+}
+```
+
+Match the actual field names from `main.py`'s portfolio endpoint response — do not assume.
+
+**Email Queue panel:**
+
+```javascript
+async function refreshEmail() {
+  const data = await fetchJSON("/api/email/queue");
+  document.getElementById("email-stats").innerHTML = `
+    <div class="stat-row"><span>Unread</span><span class="value">${data.unread_count}</span></div>
+    <div class="stat-row"><span>Pending Drafts</span><span class="value">${data.pending_drafts}</span></div>
+    <div class="stat-row"><span>Auto-Responses Sent</span><span class="value">${data.auto_responses_today}</span></div>
+  `;
+}
+```
+
+**Calendar panel:**
+
+```javascript
+async function refreshCalendar() {
+  const data = await fetchJSON("/api/calendar/today");
+  const events = data.events || [];
+  document.getElementById("calendar-events").innerHTML = events.length === 0
+    ? "<div class='empty-state'>No events today</div>"
+    : events.map(evt => `
+        <div class="calendar-event">
+          <span class="event-time">${evt.time || evt.start}</span>
+          <span class="event-title">${evt.title || evt.summary}</span>
+        </div>
+      `).join("");
+}
+```
+
+**Follow-Ups panel:**
+
+```javascript
+async function refreshFollowups() {
+  const data = await fetchJSON("/api/followups");
+  const items = data.followups || [];
+  document.getElementById("followup-list").innerHTML = items.length === 0
+    ? "<div class='empty-state'>No pending follow-ups</div>"
+    : items.map(f => `
+        <div class="followup-row ${f.overdue ? 'overdue' : ''}">
+          <span class="followup-client">${f.client}</span>
+          <span class="followup-due">${f.due_date || f.due}</span>
+        </div>
+      `).join("");
+}
+```
+
+**System Resources panel:**
+
+```javascript
+async function refreshSystem() {
+  const data = await fetchJSON("/api/system");
+  document.getElementById("system-stats").innerHTML = `
+    <div class="resource-bar">
+      <span>CPU</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${data.cpu_percent}%"></div></div>
+      <span>${data.cpu_percent?.toFixed(1)}%</span>
+    </div>
+    <div class="resource-bar">
+      <span>RAM</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${data.ram_percent}%"></div></div>
+      <span>${data.ram_percent?.toFixed(1)}%</span>
+    </div>
+    <div class="resource-bar">
+      <span>Disk</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${data.disk_percent}%"></div></div>
+      <span>${data.disk_percent?.toFixed(1)}%</span>
+    </div>
+  `;
+}
+```
+
+**Error handling:**
+
+```javascript
+async function fetchJSON(url) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (e) {
+    console.warn(`fetchJSON failed for ${url}:`, e);
+    return {};
+  }
+}
+```
+
+### 4. Dark Theme in style.css
+
+Replace or upgrade `style.css` with a dark theme:
+
+```css
+:root {
+  --bg-primary: #0d0d0d;
+  --bg-panel: #1a1a1a;
+  --bg-panel-header: #222222;
+  --border: #2e2e2e;
+  --text-primary: #e8e8e8;
+  --text-secondary: #999999;
+  --accent-green: #00e676;
+  --accent-yellow: #ffd740;
+  --accent-red: #ff5252;
+  --accent-blue: #40c4ff;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: "SF Mono", "Fira Code", monospace;
+  margin: 0;
+  padding: 16px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.panel h2 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.status-dot.healthy { color: var(--accent-green); }
+.status-dot.degraded { color: var(--accent-yellow); }
+.status-dot.down { color: var(--accent-red); }
+
+.value.positive { color: var(--accent-green); }
+.value.negative { color: var(--accent-red); }
+.value.highlight { color: var(--accent-blue); font-weight: bold; }
+
+.bar-track { background: #333; border-radius: 4px; height: 6px; flex: 1; margin: 0 8px; }
+.bar-fill { background: var(--accent-blue); height: 100%; border-radius: 4px; }
+
+.overdue { color: var(--accent-red); }
+.empty-state { color: var(--text-secondary); font-style: italic; }
+
+@media (max-width: 1200px) { .dashboard-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) { .dashboard-grid { grid-template-columns: 1fr; } }
+```
+
+### 5. Verify It Runs on Port 8098
+
+After building the dashboard:
+
+- Confirm `docker-compose.yml` mounts the `dashboard/` directory into the mission-control container at the path that main.py serves static files from
+- If main.py serves static files from `mission_control/static/` but the files are in `dashboard/`, either update the mount path or move the files — check the Dockerfile or docker-compose volume mounts
+- Confirm main.py has a static file handler — if not, add `app.mount("/", StaticFiles(directory="static"), name="static")` (FastAPI) or equivalent
+- Test: `curl http://localhost:8098/` should return the HTML, not a 404
+
+Do not change the port. Do not add nginx. The existing container already serves on 8098 — just make sure the dashboard files are in the right directory.

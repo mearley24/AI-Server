@@ -8,253 +8,233 @@ Bob's Brain is a central context engine — a single place where every service w
 
 The flywheel this enables: **business revenue → funds trading capital → trading profits fund daily operations → operations help win more business → repeat.** Every service needs to be aware of where the flywheel is spinning and where it's stalling.
 
+Read the existing code first.
+
 ## Context Files to Read First
-- AGENTS.md (north star: 24/7 machine time)
-- CONTEXT.md (current shared context approach)
-- notification-hub/main.py
-- openclaw/orchestrator.py
-- polymarket-bot/heartbeat/runner.py
-- email-monitor/main.py
+
+- `openclaw/agent_bus.py` (Redis pub/sub bus — AgentBus class)
+- `openclaw/orchestrator.py` (current dispatch logic)
+- `openclaw/main.py` (OpenClaw entry point)
 
 ## Prompt
 
-Build the unified context engine that makes Bob self-aware:
+Build the unified context engine on top of the existing OpenClaw infrastructure:
 
-### 1. Event Bus (`core/event_bus.py`)
+### 1. Understand the Existing Infrastructure
 
-**Transport: Redis pub/sub.** Use Redis because it's already running on Bob, it's lightweight, and it handles fan-out to multiple subscribers naturally. No new infrastructure required.
+Before writing any new code:
+- Read `agent_bus.py` — understand the AgentBus class: what channel it uses (`agents:messages`), how publish/subscribe work, what the message envelope looks like
+- Read `orchestrator.py` — understand current dispatch: what events it handles, how it routes to agents, what the agent interface expects
+- Read `main.py` — understand the startup sequence and how modules are loaded
+- The new context store and decision engine must extend these — not replace them
 
-Every service publishes structured events to the `events:bus` Redis stream (XADD) and to the `events:pubsub` channel (PUBLISH) simultaneously — stream for durability/replay, pub/sub for real-time fan-out.
+### 2. Build the Context Store (`openclaw/context_store.py`)
 
-**Canonical event envelope:**
-```python
-event = {
-    "service": "polymarket-bot",       # which service published this
-    "event_type": "trade_executed",    # snake_case type (see taxonomy below)
-    "timestamp": "2026-04-03T16:24:35Z",  # ISO 8601 UTC
-    "payload": {                        # event-specific data
-        "market": "...",
-        "size": 1.0,
-        "price": 0.09
-    },
-    "priority": "normal"               # low | normal | high | critical
-}
-```
+A living Redis-backed state document that any service can read or write:
 
-Note: use `event_type` (not `type`) and `payload` (not `data`) — this is the canonical field naming across all services. Update any existing services that use the old format.
-
-**Event taxonomy:**
-- `trade_executed`, `trade_exited`, `position_resolved`, `portfolio_updated` (trading)
-- `email_received`, `email_responded`, `email_escalated`, `email_classified` (email)
-- `proposal_generated`, `proposal_sent`, `proposal_accepted`, `proposal_rejected` (proposals)
-- `payment_received`, `payment_pending`, `deposit_confirmed` (payments)
-- `follow_up_due`, `follow_up_sent`, `follow_up_overdue` (follow-ups)
-- `meeting_scheduled`, `meeting_reminder`, `meeting_completed` (calendar)
-- `service_healthy`, `service_unhealthy`, `service_restarted` (infra)
-- `intel_signal`, `idea_validated`, `idea_rejected` (intel/RBI)
-- `daily_briefing_sent`, `weekly_report_sent` (reporting)
-- `file_synced`, `client_uploaded`, `proposal_uploaded` (file pipeline)
-- `project_created`, `project_phase_changed`, `project_completed` (lifecycle)
-- `error_critical`, `error_recoverable` (errors)
-
-Redis Stream: `events:bus` with consumer groups per listener.  
-Redis Pub/Sub channel: `events:pubsub` for real-time fan-out.  
-Redis at `redis://172.18.0.100:6379` inside Docker.
-
-**Publisher helper:**
-```python
-class EventBus:
-    def publish(self, service: str, event_type: str, payload: dict, priority: str = "normal"):
-        event = {
-            "service": service,
-            "event_type": event_type,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "payload": payload,
-            "priority": priority
-        }
-        # Publish to both stream (durable) and pub/sub (real-time)
-        self.redis.xadd("events:bus", {"data": json.dumps(event)})
-        self.redis.publish("events:pubsub", json.dumps(event))
-```
-
-**Consumer helper:**
-```python
-class EventConsumer:
-    def __init__(self, service_name: str, event_types: list[str]):
-        # Create consumer group on stream
-        self.redis.xgroup_create("events:bus", service_name, id="$", mkstream=True)
-    
-    def listen(self, handler: callable):
-        # XREADGROUP for durable processing, also SUBSCRIBE for real-time
-        ...
-```
-
-### 2. Context Store (`core/context_store.py`)
-
-A living document in Redis that any service can read to understand the current state of everything. Organized as **Redis hashes per domain** so services can read only what they need:
-
-- `bob:context:portfolio` — trading state
-- `bob:context:email` — email queue state
-- `bob:context:calendar` — calendar/scheduling state
-- `bob:context:project` — active project state (one hash per project + summary hash)
-- `bob:context:infrastructure` — service health, disk, VPN
-- `bob:context:intelligence` — signals, ideas, RBI state
-- `bob:context:owner` — Matt's last active, preferences, focus mode
-
-**Full context shape:**
-```python
-context = {
-    "trading": {
-        "portfolio_value": 1343.00,
-        "available_usdc": 217.00,
-        "positions_count": 47,
-        "daily_pnl": 19.50,
-        "last_trade": "2026-04-03T16:24:35Z",
-        "strategies_active": ["copytrade", "weather", "spread_arb"],
-        "alerts": ["exit_engine_stuck_ct-760c"]
-    },
-    "business": {
-        "active_projects": [{"name": "Topletz", "status": "proposal_sent", "value": 57683}],
-        "pending_emails": 3,
-        "next_meeting": "2026-04-04T10:00:00",
-        "proposals_pending": 1,
-        "follow_ups_due_today": 1,
-        "payments_pending": [{"client": "Topletz", "amount": 34609, "type": "deposit"}],
-        "revenue_mtd": 0,
-        "pipeline_value": 57683
-    },
-    "infrastructure": {
-        "services_healthy": 14,
-        "services_unhealthy": 2,
-        "disk_usage_pct": 45,
-        "vpn_status": "connected",
-        "last_restart": "2026-04-03T13:18:00Z"
-    },
-    "intelligence": {
-        "signals_today": 5,
-        "ideas_pending_validation": 2,
-        "top_signal": "weather edge detected in Shanghai brackets"
-    },
-    "owner": {
-        "last_active": "2026-04-03T10:30:00",
-        "notification_preference": "imessage",
-        "focus_mode": false
-    }
-}
-```
-
-**Access API:**
 ```python
 class ContextStore:
+    """
+    Redis hash per domain: bob:context:{domain}
+    Any service can query without knowing who owns the data.
+    """
+    
     def get(self, path: str) -> any:
-        # e.g. context_store.get("trading.portfolio_value")
-        # Reads from redis hash bob:context:{domain}
-        ...
-    
-    def set(self, path: str, value: any):
-        # e.g. context_store.set("business.pending_emails", 3)
-        ...
-    
+        # e.g. context_store.get("portfolio.total_value") → 1343.00
+        # Split on first dot: domain=portfolio, key=total_value
+        # HGET bob:context:portfolio total_value → parse JSON value
+        
+    def set(self, path: str, value: any, ttl_seconds: int = 300):
+        # e.g. context_store.set("portfolio.total_value", 1343.00)
+        # HSET bob:context:portfolio total_value json.dumps(value)
+        # TTL: set expiry on the hash key (5 min default, configurable per domain)
+        
     def get_section(self, section: str) -> dict:
-        # e.g. context_store.get_section("trading") → full trading dict
-        ...
+        # e.g. context_store.get_section("portfolio") → full portfolio dict
+        # HGETALL bob:context:portfolio → parse all values from JSON
+        
+    def update_section(self, section: str, data: dict):
+        # Batch update: HMSET bob:context:{section} {k: json.dumps(v) for k,v in data.items()}
 ```
 
-- Persisted to Redis hash `bob:context` + backed up to `data/context_snapshots/` hourly
-- Any service can call `context_store.get("trading.portfolio_value")` without knowing which service owns that data
+**Domain → Redis key mapping:**
+- `portfolio` → `bob:context:portfolio`
+- `email` → `bob:context:email`
+- `calendar` → `bob:context:calendar`
+- `project` → `bob:context:project`
+- `infrastructure` → `bob:context:infrastructure`
+- `intelligence` → `bob:context:intelligence`
+- `owner` → `bob:context:owner`
 
-### 3. Decision Engine (`core/decision_engine.py`)
-
-**Architecture: rules-based first, ML later.**
-
-The decision engine subscribes to the event bus and evaluates rules whenever relevant events fire. Rules are evaluated in-order; first match wins. ML scoring can be added later as a rule modifier.
-
-**Rule evaluation loop:**
+**Each service writes its own domain.** Examples:
 ```python
-# Triggered every 5 minutes by heartbeat AND on every high/critical priority event
-def evaluate_rules(context: dict, recent_events: list[dict]) -> list[Action]:
-    actions = []
-    for rule in RULES:
-        if rule.condition(context, recent_events):
-            actions.append(rule.action)
-    return actions
+# Trading bot writes portfolio context on every portfolio update
+context_store.update_section("portfolio", {
+    "portfolio_value": 1343.00,
+    "available_usdc": 217.00,
+    "positions_count": 47,
+    "daily_pnl": 19.50,
+    "last_trade": "2026-04-03T16:24:35Z",
+    "strategies_active": ["copytrade", "weather", "spread_arb"]
+})
+
+# Email monitor writes email context after processing inbox
+context_store.update_section("email", {
+    "pending_count": 3,
+    "last_checked": "2026-04-03T16:00:00Z",
+    "urgent_count": 1
+})
 ```
 
-**Core rules:**
+Back up context to `data/context_snapshots/context_{timestamp}.json` every hour. Keep last 24 snapshots.
 
-a) **Proposal + Project cross-service rule:**
-   - `IF event_type == "email_received" AND payload contains ["proposal", "quote", "pricing"] AND project exists for sender → emit check_proposal action → proposal checker validates → notification hub alerts Matt`
-   - Full cross-service flow: `email-monitor` detects proposal request → `dtools-bridge` pulls matching project → `proposal-checker` validates scope/pricing → `notification-hub` sends iMessage to Matt
-   - This is the canonical example of cross-service intelligence. Wire it first.
+### 3. Build the Decision Engine (`openclaw/decision_engine.py`)
 
-b) **Trading + Business awareness:**
-   - If a proposal is accepted and deposit received → reduce trading risk (preserve capital for equipment procurement)
-   - If no active projects and pipeline is empty → increase trading aggression (this is the primary revenue stream)
-   - If daily trading P/L exceeds +$50 → send Matt a celebration iMessage
+Rules-based engine that evaluates conditions against the context store and emits actions:
 
-c) **Email + Trading awareness:**
-   - If an email mentions "Polymarket" or "trading" → flag for Matt, don't auto-respond
-   - If a client emails during market hours and Bob is mid-trade → prioritize client, queue trade signals
-
-d) **Infrastructure + Everything awareness:**
-   - If VPN goes down → pause all trading immediately, alert Matt
-   - If disk >85% → auto-rotate old logs, archive old paper trading reports
-   - If any service crashes 3x in an hour → stop it, alert Matt, don't keep restarting
-
-e) **Calendar + Business awareness:**
-   - Morning of a client meeting → compile all project context, recent emails, pending decisions into a brief
-   - If no meetings today → Bob focuses on ClawWork and trading
-
-**Adding new rules:**
 ```python
-# Rules live in core/rules/ as individual Python files, auto-loaded at startup
-# Each rule is a dataclass: condition(context, events) → bool, action → Action
+class DecisionEngine:
+    def __init__(self, context_store: ContextStore, agent_bus: AgentBus):
+        self.context = context_store
+        self.bus = agent_bus
+        self.rules = self._load_rules()  # Load from agents/decision_rules.yml
+    
+    def evaluate(self):
+        """Run all rules. Called every 60 seconds from main loop."""
+        context_snapshot = {
+            section: self.context.get_section(section)
+            for section in ["portfolio", "email", "calendar", "project", "infrastructure"]
+        }
+        for rule in self.rules:
+            try:
+                if rule.condition(context_snapshot):
+                    rule.action(context_snapshot, self.bus)
+            except Exception as e:
+                log.error(f"Rule {rule.name} failed: {e}")
 ```
 
-### 4. Natural Language Interface
+**Rules file (`agents/decision_rules.yml`):**
 
-Bob should be able to answer questions about himself via iMessage:
+```yaml
+rules:
+  - name: proposal_email_detected
+    description: "Email with proposal/quote keywords from known client → check proposal"
+    condition:
+      event_type: email_received
+      payload_contains: [proposal, quote, pricing]
+      sender_in: known_clients
+    action: trigger_proposal_checker
 
-- "How's trading going?" → pulls from `bob:context:portfolio`, formats a summary
-- "Any emails I need to handle?" → pulls from `bob:context:email`
-- "System status?" → pulls from `bob:context:infrastructure`
-- "What happened overnight?" → queries `events:bus` stream for last 12 hours, summarizes
-- "Any follow-ups due?" → pulls from `bob:context:project`, lists clients needing follow-up
-- "Any pending payments?" → pulls from `bob:context:project`, lists outstanding deposits
+  - name: portfolio_drop_alert
+    description: "Portfolio drops >10% in 5 min → alert Matt, pause new trades"
+    condition:
+      metric: portfolio.daily_pnl_pct
+      operator: less_than
+      threshold: -0.10
+    action: alert_matt_and_pause_trades
 
-Wire into the existing iMessage bridge at port 8199. When a message from Matt matches a "status query" pattern, route to the context engine instead of GPT.
+  - name: calendar_reminder
+    description: "Calendar event in 30 min → send iMessage reminder"
+    condition:
+      metric: calendar.next_event_minutes
+      operator: less_than
+      threshold: 30
+    action: send_meeting_reminder
 
-### 5. CONTEXT.md Auto-Updater
+  - name: follow_up_due
+    description: "Follow-up due today → draft and queue follow-up email"
+    condition:
+      metric: project.follow_ups_due_today
+      operator: greater_than
+      threshold: 0
+    action: draft_follow_up_emails
+```
 
-The existing `CONTEXT.md` in the repo is manually maintained. Make it auto-generated:
-- Every hour, dump the context store to CONTEXT.md
-- Format it as readable markdown
-- Git commit + push if content changed (so any Cursor session on any device has fresh context)
-- This replaces manual updates and ensures CONTEXT.md is always accurate
+Load YAML rules at startup. The engine evaluates YAML rules in order; Python rules in `core/rules/` are auto-loaded as plugins for complex conditions.
 
-### 6. Integration Points
+### 4. Wire into OpenClaw Main Loop (`openclaw/main.py`)
 
-- **Trading bot**: publishes trade events, reads `bob:context:portfolio` for risk adjustment
-- **Email monitor**: publishes email events, reads `bob:context:calendar` for auto-response timing
-- **Calendar agent**: publishes meeting events, reads `bob:context:project` for meeting prep
-- **Notification hub**: subscribes to high-priority events on `events:pubsub`, routes to iMessage
-- **Mission Control**: reads entire context store via `GET /context` for dashboard display
-- **Heartbeat**: runs the decision engine every 5 minutes
-- **Intel feeds**: publishes signal events, reads `bob:context:portfolio` for relevance scoring
-- **Client lifecycle (API-13)**: publishes project/payment/follow-up events, reads business context
+Extend (do not replace) the existing main loop:
 
-### 7. Docker Service
+```python
+# In main.py startup sequence (after existing initialization):
+context_store = ContextStore(redis_client)
+decision_engine = DecisionEngine(context_store, agent_bus)
 
-Add `bobs-brain` service to docker-compose.yml:
-- Port 8096
-- Depends on Redis
-- Runs the event bus consumer, context store updater, and decision engine loop
-- Health endpoint at `/health`
-- API:
-  - `GET /context` — full context store as JSON
-  - `GET /context/{section}` — specific section (trading, business, infrastructure, etc.)
-  - `GET /events?since=1h` — recent events from the stream
-  - `POST /events` — publish an event (for services that can't use the Python library directly)
-  - `GET /rules` — list active rules and their last evaluation result
+# In the existing event loop:
+# 1. Every service event → update context store
+agent_bus.on_message(lambda event: context_store.handle_event(event))
 
-Use standard logging. Redis at `redis://172.18.0.100:6379` inside Docker.
+# 2. Decision engine runs every 60 seconds
+scheduler.add_job(decision_engine.evaluate, 'interval', seconds=60)
+```
+
+`ContextStore.handle_event(event)` maps event types to context updates:
+```python
+EVENT_TO_CONTEXT = {
+    "trade_executed": lambda e: ("portfolio", "last_trade", e["payload"]["timestamp"]),
+    "email_received": lambda e: ("email", "pending_count", "+1"),  # increment
+    "proposal_sent":  lambda e: ("project", "proposals_pending", "+1"),
+    "payment_received": lambda e: ("project", "payments_pending", "-1"),
+}
+```
+
+### 5. Test: Publish a Mock Event, Verify Everything Fires
+
+```bash
+# Publish a mock event to the agents:messages channel
+python3 -c "
+import redis, json
+r = redis.from_url('redis://localhost:6379')
+event = {
+    'service': 'email-monitor',
+    'event_type': 'email_received',
+    'timestamp': '2026-04-03T16:00:00Z',
+    'payload': {
+        'from': 'john@topletz.com',
+        'subject': 'Question about the proposal',
+        'body_preview': 'I had a question about the pricing and the proposal...'
+    },
+    'priority': 'normal'
+}
+r.publish('agents:messages', json.dumps(event))
+print('Published')
+"
+
+# Verify context store captured it
+python3 -c "
+from openclaw.context_store import ContextStore
+import redis
+cs = ContextStore(redis.from_url('redis://localhost:6379'))
+print(cs.get_section('email'))
+"
+
+# Verify decision engine would trigger proposal_email_detected rule
+# (Run with --dry-run flag if implemented)
+python3 -c "
+from openclaw.decision_engine import DecisionEngine
+# ... verify rule matches the mock event
+"
+```
+
+### 6. CONTEXT.md Auto-Updater
+
+The repo's `CONTEXT.md` is manually maintained. Auto-generate it:
+
+```python
+# Runs every hour via scheduler
+def update_context_md():
+    snapshot = {s: context_store.get_section(s) for s in ALL_SECTIONS}
+    md = format_context_as_markdown(snapshot)
+    
+    current = open("CONTEXT.md").read()
+    if md != current:
+        open("CONTEXT.md", "w").write(md)
+        subprocess.run(["git", "add", "CONTEXT.md"])
+        subprocess.run(["git", "commit", "-m", f"auto: update CONTEXT.md {utc_now}"])
+        subprocess.run(["git", "push"])
+```
+
+The markdown format must be human-readable — Matt should be able to open CONTEXT.md in any Cursor session and immediately understand the system state.
+
+Use standard logging. All log messages prefixed with `[context-engine]`. Redis at `redis://172.18.0.100:6379` inside Docker.

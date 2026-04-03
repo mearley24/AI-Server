@@ -2,113 +2,229 @@
 
 ## The Vision
 
-Drop in a room list and equipment selection → the system auto-validates every component against every other → flags incompatibilities (wrong VESA mount, insufficient PoE budget, VLAN conflict, missing cable runs) → generates wiring diagrams → eventually powers automated 3D layout previews. This is the long-term competitive moat for Symphony.
+Drop in a room list and equipment selection → the system auto-validates every component against every other → flags incompatibilities (wrong VESA mount, insufficient PoE budget, control protocol mismatch, missing cable runs) → generates wiring diagrams. This is the long-term competitive moat for Symphony: no other integrator does this automatically. The system_graph.py has compatibility checking. Extend it into a full design validation engine.
+
+Read the existing code first.
 
 ## Context Files to Read First
-- tools/knowledge_graph.py (81 nodes, 76 relationships already)
-- tools/graph_learner.py
-- knowledge/products/*.md
-- knowledge/network/smart_home_protocols.md
-- knowledge/network/vlan_best_practices.md
-- knowledge/hardware/ssh_mount_clearance_validation.md
-- knowledge/hardware/c4_tv_driver_reference.md
-- tools/system_shell.py
+
+- `knowledge/hardware/system_graph.py`
+- `knowledge/hardware/tvs.json`
+- `knowledge/hardware/mounts.json`
+- `knowledge/hardware/networking.json`
+- `knowledge/hardware/c4_tv_driver_reference.json`
 
 ## Prompt
 
-Evolve the knowledge graph into a full system design validation engine:
+### 1. Understand the Existing Component Model
 
-### 1. Product Compatibility Database (`knowledge/compatibility/compatibility_db.py`)
+Read `system_graph.py` end to end:
+- What does the component model look like? (fields, types, relationships)
+- What compatibility rules are already defined?
+- How are components stored and queried?
+- What is the graph data structure? (NetworkX? Dict-based? SQLite?)
 
-Expand beyond the current 81 nodes into a complete compatibility matrix:
+Read all JSON files in `knowledge/hardware/`:
+- `tvs.json`: What TV fields exist? VESA pattern? Weight? Dimensions? IP control support?
+- `mounts.json`: What mount fields exist? VESA compatibility? Weight rating? Size range?
+- `networking.json`: What switch fields exist? PoE budget? Port count? VLAN support?
+- `c4_tv_driver_reference.json`: What driver types exist? SDDP vs IP vs IR? Which TVs have native SDDP?
+
+Map every existing field. The validation engine must use actual field names — do not invent new schema.
+
+### 2. Extend the Component Model (`knowledge/hardware/system_graph.py`)
+
+Add missing fields to the existing model (do not break what's there):
 
 ```python
-product = {
-    "sku": "C4-KPZ-B",
-    "name": "Control4 Keypad Dimmer",
-    "category": "lighting",
-    "protocols": ["zigbee_pro"],
-    "requires": ["C4_controller"],  # needs a controller to function
-    "power": {"type": "line_voltage", "watts": null, "poe": false},
-    "network": {"vlan": 20, "ports": 0, "wifi": false},
-    "compatible_with": ["C4-EA5", "C4-EA3", "C4-EA1", "C4-CORE3"],
-    "incompatible_with": [],
-    "cable_requirements": [],  # no cable — wireless zigbee
-    "mounting": null,
-    "max_per_controller": 125,  # zigbee device limit
-    "msrp": 350.00,
-    "labor_hours": 0.5
+# Add to existing component structure:
+component = {
+    # ... existing fields ...
+    
+    # Physical / mounting
+    "vesa_pattern": "400x300",      # e.g. "400x400", "200x200" — for TV/mount matching
+    "weight_lbs": 65.2,             # TV weight, or mount weight capacity
+    "screen_size_inches": 75,       # for mount size rating check
+    
+    # Networking
+    "vlan": 30,                     # which VLAN this device belongs to
+    "poe_watts": 15.4,              # how much PoE power this device draws (0 if not PoE)
+    "poe_type": "802.3af",          # af=15.4W, at=30W, bt=60W, null if not PoE
+    "ip_ports": 1,                  # how many switch ports this device needs
+    
+    # Control
+    "control_protocol": "SDDP",     # SDDP | IP | IR | RS232 | CEC | none
+    "requires_controller": "C4",    # which controller family manages this device
+    
+    # Cable
+    "cable_in": ["HDMI 2.1"],       # cables coming into this device
+    "cable_out": ["HDMI 2.1"],      # cables going out from this device
+    
+    # Capacity
+    "max_devices": 125,             # for hubs/controllers: max connected devices
+    "zone_count": 16,               # for audio/video matrices: number of zones
+    "poe_budget_watts": 370,        # for switches: total PoE output budget
 }
 ```
 
-- Import all products from `knowledge/products/*.md` into this structured format
-- Add compatibility relationships: what works with what, what conflicts
-- Add protocol-level rules: ZigBee Pro max 125 devices per controller, Lutron RA3 max 100 devices per processor
-- Add network rules: cameras ALWAYS go through NVR not switch, mDNS reflector needed across VLANs for Sonos
+Add compatibility relationships as edges in the existing graph:
+- `COMPATIBLE_WITH`: verified to work together
+- `INCOMPATIBLE_WITH`: known not to work together (with reason string)
+- `REQUIRES`: device A requires device B to function (e.g., keypad requires controller)
+- `CONNECTS_TO`: physical cable connection
 
-### 2. Design Validator (`knowledge/compatibility/design_validator.py`)
+### 3. Design Validator (`knowledge/hardware/design_validator.py` — new file)
 
-Takes a room list + equipment selection and validates everything:
+Takes a project's room list and equipment selection, validates every pair:
 
 ```python
-validation = validate_design({
-    "rooms": [
-        {"name": "Living Room", "devices": ["C4-KPZ-B", "C4-KPZ-B", "EP-SPEAKER-6", "SAMSUNG-QN85"]},
-        {"name": "Theater", "devices": ["HISENSE-100U8", "PEERLESS-PLCM2", "TRIAD-AMS16"]}
-    ]
-})
-# Returns:
-# FAIL: Theater — Peerless PLCM-2 incompatible with Hisense 100" U8 (VESA 800x400, 137lbs exceeds mount capacity)
-# WARN: Living Room — No VersaBox specified for Samsung TV location
-# WARN: No network switch specified — 4 IP devices need switch ports
-# PASS: ZigBee device count (4) within EA-5 limit (125)
-# PASS: VLAN assignments correct for all devices
+def validate_design(rooms: list[dict]) -> ValidationReport:
+    """
+    Input:  [{"name": "Living Room", "devices": ["SKU1", "SKU2"]}, ...]
+    Output: ValidationReport with PASS/WARN/FAIL items
+    """
 ```
 
-Validation rules:
-- Every TV location needs a VersaBox (Strong)
-- Every TV needs a mount rated for its VESA pattern and weight
-- Total PoE draw cannot exceed switch PoE budget
-- ZigBee/Lutron device counts within controller limits
-- Every IP device has a VLAN assignment
-- Every camera routes through NVR, not directly to switch
-- Cable run count matches device count per room
-- Amplifier channels match speaker zone count
+**Required checks (implement all):**
 
-### 3. Wiring Diagram Generator (`knowledge/compatibility/wiring_generator.py`)
+**TV + Mount:**
+- VESA pattern match (TV VESA must be in mount's compatible_vesa list)
+- Weight: TV weight_lbs ≤ mount weight capacity
+- Size: TV screen_size_inches within mount's min/max size range
+- `FAIL` if any mismatch; `WARN` if no mount specified for a TV location
 
-Auto-generate a wiring diagram from validated design:
+**TV + Controller driver:**
+- Check c4_tv_driver_reference.json: does this TV have a SDDP driver, IP driver, or IR-only?
+- `WARN` if IR-only (less reliable, harder to diagnose)
+- `FAIL` if no driver exists for this TV model at all
 
-- Output: Markdown table + optional Mermaid diagram
-- Per room: device, cable type, cable destination (rack/NVR/local), VLAN, switch port
-- Summary: total cable runs by type, switch port allocation, PoE budget
-- Export to CSV for cable labeling
-- Integrates with existing `tools/system_shell.py` and `tools/port_allocator.py`
+**Switch + Devices (PoE):**
+- Sum all PoE-drawing devices on the switch
+- `FAIL` if total poe_watts > switch poe_budget_watts
+- `WARN` if total > 80% of poe_budget_watts (headroom rule)
+- `FAIL` if device count > switch port count
 
-### 4. Pre-Sale Design Tool
+**Audio matrix + Amplifiers + Speakers:**
+- Amp channel count must match speaker zone count (or be ≥)
+- `WARN` if impedance data missing
+- `FAIL` if zone_count mismatch
 
-When Bob receives a room list from a consultation:
-- Auto-select recommended equipment packages per room (from `knowledge/proposal_library/room_packages/`)
-- Run design validator
-- Flag any issues before the proposal goes out
-- Generate the wiring diagram for the pre-wire crew
-- Attach validation report to the Linear project
+**VersaBox rule:**
+- Every TV location must have a VersaBox (Strong) in the BOM
+- `WARN` if missing — this is a preflight rule, not hard fail
 
-### 5. Integration
+**ZigBee/Lutron device limits:**
+- ZigBee Pro: max 125 devices per Control4 controller
+- Lutron RA3: max 100 devices per processor
+- `FAIL` if exceeded
 
-- Wire into proposal engine (Auto-16): every proposal auto-validated before sending
-- Wire into SOW assembler (Auto-9): cable runs and port allocations auto-generated
-- Wire into Bob's Brain (API-11): design validation results in context store
-- API endpoint: `POST /api/validate-design` for Mission Control / Symphony Ops dashboard
-- CLI: `python3 design_validator.py --rooms rooms.yaml --output report.md`
+**VLAN assignment:**
+- Every IP device must have a VLAN assignment
+- `WARN` if any device has `vlan: null`
 
-### 6. Future: 3D Layout Preview
+**Missing items (BOM gap check):**
+- Count devices per room that need HDMI cables
+- Count actual HDMI cables in the BOM
+- `WARN` if device count > cable count for any cable type
 
-Not building this now, but the data model should support it:
-- Each product has physical dimensions (width, height, depth)
-- Room dimensions can be input
-- Rack layout: U-space allocation per device
-- Wall plate locations per room
-- This data feeds a future 3D renderer (Three.js or similar)
+```python
+@dataclass
+class ValidationItem:
+    severity: str        # PASS | WARN | FAIL
+    category: str        # mount | driver | poe | audio | versabox | zigbee | vlan | bom
+    room: str            # which room (or "system-wide")
+    device_a: str        # first device SKU/name
+    device_b: str        # second device SKU/name (or None)
+    message: str         # human-readable description of the issue
+    fix: str             # recommended fix action
 
-Use standard logging.
+@dataclass
+class ValidationReport:
+    passes: list[ValidationItem]
+    warnings: list[ValidationItem]
+    failures: list[ValidationItem]
+    is_valid: bool       # True only if failures is empty
+    summary: str         # one-line summary
+```
+
+### 4. Wiring Diagram Generator (`knowledge/hardware/wiring_generator.py` — new file)
+
+Generate a text-based wiring diagram from a validated design:
+
+```python
+def generate_wiring_diagram(rooms: list[dict], format: str = "mermaid") -> str:
+    """
+    Generates a wiring diagram in Mermaid or plain text format.
+    
+    Mermaid format (default):
+        graph TD
+            Rack[Equipment Rack] --> Switch[Cisco SG350-10P]
+            Switch --> TV_LR[Samsung QN85 — Living Room]
+            Switch --> Camera_Front[Hikvision — Front Entry]
+            Switch --> NVR[Hikvision NVR]
+            NVR --> Camera_Front
+    
+    Text format:
+        RACK → SWITCH (2x CAT6)
+        SWITCH → TV (Living Room) — CAT6, port 1, VLAN 30
+        SWITCH → NVR — CAT6, port 7, VLAN 40
+        NVR → CAMERA (Front Entry) — CAT6, port 1
+    """
+```
+
+Per-room output: device, cable type, cable source/destination, VLAN, switch port.
+System-wide summary: total cable runs by type, switch port allocation table, PoE budget table.
+Export to CSV for cable labeling: `cable_label, from, to, type, length_ft, vlan`.
+
+### 5. Integrate with Proposal Checker
+
+When the proposal checker (Auto-16) validates a D-Tools proposal, also run design validation:
+
+```python
+# In Auto-16 proposal checker:
+from knowledge.hardware.design_validator import validate_design
+
+validation_report = validate_design(proposal.rooms)
+if not validation_report.is_valid:
+    # Add design issues to the proposal checker output
+    # FAIL items block proposal from sending
+    # WARN items are shown to Matt but don't block
+```
+
+The proposal must not go out with design FAILs unaddressed.
+
+### 6. CLI
+
+```bash
+# Validate a project
+python3 knowledge/hardware/system_graph.py --validate-project topletz
+# Reads project data from data/projects/topletz/equipment_list.json
+# Outputs validation report to stdout and saves to data/projects/topletz/validation_report.md
+
+# Generate wiring diagram
+python3 knowledge/hardware/system_graph.py --wiring-diagram topletz --format mermaid
+# Outputs Mermaid diagram to stdout and saves to data/projects/topletz/wiring_diagram.md
+
+# Validate a custom rooms YAML
+python3 knowledge/hardware/system_graph.py --rooms rooms.yaml --output report.md
+```
+
+### 7. Test with Topletz Equipment List
+
+```bash
+# Validate Topletz
+python3 knowledge/hardware/system_graph.py --validate-project topletz
+
+# Expected: validation report showing all devices, any compatibility warnings,
+# VersaBox presence check for each TV, PoE budget analysis for the network switch,
+# VLAN assignments for all IP devices
+
+# Generate wiring diagram
+python3 knowledge/hardware/system_graph.py --wiring-diagram topletz --format mermaid
+
+# Paste the Mermaid output into https://mermaid.live to verify it renders correctly
+```
+
+Fix any issues found in Topletz validation — these are real project defects.
+
+Use standard logging. All log messages prefixed with `[design-graph]`.
