@@ -976,6 +976,7 @@ When starting work on D-Tools or proposals:
 - Proposal gap checker: run `python3 -m http.server 8080` from tools folder, then open `http://localhost:8080/proposal_gap_checker.html`
 - Gap checker search: multi-word AND logic (e.g., "C4 dimmer", "araknis 48 poe") across full SnapOne catalog
 - D-Tools Cloud REST API: only DTOOLS_API_KEY needed (from Settings > Integration > Developer); Basic Auth is fixed
+- Runtime under `data/` (SQLite, WAL, polymarket JSON/CSV, email-monitor DB, intel feeds, transcripts, `network_watch/`, OpenClaw live exports) is **gitignored** — stays on Bob; never commit it.
 - Overnight learner requires Playwright: `pip3 install playwright && playwright install chromium`; launchd uses `/usr/bin/python3`
 - Overnight learner SKUs: extend via `knowledge/learning/overnight_skus.json` (optional merge with built-in lists)
 - iOS signing recovery: if `CodeSign failed` due to revoked `Apple Development` cert and Xcode delete is grayed out, open Keychain Access -> `login` -> `My Certificates`, search `Apple Development`, then delete affected Apple Development cert entries and matching private keys, regenerate cert in Xcode Accounts, and rebuild.
