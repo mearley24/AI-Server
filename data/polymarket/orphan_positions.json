@@ -1,0 +1,452 @@
+[
+  {
+    "condition_id": "0x13e1cc703a120883a709d3bb29707097952845d61ca6793ea2b4328bae2a7451",
+    "token_id": "",
+    "estimated_value": 9.0,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xbcc340974a65eb173688236658639f9644994c61352422fe876a1ef450bb5a96",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xad27028bbeb50f4a4211a5dde8272378df43420a2df6be88a67d3a0ca5093045",
+    "token_id": "",
+    "estimated_value": 9.57,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xac88cfc6c70904c9da973654a948189c6bcc34ce2e0df8f726f4bdcbb25eb0f7",
+    "token_id": "",
+    "estimated_value": 0.15,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x5290ca4c30ae6068f294f00edb5365eb44891dd8161eb9b94954b155f8d4683a",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x6971a373e4ba2c89e05edb70e8560425a5ab8a8c4d70f03720c443b878d3a1db",
+    "token_id": "",
+    "estimated_value": 0.0,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x0b0b2f0603786ebda674a70c41ea54eddf4ab88610b2f523b511e8afe1f09263",
+    "token_id": "",
+    "estimated_value": 8.24,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x8a217cf9920f3da83cb50d625abda71edb6e4eba1926b7f64747f41a667bb11c",
+    "token_id": "",
+    "estimated_value": 7.69,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xab507e958496c2b7b22edcb57c7ccc8a547432d12809a643cf5cbdd112b64a02",
+    "token_id": "",
+    "estimated_value": 1.4,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x83c3c53055d9fcc2e301bb530367216da6863b9f4beac4a2977b622e2d8ca0dc",
+    "token_id": "",
+    "estimated_value": 7.7,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x0a9abb96b3667c4e3db9b24241fe39f48e936f0473ccbbc0948000e474ae4cfd",
+    "token_id": "",
+    "estimated_value": 10.21,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x30156fbc7c791fcbde937b339ff6499e26c2f5c8e5cf6bb9b639cd2de0e5a78d",
+    "token_id": "",
+    "estimated_value": 3.31,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xe4d292efd497b7ae7622de6ba46f918dddd7668f6af5201e0a6baf804a780911",
+    "token_id": "",
+    "estimated_value": 5.45,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xbcac6fc29798613be4ca6bd02f087f1a17bc7adfb24af3a6bdcedd161c6924c8",
+    "token_id": "",
+    "estimated_value": 8.72,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x3868b2cc42a1edca25cd44ab0c770bbe956ea25a5201a827bdca61d46082031b",
+    "token_id": "",
+    "estimated_value": 11.21,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x9c4459a70fd67a346075c22a6b010b454794204f2f28d128983b9056fe8d64b5",
+    "token_id": "",
+    "estimated_value": 2.33,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xac850c8829ee1a666720b000280d13055e7e0c7d29ed6f47f252ff73874e40e0",
+    "token_id": "",
+    "estimated_value": 8.55,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xfaf6be89099b4fcf19a33e0ab3b5f032c663ebdab03ddfde284cd615869360d8",
+    "token_id": "",
+    "estimated_value": 0.07,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xfcf026e1f2ba42c34d64c975718684d33a61de8c1129c0138a9280a69e2fb127",
+    "token_id": "",
+    "estimated_value": 7.83,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x90c6511dcc9499c2c58786a2456df333a87c97a9cf548acc26f3e4e56fbc36e7",
+    "token_id": "",
+    "estimated_value": 1.48,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x7d9a5c446eca3bcb22202b538660a932b93bffde29ecbd188967be6408b94ce8",
+    "token_id": "",
+    "estimated_value": 9.99,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xed4225a8ca998b136771ca92a61dc223f70279ee7260e90887a5abab3297c260",
+    "token_id": "",
+    "estimated_value": 27.89,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x094977be8087ca1bc3e530d16fca2a76a21548dd548c42fb76144e377aea76e0",
+    "token_id": "",
+    "estimated_value": 0.08,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x858b982b9ea15f0133c1ae8c53a5b7bbdf67891eca22dc8d726604dbbc5a8c5a",
+    "token_id": "",
+    "estimated_value": 2.81,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xc76e713ed44b71f6c09556598be4c897f7fee918525b8f5d171d679667ec8539",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xf398b0e5016eeaee9b0885ed84012b6dc91269ac10d3b59d60722859c2e30b2f",
+    "token_id": "",
+    "estimated_value": 11.08,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xeb29028426b0733aad8e71f54e47e56b597d95607eb22b84311c00f113a1a95e",
+    "token_id": "",
+    "estimated_value": 29.68,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x9fe87b4bec41ca0b2e5f09b79e59f9aba6a88feab636db30b70fa103c1b54e5a",
+    "token_id": "",
+    "estimated_value": 1.3,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x4e9383aaa971711d91b4d6c8a2cfb106d69b5ebf4e427d8a629b32e36d4e9091",
+    "token_id": "",
+    "estimated_value": 2.33,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x1b167fcb93f635be1ac3b8e38e80377dd59c54a2854ba0fafe87f02b246a91eb",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xd80f459aec8f46da51932f3c12c2184d220a1247cbec37a263edfffd31f92800",
+    "token_id": "",
+    "estimated_value": 8.67,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xd54b09626462637f81652dc8bac4e2c2bc0ce9f9415456bc1c093f25f2dba6ea",
+    "token_id": "",
+    "estimated_value": 13.79,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x7deab001b4967cc57278c88614e4bbd14ad5b6181fb7e76bd3f3b5b1beff0484",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x1186b029026927e8d460f65ea446867cd81f55ed03dd75fd40d09b6882182ba6",
+    "token_id": "",
+    "estimated_value": 9.42,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xbcbd6d8d41dae71e811acabf49b8d13dff095bcadc63af1383aa66103d2af6ef",
+    "token_id": "",
+    "estimated_value": 9.59,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xe13580121403007fe058e9e461f2dba3b2292ee636f74d510e004c7d84449771",
+    "token_id": "",
+    "estimated_value": 13.99,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x4311bcd31d2b6e9b8b0ab18bf4b4a3e9aa5b1c61da22dda42c31519b490f4e7b",
+    "token_id": "",
+    "estimated_value": 44.95,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x1c3900c0745f9bc1d885eab45d5e7870e59b503bc6e26190033dacde1217a7af",
+    "token_id": "",
+    "estimated_value": 0.02,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x0fd31bed2e1b09782b20f51a87002bd461025c4ffa034f36687c1ace0fe098a9",
+    "token_id": "",
+    "estimated_value": 8.93,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xd6b9ead4e78ff448e50aa2f57ab7f827cfaa5ed0105be484772576a34c9cc2bd",
+    "token_id": "",
+    "estimated_value": 3.03,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x50bf9314056f8c5c721cfcd7e9068eadc5c3320b0699a0b80e75094249fe0d62",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x46e7aea00051a1797ca16ceca8fcc07124ceda3c0c131fe9bf7478164ed7ffb9",
+    "token_id": "",
+    "estimated_value": 10.64,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x7df2b6e7da9d4972ef869c57b931929ba5bc7e2d60e2e1eae8db1118a9cb424c",
+    "token_id": "",
+    "estimated_value": 8.14,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x61288d6f9ea97d8f52f47b40c55a2278079e96ea557d65f6f4ea8da7f2b9919b",
+    "token_id": "",
+    "estimated_value": 14.05,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xbc9753c4bbae294955f828080c5a9e7f41a6d9ea8e037b7f24366d65e8f0f096",
+    "token_id": "",
+    "estimated_value": 7.86,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x18a41502a70373de90c3f28785b607d92ed7e4383240e625a7446edc78fe6f04",
+    "token_id": "",
+    "estimated_value": 2.35,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xb79a83e41a4192ffda48b9996c6677ccfafbbe49325a577369cf81f94f46baf0",
+    "token_id": "",
+    "estimated_value": 2.25,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x3c2dd75ecc1d2a2b59643456816d54e25fb4f485c8375a4e85db1bdc9864c383",
+    "token_id": "",
+    "estimated_value": 0.1,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xdc3fe77a47a8c4130a679ef0d78cb19e343f3e8fc1645f6d6c4cc19f01bf8603",
+    "token_id": "",
+    "estimated_value": 7.54,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x605b1fd3bd76d0bf625fff70aab3673b34767f6dcb28153ccdcbc4e46247536d",
+    "token_id": "",
+    "estimated_value": 9.0,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xf480b4ea858af172baf1d8c4d2d0281ee8d2694ed9f40b12b3630c5328dfb3f6",
+    "token_id": "",
+    "estimated_value": 1.6,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xadead580ed2e2961c9a7a3cb9db78daf96faf94bdc00a82ec217cfd6bf341bf0",
+    "token_id": "",
+    "estimated_value": 6.47,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x60d483b66926aae00b3b776c3d64bd0dceaeadbdaea5a477e6297b82d4276976",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x0a14d9c74227e7cb00676470e2d2c3c1d4cac382e6be34d385370ef5a56ec6fc",
+    "token_id": "",
+    "estimated_value": 9.5,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xb207031da5ef9cbded418e6b5b3c5eee24a3a7b22c6ec10053cbaaa67d793796",
+    "token_id": "",
+    "estimated_value": 9.97,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xa0a027ecbe061e6af1ce25bb891ba17b5792fb867a5331492463f2efe943bf90",
+    "token_id": "",
+    "estimated_value": 3.58,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xff4d8abaafa527636e0b74191b56821f749cbe0aff282a47dbe4ca089cf1f559",
+    "token_id": "",
+    "estimated_value": 9.41,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xdedccac9fc9ce0b1db96db29f33c56c3337a013988c57e450f6cbe0df3946c37",
+    "token_id": "",
+    "estimated_value": 1.44,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xd40d765371ce6e829e703ff06080a3b87b16fb2c0760cf849c59fc9874cb1913",
+    "token_id": "",
+    "estimated_value": 9.48,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0xe50a0712551938baf5edb7f9d2df2df43b06a413214a150de12e529a1aedbf25",
+    "token_id": "",
+    "estimated_value": 7.35,
+    "detected_at": "2026-04-03T21:55:44Z"
+  },
+  {
+    "condition_id": "0x5937b4f4888eb9252f3a18b24c8ae16f66d56c619f327160b2d75d2cc1d468de",
+    "token_id": "",
+    "estimated_value": 8.45,
+    "detected_at": "2026-04-03T22:48:09Z"
+  },
+  {
+    "condition_id": "0xae027330ad17c50692cc6e96696ebaf52f7936f159c34d9796271d7f8f841181",
+    "token_id": "",
+    "estimated_value": 1.98,
+    "detected_at": "2026-04-03T22:48:09Z"
+  },
+  {
+    "condition_id": "0xdaf306854808eb73447e3fd8cd3736377b23e0e9e08234909fdb486b47462c99",
+    "token_id": "",
+    "estimated_value": 6.48,
+    "detected_at": "2026-04-03T22:58:34Z"
+  },
+  {
+    "condition_id": "0x6584fa54e16309a8a65a0125f06b2e2978f9beccc798932ebe103b673b869159",
+    "token_id": "",
+    "estimated_value": 0.1,
+    "detected_at": "2026-04-03T23:08:59Z"
+  },
+  {
+    "condition_id": "0x3812e00c29adb25dcaf61a62fe28f34bf568ca71df08479880eff3247d822915",
+    "token_id": "",
+    "estimated_value": 6.63,
+    "detected_at": "2026-04-03T23:08:59Z"
+  },
+  {
+    "condition_id": "0x99c9da726dba8a31e41ec9cf613ba9890794705f43e08ae59ad4e12ea3a7cfce",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T23:08:59Z"
+  },
+  {
+    "condition_id": "0xb2fcf12c2901ff31e50622b25553902e5636df7f76028eda128a7d159be68363",
+    "token_id": "",
+    "estimated_value": 1.75,
+    "detected_at": "2026-04-03T23:19:17Z"
+  },
+  {
+    "condition_id": "0xe65f8c8448cd76ae5f55014eaeac38b7a07c286febb91452161c298d84780ea3",
+    "token_id": "",
+    "estimated_value": 2.15,
+    "detected_at": "2026-04-03T23:29:47Z"
+  },
+  {
+    "condition_id": "0x302d4c93e1a1d103290b9f977fa50b4c173391713c5e8cb268592644c08188c7",
+    "token_id": "",
+    "estimated_value": 8.0,
+    "detected_at": "2026-04-03T23:29:47Z"
+  },
+  {
+    "condition_id": "0x3dc435687f15659e575cc1e8c56334033362eb1b70a63a7a76c6c5e1398aefa2",
+    "token_id": "",
+    "estimated_value": 8.18,
+    "detected_at": "2026-04-03T23:40:19Z"
+  },
+  {
+    "condition_id": "0x913d94d8140c5f34a36298c2d2855c157f03b47884f780fe4a6f40c42fecd760",
+    "token_id": "",
+    "estimated_value": 4.35,
+    "detected_at": "2026-04-03T23:40:19Z"
+  },
+  {
+    "condition_id": "0x18cb3b359cbf26bf4000466685e53f2727246ee1eb57778a1971c73d617786a1",
+    "token_id": "",
+    "estimated_value": 0.09,
+    "detected_at": "2026-04-03T23:40:19Z"
+  },
+  {
+    "condition_id": "0x30bd11936ab73b89b8272ff9ecd0c5b8aebe24aaed93ccceec17e6dc12b10816",
+    "token_id": "",
+    "estimated_value": 0.01,
+    "detected_at": "2026-04-03T23:40:19Z"
+  },
+  {
+    "condition_id": "0xff160c7f972152c107a9d638e23bbf461d7885db156c11bea24fa4363d2ea240",
+    "token_id": "",
+    "estimated_value": 1.88,
+    "detected_at": "2026-04-03T23:58:46Z"
+  },
+  {
+    "condition_id": "0x746826b9ab0205473b7d6981b0933702af9602d65ee7062d3ace85550e7193f0",
+    "token_id": "",
+    "estimated_value": 0.31,
+    "detected_at": "2026-04-04T00:08:59Z"
+  }
+]

@@ -1,0 +1,295 @@
+{
+  "project_slug": "kelly",
+  "project_name": "Kelly",
+  "address": "[from proposal intelligence \u2014 fill at contract]",
+  "version": 1,
+  "generated_at": "2026-04-03T23:41:39.183165+00:00",
+  "access_codes_source": null,
+  "devices": [
+    {
+      "room": "Building 1 Rack",
+      "device": "Router",
+      "model": "AN-520-RT",
+      "ip": "10.4.1.1",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "router",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 1 Rack",
+      "device": "Switch 8P",
+      "model": "AN-620-SW-R-8-POE",
+      "ip": "10.4.1.2",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 1 Rack",
+      "device": "Switch 24P",
+      "model": "AN-420-SW-F-24-POE",
+      "ip": "10.4.1.3",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 1 Rack",
+      "device": "Access Point B1",
+      "model": "AN-820-AP-I",
+      "ip": "10.4.1.16",
+      "vlan": "1",
+      "switch_port": "Sw1-P1",
+      "cable_label": "RK-AP-01",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 1 Rack",
+      "device": "Audio Matrix B1",
+      "model": "TS-AMS16",
+      "ip": "10.4.20.16",
+      "vlan": "20",
+      "switch_port": "Sw1-P4",
+      "cable_label": "RK-AMS-01",
+      "status": "\u2b1c",
+      "category": "audio_matrix",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 2 Rack",
+      "device": "Router",
+      "model": "AN-520-RT",
+      "ip": "10.4.1.1",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "router",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 2 Rack",
+      "device": "Switch 8P",
+      "model": "AN-620-SW-R-8-POE",
+      "ip": "10.4.1.2",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 2 Rack",
+      "device": "Switch 24P",
+      "model": "AN-420-SW-F-24-POE",
+      "ip": "10.4.1.3",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 2 Rack",
+      "device": "Access Point B2",
+      "model": "AN-820-AP-I",
+      "ip": "10.4.1.17",
+      "vlan": "1",
+      "switch_port": "Sw1-P2",
+      "cable_label": "RK-AP-02",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 2 Rack",
+      "device": "Audio Matrix B2",
+      "model": "TS-AMS16",
+      "ip": "10.4.20.17",
+      "vlan": "20",
+      "switch_port": "Sw1-P5",
+      "cable_label": "RK-AMS-02",
+      "status": "\u2b1c",
+      "category": "audio_matrix",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 3 Rack",
+      "device": "Router",
+      "model": "AN-520-RT",
+      "ip": "10.4.1.1",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "router",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 3 Rack",
+      "device": "Switch 8P",
+      "model": "AN-620-SW-R-8-POE",
+      "ip": "10.4.1.2",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 3 Rack",
+      "device": "Switch 24P",
+      "model": "AN-420-SW-F-24-POE",
+      "ip": "10.4.1.3",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 3 Rack",
+      "device": "Access Point B3",
+      "model": "AN-820-AP-I",
+      "ip": "10.4.1.18",
+      "vlan": "1",
+      "switch_port": "Sw1-P3",
+      "cable_label": "RK-AP-03",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Building 3 Rack",
+      "device": "Audio Matrix B3",
+      "model": "TS-AMS16",
+      "ip": "10.4.20.18",
+      "vlan": "20",
+      "switch_port": "Sw1-P6",
+      "cable_label": "RK-AMS-03",
+      "status": "\u2b1c",
+      "category": "audio_matrix",
+      "is_camera": false,
+      "wireless": false
+    }
+  ],
+  "checklist": [
+    {
+      "task": "Router configured, VLANs created",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Switch configured, port VLANs assigned",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "All APs powered and adopted",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Controller online, rooms created",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "All cameras visible in NVR",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Qolsys enrolled, C4 driver connected",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "All audio zones tested",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Client WiFi networks active",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Remote access verified (Tailscale/VPN)",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Client walkthrough complete",
+      "status": "\u2b1c"
+    }
+  ],
+  "port_plan": {
+    "switch_rows": [
+      {
+        "port": 1,
+        "device": "Access Point B1",
+        "vlan": 1,
+        "poe": true,
+        "cable_label": "RK-AP-01"
+      },
+      {
+        "port": 2,
+        "device": "Access Point B2",
+        "vlan": 1,
+        "poe": true,
+        "cable_label": "RK-AP-02"
+      },
+      {
+        "port": 3,
+        "device": "Access Point B3",
+        "vlan": 1,
+        "poe": true,
+        "cable_label": "RK-AP-03"
+      },
+      {
+        "port": 4,
+        "device": "Audio Matrix B1",
+        "vlan": 20,
+        "poe": true,
+        "cable_label": "RK-AMS-01"
+      },
+      {
+        "port": 5,
+        "device": "Audio Matrix B2",
+        "vlan": 20,
+        "poe": true,
+        "cable_label": "RK-AMS-02"
+      },
+      {
+        "port": 6,
+        "device": "Audio Matrix B3",
+        "vlan": 20,
+        "poe": true,
+        "cable_label": "RK-AMS-03"
+      }
+    ],
+    "nvr_rows": [],
+    "warnings": []
+  }
+}

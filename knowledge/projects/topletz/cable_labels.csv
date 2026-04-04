@@ -1,0 +1,8 @@
+label,from_room,to
+LR-AP-01,Access Point 1,Sw1-P1
+MBR-AP-02,Access Point 2,Sw1-P2
+KIT-AP-03,Access Point 3,Sw1-P3
+RK-NVR-01,NVR,Sw1-P4
+RK-EA-01,Controller,Sw1-P5
+RK-AMS-01,Audio Matrix,Sw1-P6
+GAR-QOL-01,Security Panel,Sw1-P7

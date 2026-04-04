@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.notes-indexer</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>/Users/bob/AI-Server/integrations/apple_notes/notes_indexer.py</string>
+        <string>--index</string>
+        <string>--report</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REDIS_URL</key>
+        <string>redis://localhost:6379</string>
+        <key>PATH</key>
+        <string>/Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/bob</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>0</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/notes-indexer.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/notes-indexer.err</string>
+</dict>
+</plist>

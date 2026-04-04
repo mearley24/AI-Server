@@ -1,0 +1,26 @@
+{
+  "001": {
+    "name": "Topletz Residence",
+    "address": "84 Aspen Meadow Drive, Edwards, CO 81632",
+    "slug": "topletz",
+    "assigned_at": "2026-01-01"
+  },
+  "002": {
+    "name": "Gates",
+    "address": "[from proposal schedule — fill at contract]",
+    "slug": "gates",
+    "assigned_at": "2026-04-03"
+  },
+  "003": {
+    "name": "Hernaiz",
+    "address": "[from proposal schedule — fill at contract]",
+    "slug": "hernaiz",
+    "assigned_at": "2026-04-03"
+  },
+  "004": {
+    "name": "Kelly",
+    "address": "[from proposal intelligence — fill at contract]",
+    "slug": "kelly",
+    "assigned_at": "2026-04-03"
+  }
+}

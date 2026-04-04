@@ -1,0 +1,460 @@
+{
+  "project_slug": "topletz",
+  "project_name": "Topletz Residence",
+  "address": "84 Aspen Meadow Drive, Edwards, CO 81632",
+  "version": 1,
+  "generated_at": "2026-04-03T23:41:33.002634+00:00",
+  "access_codes_source": null,
+  "devices": [
+    {
+      "room": "Rack",
+      "device": "Router",
+      "model": "AN-520-RT",
+      "ip": "10.1.1.1",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Rack",
+      "device": "Switch",
+      "model": "AN-620-SW-R-24-POE",
+      "ip": "10.1.1.2",
+      "vlan": "1",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "switch",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Great Room",
+      "device": "Access Point 1",
+      "model": "AN-820-AP-I",
+      "ip": "10.1.1.16",
+      "vlan": "1",
+      "switch_port": "Sw1-P1",
+      "cable_label": "LR-AP-01",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Master Bedroom",
+      "device": "Access Point 2",
+      "model": "AN-820-AP-I",
+      "ip": "10.1.1.17",
+      "vlan": "1",
+      "switch_port": "Sw1-P2",
+      "cable_label": "MBR-AP-02",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Kitchen",
+      "device": "Access Point 3",
+      "model": "AN-820-AP-I",
+      "ip": "10.1.1.18",
+      "vlan": "1",
+      "switch_port": "Sw1-P3",
+      "cable_label": "KIT-AP-03",
+      "status": "\u2b1c",
+      "category": "ap",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Rack",
+      "device": "NVR",
+      "model": "Luma NVR",
+      "ip": "10.1.50.2",
+      "vlan": "50",
+      "switch_port": "Sw1-P4",
+      "cable_label": "RK-NVR-01",
+      "status": "\u2b1c",
+      "category": "nvr",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Front Entry",
+      "device": "Camera 1",
+      "model": "Luma IP",
+      "ip": "10.1.50.16",
+      "vlan": "50",
+      "switch_port": "NVR-P1",
+      "cable_label": "FE-CAM-01",
+      "status": "\u2b1c",
+      "category": "camera",
+      "is_camera": true,
+      "wireless": false
+    },
+    {
+      "room": "Rear",
+      "device": "Camera 2",
+      "model": "Luma IP",
+      "ip": "10.1.50.17",
+      "vlan": "50",
+      "switch_port": "NVR-P2",
+      "cable_label": "OUT-CAM-02",
+      "status": "\u2b1c",
+      "category": "camera",
+      "is_camera": true,
+      "wireless": false
+    },
+    {
+      "room": "Garage",
+      "device": "Camera 3",
+      "model": "Luma IP",
+      "ip": "10.1.50.18",
+      "vlan": "50",
+      "switch_port": "NVR-P3",
+      "cable_label": "GAR-CAM-03",
+      "status": "\u2b1c",
+      "category": "camera",
+      "is_camera": true,
+      "wireless": false
+    },
+    {
+      "room": "Driveway",
+      "device": "Camera 4",
+      "model": "Luma IP",
+      "ip": "10.1.50.19",
+      "vlan": "50",
+      "switch_port": "NVR-P4",
+      "cable_label": "DRV-CAM-04",
+      "status": "\u2b1c",
+      "category": "camera",
+      "is_camera": true,
+      "wireless": false
+    },
+    {
+      "room": "Rack",
+      "device": "Controller",
+      "model": "C4-EA5",
+      "ip": "10.1.20.16",
+      "vlan": "20",
+      "switch_port": "Sw1-P5",
+      "cable_label": "RK-EA-01",
+      "status": "\u2b1c",
+      "category": "controller",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Rack",
+      "device": "Audio Matrix",
+      "model": "TS-AMS16",
+      "ip": "10.1.20.17",
+      "vlan": "20",
+      "switch_port": "Sw1-P6",
+      "cable_label": "RK-AMS-01",
+      "status": "\u2b1c",
+      "category": "audio_matrix",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "Kitchen/TV Room",
+      "device": "iPad 1",
+      "model": "Apple iPad",
+      "ip": "10.1.20.26",
+      "vlan": "20",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "ipad",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "Master Bedroom",
+      "device": "iPad 2",
+      "model": "Apple iPad",
+      "ip": "10.1.20.27",
+      "vlan": "20",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "ipad",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "Garage Entry",
+      "device": "Security Panel",
+      "model": "Qolsys IQ Panel 4",
+      "ip": "10.1.20.66",
+      "vlan": "20",
+      "switch_port": "Sw1-P7",
+      "cable_label": "GAR-QOL-01",
+      "status": "\u2b1c",
+      "category": "qolsys",
+      "is_camera": false,
+      "wireless": false
+    },
+    {
+      "room": "TV Zone 1",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.16",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 2",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.17",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 3",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.18",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 4",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.19",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 5",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.20",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 6",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.21",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 7",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.22",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 8",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.23",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "TV Zone 9",
+      "device": "Smart TV",
+      "model": "Client TV",
+      "ip": "10.1.30.24",
+      "vlan": "30",
+      "switch_port": "-",
+      "cable_label": "-",
+      "status": "\u2b1c",
+      "category": "tv",
+      "is_camera": false,
+      "wireless": true
+    },
+    {
+      "room": "Various",
+      "device": "Control4 Keypads (\u00d716, est.)",
+      "model": "C4 / ZigBee",
+      "ip": "\u2014",
+      "vlan": "\u2014",
+      "switch_port": "\u2014",
+      "cable_label": "\u2014",
+      "status": "\u2b1c",
+      "category": "keypad",
+      "wireless": true
+    }
+  ],
+  "checklist": [
+    {
+      "task": "Router configured, VLANs created",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Switch configured, port VLANs assigned",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "All APs powered and adopted",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Controller online, rooms created",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "All cameras visible in NVR",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Qolsys enrolled, C4 driver connected",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "All audio zones tested",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Client WiFi networks active",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Remote access verified (Tailscale/VPN)",
+      "status": "\u2b1c"
+    },
+    {
+      "task": "Client walkthrough complete",
+      "status": "\u2b1c"
+    }
+  ],
+  "port_plan": {
+    "switch_rows": [
+      {
+        "port": 1,
+        "device": "Access Point 1",
+        "vlan": 1,
+        "poe": true,
+        "cable_label": "LR-AP-01"
+      },
+      {
+        "port": 2,
+        "device": "Access Point 2",
+        "vlan": 1,
+        "poe": true,
+        "cable_label": "MBR-AP-02"
+      },
+      {
+        "port": 3,
+        "device": "Access Point 3",
+        "vlan": 1,
+        "poe": true,
+        "cable_label": "KIT-AP-03"
+      },
+      {
+        "port": 4,
+        "device": "NVR",
+        "vlan": 50,
+        "poe": false,
+        "cable_label": "RK-NVR-01"
+      },
+      {
+        "port": 5,
+        "device": "Controller",
+        "vlan": 20,
+        "poe": true,
+        "cable_label": "RK-EA-01"
+      },
+      {
+        "port": 6,
+        "device": "Audio Matrix",
+        "vlan": 20,
+        "poe": true,
+        "cable_label": "RK-AMS-01"
+      },
+      {
+        "port": 7,
+        "device": "Security Panel",
+        "vlan": 20,
+        "poe": true,
+        "cable_label": "GAR-QOL-01"
+      }
+    ],
+    "nvr_rows": [
+      {
+        "port": "NVR-P1",
+        "device": "Camera 1",
+        "vlan": 50,
+        "poe": true,
+        "cable_label": "FE-CAM-01"
+      },
+      {
+        "port": "NVR-P2",
+        "device": "Camera 2",
+        "vlan": 50,
+        "poe": true,
+        "cable_label": "OUT-CAM-02"
+      },
+      {
+        "port": "NVR-P3",
+        "device": "Camera 3",
+        "vlan": 50,
+        "poe": true,
+        "cable_label": "GAR-CAM-03"
+      },
+      {
+        "port": "NVR-P4",
+        "device": "Camera 4",
+        "vlan": 50,
+        "poe": true,
+        "cable_label": "DRV-CAM-04"
+      }
+    ],
+    "warnings": []
+  }
+}

@@ -1,0 +1,32 @@
+rules:
+  - name: proposal_email_detected
+    description: "Email with proposal/quote keywords from known client -> check proposal"
+    condition:
+      event_type: email_received
+      payload_contains: [proposal, quote, pricing]
+      sender_in: known_clients
+    action: trigger_proposal_checker
+
+  - name: portfolio_drop_alert
+    description: "Portfolio drops >10% in 5 min -> alert and pause new trades"
+    condition:
+      metric: portfolio.daily_pnl_pct
+      operator: less_than
+      threshold: -0.10
+    action: alert_matt_and_pause_trades
+
+  - name: calendar_reminder
+    description: "Calendar event in 30 min -> send reminder"
+    condition:
+      metric: calendar.next_event_minutes
+      operator: less_than_or_equal
+      threshold: 30
+    action: send_meeting_reminder
+
+  - name: follow_up_due
+    description: "Follow-up due today -> draft and queue follow-up email"
+    condition:
+      metric: project.follow_ups_due_today
+      operator: greater_than
+      threshold: 0
+    action: draft_follow_up_emails
