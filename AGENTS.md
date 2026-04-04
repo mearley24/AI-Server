@@ -17,6 +17,10 @@ Persistent context for AI agents (Cursor, Bob, OpenClaw) working in this repo.
 
 **Roadmap:** `knowledge/agents/LEARNER_ROADMAP.md`
 
+### Close the loop (outcomes, Redis audit, approvals)
+
+**Status + optional follow-ups (“possibles”):** `.cursor/prompts/close-the-loop-part2.md` — Part 2 core items are **done** (events:log, silent-service checks, iMessage approvals, weekly digest, weather accuracy on redeem). **Ship / verify:** `scripts/symphony-ship.sh` (see `.cursor/rules/project.mdc`). Cursor **Settings → Skills → Create** opens a **new Agent**, not an imported repo skill; an optional **deploy-only** agent is documented under **Possibles** in that file and is **not required** for the loop to work.
+
 ---
 
 ## Pre-Ultra Setup & Autonomous Runbook

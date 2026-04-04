@@ -306,7 +306,7 @@ class Orchestrator:
                         body = (
                             f"Low confidence ({conf:.0f}%) — review: {subj}\n"
                             f"Decision ID: {dec_id}\n"
-                            f"Reply YES to acknowledge, NO to dismiss (include ID if not the latest)."
+                            f"Reply YES or NO, or EDIT <id> <note> / EDIT <note> (id from file if omitted)."
                         )
                         await self.notify("needs_approval", body)
                         await self._redis_publish(
@@ -840,8 +840,12 @@ class Orchestrator:
                 briefing_parts.append("All services healthy")
 
             try:
+                from pattern_engine import load_patterns
+
                 briefing_parts.append("\n— This week (decisions) —")
-                briefing_parts.append(self._journal().weekly_digest_text())
+                briefing_parts.append(
+                    self._journal().weekly_digest_text(patterns=load_patterns(self._data_dir))
+                )
             except Exception:
                 pass
             if self._token_tracker:

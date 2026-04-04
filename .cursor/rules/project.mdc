@@ -57,3 +57,13 @@ dashboard/            Mission Control deployment UI
 - All API keys and secrets via environment variables — never hardcoded.
 - Validate and sanitise all external input (Twilio webhooks, caller data).
 - Principle of least privilege for service accounts and Docker containers.
+
+## Docker ship / verify (Bob, close-the-loop stack)
+
+Cursor **Settings → Skills** here creates **Agents**, not repo skill files. Deployment one-liners live in the repo:
+
+- **Script:** `scripts/symphony-ship.sh` — default `ship` = build `openclaw` + `polymarket-bot`, `up -d` redis vpn polymarket-bot openclaw mission-control, then verify. Also: `verify`, `restart`, `full`.
+- **Docs:** `.cursor/skills/symphony-docker-ship/SKILL.md`
+- **One-liner:** `cd "$HOME/AI-Server" && ./scripts/symphony-ship.sh`
+
+OpenClaw code is bind-mounted (`./openclaw:/app`); after Python-only edits prefer `./scripts/symphony-ship.sh restart` instead of a full build.

@@ -225,21 +225,117 @@ class DecisionJournal:
             return float(row[0])
         return 0.0
 
-    def weekly_digest_text(self) -> str:
+    def _positive_rate_in_range(
+        self, since_iso: str, until_iso: Optional[str] = None
+    ) -> tuple[int, int, Optional[float]]:
+        """Count decisions with outcomes in [since_iso, until_iso); until None = no upper bound."""
+        if until_iso:
+            base = "timestamp >= ? AND timestamp < ?"
+            params: tuple = (since_iso, until_iso)
+        else:
+            base = "timestamp >= ?"
+            params = (since_iso,)
+        total = self._conn.execute(
+            f"SELECT COUNT(*) FROM decisions WHERE {base} AND outcome != '' AND outcome IS NOT NULL",
+            params,
+        ).fetchone()[0]
+        good = self._conn.execute(
+            f"SELECT COUNT(*) FROM decisions WHERE {base} AND outcome != '' AND outcome IS NOT NULL AND outcome_score > 0",
+            params,
+        ).fetchone()[0]
+        rate = (float(good) / float(total)) if total else None
+        return int(total), int(good), rate
+
+    def weekly_digest_text(self, patterns: Optional[dict[str, Any]] = None) -> str:
+        """Rich 'What I learned' block for daily briefing (close-the-loop §3b)."""
         summary = self.get_weekly_summary()
-        acc = summary.get("accuracy", {})
+        since_7d = (datetime.utcnow() - timedelta(days=7)).isoformat() + "Z"
+        since_14d = (datetime.utcnow() - timedelta(days=14)).isoformat() + "Z"
+        total_logged = int(
+            self._conn.execute(
+                "SELECT COUNT(*) FROM decisions WHERE timestamp >= ?", (since_7d,)
+            ).fetchone()[0]
+        )
+        scored, _pos, rate_7 = self._positive_rate_in_range(since_7d, None)
+        _pw, _pw_good, rate_prior = self._positive_rate_in_range(since_14d, since_7d)
+        pct_scored = int(round(100 * scored / total_logged)) if total_logged else 0
+        acc_pct = int(round(100 * rate_7)) if rate_7 is not None else None
+        prior_pct = int(round(100 * rate_prior)) if rate_prior is not None else None
+        mis_email = int(
+            self._conn.execute(
+                """
+                SELECT COUNT(*) FROM decisions
+                WHERE timestamp >= ? AND category = 'email'
+                  AND LOWER(COALESCE(outcome, '')) LIKE '%misclassif%'
+                """,
+                (since_7d,),
+            ).fetchone()[0]
+        )
+        now = datetime.utcnow()
+        wk_start = now - timedelta(days=7)
+        header = (
+            f"This week ({wk_start.strftime('%b %d')}–{now.strftime('%b %d, %Y')}):"
+        )
+        sep = "━━━━━━━━━━━━━━━━━━"
         lines = [
-            "This week I learned:",
-            f"- {acc.get('with_outcome', 0)} decisions with recorded outcomes; "
-            f"{acc.get('positive_outcomes', 0)} positive ({acc.get('positive_rate', 0):.0%} win rate on scored rows).",
+            header,
+            sep,
+            f"Decisions: {total_logged} logged, {scored} scored ({pct_scored}%)",
         ]
-        for row in summary.get("by_category", [])[:8]:
-            lines.append(
-                f"- {row['category']}: {row['decisions']} logged, "
-                f"{row.get('positive_outcomes', 0)} positive outcomes, "
-                f"avg confidence {row.get('avg_confidence', 0)}."
-            )
-        lines.append("- Use update_outcome when trades resolve or clients reply to tighten calibration.")
+        if acc_pct is not None:
+            acc_line = f"Accuracy: {acc_pct}% positive outcomes (of scored)"
+            if prior_pct is not None:
+                delta = acc_pct - prior_pct
+                acc_line += f" — prior week {prior_pct}% ({delta:+d} pp)"
+            lines.append(acc_line)
+        else:
+            lines.append("Accuracy: not enough scored outcomes yet this week.")
+        lines.append("")
+        lines.append("By category:")
+        for row in sorted(
+            summary.get("by_category", []),
+            key=lambda r: -int(r.get("decisions", 0)),
+        )[:8]:
+            wo = int(row.get("with_outcome", 0) or 0)
+            po = int(row.get("positive_outcomes", 0) or 0)
+            cat_acc = int(round(100 * po / wo)) if wo else None
+            extra = ""
+            if row.get("category") == "email" and mis_email and wo:
+                extra = f" — {mis_email} misclassification(s) noted"
+            if cat_acc is not None:
+                lines.append(
+                    f"  {row['category']}: {row['decisions']} decisions, ~{cat_acc}% positive (scored) "
+                    f"(avg conf {row.get('avg_confidence', 0)}){extra}"
+                )
+            else:
+                lines.append(
+                    f"  {row['category']}: {row['decisions']} decisions (no scores yet) "
+                    f"(avg conf {row.get('avg_confidence', 0)}){extra}"
+                )
+        hints = (patterns or {}).get("hints") or []
+        clients = (patterns or {}).get("clients") or {}
+        if hints or clients:
+            lines.append("")
+            lines.append("Patterns / timing:")
+            for h in hints[:5]:
+                lines.append(f"  • {h}")
+            top_clients = sorted(
+                clients.items(),
+                key=lambda x: -int((x[1] or {}).get("samples") or 0),
+            )[:3]
+            for name, d in top_clients:
+                if not isinstance(d, dict):
+                    continue
+                bh = d.get("best_hour_local_mdt")
+                bd = d.get("best_weekday")
+                if bh is not None and bd:
+                    lines.append(
+                        f"  • {name}: often active ~{bh}:00 local ({bd}, n={d.get('samples', '?')})"
+                    )
+        lines.append("")
+        lines.append(
+            "Tip: more outcomes flow when trades redeem and clients reply — calibration tightens."
+        )
         return "\n".join(lines)
 
     def stats(self) -> dict[str, Any]:

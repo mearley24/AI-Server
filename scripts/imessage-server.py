@@ -691,37 +691,74 @@ def handle_schedule_walkthrough(message: str) -> str:
     return "%s\nNo client email match found for %s." % (schedule_msg, contact)
 
 
+def _read_last_approval_decision_id():
+    """Numeric id from OpenClaw last approval notification (same host path as orchestrator)."""
+    data_dir = os.environ.get(
+        "OPENCLAW_DATA_DIR",
+        str(Path.home() / "AI-Server/data/openclaw"),
+    )
+    p = Path(data_dir) / "last_approval_decision.txt"
+    try:
+        if p.exists():
+            return int(p.read_text(encoding="utf-8").strip())
+    except Exception:
+        pass
+    return None
+
+
 def try_approval_reply(message: str):
-    """Match YES/NO replies for OpenClaw decision approvals (see close-the-loop-part2)."""
+    """Match YES/NO/EDIT replies for OpenClaw decision approvals (see close-the-loop-part2)."""
     import re as _re
 
-    lower = message.strip().lower()
-    if not lower or len(lower) > 160:
+    raw = message.strip()
+    lower = raw.lower()
+    if not lower:
         return None
-    m = _re.match(r"^(yes|y|no|n)(\s|$|\d)", lower)
-    if not m:
-        return None
-    granted = m.group(1) in ("yes", "y")
-    num = _re.search(r"\b(\d{1,8})\b", message)
-    decision_id = None
-    if num:
-        decision_id = int(num.group(1))
+
+    # EDIT <id> <note> | EDIT <note> — approve with optional note (granted=True)
+    m_edit = _re.match(r"^edit\s*(.*)$", raw, _re.IGNORECASE | _re.DOTALL)
+    if m_edit:
+        tail = (m_edit.group(1) or "").strip()
+        if not tail or len(tail) > 2000:
+            return (
+                "Use: EDIT <id> <note> or EDIT <note> — id from last approval if you omit the number."
+            )
+        head_num = _re.match(r"^(\d{1,8})\s+(.+)$", tail, _re.DOTALL)
+        lone_num = _re.match(r"^(\d{1,8})\s*$", tail)
+        if head_num:
+            decision_id = int(head_num.group(1))
+            edit_note = head_num.group(2).strip()
+        elif lone_num:
+            decision_id = int(lone_num.group(1))
+            edit_note = ""
+        else:
+            decision_id = _read_last_approval_decision_id()
+            if decision_id is None:
+                return (
+                    "Could not resolve EDIT — use EDIT <id> <note> or EDIT <note> after a "
+                    "needs_approval notification."
+                )
+            edit_note = tail
+        granted = True
     else:
-        data_dir = os.environ.get(
-            "OPENCLAW_DATA_DIR",
-            str(Path.home() / "AI-Server/data/openclaw"),
-        )
-        p = Path(data_dir) / "last_approval_decision.txt"
-        try:
-            if p.exists():
-                decision_id = int(p.read_text(encoding="utf-8").strip())
-        except Exception:
-            decision_id = None
-    if decision_id is None:
-        return (
-            "Could not resolve approval — reply YES 123 or NO 123 with the decision ID "
-            "(from the notification)."
-        )
+        if len(lower) > 160:
+            return None
+        m = _re.match(r"^(yes|y|no|n)(\s|$|\d)", lower)
+        if not m:
+            return None
+        granted = m.group(1) in ("yes", "y")
+        num = _re.search(r"\b(\d{1,8})\b", message)
+        if num:
+            decision_id = int(num.group(1))
+        else:
+            decision_id = _read_last_approval_decision_id()
+        edit_note = ""
+        if decision_id is None:
+            return (
+                "Could not resolve approval — reply YES 123 or NO 123 with the decision ID "
+                "(from the notification)."
+            )
+
     secret = os.environ.get("APPROVAL_BRIDGE_SECRET", "")
     if not secret:
         return "Approval bridge not configured: set APPROVAL_BRIDGE_SECRET in the environment."
@@ -730,7 +767,7 @@ def try_approval_reply(message: str):
             "decision_id": decision_id,
             "granted": granted,
             "secret": secret,
-            "edit_note": "",
+            "edit_note": edit_note,
         }
     ).encode("utf-8")
     req = Request(
@@ -742,10 +779,10 @@ def try_approval_reply(message: str):
     try:
         with urlopen(req, timeout=20) as resp:
             resp.read()
-        return "Recorded: decision %d %s." % (
-            decision_id,
-            "approved" if granted else "denied",
-        )
+        suffix = "approved" if granted else "denied"
+        if granted and edit_note:
+            suffix = "approved (note saved)"
+        return "Recorded: decision %d %s." % (decision_id, suffix)
     except Exception as e:
         return "Approval request failed: %s" % str(e)[:220]
 

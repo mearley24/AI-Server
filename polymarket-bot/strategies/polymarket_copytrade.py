@@ -745,6 +745,30 @@ class PolymarketCopyTrader:
         except Exception as exc:
             logger.debug("redis_trade_event", error=str(exc)[:80])
 
+        # Weather / temperature markets — station hit-rate for Kelly hints (close-the-loop §6)
+        try:
+            mq = pos.market_question or ""
+            qlow = mq.lower()
+            is_weatherish = (
+                _extract_temp_cluster_key(mq) is not None
+                or "temperature" in qlow
+                or "°" in mq
+                or "metar" in qlow
+                or ("high" in qlow and "temp" in qlow)
+            )
+            if is_weatherish:
+                from strategies.weather_accuracy import get_store
+
+                cluster = _extract_temp_cluster_key(mq)
+                if cluster:
+                    city, _date_str, _temp = cluster
+                    sid = f"city:{city}"
+                else:
+                    sid = "weather_other"
+                get_store().record_outcome(sid, pnl_usd > 0.0)
+        except Exception as exc:
+            logger.debug("weather_accuracy_record", error=str(exc)[:80])
+
     # ── Trade pacing ──────────────────────────────────────────────────────
 
     def _prune_hourly_trades(self, now: float) -> None:
