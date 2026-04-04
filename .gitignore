@@ -20,3 +20,4 @@ heartbeat_reports/*.json
 **/*.xcodeproj/project.xcworkspace/xcuserdata/
 **/*.xcodeproj/xcuserdata/
 **/*.xcworkspace/xcuserdata/
+data/network_watch/dropout_watch_status.json
