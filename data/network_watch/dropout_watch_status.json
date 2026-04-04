@@ -2,7 +2,7 @@
   "success": true,
   "running": true,
   "pid": 24740,
-  "updated_at": "2026-04-04T03:31:31.294611",
+  "updated_at": "2026-04-04T03:32:37.462614",
   "health": "lan_or_router_down",
   "targets": {
     "gateway": "192.168.1.1",
@@ -16,14 +16,14 @@
       "ok": false,
       "latency_ms": null,
       "error": "[Errno 2] No such file or directory: 'ping'",
-      "duration_ms": 3.89
+      "duration_ms": 4.51
     },
     "wan": {
       "host": "1.1.1.1",
       "ok": false,
       "latency_ms": null,
       "error": "[Errno 2] No such file or directory: 'ping'",
-      "duration_ms": 2.8
+      "duration_ms": 3.37
     }
   }
 }
