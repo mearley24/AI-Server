@@ -35,7 +35,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -46,6 +47,7 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
       - "0.0.0.0:6379:6379"
     networks:
@@ -53,6 +55,12 @@ services:
         ipv4_address: 172.18.0.100
     volumes:
       - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     logging:
       driver: "json-file"
       options:
@@ -143,6 +151,10 @@ services:
     depends_on:
       vpn:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 2g
+    mem_reservation: 512m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8430/health"]
       interval: 30s
@@ -167,7 +179,8 @@ services:
     volumes:
       - ./data/proposals:/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health')"]
       interval: 30s
@@ -200,7 +213,8 @@ services:
       - ./data/email-monitor:/data
       - ./openclaw:/app/openclaw
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/health')"]
       interval: 30s
@@ -231,7 +245,8 @@ services:
     volumes:
       - ./data/voice-receptionist:/app/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s
@@ -260,7 +275,8 @@ services:
     ports:
       - "127.0.0.1:8094:8094"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8094/health')"]
       interval: 30s
@@ -288,7 +304,8 @@ services:
     volumes:
       - ./data/notification-hub:/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8095/health')"]
       interval: 30s
@@ -341,7 +358,8 @@ services:
     volumes:
       - ./data/clawwork:/root/.symphony
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8097/health')"]
       interval: 60s
@@ -373,15 +391,23 @@ services:
       - DTOOLS_API_KEY=${DTOOLS_API_KEY:-}
       - LINEAR_API_KEY=${LINEAR_API_KEY:-}
       - SYMPHONY_DOCS_PATH=${SYMPHONY_DOCS_PATH:-}
+      - APPROVAL_BRIDGE_SECRET=${APPROVAL_BRIDGE_SECRET:-}
+      - EMAIL_MONITOR_DB_PATH=/data/email-monitor/emails.db
+      # Polymarket API is on the vpn container (not 127.0.0.1 from inside this container)
+      - POLYMARKET_BOT_URL=http://vpn:8430
     ports:
       - "127.0.0.1:8099:3000"
     volumes:
+      # Host source (avoid stale image — OpenClaw code is not copied on every pull)
+      - ./openclaw:/app
       - ./agents:/app/agents:ro
       - ./data/openclaw:/app/data
+      - ./data/email-monitor:/data/email-monitor:ro
       - ./integrations/dtools:/app/integrations/dtools:ro
       - "${SYMPHONY_DOCS_PATH:-/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/SymphonySH}:/data/symphony_docs:ro"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
       interval: 30s
@@ -411,7 +437,8 @@ services:
     volumes:
       - ./data/knowledge-scanner:/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health')"]
       interval: 30s
@@ -436,10 +463,13 @@ services:
     ports:
       - "0.0.0.0:8098:8098"
     volumes:
+      # Host source so new API routes (e.g. /api/events-log) apply without image rebuild
+      - ./mission_control:/app
       - ./data/mission-control:/data
       - ./data/polymarket:/trading-data:ro
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8098/health')"]
       interval: 30s
@@ -465,7 +495,8 @@ services:
     volumes:
       - ./data/intel_feeds:/data
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/health')"]
       interval: 30s

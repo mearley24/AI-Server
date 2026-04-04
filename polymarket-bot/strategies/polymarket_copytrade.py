@@ -718,6 +718,33 @@ class PolymarketCopyTrader:
         now_mdt = datetime.datetime.now(ZoneInfo("America/Denver"))
         return now_mdt.hour >= 23 or now_mdt.hour < 5
 
+    def _emit_trade_resolved_event(self, pos: CopiedPosition, pos_id: str, pnl_usd: float) -> None:
+        """Notify Redis outcome listener (OpenClaw decision journal scoring)."""
+        try:
+            import redis
+
+            url = os.environ.get("REDIS_URL", "")
+            if not url:
+                return
+            r = redis.from_url(url, decode_responses=True)
+            r.publish(
+                "events:trading",
+                json.dumps(
+                    {
+                        "type": "trade.redeemed",
+                        "data": {
+                            "position_id": pos_id,
+                            "market": (pos.market_question or "")[:500],
+                            "condition_id": pos.condition_id,
+                            "pnl": pnl_usd,
+                        },
+                    }
+                ),
+            )
+            r.close()
+        except Exception as exc:
+            logger.debug("redis_trade_event", error=str(exc)[:80])
+
     # ── Trade pacing ──────────────────────────────────────────────────────
 
     def _prune_hourly_trades(self, now: float) -> None:
@@ -2260,6 +2287,22 @@ class PolymarketCopyTrader:
                     else:
                         self._daily_realized_losses += abs(pnl_usd) if pnl_usd < 0 else cost_basis
                     category = getattr(pos, 'category', None) or categorize_market(pos.market_question)
+                    self._emit_trade_resolved_event(pos, pos_id, pnl_usd)
+                    if category == "weather":
+                        try:
+                            from strategies.weather_accuracy import get_store
+
+                            city = self._metar_client.find_city_in_market(pos.market_question) or "unknown"
+                            sid = city.lower().replace(" ", "_")
+                            get_store().record_forecast(
+                                station=sid,
+                                horizon_hours=24,
+                                predicted_temp=0.0,
+                                actual_temp=0.0,
+                                correct=(pnl_usd > 0),
+                            )
+                        except Exception:
+                            pass
                     self._category_pnl[category] = self._category_pnl.get(category, 0) + pnl_usd
                     logger.info(
                         "copytrade_resolved",

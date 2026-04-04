@@ -37,6 +37,8 @@
   --fs-hero: clamp(28px, 3vw, 42px);
   --fs-badge: clamp(11px, 1vw, 13px);
   --fs-sys: clamp(12px, 1.1vw, 14px);
+  /* Event strip — smallest readable */
+  --fs-strip: clamp(10px, 0.95vw, 12px);
 }
 
 html, body {
@@ -83,7 +85,7 @@ body.sidebar-collapsed #app-shell { margin-left: var(--sidebar-collapsed); }
 }
 
 #topbar-title {
-  font-size: 13px;
+  font-size: var(--fs-label);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text);
@@ -97,7 +99,7 @@ body.sidebar-collapsed #app-shell { margin-left: var(--sidebar-collapsed); }
 }
 
 #last-refresh {
-  font-size: 11px;
+  font-size: var(--fs-badge);
   color: var(--text-muted);
   margin-right: 4px;
 }
@@ -110,7 +112,7 @@ body.sidebar-collapsed #app-shell { margin-left: var(--sidebar-collapsed); }
 
 #clock {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   letter-spacing: 0.02em;
 }
@@ -223,7 +225,7 @@ body.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
 .qa-btn {
   flex: 0 0 auto;
   padding: 8px 14px;
-  font-size: 12px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   background: rgba(255,255,255,0.06);
   border: 1px solid rgba(255,255,255,0.08);
@@ -254,7 +256,7 @@ body.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
   max-height: 320px;
   overflow: auto;
 }
-.tile-expanded table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.tile-expanded table { width: 100%; border-collapse: collapse; font-size: var(--fs-badge); }
 .tile-expanded th, .tile-expanded td { padding: 6px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
 .tile-expanded th { color: var(--text-muted); font-weight: 600; }
 .view-panel h2 {
@@ -275,7 +277,7 @@ body.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
   padding: 10px 0;
   border-bottom: 1px solid rgba(255,255,255,0.06);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-badge);
 }
 .event-log-row strong { color: var(--blue); font-weight: 600; }
 
@@ -295,7 +297,7 @@ body.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
 .view-pre {
   white-space: pre-wrap;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-badge);
   color: var(--text-secondary);
   background: rgba(255,255,255,0.03);
   border-radius: 10px;
@@ -305,7 +307,7 @@ body.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
 .pos-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: var(--fs-badge);
   margin-bottom: 8px;
 }
 .pos-table th, .pos-table td {
@@ -327,7 +329,7 @@ body.sidebar-collapsed .nav-item { justify-content: center; padding: 10px; }
 #service-fix-strip[hidden] { display: none !important; }
 body:not([data-mc-view="dashboard"]) #service-fix-strip { display: none !important; }
 .sf-label {
-  font-size: 11px;
+  font-size: var(--fs-badge);
   color: var(--text-muted);
   width: 100%;
   flex-basis: 100%;
@@ -335,7 +337,7 @@ body:not([data-mc-view="dashboard"]) #service-fix-strip { display: none !importa
 }
 .sf-btn {
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--fs-badge);
   border-radius: 999px;
   background: rgba(255,69,58,0.12);
   border: 1px solid rgba(255,69,58,0.35);
@@ -344,6 +346,11 @@ body:not([data-mc-view="dashboard"]) #service-fix-strip { display: none !importa
   font-family: var(--font);
 }
 .sf-btn:hover { background: rgba(255,69,58,0.22); color: var(--text); }
+
+.settings-code {
+  font-size: var(--fs-badge);
+  font-family: var(--mono);
+}
 
 /* Live event strip: dashboard only (full-width ticker) */
 body:not([data-mc-view="dashboard"]) #event-strip {
@@ -415,7 +422,8 @@ body:not([data-mc-view="dashboard"]) #event-strip {
   border-radius: 10px;
   padding: 10px 14px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.45);
-  font-size: 13px;
+  font-size: var(--fs-body);
+  white-space: pre-line;
   animation: toastIn 0.25s ease;
   cursor: pointer;
 }
@@ -520,7 +528,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 
 /* ── Empty state ── */
 .empty {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   padding: 8px 0;
 }
@@ -616,7 +624,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 .trading-hero.neg { color: var(--red); }
 
 .trading-mini-stats {
-  font-size: 13px;
+  font-size: var(--fs-secondary);
   color: var(--text-secondary);
   margin-bottom: 10px;
   display: flex;
@@ -699,7 +707,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 
 .cal-time {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-secondary);
   color: var(--text-secondary);
   white-space: nowrap;
   flex-shrink: 0;
@@ -766,7 +774,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 
 .fu-due {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-secondary);
   color: var(--text-muted);
   white-space: nowrap;
   flex-shrink: 0;
@@ -855,12 +863,23 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 }
 
 .emp-task {
-  font-size: 11px;
+  font-size: var(--fs-secondary);
   color: var(--text-muted);
   display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.redis-events-line {
+  font-family: var(--mono);
+  font-size: var(--fs-badge);
+  color: var(--text-muted);
+  margin-top: 10px;
+  line-height: 1.45;
+  max-height: 3.6em;
+  overflow: hidden;
+  word-break: break-all;
 }
 
 .sys-stats {
@@ -870,13 +889,13 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 }
 
 .sys-stat {
-  font-size: 12px;
+  font-size: var(--fs-sys);
   color: var(--text-muted);
 }
 
 .sys-stat strong {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-secondary);
   font-weight: 600;
 }
@@ -906,7 +925,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 
 .event-item {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: var(--fs-strip);
   color: var(--text-secondary);
   white-space: nowrap;
   display: flex;
@@ -923,6 +942,10 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 .event-item .event-ts {
   color: var(--text-muted);
   margin-left: 4px;
+}
+.event-item--muted {
+  color: var(--text-muted);
+  opacity: 0.9;
 }
 
 @keyframes fadeSlide {
@@ -1108,6 +1131,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
       <div class="sys-divider"></div>
       <div class="employees-grid" id="employees-grid"></div>
       <div class="sys-stats" id="sys-stats"></div>
+      <div id="redis-events-line" class="redis-events-line" title="Redis events:log (orchestrator audit)"></div>
       <div id="system-expanded" class="tile-expanded" hidden></div>
     </div>
   </div>
@@ -1132,7 +1156,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
   <p class="view-lede">Server-side settings are in Docker / environment; this panel is a quick reference.</p>
   <ul style="color:var(--text-secondary);font-size:var(--fs-secondary);line-height:1.6;padding-left:1.2em;">
     <li>Timezone: America/Denver (container <code>TZ</code>)</li>
-    <li>After editing the dashboard: <code style="font-size:11px;">docker compose build mission-control &amp;&amp; docker compose up -d mission-control</code></li>
+    <li>After editing the dashboard: <code class="settings-code">docker compose build mission-control &amp;&amp; docker compose up -d mission-control</code></li>
     <li>WebSocket feed: same origin <code>/ws</code></li>
   </ul>
 </div>
@@ -1148,7 +1172,7 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 <!-- Event Strip -->
 <div id="event-strip">
   <div id="event-items">
-    <span class="event-item" style="color: var(--text-muted); font-family: var(--mono); font-size: 10px;">Connecting to live feed…</span>
+    <span class="event-item event-item--muted">Connecting to live feed…</span>
   </div>
 </div>
 
@@ -1169,14 +1193,41 @@ function setTextContent(el, value) {
 
 function parseDate(input) {
   if (input == null || input === '') return null;
+  if (input instanceof Date) {
+    return isNaN(input.getTime()) ? null : input;
+  }
   if (typeof input === 'number') {
     const ms = input < 1e12 ? input * 1000 : input;
     const d = new Date(ms);
     return isNaN(d.getTime()) ? null : d;
   }
+  if (typeof input === 'object') {
+    const v = input.ts ?? input.timestamp ?? input.time ?? input.date;
+    if (v != null && v !== input) return parseDate(v);
+  }
   const s = String(input).trim();
+  if (!s) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const d = new Date(s + 'T12:00:00');
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const mdy = s.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?/
+  );
+  if (mdy) {
+    let month = parseInt(mdy[1], 10) - 1;
+    const day = parseInt(mdy[2], 10);
+    let year = parseInt(mdy[3], 10);
+    if (year < 100) year += year >= 70 ? 1900 : 2000;
+    const d = new Date(year, month, day);
+    if (mdy[4] != null) {
+      let h = parseInt(mdy[4], 10);
+      const min = parseInt(mdy[5], 10);
+      const ampm = (mdy[7] || '').toUpperCase();
+      if (ampm === 'PM' && h < 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      d.setHours(h, min, 0, 0);
+    }
     return isNaN(d.getTime()) ? null : d;
   }
   const d = new Date(s);
@@ -1214,10 +1265,51 @@ function formatDuration(start, end) {
   return formatTime(start);
 }
 
+/** Event / log lines: never show "Invalid Date"; prefer relative + wall time in MT. */
+function formatEventWhen(raw) {
+  if (raw == null || raw === '') return '';
+  const d = parseDate(raw);
+  if (!d) {
+    const t = String(raw).trim();
+    return t || '';
+  }
+  return formatRelative(raw) + ' · ' + formatTime(raw);
+}
+
 function formatMoney(n) {
   if (n === null || n === undefined) return '$0.00';
   const abs = Math.abs(n);
   return '$' + abs.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Build readable multi-line summary for Quick Action "Bot Status" (§5). */
+function summarizeBotStatusPayload(data) {
+  const lines = [];
+  const st = data.status;
+  if (!st || typeof st !== 'object') {
+    return 'No status from bot (is polymarket-bot up on vpn:8430?)';
+  }
+  if (st.status) lines.push('State: ' + String(st.status));
+  if (st.wallet) {
+    const w = String(st.wallet);
+    lines.push('Wallet: ' + (w.length > 18 ? w.slice(0, 10) + '…' + w.slice(-6) : w));
+  }
+  const strategies = st.strategies || {};
+  const names = Object.keys(strategies);
+  if (names.length) {
+    const bits = names.map(function (n) {
+      const s = strategies[n] || {};
+      const state = s.state != null ? s.state : '?';
+      return n + '=' + state;
+    });
+    lines.push('Strategies: ' + bits.join(', '));
+  }
+  const copy = strategies.copytrade || {};
+  if (copy.bankroll != null) lines.push('Copytrade bankroll: ' + formatMoney(Number(copy.bankroll)));
+  if (copy.open_positions != null) lines.push('Copytrade open positions: ' + copy.open_positions);
+  if (copy.daily_trades != null) lines.push('Daily trades (24h): ' + copy.daily_trades);
+  if (lines.length) return lines.join('\n');
+  return JSON.stringify(st).slice(0, 600);
 }
 
 function barColor(pct) {
@@ -1360,7 +1452,9 @@ function showToast(who, title) {
   if (!toastStack) return;
   const t = document.createElement('div');
   t.className = 'toast';
-  t.innerHTML = '<span class="toast-who">' + esc(who) + '</span> ' + esc(title);
+  const whoSpan = '<span class="toast-who">' + esc(who) + '</span>';
+  const body = String(title ?? '').split('\n').map(function (line) { return esc(line); }).join('<br/>');
+  t.innerHTML = body ? whoSpan + '<br/>' + body : whoSpan;
   t.addEventListener('click', () => dismissToast(t));
   toastStack.appendChild(t);
   toastNodes.push(t);
@@ -1596,7 +1690,8 @@ function renderTrading(data, botData) {
   const pf = document.getElementById('topbar-portfolio');
   if (pf) {
     const ov = summary.open_value ?? 0;
-    pf.textContent = ' · Open ' + formatMoney(ov);
+    const netStr = (netPnl >= 0 ? '+' : '') + formatMoney(netPnl);
+    pf.textContent = ' · ' + netStr + ' · Open ' + formatMoney(ov);
     pf.hidden = false;
   }
 
@@ -2180,7 +2275,7 @@ async function loadEventsView() {
     const res = await fetch('/events?limit=50');
     const data = await res.json();
     const evs = data.events || [];
-    el.innerHTML = evs.map(ev => '<div class="event-log-row"><strong>' + esc(ev.employee || '') + '</strong> · ' + esc(ev.title || '') + '<br/><span style="color:var(--text-muted);">' + esc(ev.timestamp || '') + '</span></div>').join('');
+    el.innerHTML = evs.map(ev => '<div class="event-log-row"><strong>' + esc(ev.employee || '') + '</strong> · ' + esc(ev.title || '') + '<br/><span style="color:var(--text-muted);">' + esc(formatEventWhen(ev.timestamp)) + '</span></div>').join('');
   } catch (e) {
     el.innerHTML = '<span class="empty">Failed to load events</span>';
   }
@@ -2278,6 +2373,35 @@ function initNav() {
   });
 }
 
+async function fetchEventsLog() {
+  const el = document.getElementById('redis-events-line');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/events-log?limit=15');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const evs = data.events || [];
+    if (data.error && !evs.length) {
+      el.textContent = 'events:log — ' + data.error;
+      return;
+    }
+    if (!evs.length) {
+      el.textContent = 'events:log — empty (waiting for orchestrator ticks)';
+      return;
+    }
+    const bits = evs.slice(0, 3).map(function (e) {
+      if (e.channel) return String(e.channel).slice(0, 36);
+      if (e.source) return String(e.source).slice(0, 36);
+      var p = e.payload || {};
+      if (p.type) return String(p.type).slice(0, 36);
+      return 'evt';
+    });
+    el.textContent = 'events:log (' + evs.length + ') — ' + bits.join(' · ') + (evs.length > 3 ? ' …' : '');
+  } catch (err) {
+    el.textContent = 'events:log — unavailable';
+  }
+}
+
 async function refreshAll() {
   touchRefresh();
   await Promise.allSettled([
@@ -2286,7 +2410,8 @@ async function refreshAll() {
     fetchEmails(),
     fetchCalendar(),
     fetchFollowups(),
-    fetchSystem()
+    fetchSystem(),
+    fetchEventsLog()
   ]);
 }
 
@@ -2305,10 +2430,12 @@ function initQuickActions() {
     qaBot.addEventListener('click', async () => {
       try {
         const res = await fetch('/api/trading/bot-status');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
-        window.alert('Bot status\n\n' + JSON.stringify(data, null, 2).slice(0, 1500));
+        const msg = summarizeBotStatusPayload(data);
+        showToast('Polymarket bot', msg);
       } catch (e) {
-        window.alert('Failed to load bot status');
+        showToast('Mission Control', 'Failed to load bot status');
       }
     });
   }
@@ -2318,7 +2445,7 @@ function initQuickActions() {
         const res = await fetch('/events?limit=20');
         const data = await res.json();
         const evs = data.events || [];
-        slide.innerHTML = evs.map(ev => '<div class="event-log-row">' + esc(ev.title || '') + ' <span style="color:var(--text-muted);">' + esc(ev.timestamp || '') + '</span></div>').join('');
+        slide.innerHTML = evs.map(ev => '<div class="event-log-row">' + esc(ev.title || '') + ' <span style="color:var(--text-muted);">' + esc(formatEventWhen(ev.timestamp)) + '</span></div>').join('');
       } catch (e) {
         slide.textContent = 'Failed to load events';
       }
@@ -2350,7 +2477,8 @@ function startPolling() {
     fetchEmails(),
     fetchCalendar(),
     fetchFollowups(),
-    fetchSystem()
+    fetchSystem(),
+    fetchEventsLog()
   ]).then(() => touchRefresh());
 
   setInterval(fetchServices, 30_000);
@@ -2359,6 +2487,7 @@ function startPolling() {
   setInterval(fetchCalendar, 2 * 60_000);
   setInterval(fetchFollowups, 2 * 60_000);
   setInterval(fetchSystem, 30_000);
+  setInterval(fetchEventsLog, 45_000);
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────

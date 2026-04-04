@@ -630,6 +630,22 @@ async def api_followups():
     return {"followups": [], "overdue_count": 0}
 
 
+@app.get("/api/events-log")
+async def api_events_log(limit: int = 50):
+    """Proxy to OpenClaw: Redis ``events:log`` audit trail (orchestrator + bus)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "http://openclaw:3000/intelligence/events-log",
+                params={"limit": min(max(limit, 1), 200)},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        logger.debug("api_events_log: %s", e)
+    return {"events": [], "count": 0, "error": "unavailable"}
+
+
 @app.get("/api/system")
 async def api_system():
     """System resource info + employee status. Reads /proc inside container."""

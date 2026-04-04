@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 logs/
 *.log
+backups/
+**/last_approval_decision.txt
 **/.env
 orchestrator/state/api_key.txt
 knowledge/Extracted_Knowledge/

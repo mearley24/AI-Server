@@ -95,15 +95,14 @@ Repo: `/Users/bob/AI-Server`
 4. Added backward-compatible strategy aliases:
    - `polymarket-bot/strategies/polymarket_copytrade.py` → `PolymarketCopytrade`
    - `polymarket-bot/strategies/weather_trader.py` → `CheapBracketStrategy`
-5. Added local compatibility shim for environments missing structlog package:
-   - `polymarket-bot/structlog.py`
+5. ~~Added local structlog shim~~ **Removed** — a root-level `structlog.py` shadowed the real `structlog` package and broke `structlog.configure` in Docker. Use `structlog` from `polymarket-bot/requirements.txt` only.
 6. Added knowledge graph utility module:
    - `tools/knowledge_graph.py`
 
 ## 11) Known Issues / Manual Intervention
 
 - None blocking for verification/import checks.
-- Note: installing `structlog` with system `pip` failed due macOS externally-managed Python (PEP 668); the local shim resolves import checks in this workspace.
+- Note: on macOS, prefer `pip install` into a venv or use Docker for polymarket-bot; do not add a `structlog.py` file in `polymarket-bot/` (name collision with the `structlog` package).
 
 ## Overall Status
 

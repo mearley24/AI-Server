@@ -50,6 +50,28 @@ REPLY_TO = os.environ.get("REPLY_TO", "+19705193013")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
 
+
+def _load_repo_env():
+    """Load AI-Server/.env for keys not already set (e.g. APPROVAL_BRIDGE_SECRET for /internal/approval)."""
+    root = Path(__file__).resolve().parent.parent / ".env"
+    if not root.exists():
+        return
+    try:
+        for line in root.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if k and k not in os.environ:
+                os.environ[k] = v
+    except Exception:
+        pass
+
+
+_load_repo_env()
+
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
 TWILIO_FROM_NUMBER = os.environ.get("TWILIO_FROM_NUMBER", "")
@@ -669,6 +691,65 @@ def handle_schedule_walkthrough(message: str) -> str:
     return "%s\nNo client email match found for %s." % (schedule_msg, contact)
 
 
+def try_approval_reply(message: str):
+    """Match YES/NO replies for OpenClaw decision approvals (see close-the-loop-part2)."""
+    import re as _re
+
+    lower = message.strip().lower()
+    if not lower or len(lower) > 160:
+        return None
+    m = _re.match(r"^(yes|y|no|n)(\s|$|\d)", lower)
+    if not m:
+        return None
+    granted = m.group(1) in ("yes", "y")
+    num = _re.search(r"\b(\d{1,8})\b", message)
+    decision_id = None
+    if num:
+        decision_id = int(num.group(1))
+    else:
+        data_dir = os.environ.get(
+            "OPENCLAW_DATA_DIR",
+            str(Path.home() / "AI-Server/data/openclaw"),
+        )
+        p = Path(data_dir) / "last_approval_decision.txt"
+        try:
+            if p.exists():
+                decision_id = int(p.read_text(encoding="utf-8").strip())
+        except Exception:
+            decision_id = None
+    if decision_id is None:
+        return (
+            "Could not resolve approval — reply YES 123 or NO 123 with the decision ID "
+            "(from the notification)."
+        )
+    secret = os.environ.get("APPROVAL_BRIDGE_SECRET", "")
+    if not secret:
+        return "Approval bridge not configured: set APPROVAL_BRIDGE_SECRET in the environment."
+    payload = json.dumps(
+        {
+            "decision_id": decision_id,
+            "granted": granted,
+            "secret": secret,
+            "edit_note": "",
+        }
+    ).encode("utf-8")
+    req = Request(
+        "%s/internal/approval" % OPENCLAW_URL.rstrip("/"),
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=20) as resp:
+            resp.read()
+        return "Recorded: decision %d %s." % (
+            decision_id,
+            "approved" if granted else "denied",
+        )
+    except Exception as e:
+        return "Approval request failed: %s" % str(e)[:220]
+
+
 def ask_openclaw(message: str) -> str:
     """Send a message to OpenClaw and get a response."""
     try:
@@ -680,6 +761,10 @@ def ask_openclaw(message: str) -> str:
             for url in urls[:2]:
                 results.append(research_link(url, context))
             return "\n\n---\n\n".join(results)
+
+        approval_resp = try_approval_reply(message)
+        if approval_resp is not None:
+            return approval_resp
 
         lower = message.lower()
 

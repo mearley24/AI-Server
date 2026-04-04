@@ -30,6 +30,7 @@ from job_lifecycle import JobLifecycleManager
 import job_api
 import knowledge_base as kb_mod
 import client_tracker as ct_mod
+import intelligence as intelligence_mod
 from knowledge_base import KnowledgeBase
 from dtools_sync import DToolsSync
 from linear_sync import LinearSync
@@ -726,6 +727,7 @@ app.include_router(job_api.router)
 app.include_router(kb_mod.router)
 # Client tracker API routes
 app.include_router(ct_mod.router)
+app.include_router(intelligence_mod.router)
 
 registry: AgentRegistry = None  # type: ignore
 llm: LLMRouter = None  # type: ignore
@@ -790,9 +792,22 @@ async def startup():
         memory=memory, job_mgr=job_mgr,
         dtools_sync=dtools_sync, knowledge_base=knowledge_base,
         linear_sync=linear_sync, client_tracker=client_tracker,
+        data_dir=DATA_DIR,
+        redis_url=REDIS_URL,
+        token_tracker=token_tracker,
     )
     asyncio.create_task(orchestrator.run_loop())
     logger.info("Autonomous orchestrator started")
+
+    import approval_bridge
+
+    approval_bridge.set_resolve_handler(orchestrator.resolve_approval)
+
+    if REDIS_URL:
+        from outcome_listener import run_outcome_listener
+
+        asyncio.create_task(run_outcome_listener(DATA_DIR, REDIS_URL))
+        logger.info("Outcome listener task scheduled (Redis)")
 
     logger.info("OpenClaw ready on port %d — %d agents loaded", PORT, len(registry.agents))
 
@@ -843,6 +858,48 @@ async def health():
         "agents": agent_list,
         "uptime": "running",
     }
+
+
+class InternalApprovalBody(BaseModel):
+    decision_id: int
+    granted: bool = True
+    secret: str = ""
+    edit_note: str = ""
+
+
+@app.get("/internal/approval")
+async def internal_approval_help():
+    """Avoid 404 when testing with GET — use POST with JSON body."""
+    return {
+        "service": "openclaw",
+        "use": "POST /internal/approval",
+        "content_type": "application/json",
+        "body": {
+            "decision_id": 1,
+            "granted": True,
+            "secret": "(must match APPROVAL_BRIDGE_SECRET in OpenClaw env)",
+            "edit_note": "",
+        },
+        "example": (
+            "curl -s -X POST http://127.0.0.1:8099/internal/approval "
+            '-H "Content-Type: application/json" '
+            '-d \'{"decision_id":1,"granted":false,"secret":"YOUR_SECRET"}\''
+        ),
+        "note": "OpenClaw is port 8099 on the host (docker-compose maps 8099:3000). "
+        "404 on other ports usually means a different service (e.g. mission-control 8098).",
+    }
+
+
+@app.post("/internal/approval")
+async def internal_approval(body: InternalApprovalBody):
+    """iMessage bridge / local tools: resolve a pending approval decision."""
+    need = os.getenv("APPROVAL_BRIDGE_SECRET", "")
+    if not need or body.secret != need:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not orchestrator:
+        raise HTTPException(status_code=503, detail="Orchestrator not ready")
+    await orchestrator.resolve_approval(body.decision_id, body.granted, body.edit_note)
+    return {"ok": True, "decision_id": body.decision_id}
 
 
 @app.get("/api/models")
