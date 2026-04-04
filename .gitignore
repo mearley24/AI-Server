@@ -20,4 +20,29 @@ heartbeat_reports/*.json
 **/*.xcodeproj/project.xcworkspace/xcuserdata/
 **/*.xcodeproj/xcuserdata/
 **/*.xcworkspace/xcuserdata/
-data/network_watch/dropout_watch_status.json
+
+# --- Runtime / machine-local data (Bob — keep files on disk, not in git) ---
+# SQLite and sidecars
+data/**/*.db
+data/**/*.db-shm
+data/**/*.db-wal
+
+# Network watch + intake (updated by daemons)
+data/network_watch/
+data/intake_uploads/
+data/manual_digest/
+
+# Transcript drops, polymarket live state, OpenClaw live exports
+data/transcripts/
+data/polymarket/*.json
+data/polymarket/*.csv
+data/notes_index.json
+data/openclaw/AGENT_LEARNINGS_LIVE.md
+data/openclaw/patterns.json
+
+# Large proposal PDFs in data/ (export artifacts; not source code)
+data/proposals/*.pdf
+
+# Intel + email SQLite trees (paths beyond *.db if added)
+data/intel_feeds/
+data/email-monitor/
