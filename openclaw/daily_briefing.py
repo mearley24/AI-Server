@@ -30,7 +30,32 @@ logger = logging.getLogger("openclaw.daily_briefing")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-EMAIL_DB_PATH = os.environ.get("EMAIL_DB_PATH", "/data/emails.db")
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_REPO_ROOT / ".env")
+except ImportError:
+    pass
+
+
+def _find_email_db() -> Optional[str]:
+    """Resolve email SQLite path for Docker, host, or cron."""
+    candidates = [
+        os.environ.get("EMAIL_MONITOR_DB_PATH", ""),
+        os.environ.get("EMAIL_DB_PATH", ""),
+        "/app/data/email-monitor/emails.db",
+        str(_REPO_ROOT / "data" / "email-monitor" / "emails.db"),
+        "/data/email-monitor/emails.db",
+        "/data/emails.db",
+    ]
+    for p in candidates:
+        if p and os.path.isfile(p):
+            return p
+    return None
+
+
+EMAIL_DB_PATH = _find_email_db() or os.environ.get("EMAIL_DB_PATH", "/data/emails.db")
 ROUTING_CONFIG_PATH = _REPO_ROOT / "email-monitor" / "routing_config.json"
 
 # Mountain Time offset (UTC-6 in summer / UTC-7 in winter)

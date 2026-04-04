@@ -15,7 +15,7 @@ from typing import Optional
 
 import httpx
 
-from job_lifecycle import JobLifecycleManager
+from job_lifecycle import JobLifecycleManager, Phase
 
 logger = logging.getLogger("openclaw.dtools_sync")
 
@@ -147,16 +147,42 @@ class DToolsSync:
                         self._jobs.link_dtools(matched_job["job_id"], opp_id)
                         stats["jobs_linked"] += 1
                         logger.info("Linked D-Tools opp %s to job #%d (%s)", opp_id, matched_job["job_id"], client_name)
-                # No existing job match — log for pipeline visibility
-                # Full jobs are created manually. D-Tools entries go to Linear
-                # backlog as pipeline opportunities for the owner to review.
-                opp_status = opp.get("systemState", opp.get("status", ""))
-                opp_price = opp.get("price", 0)
-                logger.info(
-                    "D-Tools pipeline: %s — %s (%s, $%.0f) — no active job",
-                    client_name, opp_name, opp_status, opp_price or 0,
-                )
-                stats["pipeline_logged"] = stats.get("pipeline_logged", 0) + 1
+                else:
+                    # No name match — auto-create jobs for Won / On Hold when not duplicate by D-Tools id
+                    opp_status = opp.get("systemState", opp.get("status", opp.get("State", "")))
+                    opp_price = float(opp.get("price", 0) or 0)
+                    st = str(opp_status or "").upper().replace(" ", "_")
+                    won = st in ("WON", "CLOSED_WON") or "WON" in st
+                    on_hold = st in ("ON_HOLD", "ONHOLD") or "ON_HOLD" in st
+                    if opp_id and self._jobs and (won or on_hold):
+                        existing = self._jobs.get_job_by_dtools_id(opp_id)
+                        if not existing:
+                            phase = Phase.WON.value if won else Phase.QUOTE.value
+                            try:
+                                self._jobs.create_job(
+                                    client_name=client_name,
+                                    project_name=opp_name or f"Opp {opp_id}",
+                                    phase=phase,
+                                    d_tools_id=opp_id,
+                                    notes=f"Auto-created from D-Tools opportunity (status={opp_status})",
+                                )
+                                stats["jobs_created"] = stats.get("jobs_created", 0) + 1
+                                logger.info(
+                                    "D-Tools auto-created job for %s opp %s phase=%s",
+                                    client_name,
+                                    opp_id,
+                                    phase,
+                                )
+                            except Exception as e:
+                                logger.warning("D-Tools auto-create job failed: %s", e)
+                        else:
+                            logger.debug("D-Tools opp %s already has job #%s", opp_id, existing.get("job_id"))
+                    else:
+                        logger.info(
+                            "D-Tools pipeline: %s — %s (%s, $%.0f) — no active job",
+                            client_name, opp_name, opp_status, opp_price,
+                        )
+                        stats["pipeline_logged"] = stats.get("pipeline_logged", 0) + 1
         except Exception as e:
             logger.warning("D-Tools opportunity sync failed: %s", e)
 

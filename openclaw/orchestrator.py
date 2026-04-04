@@ -133,6 +133,15 @@ class Orchestrator:
     def _journal(self):
         return get_journal(self._data_dir)
 
+    def _tracker_db_paths(self) -> tuple[str, str, str]:
+        """Email monitor DB (read-only mount), writable follow-up and payment DBs under DATA_DIR."""
+        email = os.environ.get("EMAIL_MONITOR_DB_PATH") or os.environ.get(
+            "EMAIL_DB_PATH", "/data/email-monitor/emails.db"
+        )
+        follow = os.environ.get("FOLLOW_UP_DB_PATH", str(self._data_dir / "follow_ups.db"))
+        pay = os.environ.get("PAYMENT_DB_PATH", str(self._data_dir / "payments.db"))
+        return email, follow, pay
+
     def _match_email_to_active_client(self, em: dict) -> Optional[str]:
         if not self._client_tracker or not self._job_mgr:
             return None
@@ -195,6 +204,8 @@ class Orchestrator:
             logger.debug("confidence calibrate: %s", e)
 
         await self.check_emails()
+        await self.check_followups()
+        await self.check_payments()
         await self.check_calendar()
         await self.check_pipeline()
         await self.check_trading()
@@ -268,6 +279,10 @@ class Orchestrator:
                     self._track_processed_email(email_id)
 
             if not new_emails:
+                await self._redis_publish(
+                    "events:email",
+                    {"type": "email.processed", "data": {"new_count": 0}},
+                )
                 return
 
             logger.info("Found %d new email(s) this tick", len(new_emails))
@@ -359,8 +374,69 @@ class Orchestrator:
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)
 
+            await self._redis_publish(
+                "events:email",
+                {
+                    "type": "email.processed",
+                    "data": {"new_count": len(new_emails)},
+                },
+            )
+
+            if os.getenv("AUTO_RESPONDER_ENABLED", "").lower() in ("1", "true", "yes"):
+                try:
+                    from auto_responder import auto_respond
+
+                    for em in new_emails:
+                        if em.get("category") != "ACTIVE_CLIENT":
+                            continue
+                        mid = em.get("id", em.get("message_id", ""))
+                        if not mid:
+                            continue
+                        await asyncio.to_thread(
+                            auto_respond,
+                            em.get("sender", ""),
+                            em.get("sender_name") or "",
+                            em.get("subject", ""),
+                            em.get("snippet", ""),
+                            mid,
+                        )
+                        break
+                except Exception as e:
+                    logger.debug("auto_responder: %s", e)
+
         except Exception as e:
             logger.debug("Email check skipped: %s", e)
+
+    async def check_followups(self):
+        """Run follow-up SLA tracker (SQLite under DATA_DIR)."""
+        try:
+            from follow_up_tracker import run_cycle as run_followups
+
+            email_db, follow_db, _ = self._tracker_db_paths()
+            res = await asyncio.to_thread(run_followups, follow_db, email_db)
+            if res and (res.get("overdue_alerts") or res.get("followup_alerts")):
+                await self._redis_publish(
+                    "events:clients",
+                    {"type": "client.followup_alert", "data": res},
+                )
+        except Exception as e:
+            logger.warning("check_followups failed: %s", e)
+
+    async def check_payments(self):
+        """Run payment/deposit tracker against email signals."""
+        try:
+            from payment_tracker import run_cycle as run_payments
+
+            email_db, _, pay_db = self._tracker_db_paths()
+            res = await asyncio.to_thread(run_payments, pay_db, email_db)
+            paid = int(res.get("paid_updates") or 0)
+            if paid > 0:
+                await self._redis_publish(
+                    "events:jobs",
+                    {"type": "job.payment_received", "data": res},
+                )
+        except Exception as e:
+            logger.warning("check_payments failed: %s", e)
 
     async def _backfill_client_preferences(self):
         """One-time scan of all stored emails to extract client preferences for active jobs."""
@@ -471,6 +547,10 @@ class Orchestrator:
                     title = event.get("title", event.get("summary", ""))
                     start = event.get("start", event.get("start_time", ""))
                     logger.info("Upcoming: %s at %s", title, start)
+                await self._redis_publish(
+                    "events:calendar",
+                    {"type": "calendar.checked", "data": {"count": len(events)}},
+                )
         except Exception as e:
             logger.debug("Calendar check skipped: %s", e)
 
@@ -622,6 +702,18 @@ class Orchestrator:
                     )
                 except Exception as e:
                     logger.debug("journal dtools: %s", e)
+                await self._redis_publish(
+                    "events:jobs",
+                    {
+                        "type": "jobs.synced",
+                        "data": {
+                            "jobs_created": result.get("jobs_created", 0),
+                            "jobs_linked": result.get("jobs_linked", 0),
+                            "opportunities_checked": result.get("opportunities_checked", 0),
+                            "projects_checked": result.get("projects_checked", 0),
+                        },
+                    },
+                )
         except Exception as e:
             logger.debug("D-Tools sync failed: %s", e)
 
@@ -722,6 +814,7 @@ class Orchestrator:
     # ------------------------------------------------------------------
     async def check_health(self):
         """Ping all services. Alert if critical services are down for >2 ticks."""
+        up = 0
         for name, url in SERVICES.items():
             urls_to_try = _polymarket_bot_url_candidates() if name == "polymarket-bot" else [url]
             ok = False
@@ -734,6 +827,7 @@ class Orchestrator:
                 except Exception:
                     pass
             if ok:
+                up += 1
                 if name in self._health_failures:
                     logger.info("Service %s recovered after %d failed ticks", name, self._health_failures[name])
                     del self._health_failures[name]
@@ -761,6 +855,11 @@ class Orchestrator:
                 msg = f"CRITICAL: {name} has been down for {count} consecutive ticks (~{count * 5} min)"
                 logger.error(msg)
                 await self.notify("health", msg)
+
+        await self._redis_publish(
+            "events:system",
+            {"type": "health.checked", "data": {"up": up, "total": len(SERVICES)}},
+        )
 
     # ------------------------------------------------------------------
     # Daily briefing
@@ -870,6 +969,10 @@ class Orchestrator:
             await self.notify("briefing", briefing)
             self.last_briefing_date = today
             logger.info("Daily briefing sent")
+            await self._redis_publish(
+                "events:system",
+                {"type": "briefing.sent", "data": {"date": today}},
+            )
 
     # ------------------------------------------------------------------
     # Notification helper

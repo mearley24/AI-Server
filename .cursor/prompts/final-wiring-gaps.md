@@ -5,6 +5,19 @@ The AI-Server has substantial code across 38 OpenClaw modules, 14 trading strate
 
 **Read each file before editing.** Many modules are real (300+ lines with working logic). The gap is always wiring — the orchestrator doesn't call them, or events don't flow through.
 
+### Implementation status (2026-04)
+
+| Gap | In code |
+|-----|---------|
+| **1–2** Follow-up + payment trackers | **`check_followups()`** / **`check_payments()`** on tick after emails; DBs under `DATA_DIR` (`follow_ups.db`, `payments.db`); Redis events `client.followup_alert`, `job.payment_received` |
+| **3** D-Tools auto jobs | **`get_job_by_dtools_id`** + **`dtools_sync`** auto-create for Won / On Hold |
+| **4** Daily briefing email DB | **`daily_briefing._find_email_db()`** + optional **dotenv** |
+| **5** Redis persistence | **`redis/redis.conf`** + compose mount (already present) |
+| **6** More orchestrator emissions | **`email.processed`**, **`calendar.checked`**, **`jobs.synced`**, **`health.checked`**, **`briefing.sent`** |
+| **7** Outcome listener | Already started in **`main.py`** — more bus traffic from gap 6 |
+| **8–9** Mission Control | Still UI work (Settings, digest MD, trading polish) |
+| **10** Auto-responder | **`AUTO_RESPONDER_ENABLED=true`** — at most one **ACTIVE_CLIENT** draft per tick |
+
 ---
 
 ## GAP 1: Follow-Up Tracker Not Wired (P0 — real money)

@@ -1,85 +1,107 @@
-# Perplexity Computer — AI-Server status, gaps, and what’s still broken
+# Perplexity Computer — AI-Server: what’s done, what’s left, what breaks
 
-**Copy everything below the horizontal rule into Perplexity Computer.** Repo path on Bob’s Mac Mini: `~/AI-Server` (adjust if different).
+**Copy everything below the horizontal rule into Perplexity Computer.** Repo on Bob’s Mac Mini: `~/AI-Server` (change if your path differs).
 
 ---
 
 ## Your role
 
-You are helping **prioritize, verify, and finish** remaining work on **Symphony AI-Server**: Docker services (OpenClaw, polymarket-bot, Mission Control, Redis, VPN, email-monitor, etc.), the **close-the-loop** outcome pipeline, and the **Mission Control** dashboard. Use **official repo files** as source of truth when paths are mentioned.
+You are helping **prioritize, verify, and finish** work on **Symphony AI-Server**: Docker (OpenClaw, polymarket-bot, Mission Control, Redis, VPN, email-monitor, etc.), the **orchestrator tick**, **Redis / events**, and **Mission Control** UI. Treat paths in this repo as source of truth.
 
 ---
 
-## A. Close the loop (OpenClaw + Redis + approvals) — **largely DONE in code**
-
-| Item | Status |
-|------|--------|
-| Redis **`events:log`** audit (LPUSH + LTRIM alongside pub/sub) | **Done** — `openclaw/event_bus.py`, orchestrator |
-| **`check_silent_services`** (~2h without heartbeats → alert) | **Done** — `openclaw/orchestrator.py` |
-| **Approvals** — decision IDs, `pending_approvals`, iMessage YES/NO/EDIT, `POST /internal/approval`, `APPROVAL_BRIDGE_SECRET` | **Done** |
-| **Pattern engine** — client email timing → `patterns.json` | **Done** |
-| **Weekly “What I learned” digest** in daily briefing | **Done** — `decision_journal.weekly_digest_text` + costs |
-| **Weather accuracy on redeem** | **Done** — hook in `polymarket_copytrade._emit_trade_resolved_event` → `strategies/weather_accuracy` store |
-| **Ops: `scripts/backup-data.sh`, `backups/` gitignored, Redis in compose** | **In repo** |
-
-**Ship / verify script:** `scripts/symphony-ship.sh` (`verify` | `ship` | `restart` | `full`). Docs: `.cursor/skills/symphony-docker-ship/SKILL.md`, `.cursor/rules/project.mdc`.
-
-### A1. Not started / optional (possibles — not blocking)
+## A. Close the loop (outcomes, Redis audit, approvals) — **done in code**
 
 | Item | Notes |
 |------|--------|
-| **Host backup cron** | Script exists; **cron line not necessarily installed** on the Mac: `0 4 * * * ~/AI-Server/scripts/backup-data.sh >> /tmp/backup-data.log 2>&1` |
-| **Unified `events:log` from polymarket-bot** | Bot **PUBLISH**es to Redis; **does not** LPUSH audit lines like OpenClaw. Only needed if you want one list for every producer without going through orchestrator heartbeats. |
-| **Execute real actions after approval** | Today: journal outcome + notification. **Not built:** auto-send draft email / run side effect on `approval_granted` for `email_classification`. |
-| **Cursor “deploy” Agent** | Cursor **Skills → Create** makes an **Agent**, not an imported skill. Optional UX only; see `.cursor/prompts/close-the-loop-part2.md` **Possibles**. |
+| **`events:log`** + pub/sub | `openclaw/event_bus.py`, orchestrator `_redis_publish` / `_redis_log_only` |
+| **`check_silent_services`** | ~2h missing heartbeats → alerts |
+| **Approvals** | `pending_approvals`, iMessage YES/NO/EDIT, `POST /internal/approval`, `APPROVAL_BRIDGE_SECRET` |
+| **Pattern engine + weekly digest** | `decision_journal.weekly_digest_text`, briefing |
+| **Weather accuracy on redeem** | `polymarket_copytrade` → `weather_accuracy` store |
+| **Ship script** | `scripts/symphony-ship.sh`; see `.cursor/rules/project.mdc` |
 
----
+### A1. Still optional / not started (not blocking core loop)
 
-## B. Mission Control dashboard — **core UX done; polish thin**
-
-**Files:** `mission_control/static/index.html`, `mission_control/main.py`, `mission_control/event_server.py`, port **8098**. Full intended UX: `.cursor/prompts/mission-control-final.md`.
-
-| Area | Status |
+| Item | Notes |
 |------|--------|
-| §1–§10 baseline (dates, fonts, sidebar, quick actions, toasts, trading tag, sparklines, etc.) | **Implemented** — may still need **visual QA** after rebuild |
-| **Settings view** | **Mostly placeholder** — no real settings editing, env editor, or doc links |
-| **Daily Digest modal** | **Plain text**, not **rendered markdown** as spec asked — needs sanitizer + MD library or server-rendered HTML |
-| **Trading view** | Works but can be **polished** (layout, mobile, error state when bot down) |
-| **Expanded tiles vs spec** | Some columns **partial** (e.g. `checked_at`, container uptime, full subjects) depending on APIs |
+| **Host backup cron** | `scripts/backup-data.sh` exists; **cron may not be installed** — e.g. `0 4 * * * ~/AI-Server/scripts/backup-data.sh >> /tmp/backup-data.log 2>&1` |
+| **Polymarket → same `events:log` LPUSH as OpenClaw** | Bot **PUBLISH**es only; unified audit list is optional |
+| **Run real action after approval** (send draft, etc.) | Journal + notify only today |
+| **Cursor deploy-only Agent** | Optional; see `.cursor/prompts/close-the-loop-part2.md` |
 
 ---
 
-## C. Still not working or fragile (production failure modes)
+## B. Final wiring (orchestrator integration) — **implemented (verify in prod)**
 
-These are **symptoms**, not necessarily code bugs — environment and process matter.
+See `.cursor/prompts/final-wiring-gaps.md` for the original gap list. Status:
+
+| Area | What shipped |
+|------|----------------|
+| **Follow-up tracker** | `check_followups()` after emails; DB `DATA_DIR/follow_ups.db`; Redis `client.followup_alert` |
+| **Payment tracker** | `check_payments()`; DB `DATA_DIR/payments.db`; Redis `job.payment_received` when payments detected |
+| **D-Tools auto jobs** | `get_job_by_dtools_id()` + auto-create for **Won** / **On Hold** opps without duplicate `d_tools_id` |
+| **Daily briefing script** | `_find_email_db()` + optional `dotenv` for cron |
+| **Redis persistence** | `redis/redis.conf` + compose mount |
+| **More bus traffic** | `email.processed`, `calendar.checked`, `jobs.synced`, `health.checked`, `briefing.sent` |
+| **Outcome listener** | Already runs from `openclaw/main.py`; more events = more scoring opportunities |
+| **Auto-responder** | **Off by default** — set **`AUTO_RESPONDER_ENABLED=true`** for OpenClaw to draft **one** `ACTIVE_CLIENT` reply per tick (uses OpenAI + IMAP + Zoho; costs $) |
+
+### B1. Not started or needs your decision
+
+| Item | Notes |
+|------|--------|
+| **Turn on auto-responder** | Only if you want automated drafts — env flag above |
+| **End-to-end test** | Confirm follow-up/payment DBs populate and D-Tools job creation matches real API **status** strings (Won/On Hold naming) |
+| **Deferred approval execution** | Still future (send email on grant) |
+
+---
+
+## C. Mission Control — **core done; polish not done**
+
+**Files:** `mission_control/static/index.html`, `mission_control/main.py`, `mission_control/event_server.py`, port **8098**. Spec: `.cursor/prompts/mission-control-final.md`.
+
+| Still thin / not finished |
+|---------------------------|
+| **Settings** — placeholder; no ports table, doc links, or env editor |
+| **Digest modal** — plain text, not **rendered markdown** |
+| **Trading view** — hierarchy, mobile, **offline bot** banner |
+| **Expanded tiles** — some columns partial vs spec (`checked_at`, uptime, full subjects) |
+| **Visual QA** — click every nav, quick action, tile, WS after each deploy |
+
+---
+
+## D. Still broken or fragile (symptoms → likely cause)
 
 | Symptom | Likely cause |
 |---------|----------------|
-| OpenClaw logs **“Trading bot unreachable”** | `polymarket-bot` down, restarting, or **8430** not up on **vpn** namespace. Check: `docker compose ps`, `curl http://127.0.0.1:8430/health`, `docker exec openclaw curl -sS http://vpn:8430/health`. |
-| **`curl 127.0.0.1:8430` refused / empty** | **vpn** + **polymarket-bot** share network; bot uses `network_mode: service:vpn`. Restart order: redis → vpn → polymarket-bot. |
-| Mission Control **`/api/events-log` empty or unavailable** | **OpenClaw** down or **REDIS_URL** wrong; orchestrator must run ticks to fill **`events:log`**. |
-| **`structlog` crash in polymarket-bot** | Do **not** add `polymarket-bot/structlog.py` — it shadowed PyPI `structlog`. Use requirements only. |
-| **Internal HTTP fails with proxy** | OpenClaw uses **`trust_env=False`** for httpx to internal Docker URLs. Reverting to `trust_env=True` can break `http://vpn:8430`. |
-| **Redis IP drift for bot** | Compose may hardcode Redis IP for bot; after network recreate, verify **REDIS_URL** still valid. |
+| **“Trading bot unreachable”** in OpenClaw | `polymarket-bot` down / **8430** not listening on **vpn** stack. Check `docker compose ps`, `curl http://127.0.0.1:8430/health`, `docker exec openclaw curl -sS http://vpn:8430/health`. |
+| **`curl 127.0.0.1:8430` fails** | **vpn** + bot share network (`network_mode: service:vpn`). Restart **redis → vpn → polymarket-bot** order. |
+| **Mission Control `/api/events-log` empty** | OpenClaw down, Redis down, or orchestrator not ticking |
+| **Polymarket crash: `structlog.configure`** | Never add **`polymarket-bot/structlog.py`** — it shadowed PyPI `structlog`. |
+| **Internal HTTP weirdness** | OpenClaw **httpx `trust_env=False`** — re-enabling proxy on internal URLs breaks `http://vpn:8430`. |
+| **Redis IP for bot** | Bot may use fixed IP in env; after `docker network` recreate, confirm **REDIS_URL**. |
+| **Follow-up/payment “no data”** | Need **`EMAIL_MONITOR_DB_PATH`** readable + writable **`DATA_DIR`** for SQLite sidecars |
 
 ---
 
-## D. What you should do next (suggested order)
+## E. Suggested order of work
 
-1. **Smoke-test the stack:** `~/AI-Server/scripts/symphony-ship.sh verify` (or `ship` after code changes).
-2. **Mission Control:** Manual click-through every nav, quick action, tile expand, WS; note regressions vs `mission-control-final.md`.
-3. **Implement or schedule:** Settings content (non-secret), **safe markdown** for digest modal, Trading/expanded-tile polish as time allows.
-4. **Ops:** Install **backup cron** on the host if not already.
-5. **Optional:** Deferred approval actions; polymarket → `events:log` LPUSH; align any **`VERIFICATION_REPORT.md`** with repo reality.
-
----
-
-## E. Constraints
-
-- Dashboard: **vanilla JS** only (no React/TS) per project rules.
-- **Secrets:** never embed in UI; env/Docker only.
-- **Timezone display:** **America/Denver** where relevant.
+1. **`./scripts/symphony-ship.sh verify`** (or `ship` after pulls).
+2. **`docker logs openclaw`** — confirm tick runs, no tracebacks in `check_followups` / `check_payments` / `sync_dtools`.
+3. **`docker exec redis redis-cli LRANGE events:log 0 15`** — confirm new event types appear over time.
+4. **Mission Control** manual QA + **Settings / digest markdown / trading polish** as desired.
+5. **Backup cron** on host if not set.
+6. **Optional:** enable `AUTO_RESPONDER_ENABLED`, approval side effects, polymarket `events:log` parity.
 
 ---
 
-**End of prompt — use sections A–E to plan work, run tests, and report what’s still broken vs environment.**
+## F. Constraints
+
+- Mission Control: **vanilla JS** only (no React/TS) per project rules.
+- **Secrets:** never in client UI; use env / Docker.
+- **Timezone:** **America/Denver** where relevant.
+
+---
+
+**End of prompt — use sections A–F to plan, test, and report what’s still broken vs environment vs not yet built.**

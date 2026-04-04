@@ -348,6 +348,24 @@ class JobLifecycleManager:
         logger.info("job_created id=%d client=%s project=%s phase=%s", job_id, client_name, project_name, phase)
         return self.get_job(job_id)
 
+    def get_job_by_dtools_id(self, d_tools_id: str) -> Optional[dict]:
+        """Return a job row if one already has this D-Tools opportunity/project id."""
+        if not (d_tools_id or "").strip():
+            return None
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE d_tools_id = ? LIMIT 1",
+            (d_tools_id.strip(),),
+        ).fetchone()
+        if not row:
+            return None
+        job = dict(row)
+        try:
+            job["metadata"] = json.loads(job.get("metadata", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            job["metadata"] = {}
+        return job
+
     def get_job(self, job_id: int) -> Optional[dict]:
         """Get a single job by ID."""
         conn = self._get_conn()
