@@ -15,8 +15,8 @@ The AI-Server has substantial code across 38 OpenClaw modules, 14 trading strate
 | **5** Redis persistence | **`redis/redis.conf`** + compose mount (already present) |
 | **6** More orchestrator emissions | **`email.processed`**, **`calendar.checked`**, **`jobs.synced`**, **`health.checked`**, **`briefing.sent`** |
 | **7** Outcome listener | Already started in **`main.py`** — more bus traffic from gap 6 |
-| **8–9** Mission Control | Still UI work (Settings, digest MD, trading polish) |
-| **10** Auto-responder | **`AUTO_RESPONDER_ENABLED=true`** — at most one **ACTIVE_CLIENT** draft per tick |
+| **8–9** Mission Control | Shipped: Settings, digest markdown (`marked`), trading cache/banner; optional Remediator/ClawWork excluded from core badge |
+| **10** Auto-responder | Wired in **`check_emails()`** — set **`AUTO_RESPONDER_ENABLED=true`** for up to one **ACTIVE_CLIENT** Zoho draft per tick; startup logs status |
 
 ---
 
@@ -206,14 +206,11 @@ The trading nav view (`loadTradingView()`) works but needs:
 - Mobile-friendly tables (horizontal scroll)
 - Error state when bot is unreachable (show last cached data + "Bot offline" banner)
 
-## GAP 10: Auto-Responder Not Wired (P2)
+## GAP 10: Auto-Responder (P2) — done (enable via env)
 
-`openclaw/auto_responder.py` (260 lines) exists. Check if the orchestrator calls it during email processing. If not, wire it:
-- Vendor emails → auto-acknowledge
-- Bid invites → auto-triage + score
-- Routine client questions → draft response for Matt's review
+`openclaw/auto_responder.py` is called from **`orchestrator.check_emails()`** when **`AUTO_RESPONDER_ENABLED`** is `true` / `1` / `yes`. Only **`ACTIVE_CLIENT`** category is auto-drafted, **at most one per tick** (first matching new email). Startup logs whether auto-respond is on.
 
-Read the file first to understand its interface, then add the call in `check_emails()`.
+Future: vendor ack / bid triage can extend `auto_responder` or separate handlers; classification already feeds the decision journal.
 
 ---
 

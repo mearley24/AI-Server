@@ -130,6 +130,15 @@ class Orchestrator:
             from job_worker import JobWorker
             self._job_worker = JobWorker(job_mgr, self.http, linear_sync=linear_sync)
 
+        if os.getenv("AUTO_RESPONDER_ENABLED", "").lower() in ("1", "true", "yes"):
+            logger.info(
+                "AUTO_RESPONDER_ENABLED — ACTIVE_CLIENT emails: up to one Zoho draft per tick"
+            )
+        else:
+            logger.info(
+                "AUTO_RESPONDER_ENABLED off — export AUTO_RESPONDER_ENABLED=true to draft replies"
+            )
+
     def _journal(self):
         return get_journal(self._data_dir)
 

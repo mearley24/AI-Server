@@ -38,12 +38,17 @@ def get_client():
 # ---------------------------------------------------------------------------
 @app.route("/health", methods=["GET"])
 def health():
+    """
+    Liveness only — must stay fast for Docker (10s) and Mission Control (5s).
+    Do not call snapshot() here: it runs three cloud API calls and can exceed
+    health timeouts under load or slow D-Tools responses.
+    Use GET /snapshot to verify cloud connectivity.
+    """
     try:
-        c = get_client()
-        snap = c.snapshot()
-        return jsonify({"status": "healthy", "dtools": snap.get("status", "unknown")})
+        get_client()
+        return jsonify({"status": "healthy", "dtools": "ready"})
     except Exception as e:
-        return jsonify({"status": "degraded", "error": str(e)}), 500
+        return jsonify({"status": "degraded", "error": str(e)}), 503
 
 
 # ---------------------------------------------------------------------------

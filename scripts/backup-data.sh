@@ -24,3 +24,13 @@ done
 find "${ROOT}/backups" -maxdepth 1 -mindepth 1 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
 
 echo "Backed up to $BACKUP_DIR"
+
+if [[ "${BACKUP_SHOW_CRON:-}" == "1" ]]; then
+  echo ""
+  echo "=== INSTALL BACKUP CRON ==="
+  echo "Run this on the host (not in Docker):"
+  echo "  crontab -e"
+  echo "  Add this line:"
+  echo "  0 4 * * * /Users/bob/AI-Server/scripts/backup-data.sh >> /tmp/backup-data.log 2>&1"
+  echo ""
+fi

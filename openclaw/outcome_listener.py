@@ -21,6 +21,34 @@ EVENT_CHANNELS = (
 )
 
 
+async def _close_async_pubsub(pubsub: Any, r: Any, channels: tuple[str, ...]) -> None:
+    """Unsubscribe and close without racing async generator teardown."""
+    try:
+        await pubsub.unsubscribe(*channels)
+    except Exception as e:
+        logger.debug("outcome_listener unsubscribe: %s", e)
+    try:
+        pclose = getattr(pubsub, "aclose", None)
+        if callable(pclose):
+            await pclose()
+        else:
+            close = getattr(pubsub, "close", None)
+            if callable(close):
+                res = close()
+                if asyncio.iscoroutine(res):
+                    await res
+    except Exception as e:
+        logger.debug("outcome_listener pubsub close: %s", e)
+    try:
+        aclose = getattr(r, "aclose", None)
+        if callable(aclose):
+            await aclose()
+        else:
+            r.close()
+    except Exception as e:
+        logger.debug("outcome_listener redis close: %s", e)
+
+
 class OutcomeListener:
     """Background task: map external outcomes to journal rows via Redis pub/sub."""
 
@@ -44,36 +72,49 @@ class OutcomeListener:
         logger.info("outcome_listener subscribed: %s", EVENT_CHANNELS)
 
         try:
-            async for msg in pubsub.listen():
+            # get_message loop avoids async-for/listen() generator shutdown races on task cancel.
+            while True:
+                msg = await pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
+                )
+                if msg is None:
+                    continue
                 if msg.get("type") != "message":
                     continue
                 raw = msg.get("data")
                 if not raw:
                     continue
+                ch = msg.get("channel")
+                if isinstance(ch, bytes):
+                    ch = ch.decode()
+                await self._mirror_pubsub_to_audit(ch or "unknown", raw)
                 try:
                     event = json.loads(raw) if isinstance(raw, str) else json.loads(str(raw))
                     await self._process_event(event)
                 except Exception as e:
                     logger.debug("outcome_listener parse/process: %s", e)
-        except asyncio.CancelledError:
-            raise
         except Exception as e:
             logger.error("outcome_listener loop error: %s", e)
         finally:
+            await _close_async_pubsub(pubsub, r, EVENT_CHANNELS)
+
+    async def _mirror_pubsub_to_audit(self, channel: str, raw: str) -> None:
+        """LPUSH to events:log so external PUBLISH-only clients appear in Mission Control."""
+        import event_bus
+
+        try:
             try:
-                await pubsub.unsubscribe()
-                close = getattr(pubsub, "aclose", None) or getattr(pubsub, "close", None)
-                if callable(close):
-                    res = close()
-                    if asyncio.iscoroutine(res):
-                        await res
-                aclose = getattr(r, "aclose", None)
-                if callable(aclose):
-                    await aclose()
-                else:
-                    r.close()
-            except Exception:
-                pass
+                payload = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                payload = {"raw": (raw or "")[:4000]}
+            await asyncio.to_thread(
+                event_bus.log_only,
+                self._redis_url,
+                {"channel": channel, "source": "outcome_listener_pubsub", "payload": payload},
+            )
+        except Exception as e:
+            logger.debug("outcome_listener audit mirror: %s", e)
 
     async def _process_event(self, event: dict[str, Any]) -> None:
         etype = str(event.get("type", ""))

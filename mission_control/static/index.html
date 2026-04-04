@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mission Control</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -401,6 +402,80 @@ body:not([data-mc-view="dashboard"]) #event-strip {
   font-size: var(--fs-secondary);
   line-height: 1.45;
 }
+.digest-box.digest-content {
+  white-space: normal;
+}
+.digest-content h1, .digest-content h2, .digest-content h3 {
+  margin-top: 12px;
+  font-weight: 600;
+}
+.digest-content ul, .digest-content ol {
+  padding-left: 20px;
+}
+.digest-content code {
+  font-family: var(--mono);
+  background: rgba(255,255,255,0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.digest-content pre {
+  background: rgba(255,255,255,0.04);
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.digest-content pre code {
+  background: transparent;
+  padding: 0;
+}
+.offline-banner {
+  background: rgba(255,159,10,0.12);
+  border: 1px solid rgba(255,159,10,0.35);
+  color: var(--orange);
+  padding: 10px 12px;
+  border-radius: var(--radius-inner);
+  margin-bottom: 12px;
+  font-size: var(--fs-secondary);
+}
+.trading-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 16px;
+}
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-secondary);
+  margin: 12px 0 20px;
+}
+.settings-table th, .settings-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.settings-table td:last-child {
+  font-family: var(--mono);
+  color: var(--text-secondary);
+}
+.settings-links {
+  color: var(--text-secondary);
+  font-size: var(--fs-secondary);
+  line-height: 1.7;
+  padding-left: 1.2em;
+  margin: 0 0 16px;
+}
+.settings-links a {
+  color: var(--accent);
+}
+.settings-links a:hover {
+  text-decoration: underline;
+}
+h3.view-settings-h3 {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  margin: 16px 0 8px;
+  color: var(--text);
+}
 
 /* ── Toasts ── */
 #toast-stack {
@@ -548,6 +623,9 @@ body:not([data-mc-view="dashboard"]) #event-strip {
   background: rgba(255,255,255,0.04);
   border-radius: 8px;
   min-width: 0;
+}
+.svc-pill--optional {
+  opacity: 0.85;
 }
 .svc-spark {
   display: flex;
@@ -1154,16 +1232,47 @@ body:not([data-mc-view="dashboard"]) #event-strip {
 </div>
 <div id="view-settings" class="view-panel">
   <p class="view-lede">Server-side settings are in Docker / environment; this panel is a quick reference.</p>
-  <ul style="color:var(--text-secondary);font-size:var(--fs-secondary);line-height:1.6;padding-left:1.2em;">
-    <li>Timezone: America/Denver (container <code>TZ</code>)</li>
-    <li>After editing the dashboard: <code class="settings-code">docker compose build mission-control &amp;&amp; docker compose up -d mission-control</code></li>
-    <li>WebSocket feed: same origin <code>/ws</code></li>
+
+  <h3 class="view-settings-h3">Service ports</h3>
+  <table class="settings-table">
+    <tr><td>Mission Control</td><td>:8098</td></tr>
+    <tr><td>OpenClaw</td><td>:8099 (internal :3000)</td></tr>
+    <tr><td>Email Monitor</td><td>:8092</td></tr>
+    <tr><td>Calendar Agent</td><td>:8094</td></tr>
+    <tr><td>Notification Hub</td><td>:8095</td></tr>
+    <tr><td>D-Tools Bridge</td><td>:8096</td></tr>
+    <tr><td>Polymarket Bot</td><td>:8430 (via vpn)</td></tr>
+    <tr><td>Redis</td><td>:6379</td></tr>
+    <tr><td>Open WebUI</td><td>:3000</td></tr>
+    <tr><td>Context Preprocessor</td><td>:8028</td></tr>
+  </table>
+
+  <h3 class="view-settings-h3">Quick links</h3>
+  <ul class="settings-links">
+    <li><a href="/api/services">Service Health API</a></li>
+    <li><a href="/api/intelligence">Intelligence Summary</a></li>
+    <li><a href="/api/decisions/recent">Recent Decisions</a></li>
+    <li><a href="/events">Event Log</a></li>
+    <li><a href="/digest">Daily Digest</a></li>
+    <li><a href="/status">System Status</a></li>
   </ul>
+
+  <h3 class="view-settings-h3">Configuration</h3>
+  <p style="color:var(--text-secondary);font-size:var(--fs-secondary);line-height:1.6;margin:0 0 8px;">
+    Service tile counts <strong>core</strong> only (Remediator + ClawWork are optional — bring up with <code>docker compose up -d remediator clawwork</code> when needed).<br/>
+    Timezone: America/Denver (MDT)<br/>
+    Orchestrator tick: 5 minutes (OpenClaw)<br/>
+    After editing the dashboard: <code class="settings-code">docker compose build mission-control &amp;&amp; docker compose up -d mission-control</code><br/>
+    WebSocket feed: same origin <code>/ws</code>
+  </p>
+  <p style="color:var(--text-secondary);font-size:var(--fs-secondary);line-height:1.6;margin:0;">
+    Auto-responder / event feed: <span id="autoResponderStatus">checking…</span>
+  </p>
 </div>
 
 <div id="modal-backdrop" role="presentation"><div id="slide-panel"></div></div>
 <div id="digest-modal" role="dialog" aria-modal="true" aria-label="Daily digest">
-  <div class="digest-box" id="digest-modal-body"></div>
+  <div class="digest-box digest-content" id="digest-modal-body"></div>
 </div>
 <div id="toast-stack" aria-live="polite"></div>
 
@@ -1537,10 +1646,17 @@ function renderServices(data) {
   const services = data.services || [];
   const total = data.total || services.length;
   const healthy = data.healthy || services.filter(s => s.status === 'healthy').length;
+  const totalCore = data.total_core != null ? data.total_core : total;
+  const healthyCore = data.healthy_core != null ? data.healthy_core : healthy;
+  const optT = data.optional_total || 0;
+  const optH = data.optional_healthy != null ? data.optional_healthy : 0;
 
   const badge = document.getElementById('svc-badge');
-  badge.textContent = healthy + '/' + total;
-  badge.className = 'tile-badge ' + (healthy === total ? 'green' : healthy < total * 0.5 ? 'red' : '');
+  badge.textContent = healthyCore + '/' + totalCore;
+  badge.title = optT > 0
+    ? ('Core ' + healthyCore + '/' + totalCore + '. Optional (Remediator, ClawWork): ' + optH + '/' + optT + ' — not counted in badge')
+    : '';
+  badge.className = 'tile-badge ' + (healthyCore === totalCore ? 'green' : healthyCore < totalCore * 0.5 ? 'red' : '');
 
   recordServiceHealth(services);
 
@@ -1548,7 +1664,8 @@ function renderServices(data) {
   grid.innerHTML = '';
   services.forEach(svc => {
     const pill = document.createElement('div');
-    pill.className = 'svc-pill';
+    pill.className = 'svc-pill' + (svc.optional ? ' svc-pill--optional' : '');
+    if (svc.optional) pill.title = 'Optional stack — OK if container not running on this host';
 
     const dot = document.createElement('div');
     dot.className = 'svc-dot';
@@ -1585,7 +1702,9 @@ function renderServices(data) {
 function renderServiceFixStrip(services) {
   const strip = document.getElementById('service-fix-strip');
   if (!strip) return;
-  const bad = (services || []).filter(s => s.status === 'down' || s.status === 'degraded');
+  const bad = (services || []).filter(s =>
+    (s.status === 'down' || s.status === 'degraded') && !s.optional
+  );
   if (bad.length === 0) {
     strip.hidden = true;
     strip.innerHTML = '<span class="sf-label">Services need attention — copy restart command (run on AI-Server host)</span>';
@@ -1636,9 +1755,10 @@ function renderServicesExpanded() {
   el.hidden = false;
   const rows = (lastServicesPayload.services || []).map(s => {
     const det = s.details && typeof s.details === 'object' ? JSON.stringify(s.details).slice(0, 240) : '';
-    return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.status) + '</td><td>' + esc(String(s.port)) + '</td><td>' + esc(s.checked_at || '') + '</td><td>' + esc(det) + '</td></tr>';
+    const opt = s.optional ? 'yes' : '';
+    return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.status) + '</td><td>' + esc(String(s.port)) + '</td><td>' + esc(s.checked_at || '') + '</td><td>' + esc(opt) + '</td><td>' + esc(det) + '</td></tr>';
   }).join('');
-  el.innerHTML = '<table><thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Checked</th><th>Details</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  el.innerHTML = '<table><thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Checked</th><th>Optional</th><th>Details</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 // ── Trading P&L ────────────────────────────────────────────────────────────
@@ -2266,6 +2386,36 @@ function setView(view) {
   if (view === 'events') loadEventsView();
   if (view === 'digest') loadDigestFullPanel();
   if (view === 'trading') loadTradingView();
+  if (view === 'settings') loadSettingsPanel();
+}
+
+function renderMarkdownHtml(text) {
+  const t = String(text ?? '');
+  if (typeof marked !== 'undefined' && typeof marked.parse === 'function') {
+    return marked.parse(t);
+  }
+  const d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML.replace(/\n/g, '<br/>');
+}
+
+async function loadSettingsPanel() {
+  const el = document.getElementById('autoResponderStatus');
+  if (!el) return;
+  el.textContent = 'checking…';
+  try {
+    const res = await fetch('/status');
+    const d = await res.json();
+    const ar = d.auto_responder ?? d.autoResponder;
+    if (ar != null && String(ar).trim() !== '') {
+      el.textContent = String(ar);
+      return;
+    }
+    const n = d.connections ?? 0;
+    el.textContent = 'Event feed active (' + n + ' WS connection' + (n === 1 ? '' : 's') + ')';
+  } catch (e) {
+    el.textContent = 'unavailable';
+  }
 }
 
 async function loadEventsView() {
@@ -2287,79 +2437,107 @@ async function loadDigestFullPanel() {
   try {
     const res = await fetch('/digest');
     const data = await res.json();
-    el.textContent = data.content || JSON.stringify(data, null, 2);
+    const raw = data.content != null ? data.content : JSON.stringify(data, null, 2);
+    el.className = 'view-scroll digest-content';
+    el.innerHTML = renderMarkdownHtml(raw);
   } catch (e) {
     el.innerHTML = '<span class="empty">Failed to load digest</span>';
   }
+}
+
+const TRADING_VIEW_CACHE_KEY = 'mc_trading_view_v1';
+
+function buildTradingViewHtml(posData, catData, botData, botOffline) {
+  let html = '';
+  if (botOffline) {
+    html += '<div class="offline-banner">Trading bot unreachable — last known bot JSON below if any.</div>';
+  }
+  html += '<h3 class="view-sub">Open positions (' + (posData.count || 0) + ')</h3>';
+  if (posData.error) {
+    html += '<p class="empty">' + esc(posData.error) + '</p>';
+  }
+  const plist = posData.positions || [];
+  if (plist.length) {
+    html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Market</th><th>Side</th><th>Value</th><th>Price</th><th>P&amp;L</th></tr></thead><tbody>';
+    plist.slice(0, 120).forEach(p => {
+      const pnl = p.cashPnl;
+      let pnlStr = '—';
+      if (pnl != null && pnl !== '' && !isNaN(Number(pnl))) {
+        const v = Number(pnl);
+        pnlStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      html += '<tr><td>' + esc(p.title) + '</td><td>' + esc(p.outcome) + '</td><td>' + esc(formatMoney(p.currentValue)) + '</td><td>' + esc(String(p.curPrice ?? '')) + '</td><td>' + esc(pnlStr) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  } else if (!posData.error) {
+    html += '<p class="empty">No positions with current value &gt; 0.</p>';
+  }
+
+  const cats = catData.categories || {};
+  const keys = Object.keys(cats);
+  html += '<h3 class="view-sub">Category P&amp;L</h3>';
+  if (keys.length) {
+    html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Category</th><th>P&amp;L</th><th>Open</th><th>Positions</th></tr></thead><tbody>';
+    keys.forEach(k => {
+      const c = cats[k] || {};
+      html += '<tr><td>' + esc(k) + '</td><td>' + esc(String(c.total_pnl ?? '')) + '</td><td>' + esc(formatMoney(c.open_value ?? 0)) + '</td><td>' + esc(String(c.open_count ?? '')) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  } else {
+    html += '<p class="empty">' + esc(catData.error || 'No category data (API or cache).') + '</p>';
+  }
+
+  const sum = catData.summary || {};
+  const nv = sum.net_pnl;
+  let netStr = '—';
+  if (nv != null && nv !== '' && !isNaN(Number(nv))) {
+    const v = Number(nv);
+    netStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  html += '<p style="font-size:var(--fs-secondary);color:var(--text-muted);margin:12px 0;">Open value ' + esc(formatMoney(sum.open_value ?? 0)) + ' · Net P&amp;L ' + esc(netStr) + '</p>';
+
+  html += '<h3 class="view-sub">Polymarket bot</h3>';
+  html += '<pre class="view-pre">' + esc(JSON.stringify(botData, null, 2)) + '</pre>';
+  return html;
 }
 
 async function loadTradingView() {
   const el = document.getElementById('trading-view-body');
   if (!el) return;
   el.innerHTML = '<span class="empty">Loading…</span>';
+  var cachedHTML = '';
+  try {
+    const raw = localStorage.getItem(TRADING_VIEW_CACHE_KEY);
+    if (raw) {
+      const c = JSON.parse(raw);
+      cachedHTML = c.html || '';
+    }
+  } catch (e) {
+    cachedHTML = '';
+  }
   try {
     const [posRes, catRes, botRes] = await Promise.all([
       fetch('/api/trading/positions'),
       fetch('/api/trading/categories?nocache=1'),
-      fetch('/api/trading/bot-status').catch(() => ({ ok: false }))
+      fetch('/api/trading/bot-status').catch(function () { return { ok: false }; })
     ]);
     const posData = await posRes.json();
     const catData = await catRes.json();
-    let botData = null;
+    var botData = null;
+    var botOffline = !botRes || !botRes.ok;
     if (botRes && botRes.ok) {
-      try { botData = await botRes.json(); } catch (e) { botData = null; }
+      try { botData = await botRes.json(); } catch (e2) { botData = null; botOffline = true; }
     }
-
-    let html = '';
-    html += '<h3 class="view-sub">Open positions (' + (posData.count || 0) + ')</h3>';
-    if (posData.error) {
-      html += '<p class="empty">' + esc(posData.error) + '</p>';
+    var html = buildTradingViewHtml(posData, catData, botData, botOffline);
+    try {
+      localStorage.setItem(TRADING_VIEW_CACHE_KEY, JSON.stringify({ html: html, ts: Date.now() }));
+    } catch (e3) {
+      /* ignore quota */
     }
-    const plist = posData.positions || [];
-    if (plist.length) {
-      html += '<table class="pos-table"><thead><tr><th>Market</th><th>Side</th><th>Value</th><th>Price</th><th>P&amp;L</th></tr></thead><tbody>';
-      plist.slice(0, 120).forEach(p => {
-        const pnl = p.cashPnl;
-        let pnlStr = '—';
-        if (pnl != null && pnl !== '' && !isNaN(Number(pnl))) {
-          const v = Number(pnl);
-          pnlStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        }
-        html += '<tr><td>' + esc(p.title) + '</td><td>' + esc(p.outcome) + '</td><td>' + esc(formatMoney(p.currentValue)) + '</td><td>' + esc(String(p.curPrice ?? '')) + '</td><td>' + esc(pnlStr) + '</td></tr>';
-      });
-      html += '</tbody></table>';
-    } else if (!posData.error) {
-      html += '<p class="empty">No positions with current value &gt; 0.</p>';
-    }
-
-    const cats = catData.categories || {};
-    const keys = Object.keys(cats);
-    html += '<h3 class="view-sub">Category P&amp;L</h3>';
-    if (keys.length) {
-      html += '<table class="pos-table"><thead><tr><th>Category</th><th>P&amp;L</th><th>Open</th><th>Positions</th></tr></thead><tbody>';
-      keys.forEach(k => {
-        const c = cats[k] || {};
-        html += '<tr><td>' + esc(k) + '</td><td>' + esc(String(c.total_pnl ?? '')) + '</td><td>' + esc(formatMoney(c.open_value ?? 0)) + '</td><td>' + esc(String(c.open_count ?? '')) + '</td></tr>';
-      });
-      html += '</tbody></table>';
-    } else {
-      html += '<p class="empty">' + esc(catData.error || 'No category data (API or cache).') + '</p>';
-    }
-
-    const sum = catData.summary || {};
-    const nv = sum.net_pnl;
-    let netStr = '—';
-    if (nv != null && nv !== '' && !isNaN(Number(nv))) {
-      const v = Number(nv);
-      netStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    html += '<p style="font-size:var(--fs-secondary);color:var(--text-muted);margin:12px 0;">Open value ' + esc(formatMoney(sum.open_value ?? 0)) + ' · Net P&amp;L ' + esc(netStr) + '</p>';
-
-    html += '<h3 class="view-sub">Polymarket bot</h3>';
-    html += '<pre class="view-pre">' + esc(JSON.stringify(botData, null, 2)) + '</pre>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span class="empty">Unable to load trading view</span>';
+    el.innerHTML = '<div class="offline-banner">Trading data offline — showing last cached view</div>' +
+      (cachedHTML || '<div class="empty">No cached data available</div>');
   }
 }
 
@@ -2458,7 +2636,8 @@ function initQuickActions() {
       try {
         const res = await fetch('/digest');
         const data = await res.json();
-        digestBody.textContent = data.content || JSON.stringify(data, null, 2);
+        const raw = data.content != null ? data.content : JSON.stringify(data, null, 2);
+        digestBody.innerHTML = renderMarkdownHtml(raw);
       } catch (e) {
         digestBody.textContent = 'Failed to load digest';
       }

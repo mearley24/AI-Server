@@ -739,11 +739,12 @@ knowledge_base: KnowledgeBase = None  # type: ignore
 dtools_sync: DToolsSync = None  # type: ignore
 linear_sync: LinearSync = None  # type: ignore
 client_tracker: ClientTracker = None  # type: ignore
+outcome_listener_task: Optional[asyncio.Task] = None  # type: ignore
 
 
 @app.on_event("startup")
 async def startup():
-    global registry, llm, orchestrator, memory, agent_bus, job_mgr, knowledge_base, dtools_sync, linear_sync, client_tracker
+    global registry, llm, orchestrator, memory, agent_bus, job_mgr, knowledge_base, dtools_sync, linear_sync, client_tracker, outcome_listener_task
     logger.info("OpenClaw starting up...")
     registry = AgentRegistry(AGENTS_DIR)
     llm = LLMRouter()
@@ -806,7 +807,7 @@ async def startup():
     if REDIS_URL:
         from outcome_listener import run_outcome_listener
 
-        asyncio.create_task(run_outcome_listener(DATA_DIR, REDIS_URL))
+        outcome_listener_task = asyncio.create_task(run_outcome_listener(DATA_DIR, REDIS_URL))
         logger.info("Outcome listener task scheduled (Redis)")
 
     logger.info("OpenClaw ready on port %d — %d agents loaded", PORT, len(registry.agents))
@@ -814,6 +815,14 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    global outcome_listener_task
+    if outcome_listener_task:
+        outcome_listener_task.cancel()
+        try:
+            await asyncio.wait_for(outcome_listener_task, timeout=8.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        outcome_listener_task = None
     if orchestrator:
         await orchestrator.close()
     if agent_bus:

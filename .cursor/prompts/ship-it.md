@@ -211,69 +211,19 @@ Start simple — just log + score. Actual email sending can come later. The impo
 
 ## PHASE 4: End-to-End Smoke Test
 
-After all changes, rebuild and run this full verification:
+**Preferred:** run the maintained script from the repo root (uses log strings that match `openclaw/orchestrator.py`, jobs path fallback, and tolerates empty grep results):
 
 ```bash
-docker compose build --no-cache openclaw mission-control
-docker compose up -d openclaw mission-control
-sleep 90
-
-echo "========== SMOKE TEST =========="
-
-echo "--- 1. Orchestrator tick ---"
-docker logs openclaw 2>&1 | grep "tick_complete\|check_emails\|check_followups\|check_payments\|sync_dtools\|check_health" | tail -10
-
-echo "--- 2. Events flowing ---"
-docker exec redis redis-cli LRANGE events:log 0 15
-
-echo "--- 3. Decision journal ---"
-docker exec openclaw python3 -c "
-import sqlite3; conn = sqlite3.connect('/app/data/decision_journal.db')
-c = conn.execute('SELECT COUNT(*) FROM decisions').fetchone()[0]
-scored = conn.execute('SELECT COUNT(*) FROM decisions WHERE outcome IS NOT NULL').fetchone()[0]
-print(f'Decisions: {c} total, {scored} scored')
-"
-
-echo "--- 4. Jobs DB ---"
-docker exec openclaw python3 -c "
-import sqlite3; conn = sqlite3.connect('/app/data/jobs.db')
-tables = [t[0] for t in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall()]
-for t in tables:
-    c = conn.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
-    print(f'{t}: {c} rows')
-"
-
-echo "--- 5. Follow-ups DB ---"
-docker exec openclaw python3 -c "
-import sqlite3, os
-db = os.path.join(os.environ.get('DATA_DIR','/app/data'), 'follow_ups.db')
-if os.path.exists(db):
-    conn = sqlite3.connect(db)
-    for t in conn.execute(\"SELECT name FROM sqlite_master WHERE type='table'\").fetchall():
-        c = conn.execute(f'SELECT COUNT(*) FROM {t[0]}').fetchone()[0]
-        print(f'{t[0]}: {c} rows')
-else:
-    print('follow_ups.db not found')
-"
-
-echo "--- 6. Mission Control ---"
-curl -s http://localhost:8098/health
-curl -s http://localhost:8098/api/services | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Services: {d.get(\"healthy\",\"?\")}/{d.get(\"total\",\"?\")}')"
-curl -s http://localhost:8098/api/intelligence | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Intelligence: {list(d.keys())[:5]}')" 2>/dev/null || echo "Intelligence endpoint not reachable"
-
-echo "--- 7. Redis persistence ---"
-docker exec redis redis-cli CONFIG GET appendonly
-
-echo "--- 8. Approval endpoint ---"
-curl -s http://localhost:8099/internal/approval 2>/dev/null | head -1 || echo "Approval endpoint not found (expected — needs POST)"
-
-echo "--- 9. Silent service check ---"
-docker logs openclaw 2>&1 | grep "silent" | tail -3
-
-echo "--- 10. No crashes ---"
-docker logs openclaw 2>&1 | grep -i "traceback\|error\|exception" | grep -v "DEBUG\|debug\|httpx\|redis" | tail -5
-
-echo "========== SMOKE TEST COMPLETE =========="
+chmod +x scripts/smoke-test.sh   # once
+./scripts/smoke-test.sh
 ```
 
-Print the results. If any test fails, note the fix needed.
+Rebuild first when you have code changes:
+
+```bash
+SMOKE_REBUILD=1 SMOKE_SLEEP=90 ./scripts/smoke-test.sh
+```
+
+**What changed vs the old inline block:** (1) Orchestrator grep targets real lines such as `Orchestrator tick at`, `Trading check completed`, `D-Tools sync: N created`, not `tick_complete` / `check_emails` (those substrings do not appear in logs). (2) Jobs DB tries `/app/data/jobs.db` then `/app/data/openclaw/jobs.db`. (3) Silent check looks for `silent_service` (the warning line); empty output is OK when every heartbeat source is healthy. (4) “Errors” grep is narrowed to reduce noise; empty is good.
+
+Print the results. If any section looks wrong, note the fix needed.

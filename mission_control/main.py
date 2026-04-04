@@ -27,14 +27,14 @@ WALLET_ADDRESS = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
 # compose = docker compose service name for `docker compose restart <compose>` on the AI-Server host
 SERVICES = [
     {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000, "compose": "openwebui"},
-    {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "compose": "remediator"},
+    {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "compose": "remediator", "optional": True},
     {"name": "Proposals", "host": "proposals", "port": 8091, "ext_port": 8091, "compose": "proposals"},
     {"name": "Email Monitor", "host": "email-monitor", "port": 8092, "ext_port": 8092, "compose": "email-monitor"},
     {"name": "Voice Receptionist", "host": "voice-receptionist", "port": 3000, "ext_port": 8093, "compose": "voice-receptionist"},
     {"name": "Calendar Agent", "host": "calendar-agent", "port": 8094, "ext_port": 8094, "compose": "calendar-agent"},
     {"name": "Notification Hub", "host": "notification-hub", "port": 8095, "ext_port": 8095, "compose": "notification-hub"},
     {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096, "compose": "dtools-bridge"},
-    {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097, "compose": "clawwork"},
+    {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097, "compose": "clawwork", "optional": True},
     {"name": "Polymarket Bot", "host": "vpn", "port": 8430, "ext_port": 8430, "compose": "polymarket-bot", "compose_alt": "vpn"},
     {"name": "OpenClaw", "host": "openclaw", "port": 3000, "ext_port": 8099, "compose": "openclaw"},
     {"name": "Knowledge Scanner", "host": "knowledge-scanner", "port": 8100, "ext_port": 8100, "compose": "knowledge-scanner"},
@@ -103,12 +103,22 @@ async def api_services():
     """Check health of all services."""
     results = await asyncio.gather(*[check_service_health(s) for s in SERVICES])
     now = datetime.now().isoformat()
-    for r in results:
+    for i, r in enumerate(results):
         r["checked_at"] = now
+        r["optional"] = bool(SERVICES[i].get("optional"))
+    core = [r for r in results if not r.get("optional")]
+    optional = [r for r in results if r.get("optional")]
+    h = sum(1 for r in results if r["status"] == "healthy")
+    hc = sum(1 for r in core if r["status"] == "healthy")
+    ho = sum(1 for r in optional if r["status"] == "healthy")
     return {
         "services": results,
         "total": len(results),
-        "healthy": sum(1 for r in results if r["status"] == "healthy"),
+        "healthy": h,
+        "total_core": len(core),
+        "healthy_core": hc,
+        "optional_total": len(optional),
+        "optional_healthy": ho,
     }
 
 
@@ -628,6 +638,35 @@ async def api_followups():
     except Exception:
         pass
     return {"followups": [], "overdue_count": 0}
+
+
+@app.get("/api/intelligence")
+async def api_intelligence_summary():
+    """Proxy OpenClaw intelligence summary (Settings quick link)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get("http://openclaw:3000/intelligence/summary")
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        logger.debug("api_intelligence_summary: %s", e)
+    return {"error": "unavailable"}
+
+
+@app.get("/api/decisions/recent")
+async def api_decisions_recent(hours: int = Query(48, ge=1, le=720), limit: int = Query(20, ge=1, le=100)):
+    """Proxy OpenClaw recent decisions (Settings quick link)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                "http://openclaw:3000/intelligence/decisions/recent",
+                params={"hours": hours, "limit": limit},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        logger.debug("api_decisions_recent: %s", e)
+    return {"decisions": [], "error": "unavailable"}
 
 
 @app.get("/api/events-log")

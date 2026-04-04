@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Symphony — one-shot Docker build/up + verify (close-the-loop stack on Bob).
-# Usage: ./scripts/symphony-ship.sh [ship|verify|restart|full|help]
+# Usage: ./scripts/symphony-ship.sh [ship|verify|smoke|restart|full|help]
 set -euo pipefail
 
 ROOT="${SYMPHONY_ROOT:-$HOME/AI-Server}"
@@ -13,6 +13,7 @@ symphony-ship.sh — build/up/verify for the core Symphony loop stack.
 Commands:
   ship    Build openclaw + polymarket-bot, start core stack, run checks (default).
   verify  Only health / Redis events:log / HTTP checks (no build).
+  smoke   Full ship-it smoke test (see .cursor/prompts/ship-it.md PHASE 4).
   restart Quick: restart openclaw, polymarket-bot, mission-control (after bind-mount edits).
   full    docker compose up -d (entire compose file).
 
@@ -50,6 +51,9 @@ verify() {
 }
 
 case "${1:-ship}" in
+  smoke)
+    exec "$ROOT/scripts/smoke-test.sh"
+    ;;
   ship|loop)
     docker compose build openclaw polymarket-bot
     docker compose up -d "${LOOP_SERVICES[@]}"
