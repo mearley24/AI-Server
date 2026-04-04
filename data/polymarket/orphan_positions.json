@@ -448,5 +448,71 @@
     "token_id": "",
     "estimated_value": 0.31,
     "detected_at": "2026-04-04T00:08:59Z"
+  },
+  {
+    "condition_id": "0xc6a15269c2a784326caa18ee8f584eec21abf1551c40b07846b5ae7034a1cacb",
+    "token_id": "",
+    "estimated_value": 6.68,
+    "detected_at": "2026-04-04T00:39:46Z"
+  },
+  {
+    "condition_id": "0x2e3926753ba1e402a28832269eac8773674fbfab357fb165f2e16323d05af6ea",
+    "token_id": "",
+    "estimated_value": 0.92,
+    "detected_at": "2026-04-04T00:50:00Z"
+  },
+  {
+    "condition_id": "0x0eecd50b8730c479b9fdd5edc264768830573fbdec157f96af4dbe544753f111",
+    "token_id": "",
+    "estimated_value": 7.66,
+    "detected_at": "2026-04-04T00:50:00Z"
+  },
+  {
+    "condition_id": "0xfc5b82a61f37013c6ac35bf33db42fb57bf52deede863b0d8e8ba365bd8f16be",
+    "token_id": "",
+    "estimated_value": 7.49,
+    "detected_at": "2026-04-04T00:50:00Z"
+  },
+  {
+    "condition_id": "0x81b06cb917c9a2aabc67a7765bc3c640e88a699bbf451b29915049c0766cde04",
+    "token_id": "",
+    "estimated_value": 3.74,
+    "detected_at": "2026-04-04T01:00:52Z"
+  },
+  {
+    "condition_id": "0x2b5d41cb0e9d749108c593dd41fafd6f7f34e2b78a9fb4e9bd135f9b05968814",
+    "token_id": "",
+    "estimated_value": 0.65,
+    "detected_at": "2026-04-04T01:11:12Z"
+  },
+  {
+    "condition_id": "0xafaaef6f1f9cd48c2147e94bc55c9e5534c23405c5536d6b0c20f48020dd2946",
+    "token_id": "",
+    "estimated_value": 7.86,
+    "detected_at": "2026-04-04T01:21:31Z"
+  },
+  {
+    "condition_id": "0x6c3712de41368f3d6ef77e3830c4520d43a0c4793eff21f7d34a79c45bb57e5e",
+    "token_id": "",
+    "estimated_value": 0.88,
+    "detected_at": "2026-04-04T01:42:07Z"
+  },
+  {
+    "condition_id": "0x0842399b1d5e90288b1bc17ce671e947dba095247347149f3c2749ef542556a6",
+    "token_id": "",
+    "estimated_value": 7.62,
+    "detected_at": "2026-04-04T02:04:52Z"
+  },
+  {
+    "condition_id": "0xdde06286a7b9464d344f410ab0b3d2ebc6469904e72c27fd982f65fdbf78768d",
+    "token_id": "",
+    "estimated_value": 7.09,
+    "detected_at": "2026-04-04T02:15:07Z"
+  },
+  {
+    "condition_id": "0xc7c423bfaf59f3606c0024e67a8efaace2350a3ad7c8d4e904213799480420b5",
+    "token_id": "",
+    "estimated_value": 5.07,
+    "detected_at": "2026-04-04T02:15:07Z"
   }
 ]

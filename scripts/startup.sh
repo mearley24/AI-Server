@@ -49,12 +49,12 @@ else
   wait_for_bridge
 fi
 
-echo "$(_ts) [startup] docker compose up -d --build"
-docker compose up -d --build
+echo "$(_ts) [startup] /usr/local/bin/docker compose up -d --build"
+/usr/local/bin/docker compose up -d --build
 
 echo "$(_ts) [startup] Tailing compose logs (~30s)..."
 set +e
-docker compose logs -f --tail 30 &
+/usr/local/bin/docker compose logs -f --tail 30 &
 LOGF_PID=$!
 sleep 30
 kill "${LOGF_PID}" 2>/dev/null || true
@@ -62,7 +62,7 @@ wait "${LOGF_PID}" 2>/dev/null || true
 set -e
 
 if [[ -n "${NOTIFY_PHONE}" ]]; then
-  LIST="$(docker compose ps --format '{{.Name}}' 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+  LIST="$(/usr/local/bin/docker compose ps --format '{{.Name}}' 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
   export STARTUP_IMESSAGE_BODY="Bob is online — all services healthy. Containers: ${LIST}"
   echo "$(_ts) [startup] Sending iMessage confirmation..."
   set +e

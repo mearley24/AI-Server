@@ -10,7 +10,7 @@
 #   */5 * * * * /path/to/ai-server/scripts/vpn-guard.sh >> /tmp/vpn-guard.log 2>&1
 #
 # What it does:
-#   1. Checks whether the 'vpn' container is healthy via docker inspect
+#   1. Checks whether the 'vpn' container is healthy via /usr/local/bin/docker inspect
 #   2. If unhealthy: restarts the container, waits up to 60 s for recovery,
 #      then publishes an alert to Redis channel notifications:email
 #   3. Exposes safe_pull() — stash → backup WireGuard config → git pull
@@ -142,7 +142,7 @@ safe_pull() {
 # ---------------------------------------------------------------------------
 check_vpn_health() {
   local status
-  status=$(docker inspect --format '{{.State.Health.Status}}' "${VPN_CONTAINER}" 2>/dev/null || echo "missing")
+  status=$(/usr/local/bin/docker inspect --format '{{.State.Health.Status}}' "${VPN_CONTAINER}" 2>/dev/null || echo "missing")
   log "VPN container health: ${status}"
   if [[ "${status}" == "healthy" ]]; then
     return 0
@@ -157,7 +157,7 @@ check_vpn_health() {
 # ---------------------------------------------------------------------------
 restart_vpn() {
   log "VPN is not healthy — restarting container '${VPN_CONTAINER}'..."
-  docker restart "${VPN_CONTAINER}" || die "docker restart ${VPN_CONTAINER} failed"
+  /usr/local/bin/docker restart "${VPN_CONTAINER}" || die "/usr/local/bin/docker restart ${VPN_CONTAINER} failed"
 
   log "Waiting up to ${VPN_RESTART_TIMEOUT}s for VPN to become healthy..."
   local elapsed=0

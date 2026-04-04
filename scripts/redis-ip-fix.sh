@@ -6,7 +6,7 @@
 # PURPOSE:
 #   The polymarket-bot connects to Redis at the static IP 172.18.0.100, which
 #   is assigned via the docker-compose network IPAM config. If Docker recreates
-#   the network (e.g., after a full `docker compose down && up`), the IP could
+#   the network (e.g., after a full `/usr/local/bin/docker compose down && up`), the IP could
 #   drift. This script:
 #     1. Verifies Redis is reachable at 172.18.0.100:6379
 #     2. If not, discovers the actual Redis container IP
@@ -20,7 +20,7 @@
 #   ./redis-ip-fix.sh --force      # Force restart polymarket-bot regardless
 #
 # RUN AFTER:
-#   Any `docker compose restart`, `docker compose up -d`, or network change.
+#   Any `/usr/local/bin/docker compose restart`, `/usr/local/bin/docker compose up -d`, or network change.
 #   Add to your post-deploy hook or run manually after infra changes.
 #
 # DEPENDENCIES:
@@ -89,7 +89,7 @@ redis_ping() {
   fi
 
   # Fallback: run redis-cli inside the redis container itself
-  if docker exec "$REDIS_CONTAINER" \
+  if /usr/local/bin/docker exec "$REDIS_CONTAINER" \
        redis-cli -h "$host" -p "$port" -e PING 2>/dev/null | grep -q "PONG"; then
     return 0
   fi
@@ -181,12 +181,12 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# restart_bot — restart the polymarket-bot container via docker compose.
+# restart_bot — restart the polymarket-bot container via /usr/local/bin/docker compose.
 # ---------------------------------------------------------------------------
 restart_bot() {
   log "Restarting polymarket-bot..."
   cd "$COMPOSE_DIR"
-  docker compose restart "$BOT_CONTAINER"
+  /usr/local/bin/docker compose restart "$BOT_CONTAINER"
   log "polymarket-bot restarted"
 }
 
@@ -232,7 +232,7 @@ main() {
 
   if [[ -z "$actual_ip" ]]; then
     err "Could not determine Redis container IP — is the redis container running?"
-    docker ps --filter "name=$REDIS_CONTAINER" --format "  {{.Names}}  {{.Status}}"
+    /usr/local/bin/docker ps --filter "name=$REDIS_CONTAINER" --format "  {{.Names}}  {{.Status}}"
     exit 1
   fi
 
@@ -267,7 +267,7 @@ main() {
   else
     warn "Verification: polymarket-bot REDIS_URL ($live_url) may not reflect the update yet"
     warn "The container environment is injected at start — check that the override file is being loaded:"
-    warn "  docker compose -f docker-compose.yml -f docker-compose.redis-fix.yml up -d polymarket-bot"
+    warn "  /usr/local/bin/docker compose -f docker-compose.yml -f docker-compose.redis-fix.yml up -d polymarket-bot"
   fi
 
   log "=== Redis IP fix complete ==="
@@ -279,7 +279,7 @@ main() {
   log ""
   log "NOTE: To make the static IP permanent, ensure the Docker network subnet"
   log "      172.18.0.0/16 and Redis ipv4_address: 172.18.0.100 are in docker-compose.yml"
-  log "      and run: docker compose down && docker compose up -d"
+  log "      and run: /usr/local/bin/docker compose down && /usr/local/bin/docker compose up -d"
 }
 
 main "$@"

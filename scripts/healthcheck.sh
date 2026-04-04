@@ -81,22 +81,22 @@ while read -r line; do
   state="$(docker inspect --format '{{.State.Status}}' "${cid}" 2>/dev/null || echo unknown)"
 
   if [[ "${state}" != "running" ]]; then
-    log "Service ${svc} not running (state=${state}) — docker compose up -d --build ${svc}"
-    if docker compose up -d --build "${svc}" >>"${LOG_FILE}" 2>&1; then
+    log "Service ${svc} not running (state=${state}) — /usr/local/bin/docker compose up -d --build ${svc}"
+    if /usr/local/bin/docker compose up -d --build "${svc}" >>"${LOG_FILE}" 2>&1; then
       RESTARTED="${RESTARTED} ${svc}"
     fi
     continue
   fi
 
   if [[ "${health}" == "unhealthy" ]]; then
-    log "Service ${svc} unhealthy — docker compose up -d --build ${svc}"
-    if docker compose up -d --build "${svc}" >>"${LOG_FILE}" 2>&1; then
+    log "Service ${svc} unhealthy — /usr/local/bin/docker compose up -d --build ${svc}"
+    if /usr/local/bin/docker compose up -d --build "${svc}" >>"${LOG_FILE}" 2>&1; then
       RESTARTED="${RESTARTED} ${svc}"
     fi
   elif [[ "${health}" == "starting" ]]; then
     log "Service ${svc} still starting (health)"
   fi
-done < <(docker compose ps -q 2>/dev/null | while read -r q; do
+done < <(/usr/local/bin/docker compose ps -q 2>/dev/null | while read -r q; do
   [[ -z "${q}" ]] && continue
   state="$(docker inspect --format '{{.State.Status}}' "${q}" 2>/dev/null || true)"
   [[ "${state}" != "running" ]] && continue

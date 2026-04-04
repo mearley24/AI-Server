@@ -20,10 +20,10 @@
 #   Compares the list of files changed in the pull against known build-context
 #   directories from docker-compose.yml. If any file inside a service's build
 #   context changed, that service is rebuilt with:
-#     docker compose build --no-cache <service>
-#     docker compose up -d --no-deps <service>
+#     /usr/local/bin/docker compose build --no-cache <service>
+#     /usr/local/bin/docker compose up -d --no-deps <service>
 #
-# Dependencies: docker, docker compose (v2 plugin), git
+# Dependencies: docker, /usr/local/bin/docker compose (v2 plugin), git
 # =============================================================================
 set -euo pipefail
 
@@ -161,15 +161,15 @@ detect_changed_services() {
 }
 
 # ---------------------------------------------------------------------------
-# Rebuild a single service using docker compose
+# Rebuild a single service using /usr/local/bin/docker compose
 # ---------------------------------------------------------------------------
 rebuild_service() {
   local service="$1"
   log "Rebuilding service: ${service}"
   (
     cd "${REPO_ROOT}"
-    docker compose build --no-cache "${service}" \
-      && docker compose up -d --no-deps "${service}"
+    /usr/local/bin/docker compose build --no-cache "${service}" \
+      && /usr/local/bin/docker compose up -d --no-deps "${service}"
   ) && ok "Service '${service}' rebuilt and restarted" \
     || warn "Rebuild of '${service}' failed — manual intervention may be required"
 }
@@ -269,9 +269,9 @@ if (( REBUILD_ALL )); then
   log "Flag --rebuild-all set — rebuilding all services..."
   (
     cd "${REPO_ROOT}"
-    docker compose build --no-cache
-    docker compose up -d
-  ) && ok "Full stack rebuilt and restarted" || warn "Full rebuild had errors — check docker compose output"
+    /usr/local/bin/docker compose build --no-cache
+    /usr/local/bin/docker compose up -d
+  ) && ok "Full stack rebuilt and restarted" || warn "Full rebuild had errors — check /usr/local/bin/docker compose output"
 else
   # Detect which services have changes
   SERVICES_TO_REBUILD=()

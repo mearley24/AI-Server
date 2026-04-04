@@ -115,11 +115,11 @@ remove_container() {
 
   if [[ -n "${running}" ]]; then
     stop_tag "Stopping '${name}'..."
-    docker stop "${name}" >/dev/null
+    /usr/local/bin/docker stop "${name}" >/dev/null
   fi
   if [[ -n "${exists}" ]]; then
     stop_tag "Removing '${name}'..."
-    docker rm "${name}" >/dev/null
+    /usr/local/bin/docker rm "${name}" >/dev/null
     stop_tag "'${name}' removed"
   else
     info "'${name}' is not present — nothing to remove"
@@ -139,10 +139,10 @@ section_overview() {
   # Write stats to a temp file for lookup
   local stats_tmp
   stats_tmp=$(mktemp /tmp/audit_stats.XXXXXX)
-  docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null > "${stats_tmp}" || true
+  /usr/local/bin/docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null > "${stats_tmp}" || true
 
   # Iterate all containers (running + stopped) for status / uptime
-  docker ps -a --format "{{.Names}}\t{{.Status}}" 2>/dev/null | sort | \
+  /usr/local/bin/docker ps -a --format "{{.Names}}\t{{.Status}}" 2>/dev/null | sort | \
   while IFS=$'\t' read -r cname status; do
     local cpu mem usage
     cpu=$(grep "^${cname}" "${stats_tmp}" 2>/dev/null | cut -f2 || echo "—")

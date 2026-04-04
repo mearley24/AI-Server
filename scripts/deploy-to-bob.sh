@@ -64,14 +64,14 @@ check_bob() {
 
 do_status() {
   banner "Bob Service Status"
-  bob "cd ${REPO_DIR} && docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null || \
-  bob "cd ${REPO_DIR} && docker compose ps"
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null || \
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose ps"
 }
 
 do_logs() {
   local svc="$1"
   banner "Logs: ${svc}"
-  bob "cd ${REPO_DIR} && docker logs ${svc} --tail 50" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker logs ${svc} --tail 50" 2>&1
 }
 
 do_health() {
@@ -112,7 +112,7 @@ do_deploy() {
   do_pull
 
   banner "Building & Deploying"
-  bob "cd ${REPO_DIR} && docker compose up -d --build" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose up -d --build" 2>&1
   ok "All services deployed"
 
   sleep 3
@@ -123,11 +123,11 @@ do_rebuild() {
   do_pull
 
   banner "Rebuilding ALL (--no-cache)"
-  bob "cd ${REPO_DIR} && docker compose build --no-cache" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose build --no-cache" 2>&1
   ok "Build complete"
 
   banner "Restarting"
-  bob "cd ${REPO_DIR} && docker compose up -d --force-recreate" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose up -d --force-recreate" 2>&1
   ok "All services restarted"
 
   sleep 5
@@ -139,16 +139,16 @@ do_service() {
   do_pull
 
   banner "Rebuilding: ${svc}"
-  bob "cd ${REPO_DIR} && docker compose build --no-cache ${svc}" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose build --no-cache ${svc}" 2>&1
   ok "Build complete"
 
   banner "Restarting: ${svc}"
-  bob "cd ${REPO_DIR} && docker compose up -d --force-recreate ${svc}" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker compose up -d --force-recreate ${svc}" 2>&1
   ok "${svc} restarted"
 
   sleep 3
   info "Checking health..."
-  bob "cd ${REPO_DIR} && docker logs ${svc} --tail 10" 2>&1
+  bob "cd ${REPO_DIR} && /usr/local/bin/docker logs ${svc} --tail 10" 2>&1
 }
 
 do_env_check() {
@@ -207,7 +207,7 @@ case "${1:-}" in
     echo "Usage: $0 [option]"
     echo ""
     echo "  (no args)           Pull + deploy changed services"
-    echo "  --status, -s        Show docker compose ps"
+    echo "  --status, -s        Show /usr/local/bin/docker compose ps"
     echo "  --health, -h        Health check all services"
     echo "  --logs, -l <name>   Tail logs for a service"
     echo "  --rebuild, -r       Full rebuild (--no-cache) + restart"

@@ -27,7 +27,7 @@ fi
 
 echo ""
 echo "Done. Now restart the VPN:"
-echo "  docker compose up -d --force-recreate vpn polymarket-bot"
+echo "  /usr/local/bin/docker compose up -d --force-recreate vpn polymarket-bot"
 echo ""
 echo "Verify with:"
-echo "  docker exec polymarket-bot python3 -c \"import redis; r=redis.from_url('redis://host.docker.internal:6379', socket_timeout=2); r.ping(); print('Redis OK')\""
+echo "  /usr/local/bin/docker exec polymarket-bot python3 -c \"import redis; r=redis.from_url('redis://host.docker.internal:6379', socket_timeout=2); r.ping(); print('Redis OK')\""

@@ -495,25 +495,6 @@
       "thesis": "Buying at $0.51 makes sense as Robert Golob's rising popularity and favorable political landscape suggest a higher likelihood of him becoming the next Prime Minister of Slovenia than the current market price reflects."
     },
     {
-      "position_id": "ct-0e377fd41b0c",
-      "source_wallet": "0xe3479950ef6e8984df109ec5c9be40630f9fb438",
-      "token_id": "54952818906352713789207237448171320919443978320311956402765893438751837250831",
-      "market_question": "Will \"The Super Mario Galaxy Movie\" Opening Weekend Box Office be between 180m and 190m?",
-      "condition_id": "0x0842399b1d5e90288b1bc17ce671e947dba095247347149f3c2749ef542556a6",
-      "side": "BUY",
-      "entry_price": 0.6096733333333333,
-      "size_usd": 2.6595,
-      "size_shares": 5.0,
-      "copied_at": 1775217934.4417243,
-      "source_trade_id": "0x5f86811e54a4f2000531349423f7d15bff7defba0478c075ad63a5f483f54e9e",
-      "order_id": "0xf94ef22a1b603a1002302532464f8deff17706ac8ba031fc197a0fcd63278cbd",
-      "category": "entertainment",
-      "wallet_win_rate": 0.9666666666666667,
-      "end_date": "2020-11-04T00:00:00Z",
-      "event_slug": "will-the-super-mario-galaxy-movie-opening-weekend-box-office-be-between-180m-and-190m",
-      "thesis": "High-conviction copy: 97% WR on 30 trades"
-    },
-    {
       "position_id": "ct-760c1eb1f80b",
       "source_wallet": "0x5f390e4b7d6f06d6756a6c92afdbf7b3176aa78c",
       "token_id": "35968934704355125801757842815414846851154832122619061248995735016323288107185",
@@ -712,6 +693,8 @@
     "politics": 2.85,
     "other": 2.73,
     "geopolitics": 0.0,
-    "economics": 0.0
+    "economics": 0.0,
+    "us_sports": -0.85,
+    "entertainment": -0.5874682562246448
   }
 }
