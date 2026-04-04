@@ -51,6 +51,10 @@ data/email-monitor/
 symphonysh-web/
 redis/
 knowledge/cortex/
+
+# Root knowledge/ is markdown/json/scripts — not a pip-style package (avoid IDE stubs)
+knowledge/__init__.py
+knowledge/hardware/__init__.py
 scratch/
 .cursor/local/
 
