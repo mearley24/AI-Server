@@ -514,5 +514,11 @@
     "token_id": "",
     "estimated_value": 5.07,
     "detected_at": "2026-04-04T02:15:07Z"
+  },
+  {
+    "condition_id": "0xf2b460d7acfabeceba49906de776f2aef0e8ff46f3f61e3bbeac16178586f1a9",
+    "token_id": "",
+    "estimated_value": 0.09,
+    "detected_at": "2026-04-04T02:25:21Z"
   }
 ]
