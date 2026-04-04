@@ -765,6 +765,27 @@ class Orchestrator:
         except Exception as e:
             logger.debug("weekly patterns: %s", e)
 
+        await self._run_weekly_learning()
+
+    async def _run_weekly_learning(self) -> None:
+        """Mine decision journal + cost tracker for cortex learnings."""
+        try:
+            from continuous_learning import main as learn
+
+            learnings = await asyncio.to_thread(learn)
+            if learnings:
+                await self._publish(
+                    "events:knowledge",
+                    {
+                        "type": "knowledge.learned",
+                        "employee": "beatrice",
+                        "title": f"Learned {len(learnings)} new patterns",
+                        "data": {"learnings": learnings},
+                    },
+                )
+        except Exception as e:
+            logger.debug("weekly learning: %s", e)
+
     # ------------------------------------------------------------------
     # Memory consolidation (NEW) — runs once per hour
     # ------------------------------------------------------------------
