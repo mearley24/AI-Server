@@ -1,182 +1,106 @@
-# SymphonySH.com — Upgrade to Convert
+# SymphonySH.com — Targeted Upgrades
 
-## Current State
-The site looks premium — dark cinematic aesthetic, real photography, strong copy, Vail Valley positioning. The foundation is excellent. This prompt adds the missing pieces that turn visitors into clients.
+## Context
+symphonysh.com is a React + Vite + shadcn/ui site. Repo: `mearley24/symphonysh`. Deploys via Cloudflare Pages from GitHub. DNS on Cloudflare, www is primary, apex 301s to www.
 
-## 1. Social Proof — Testimonials Section
+### Already Done (DO NOT redo):
+- SEO structured data via `src/constants/businessSchema.ts` — LocalBusiness JSON-LD with NAP, geo, hours, service types
+- Zapier webhook centralized in `src/constants/zapier.ts` for scheduling flow
+- Homepage FAQ with human-style copy
+- Anti-AI tone polish on homepage
+- Transparent header, CTA routing
+- `sameAs` field documented and left empty (waiting for real profile URLs)
+- `hasMap` Google Maps link added
+- Cloudflare Pages build config fixed (Vite build, dist output)
 
-Add a testimonials section between "Our Process" and "Why Us" on the homepage:
+### DO NOT add:
+- Google Analytics, Facebook Pixel, or any new third-party tracking scripts
+- New schema markup — `businessSchema.ts` already handles this
+- Blog/resources placeholder pages — not needed yet
+- Any pricing information on service pages — Matt will add this when ready
 
-### Option A: Google Reviews Widget
-If a Google Business Profile exists, embed a reviews widget. Check if there's a Google Place ID in .env or config.
+---
 
-### Option B: Static Testimonials
-Create 3-4 testimonial cards. Use this format:
+## 1. Social Proof — Testimonials Component
+
+Create `src/components/Testimonials.tsx`:
+- Place it on the homepage between "Our Process" and "Why Us" sections
+- 3 testimonial cards, placeholder data with clear `// TODO: Replace with real client testimonials` comments
+- Design: dark cards matching existing aesthetic (use existing Tailwind/shadcn tokens from the site), gold/warm accent for quote marks
+- Format per card: quote text, client first name + last initial, location (e.g., Beaver Creek), project type
+- No photos — privacy-first for the luxury market
+- Responsive: 3 cols desktop, 1 col mobile
+
+Use placeholder testimonials that sound realistic for a Vail Valley smart home integrator — DO NOT make them sound AI-generated. Keep them short (1-2 sentences max).
+
+## 2. About Page — Founder Section
+
+Edit `src/pages/About.tsx`:
+- Add a "Meet the Founder" section after the existing "How We Work" content
+- Copy:
 ```
-"Quote from client about their experience."
-— First Name L., Location (e.g., Beaver Creek)
-Project type (e.g., Whole-Home Audio & Automation)
-```
-
-Design: dark cards matching the site aesthetic. Gold/warm accent for quote marks. Client first name + last initial only. No photos needed — the luxury market values privacy.
-
-If no real testimonials are available yet, create a `src/components/Testimonials.tsx` component with placeholder data that's easy to swap later. Add a comment: `// TODO: Replace with real client testimonials`
-
-Also add a subtle "Google Reviews" or "5-star rated" badge near the hero CTAs if applicable.
-
-## 2. About Page — Add the Human Element
-
-The `/about` page reads like a philosophy page. Add:
-
-### Founder Section
-```
-About the Founder
-
 Matt Earley started Symphony Smart Homes after years in the AV integration industry, 
-driven by a simple frustration: clients deserved better. Better communication, better 
+driven by a simple frustration — clients deserved better. Better communication, better 
 craftsmanship, and systems that actually work after the installer leaves.
 
 Based in Eagle County, Matt personally oversees every project from first walkthrough 
 to final programming. When you call Symphony, you talk to the person doing the work.
 ```
+- Design: clean text section, no photo, same dark aesthetic as the rest of the page
+- Do NOT add a stats row (no fake numbers)
 
-Design: clean text section, no photo needed unless one exists. Keep the same dark aesthetic.
+## 3. Project Case Study Captions
 
-### By the Numbers (if data is available)
-Subtle stats row:
-- Years in Vail Valley
-- Projects completed
-- 5-star reviews
+Edit the `/projects` page and photo gallery components:
+- Add descriptive captions to each photo category card (Home Theater, Mounted TVs, Wiring & Infrastructure)
+- Each card should have a 1-2 sentence description of what the category involves, e.g.:
+  - Home Theater: "From dedicated theater rooms with acoustic treatment to casual media spaces — designed for how you actually watch."
+  - Mounted TVs: "Clean, level installs with hidden wiring. Every mount rated for the TV, every cable managed."
+  - Wiring & Infrastructure: "The work behind the walls that makes everything else possible. Cat6, HDMI, speaker wire, conduit — done right the first time."
+- Check the photo gallery sub-pages (`/photos/*`) — if they're empty or thin, note it in a TODO comment
 
-If exact numbers aren't available, skip this — never use fake stats.
+## 4. URL Redirects
 
-## 3. Project Case Studies
-
-The `/projects` page has photo categories but no context. Add case study cards:
-
-For each project category (Home Theater, Mounted TVs, Wiring), add a brief case study format:
-
-```
-[Project Photo]
-The Challenge: Client needed a home theater in an existing basement with limited ceiling height.
-The Solution: Custom short-throw projector setup with in-wall speakers and acoustic treatment.
-The Result: "We use it every night." — Client, Edwards
-```
-
-This gives the photos meaning and demonstrates problem-solving ability.
-
-If specific project details aren't available, at least add descriptive captions to the photo galleries instead of bare images.
-
-## 4. Service Pages — Add Pricing Signals
-
-The FAQ mentions "transparent pricing" but the site has no pricing signals. Add to each service page:
-
-```
-Projects typically start at $X,XXX for [basic scope].
-Every home is different — schedule a walkthrough for an accurate quote.
+In the router (check `src/App.tsx` or wherever routes are defined), add `<Navigate>` redirects for common mistyped/old URLs:
+```tsx
+<Route path="/pre-wiring" element={<Navigate to="/services/prewire" replace />} />
+<Route path="/installation" element={<Navigate to="/install" replace />} />
+<Route path="/maintenance" element={<Navigate to="/troubleshooting" replace />} />
+<Route path="/3d-tours" element={<Navigate to="/matterport" replace />} />
+<Route path="/portfolio" element={<Navigate to="/projects" replace />} />
 ```
 
-Rough ranges to use (adjust to what's accurate):
-- Pre-wire: "Starting at $3,000 for new construction"
-- Installation: "Starting at $5,000 for whole-home control"
-- Maintenance: "Service calls from $150/hour"
-- Matterport: "Starting at $500 per scan"
+## 5. Footer Copyright — Dynamic Year
 
-This sets expectations and filters out budget-mismatch leads. Add as a subtle callout on each service page, not a full pricing table.
-
-## 5. SEO Improvements
-
-### Meta Tags
-Check that every page has unique:
-- `<title>` — include "Vail Valley" and the service name
-- `<meta name="description">` — 150 chars, include location + service
-- Open Graph tags for social sharing
-
-### Schema Markup
-Add JSON-LD structured data to `index.html` or via the SEO component:
-```json
-{
-  "@context": "https://schema.org",
-  "@type": "LocalBusiness",
-  "name": "Symphony Smart Homes",
-  "description": "Smart home integration in Vail Valley & Eagle County",
-  "telephone": "(970) 519-3013",
-  "email": "info@symphonysh.com",
-  "address": {
-    "@type": "PostalAddress",
-    "addressLocality": "Eagle",
-    "addressRegion": "CO",
-    "addressCountry": "US"
-  },
-  "areaServed": ["Vail", "Beaver Creek", "Edwards", "Avon", "Eagle"],
-  "serviceType": ["Smart Home Installation", "Home Automation", "AV Integration", "Pre-Wire", "Matterport 3D Scanning"]
-}
-```
-
-### Sitemap
-Check that `public/sitemap.xml` includes ALL actual pages:
-- `/`, `/services`, `/about`, `/contact`, `/projects`, `/matterport`
-- `/services/prewire`, `/services/automation`, `/services/audio`, `/services/lighting`, etc.
-- `/walkthrough`, `/privacy`, `/terms`
-
-## 6. Footer Copyright Fix
-Homepage shows © 2026, service pages show © 2024. Make it dynamic:
+Find the Footer component (`src/components/Footer.tsx`). If any copyright text is hardcoded to a year, replace with:
 ```tsx
 © {new Date().getFullYear()} Symphony Smart Homes
 ```
 
-## 7. 404 Page
-`/pre-wiring`, `/installation`, `/maintenance`, `/3d-tours`, `/portfolio` all 404. Either:
-- Add redirects to the correct URLs (preferred)
-- Or improve the 404 page with links to main sections
+Check ALL footer instances — homepage footer and service page footers may be different components.
 
-In the router (App.tsx or wherever routes are defined), add redirects:
-```
-/pre-wiring → /services/prewire
-/installation → /install  
-/maintenance → /troubleshooting
-/3d-tours → /matterport
-/portfolio → /projects
-```
+## 6. Mobile Polish
 
-## 8. Performance & Polish
+- Add a floating click-to-call phone button on mobile (visible below 768px):
+  - Fixed position, bottom-right, 56px circle
+  - Phone icon, links to `tel:+19705193013`
+  - Match the site's gold CTA color
+  - Only visible on mobile (hidden on desktop where phone is in header)
+- Verify the "Schedule a Walkthrough" CTA routes to `/walkthrough` (the scheduling page that POSTs to Zapier)
+- Add `loading="lazy"` to images below the hero fold (check all `<img>` tags across pages)
 
-### Loading
-- Add a subtle page transition animation (fade-in on route change)
-- Lazy-load images below the fold
-- Add `loading="lazy"` to all `<img>` tags not in the hero
+## 7. Sitemap Verification
 
-### Interactive Elements
-- The "Schedule a Walkthrough" CTA — make sure it goes to a real booking flow or contact form, not just a mailto
-- Add a floating phone button on mobile (fixed bottom-right, click-to-call)
-- Smooth scroll anchors for homepage sections
+Check `public/sitemap.xml`. Make sure it includes every real route:
+- `/`, `/services`, `/about`, `/contact`, `/projects`, `/matterport`
+- `/services/prewire`, `/install`, `/troubleshooting`
+- `/walkthrough`, `/privacy`, `/terms`
+- Service sub-pages under `/services/*` (audio, lighting, security, climate, networking, shades, maintenance)
 
-### Favicon
-Verify the favicon is the Symphony S logo, not a default Vite icon.
-
-## 9. Analytics
-If not already present, add:
-- Google Analytics 4 (or Plausible for privacy-first analytics)
-- Google Search Console verification meta tag
-- Facebook Pixel (if running any ads)
-
-Check `.env` for any existing analytics IDs before adding.
-
-## 10. Content Additions for SEO
-
-### Blog / Resources Section (Future)
-Create a placeholder `/resources` or `/blog` page that can hold:
-- "What to Know About Pre-Wiring Your New Build"
-- "Control4 vs Josh.ai: Which Smart Home System is Right for You?"
-- "How Much Does a Smart Home Cost in Vail Valley?"
-
-These pages would rank for local search queries. Don't write the full articles now — just create the page template and route so it's ready to populate.
+If the sitemap is missing pages, add them. If there's no sitemap, create one.
 
 ## Build & Deploy
 ```bash
-npm run build
-# or
-bun run build
+npm ci && npm run build
 ```
-
-Then push to GitHub — the site appears to deploy via GitHub Pages.
+Commit and push to `main` — Cloudflare Pages deploys automatically.
