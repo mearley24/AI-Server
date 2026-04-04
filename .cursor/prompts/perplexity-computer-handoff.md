@@ -1,75 +1,79 @@
-# Perplexity Computer — Symphony AI-Server handoff (paste as task)
+# Perplexity Computer Prompt — What’s Left, Started, and Still Broken
 
-Use this as the **system or first message** for a Perplexity Computer session. It assumes connectors to **GitHub** (repo `AI-Server` or local clone), optional **Google Drive / Notes** if the user links them, and **web** for docs.
-
----
-
-## Project
-
-**Symphony AI Server** — AI backend for Symphony Smart Homes (Vail Valley / Eagle County AV integration). Monorepo on a **Mac Mini** (Docker Compose): OpenClaw orchestrator, Mission Control dashboard (port **8098**), Redis, D-Tools Cloud bridge (**dtools-bridge**, host **127.0.0.1:8096** → container **5050**), email-monitor, proposals, voice, calendar, notification-hub, polymarket bot (vpn), OpenClaw, knowledge-scanner, intel-feeds, etc.
-
-Key docs in repo: **`AGENTS.md`**, **`CLAUDE.md`**, **`.cursor/prompts/final-wiring-gaps.md`**, **`docs/PROPOSAL_DTOOLS_NEXT.md`**, **`knowledge/agents/LEARNER_ROADMAP.md`**, **`scripts/smoke-test.sh`**.
+Use this as your first message in Perplexity Computer.
 
 ---
 
-## Recently fixed (2026-04) — double-check on host
+You are auditing and planning next steps for the `AI-Server` repo on Bob’s Mac (`~/AI-Server`).
+Your output must clearly separate:
+1) what is complete,
+2) what has started but still needs finishing,
+3) what has not started,
+4) what is still broken or unknown due to missing host verification.
 
-1. **D-Tools Bridge Docker health** — `GET /health` used to call `snapshot()` (three slow D-Tools API calls) and blew past Docker’s **10s** healthcheck. **Fix:** `integrations/dtools/dtools_server.py` — `/health` is now **liveness only** (API key present, fast **200**). Deep connectivity: **`GET /snapshot`**. Image rebuilt and container recreated on the host; **`docker compose ps dtools-bridge`** should show **`healthy`**, not stuck in **`health: starting`**.
+## Ground truth already implemented in code
 
----
+Treat these as implemented (verify behavior on host, but do not re-plan from scratch):
+- `openclaw/orchestrator.py`: follow-up + payment checks on tick, event emissions (`email.processed`, `calendar.checked`, `jobs.synced`, `health.checked`, `briefing.sent`), weekly learning hook.
+- `openclaw/dtools_sync.py`: D-Tools won/on-hold job auto-create path.
+- `openclaw/daily_briefing.py`: email DB path fallback.
+- `openclaw/main.py`: outcome listener lifecycle.
+- `integrations/dtools/dtools_server.py`: `/health` is liveness-only; `/snapshot` is deep cloud check.
+- `mission_control/main.py`: optional services logic (`Remediator`, `ClawWork`) and service summary fields.
+- `mission_control/static/index.html`: sidebar, digest markdown rendering, date guard work.
+- New support scripts present:
+  - `openclaw/continuous_learning.py`
+  - `openclaw/task_board.py`
+  - `tools/bob_maintenance.py`
+  - `tools/bob_export_dtools.py`
+  - `setup/nodes/configure_bob_always_on.sh`
+  - `setup/nodes/BOB_24_7_RUNBOOK.md`
+  - `setup/launchd/com.symphony.learning.plist`
 
-## Implemented in code (verify behavior, not just files)
+## Started but not fully aligned
 
-| Area | Status |
-|------|--------|
-| Follow-up + payment trackers on orchestrator tick | **`openclaw/orchestrator.py`** — `check_followups()`, `check_payments()` |
-| D-Tools → jobs for Won / On Hold | **`openclaw/dtools_sync.py`** — auto-create path with duplicate check |
-| Daily briefing email DB paths | **`openclaw/daily_briefing.py`** — `_find_email_db()` |
-| Redis persistence | **`redis/redis.conf`** mounted in **`docker-compose.yml`** |
-| Orchestrator Redis events | **`email.processed`**, **`jobs.synced`**, **`health.checked`**, **`briefing.sent`**, **`calendar.checked`** in **`orchestrator.py`** |
-| Outcome listener | **`openclaw/main.py`** — `run_outcome_listener` task |
-| Mission Control core UX | Digest markdown (**marked**), sidebar, invalid-date guards — see **`mission_control/static/index.html`** |
-| Auto-responder | Wired in **`check_emails()`** — requires **`AUTO_RESPONDER_ENABLED=true`** (or `1` / `yes`) in env; **ACTIVE_CLIENT** cap per tick |
+These are partially complete and need cleanup/alignment:
+- AGENTS/docs refer to `orchestrator/continuous_learning.py` and `orchestrator/task_board.py`, but implementation currently lives in `openclaw/`.
+- `knowledge/agents/LEARNER_ROADMAP.md` still points to `orchestrator/continuous_learning.py`.
+- Need decision: move files to `orchestrator/`, add thin wrapper files there, or update docs to canonical `openclaw/` paths.
 
----
+## Not started / still missing vs AGENTS references
 
-## Not finished / product gaps (your job to drive or verify)
+These appear referenced but missing in repo:
+- `orchestrator/WORK_IN_PROGRESS.md`
+- `knowledge/agents/ULTRA_RUNBOOK.md`
+- `.cursor/prompts/close-the-loop-part2.md`
 
-1. **D-Tools Cloud proposal loop (business process)** — Engineering checklist in **`docs/PROPOSAL_DTOOLS_NEXT.md`**: search **`get_projects` / `get_opportunities` / `get_clients`** before creating duplicates; align pipeline with active installs; Control4 fallback patterns in **`tools/bob_export_dtools.py`**. The **API client** exists; **full workflow enforcement** in agents/UI may still be partial.
+## Still broken or unknown (requires host verification now)
 
-2. **Continuous learning / learner roadmap** — **`knowledge/agents/LEARNER_ROADMAP.md`**: steady **`continuous_learning.py`** / launchd, transcript mining → **`AGENTS.md`**, growing **`knowledge/cortex/`**. Confirm what is scheduled vs aspirational.
+Cannot be confirmed from static code alone. Validate on Bob host:
+- Is D-Tools bridge stable/healthy after the liveness fix?
+- Are core services at `healthy_core == total_core` in Mission Control?
+- Are follow-up/payment DB sidecars populating?
+- Is `events:log` receiving fresh entries continuously?
+- Is `AUTO_RESPONDER_ENABLED` set intentionally in production env?
+- Is weekly learning launchd job installed/loaded and actually running?
 
-3. **Optional / flaky services** — Mission Control marks **Remediator** and **ClawWork** as optional for the “core” badge. If smoke or `/api/services` shows **11/12** or core **9/10**, distinguish **optional** vs **core** failures.
-
-4. **Environment flags** — **`AUTO_RESPONDER_ENABLED`**, **`DTOOLS_API_KEY`**, Zoho tokens, etc. Confirm what is set in production **`.env`** (never paste secrets into chat).
-
-5. **Git / data hygiene** — If **`git status`** shows conflicts on **`data/`** or `*.db`, those are **runtime/local** artifacts; resolve per team policy (often keep local DBs untracked or merge carefully).
-
----
-
-## What to run on the Mac (Bob) to see “what’s still broken”
+## Run these checks on host
 
 ```bash
 cd ~/AI-Server
 ./scripts/smoke-test.sh
 curl -sS http://127.0.0.1:8098/api/services | python3 -m json.tool
 curl -sS http://127.0.0.1:8096/health | python3 -m json.tool
-curl -sS http://127.0.0.1:8096/snapshot | python3 -m json.tool   # D-Tools cloud connectivity (slower)
+curl -sS http://127.0.0.1:8096/snapshot | python3 -m json.tool
 docker compose ps
+launchctl list | rg symphony
 ```
 
-Interpretation: **`/health`** on dtools-bridge = process + key; **`/snapshot`** = cloud round-trip. Mission Control **`healthy_core` / `total_core`** = operational summary.
+## Your deliverable
 
----
+Produce a concise report with 4 sections:
+1. **Done** (confirmed)
+2. **In Progress** (started but incomplete/misaligned)
+3. **Not Started** (missing artifacts)
+4. **Still Not Working / Unknown** (based on runtime evidence)
 
-## Ask of Perplexity Computer
+Then provide a prioritized action list (P0/P1/P2) with exact file paths and commands for each action.
 
-1. Cross-check this handoff against **current** repo files (especially **`final-wiring-gaps.md`** and **`docs/PROPOSAL_DTOOLS_NEXT.md`**) and list **only** gaps that are still open or need validation.
-
-2. Propose a **short ordered backlog** (P0 → P2) for the next work session, including anything that is **still not working** on the host (flapping containers, missing env, failing smoke sections).
-
-3. If the user pastes **smoke-test output** or **`/api/services` JSON**, diagnose which services are down or degraded and suggest **one concrete fix** per item (compose service name, env var, or code path).
-
----
-
-*Generated for Symphony AI-Server — update dates and outcomes when the situation changes.*
+Do not include generic advice; tie every recommendation to a specific file, endpoint, service, or command.
