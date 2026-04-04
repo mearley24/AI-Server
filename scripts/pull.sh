@@ -9,3 +9,4 @@ git pull --rebase origin main || (git rebase --abort 2>/dev/null && git pull --n
 git stash pop 2>/dev/null
 git checkout -- data/network_watch/dropout_watch_status.json 2>/dev/null
 echo "Done. Ready to build."
+docker compose restart openclaw mission-control 2>/dev/null && echo "Restarted openclaw + mission-control"

@@ -526,6 +526,60 @@ h3.view-settings-h3 {
   max-width: 100%;
 }
 
+/* ── Sub-tabs (horizontal tab bar inside views) ── */
+.sub-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--tile-border);
+  margin-bottom: var(--gap);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.sub-tabs::-webkit-scrollbar { display: none; }
+.sub-tab {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  padding: 10px 20px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sub-tab:hover {
+  color: var(--text-secondary);
+}
+.sub-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.sub-tab .sub-tab-badge {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text-secondary);
+}
+.sub-tab.active .sub-tab-badge {
+  background: rgba(45,212,191,0.15);
+  color: var(--accent);
+}
+
+/* Sub-tab content panels */
+.sub-panel {
+  display: none;
+}
+.sub-panel.active {
+  display: block;
+}
+
 /* ── Grid — full-width stacked rows ── */
 #grid {
   display: flex;
@@ -614,88 +668,114 @@ h3.view-settings-h3 {
   padding: 8px 0;
 }
 
-/* ── Service Health ── */
-/* Services tile — flush header bar, not a sidebar-row tile */
-#tile-services {
-  flex-direction: column;
-}
-#tile-services > .tile-header {
-  flex-direction: row;
-  width: auto;
-  min-width: auto;
-  border-right: none;
-  border-bottom: 1px solid var(--tile-border);
-  padding: 10px 16px;
+/* ── Dashboard: Services summary (opens Services tab) ── */
+.dash-svc-bar {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
 }
-#tile-services > .tile-body {
-  padding: 12px 16px;
+.dash-svc-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--tile-border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: var(--fs-secondary);
+  cursor: pointer;
 }
+.dash-svc-cta:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+}
+.dash-svc-cta-label { font-weight: 600; color: var(--text); }
 
-#services-grid {
+/* ── Services tab: cards ── */
+.services-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.svc-card {
+  background: var(--tile);
+  border: 1px solid var(--tile-border);
+  border-radius: var(--radius-tile);
+  box-shadow: var(--tile-shadow);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.svc-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.svc-card-title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.25;
+  color: var(--text);
+}
+.svc-card-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.svc-card-meta {
+  font-size: var(--fs-secondary);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  line-height: 1.4;
+}
+.svc-card-status {
+  font-size: var(--fs-badge);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.svc-card-status.healthy { color: var(--green); }
+.svc-card-status.degraded { color: var(--orange); }
+.svc-card-status.down { color: var(--red); }
+.svc-card-details {
+  font-size: var(--fs-badge);
+  color: var(--text-secondary);
+  word-break: break-word;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+.svc-card-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 4px;
 }
-
-.svc-pill {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: rgba(255,255,255,0.04);
-  border-radius: 6px;
-  min-width: 0;
-  flex: 0 0 auto;
+.svc-reset-btn {
+  padding: 8px 14px;
+  font-size: var(--fs-badge);
+  border-radius: 8px;
+  border: 1px solid rgba(45,212,191,0.35);
+  background: rgba(45,212,191,0.1);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--font);
 }
-.svc-pill--optional {
-  opacity: 0.85;
-}
-.svc-spark {
-  display: flex;
-  gap: 2px;
-  align-items: center;
-  margin-left: 4px;
-  flex-shrink: 0;
-}
-.svc-spark i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.15);
-}
-.svc-spark i.on { background: var(--green); }
-.svc-spark i.off { background: var(--red); }
-
-.svc-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.svc-info {
-  min-width: 0;
-  flex: 1;
-}
-
-.svc-name {
-  font-size: var(--fs-secondary);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.svc-reset-btn:hover {
+  background: rgba(45,212,191,0.18);
   color: var(--text);
-  display: block;
-  line-height: 1;
 }
-
-.svc-port {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-muted);
-  display: none;
+.nav-item.nav-warning {
+  box-shadow: inset 3px 0 0 rgba(255,69,58,0.75);
 }
 
 /* ── Trading ── */
@@ -745,6 +825,97 @@ h3.view-settings-h3 {
   height: 140px;
   position: relative;
 }
+
+/* ── Trading view (tabbed, same .sub-tabs / .sub-panel as dashboard) ── */
+.trading-view-wrap {
+  font-family: system-ui, var(--font);
+  max-width: 1200px;
+}
+.trading-view-wrap .sub-panel {
+  padding-bottom: 24px;
+  max-height: min(70vh, 900px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.trading-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+.trading-kpi {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--tile-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.trading-kpi .kpi-label {
+  font-size: var(--fs-badge);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+.trading-kpi .kpi-val {
+  font-family: var(--mono);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text);
+}
+.trading-kpi .kpi-sub {
+  font-size: var(--fs-badge);
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.trading-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-size: var(--fs-secondary);
+  margin: 8px 0;
+}
+.trading-dl dt { color: var(--text-muted); }
+.trading-dl dd { margin: 0; word-break: break-word; }
+.lesson-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--tile-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.lesson-card h4 {
+  font-size: var(--fs-body);
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lesson-sev {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.lesson-sev.critical { background: rgba(255,69,58,0.2); color: var(--red); }
+.lesson-sev.high { background: rgba(255,159,10,0.2); color: var(--orange); }
+.lesson-sev.medium { background: rgba(255,214,10,0.15); color: var(--yellow); }
+.lesson-sev.positive { background: rgba(48,209,88,0.18); color: var(--green); }
+.timeline-item {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: var(--fs-secondary);
+}
+.timeline-item:last-child { border-bottom: none; }
+.timeline-item .ti-time { font-family: var(--mono); color: var(--text-muted); font-size: var(--fs-badge); }
+.timeline-item .ti-ev { font-weight: 600; margin: 4px 0 2px; }
+.timeline-item.t-bad .ti-ev { color: var(--red); }
+.timeline-item.t-good .ti-ev { color: var(--green); }
+.timeline-item.t-fix .ti-ev { color: var(--accent); }
+.timeline-item.t-neutral .ti-ev { color: var(--text-secondary); }
+.trading-mono { font-family: var(--mono); font-size: var(--fs-badge); }
+
 
 /* ── Email ── */
 #email-rows {
@@ -1139,6 +1310,10 @@ h3.view-settings-h3 {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
     <span>Dashboard</span>
   </button>
+  <button type="button" class="nav-item" data-view="services" id="nav-services">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    <span>Services</span>
+  </button>
   <button type="button" class="nav-item" data-view="trading" id="nav-trading">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16l4-4 3 3 5-6"/></svg>
     <span>Trading</span>
@@ -1195,99 +1370,52 @@ h3.view-settings-h3 {
   <span class="sf-label">Services need attention — copy restart command (run on AI-Server host)</span>
 </div>
 
-<!-- Main Grid -->
-<main id="grid">
+<div class="dash-svc-bar">
+  <button type="button" class="dash-svc-cta" id="nav-open-services" title="Open Services">
+    <span class="dash-svc-cta-label">Services</span>
+    <span class="tile-badge" id="svc-badge">—</span>
+  </button>
+</div>
 
-  <!-- 1. Service Health -->
-  <div class="tile" id="tile-services">
-    <div class="tile-header" tabindex="0" role="button" aria-expanded="false">
-      <span class="tile-label">Services</span>
-      <span class="tile-badge" id="svc-badge">—</span>
-    </div>
-    <div class="tile-body">
-      <div id="services-grid"></div>
-      <div id="services-expanded" class="tile-expanded" hidden></div>
-    </div>
+<!-- Sub-tab bar -->
+<div class="sub-tabs" id="dashboard-sub-tabs">
+  <button type="button" class="sub-tab active" data-subtab="email">Email <span class="sub-tab-badge" id="email-badge">—</span></button>
+  <button type="button" class="sub-tab" data-subtab="calendar">Calendar <span class="sub-tab-badge" id="cal-badge">—</span></button>
+  <button type="button" class="sub-tab" data-subtab="followups">Follow-Ups <span class="sub-tab-badge" id="fu-badge">—</span></button>
+  <button type="button" class="sub-tab" data-subtab="system">System <span class="sub-tab-badge" id="sys-badge">—</span></button>
+</div>
+
+<!-- Sub-tab panels -->
+<div class="sub-panel active" id="panel-email">
+  <div id="email-rows"><span class="empty">Loading…</span></div>
+</div>
+
+<div class="sub-panel" id="panel-calendar">
+  <div id="cal-rows"><span class="empty">Loading…</span></div>
+</div>
+
+<div class="sub-panel" id="panel-followups">
+  <div id="fu-rows"><span class="empty">Loading…</span></div>
+</div>
+
+<div class="sub-panel" id="panel-system">
+  <div class="sys-bars" id="sys-bars">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
   </div>
-
-  <!-- 2. Trading P&L -->
-  <div class="tile" id="tile-trading">
-    <div class="tile-header" tabindex="0" role="button" aria-expanded="false">
-      <span class="tile-label">Trading</span>
-      <span class="tile-badge" id="trading-badge">—</span>
-    </div>
-    <div class="tile-body">
-      <div class="trading-hero-wrap">
-        <div class="trading-hero" id="trading-hero">—</div>
-        <span class="trading-pos-tag" id="trading-positions" hidden>— positions</span>
-      </div>
-      <div class="trading-mini-stats" id="trading-mini"></div>
-      <div class="chart-wrap">
-        <canvas id="trading-chart"></canvas>
-      </div>
-      <div id="trading-expanded" class="tile-expanded" hidden></div>
-    </div>
-  </div>
-
-  <!-- 3. Email -->
-  <div class="tile" id="tile-email">
-    <div class="tile-header" tabindex="0" role="button" aria-expanded="false">
-      <span class="tile-label">Email</span>
-      <span class="tile-badge blue" id="email-badge">—</span>
-    </div>
-    <div class="tile-body" id="email-body">
-      <div id="email-rows"><span class="empty">Loading…</span></div>
-      <div id="email-expanded" class="tile-expanded" hidden></div>
-    </div>
-  </div>
-
-  <!-- 4. Calendar -->
-  <div class="tile" id="tile-calendar">
-    <div class="tile-header" tabindex="0" role="button" aria-expanded="false">
-      <span class="tile-label">Calendar</span>
-      <span class="tile-badge" id="cal-badge">—</span>
-    </div>
-    <div class="tile-body" id="cal-body">
-      <div id="cal-rows"><span class="empty">Loading…</span></div>
-      <div id="cal-expanded" class="tile-expanded" hidden></div>
-    </div>
-  </div>
-
-  <!-- 5. Follow-ups -->
-  <div class="tile" id="tile-followups">
-    <div class="tile-header" tabindex="0" role="button" aria-expanded="false">
-      <span class="tile-label">Follow-Ups</span>
-      <span class="tile-badge" id="fu-badge">—</span>
-    </div>
-    <div class="tile-body" id="fu-body">
-      <div id="fu-rows"><span class="empty">Loading…</span></div>
-      <div id="fu-expanded" class="tile-expanded" hidden></div>
-    </div>
-  </div>
-
-  <!-- 6. System -->
-  <div class="tile" id="tile-system">
-    <div class="tile-header" tabindex="0" role="button" aria-expanded="false">
-      <span class="tile-label">System</span>
-      <span class="tile-badge" id="sys-badge">—</span>
-    </div>
-    <div class="tile-body">
-      <div class="sys-bars" id="sys-bars">
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-        <div class="skeleton"></div>
-      </div>
-      <div class="sys-divider"></div>
-      <div class="employees-grid" id="employees-grid"></div>
-      <div class="sys-stats" id="sys-stats"></div>
-      <div id="redis-events-line" class="redis-events-line" title="Redis events:log (orchestrator audit)"></div>
-      <div id="system-expanded" class="tile-expanded" hidden></div>
-    </div>
-  </div>
-
-</main>
+  <div class="sys-divider"></div>
+  <div class="employees-grid" id="employees-grid"></div>
+  <div class="sys-stats" id="sys-stats"></div>
+  <div id="redis-events-line" class="redis-events-line" title="Redis events:log (orchestrator audit)"></div>
+</div>
 </div><!-- #main-inner -->
 </div><!-- #view-dashboard -->
+
+<div id="view-services" class="view-panel">
+  <p class="view-lede">Health checks for each stack service. Use <strong>Reset</strong> to copy a <code>docker compose restart …</code> command (run on the AI-Server host). Optional services may be stopped intentionally.</p>
+  <div id="services-cards" class="services-cards-grid"><span class="empty">Loading…</span></div>
+</div>
 
 <div id="view-events" class="view-panel">
   <p class="view-lede">Live employee events from the mission-control event store.</p>
@@ -1298,8 +1426,23 @@ h3.view-settings-h3 {
   <div id="digest-full" class="view-scroll"></div>
 </div>
 <div id="view-trading" class="view-panel">
-  <p class="view-lede">Polymarket open positions, category P&amp;L, and polymarket-bot status.</p>
-  <div id="trading-view-body" class="view-scroll"></div>
+  <p class="view-lede">Polymarket positions, category P&amp;L, bot health, copy-trade, and playbook — use the tabs below.</p>
+  <div id="trading-view-body" class="trading-view-wrap">
+    <div class="sub-tabs" id="trading-sub-tabs">
+      <button type="button" class="sub-tab active" data-subtab="trading-overview">Overview <span class="sub-tab-badge" id="trading-tab-badge-overview">—</span></button>
+      <button type="button" class="sub-tab" data-subtab="trading-positions">Positions <span class="sub-tab-badge" id="trading-tab-badge-positions">—</span></button>
+      <button type="button" class="sub-tab" data-subtab="trading-categories">Categories <span class="sub-tab-badge" id="trading-tab-badge-categories">—</span></button>
+      <button type="button" class="sub-tab" data-subtab="trading-bot">Bot <span class="sub-tab-badge" id="trading-tab-badge-bot">—</span></button>
+      <button type="button" class="sub-tab" data-subtab="trading-copytrade">Copy trade <span class="sub-tab-badge" id="trading-tab-badge-copytrade">—</span></button>
+      <button type="button" class="sub-tab" data-subtab="trading-playbook">Playbook <span class="sub-tab-badge" id="trading-tab-badge-playbook">—</span></button>
+    </div>
+    <div class="sub-panel active" id="panel-trading-overview"><span class="empty">Loading…</span></div>
+    <div class="sub-panel" id="panel-trading-positions"><span class="empty">Loading…</span></div>
+    <div class="sub-panel" id="panel-trading-categories"><span class="empty">Loading…</span></div>
+    <div class="sub-panel" id="panel-trading-bot"><span class="empty">Loading…</span></div>
+    <div class="sub-panel" id="panel-trading-copytrade"><span class="empty">Loading…</span></div>
+    <div class="sub-panel" id="panel-trading-playbook"><span class="empty">Loading…</span></div>
+  </div>
 </div>
 <div id="view-settings" class="view-panel">
   <p class="view-lede">Server-side settings are in Docker / environment; this panel is a quick reference.</p>
@@ -1432,6 +1575,21 @@ function formatRelative(dateStr) {
   if (diff < 3600000) return Math.floor(diff / 60000) + 'm';
   if (diff < 86400000) return Math.floor(diff / 3600000) + 'h';
   return Math.floor(diff / 86400000) + 'd';
+}
+
+/** Services cards: avoid "checked now ago". Fresh = up to date; stale = last sync was … */
+const SERVICE_SYNC_FRESH_MS = 30_000;
+
+function formatServiceSyncSuffix(checkedAt) {
+  const d = parseDate(checkedAt);
+  if (!d) return '';
+  const age = Date.now() - d.getTime();
+  if (isNaN(age) || age < 0) return '';
+  if (age < SERVICE_SYNC_FRESH_MS) return ' · up to date';
+  if (age < 60_000) return ' · last sync was ' + Math.floor(age / 1000) + 's ago';
+  if (age < 3600000) return ' · last sync was ' + Math.floor(age / 60000) + 'm ago';
+  if (age < 86400000) return ' · last sync was ' + Math.floor(age / 3600000) + 'h ago';
+  return ' · last sync was ' + Math.floor(age / 86400000) + 'd ago';
 }
 
 function formatDuration(start, end) {
@@ -1712,6 +1870,91 @@ function sparkHTML(key) {
   return html;
 }
 
+function copyServiceRestartCommand(s) {
+  const lines = [];
+  if (s.compose) lines.push('docker compose restart ' + s.compose);
+  if (s.compose_alt) lines.push('# if VPN / network issue: docker compose restart ' + s.compose_alt);
+  const text = lines.join('\n') || ('# No compose mapping for ' + (s.name || ''));
+  const done = () => showToast('Mission Control', 'Copied restart command for ' + (s.name || ''));
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => {
+      window.prompt('Copy:', text);
+    });
+  } else {
+    window.prompt('Copy:', text);
+  }
+}
+
+function renderServicesCards(services) {
+  const grid = document.getElementById('services-cards');
+  if (!grid) return;
+  grid.innerHTML = '';
+  (services || []).forEach(svc => {
+    const card = document.createElement('article');
+    card.className = 'svc-card';
+    if (svc.optional) card.title = 'Optional stack — OK if container not running on this host';
+
+    const head = document.createElement('div');
+    head.className = 'svc-card-head';
+    const h3 = document.createElement('h3');
+    h3.className = 'svc-card-title';
+    h3.textContent = svc.name || 'Service';
+    const dot = document.createElement('span');
+    dot.className = 'svc-card-dot';
+    dot.style.background = svc.status === 'healthy' ? 'var(--green)'
+      : svc.status === 'degraded' ? 'var(--orange)' : 'var(--red)';
+    head.appendChild(h3);
+    head.appendChild(dot);
+
+    const st = document.createElement('div');
+    st.className = 'svc-card-status ' + (svc.status || 'unknown');
+    st.textContent = (svc.status || 'unknown').toUpperCase();
+
+    const meta = document.createElement('div');
+    meta.className = 'svc-card-meta';
+    const portPart = svc.port != null ? ':' + svc.port : '—';
+    const optPart = svc.optional ? ' · optional' : '';
+    const checkedPart = svc.checked_at ? formatServiceSyncSuffix(svc.checked_at) : '';
+    meta.textContent = portPart + optPart + checkedPart;
+
+    const details = document.createElement('div');
+    details.className = 'svc-card-details';
+    const d = svc.details && typeof svc.details === 'object' ? svc.details : {};
+    let detailText = '';
+    if (svc.status !== 'healthy' && d.http_status != null) detailText = 'Health check HTTP ' + d.http_status;
+    else if (svc.status !== 'healthy' && Object.keys(d).length) detailText = JSON.stringify(d).slice(0, 140);
+    else if (Object.keys(d).length) detailText = JSON.stringify(d).slice(0, 100);
+    if (detailText) details.textContent = detailText;
+    else details.style.display = 'none';
+
+    card.appendChild(head);
+    card.appendChild(st);
+    card.appendChild(meta);
+    card.appendChild(details);
+
+    const actions = document.createElement('div');
+    actions.className = 'svc-card-actions';
+    const ok = svc.status === 'healthy';
+    if (!ok && (svc.compose || svc.compose_alt)) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'svc-reset-btn';
+      btn.textContent = 'Reset (copy command)';
+      btn.addEventListener('click', () => copyServiceRestartCommand(svc));
+      actions.appendChild(btn);
+    }
+    card.appendChild(actions);
+    grid.appendChild(card);
+  });
+}
+
+function updateServicesNavWarning(healthyCore, totalCore) {
+  const nav = document.getElementById('nav-services');
+  if (!nav) return;
+  if (healthyCore < totalCore) nav.classList.add('nav-warning');
+  else nav.classList.remove('nav-warning');
+}
+
 function renderServices(data) {
   lastServicesPayload = data;
   const services = data.services || [];
@@ -1730,39 +1973,9 @@ function renderServices(data) {
   badge.className = 'tile-badge ' + (healthyCore === totalCore ? 'green' : healthyCore < totalCore * 0.5 ? 'red' : '');
 
   recordServiceHealth(services);
-
-  const grid = document.getElementById('services-grid');
-  grid.innerHTML = '';
-  services.forEach(svc => {
-    const pill = document.createElement('div');
-    pill.className = 'svc-pill' + (svc.optional ? ' svc-pill--optional' : '');
-    if (svc.optional) pill.title = 'Optional stack — OK if container not running on this host';
-
-    const dot = document.createElement('div');
-    dot.className = 'svc-dot';
-    dot.style.background = svc.status === 'healthy' ? 'var(--green)'
-      : svc.status === 'degraded' ? 'var(--orange)' : 'var(--red)';
-
-    const info = document.createElement('div');
-    info.className = 'svc-info';
-
-    const name = document.createElement('span');
-    name.className = 'svc-name';
-    name.textContent = svc.name || '';
-
-    const port = document.createElement('span');
-    port.className = 'svc-port';
-    port.textContent = svc.port ? ':' + svc.port : '';
-
-    info.appendChild(name);
-    info.appendChild(port);
-
-    pill.appendChild(dot);
-    pill.appendChild(info);
-    grid.appendChild(pill);
-  });
+  updateServicesNavWarning(healthyCore, totalCore);
+  renderServicesCards(services);
   renderServiceFixStrip(services);
-  renderServicesExpanded();
 }
 
 function renderServiceFixStrip(services) {
@@ -1783,27 +1996,17 @@ function renderServiceFixStrip(services) {
     b.type = 'button';
     b.className = 'sf-btn';
     b.textContent = (s.name || 'Service') + ' (' + s.status + ')';
-    b.addEventListener('click', () => {
-      const lines = [];
-      if (s.compose) lines.push('docker compose restart ' + s.compose);
-      if (s.compose_alt) lines.push('# if VPN / network issue: docker compose restart ' + s.compose_alt);
-      const text = lines.join('\n') || ('# No compose mapping for ' + (s.name || ''));
-      const done = () => showToast('Mission Control', 'Copied restart command for ' + (s.name || ''));
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done).catch(() => {
-          window.prompt('Copy:', text);
-        });
-      } else {
-        window.prompt('Copy:', text);
-      }
-    });
+    b.addEventListener('click', () => copyServiceRestartCommand(s));
     strip.appendChild(b);
   });
 }
 
 function renderServicesError() {
   document.getElementById('svc-badge').textContent = '—';
-  document.getElementById('services-grid').innerHTML = '<span class="empty">Unable to load services</span>';
+  const cards = document.getElementById('services-cards');
+  if (cards) cards.innerHTML = '<span class="empty">Unable to load services</span>';
+  const nav = document.getElementById('nav-services');
+  if (nav) nav.classList.remove('nav-warning');
   const strip = document.getElementById('service-fix-strip');
   if (strip) {
     strip.hidden = true;
@@ -1811,21 +2014,7 @@ function renderServicesError() {
   }
 }
 
-function renderServicesExpanded() {
-  const el = document.getElementById('services-expanded');
-  if (!el || !lastServicesPayload) return;
-  if (expandedTileId !== 'tile-services') {
-    el.hidden = true;
-    return;
-  }
-  el.hidden = false;
-  const rows = (lastServicesPayload.services || []).map(s => {
-    const det = s.details && typeof s.details === 'object' ? JSON.stringify(s.details).slice(0, 240) : '';
-    const opt = s.optional ? 'yes' : '';
-    return '<tr><td>' + esc(s.name) + '</td><td>' + esc(s.status) + '</td><td>' + esc(String(s.port)) + '</td><td>' + esc(s.checked_at || '') + '</td><td>' + esc(opt) + '</td><td>' + esc(det) + '</td></tr>';
-  }).join('');
-  el.innerHTML = '<table><thead><tr><th>Service</th><th>Status</th><th>Port</th><th>Checked</th><th>Optional</th><th>Details</th></tr></thead><tbody>' + rows + '</tbody></table>';
-}
+function renderServicesExpanded() {}
 
 // ── Trading P&L ────────────────────────────────────────────────────────────
 
@@ -2085,6 +2274,25 @@ function renderEmailExpanded() {
 
 const CAL_COLORS = ['var(--blue)', 'var(--purple)', 'var(--orange)', 'var(--green)', 'var(--yellow)'];
 
+/** Zoho returns nested dateandtime; other shapes use flat start/end. */
+function calendarEventTimes(ev) {
+  const d = ev.dateandtime || ev.dateAndTime || {};
+  const start = ev.start ?? d.start ?? ev.start_time;
+  const end = ev.end ?? d.end ?? ev.end_time;
+  return { start, end };
+}
+
+function calendarEventTitle(ev) {
+  const raw = ev.title || ev.summary || ev.subject || ev.name || ev.eventTitle;
+  if (raw != null && String(raw).trim() !== '') return String(raw).trim();
+  const desc = (ev.description || ev.notes || '').trim();
+  if (desc) {
+    const line = desc.split(/\n/)[0].trim();
+    return line.length > 96 ? line.slice(0, 96) + '…' : line;
+  }
+  return '(Untitled event)';
+}
+
 async function fetchCalendar() {
   const rowsEl = document.getElementById('cal-rows');
   const badge = document.getElementById('cal-badge');
@@ -2111,12 +2319,14 @@ async function fetchCalendar() {
     rowsEl.innerHTML = '';
     const lim = expandedTileId === 'tile-calendar' ? 20 : 6;
     events.slice(0, lim).forEach((ev, i) => {
+      const { start, end } = calendarEventTimes(ev);
       const row = document.createElement('div');
       row.className = 'cal-row';
 
       const time = document.createElement('div');
       time.className = 'cal-time';
-      time.textContent = formatTime(ev.start);
+      time.textContent = formatTime(start);
+      if (!time.textContent.trim()) time.textContent = '—';
 
       const bar = document.createElement('div');
       bar.className = 'cal-bar';
@@ -2127,11 +2337,12 @@ async function fetchCalendar() {
 
       const title = document.createElement('span');
       title.className = 'cal-title';
-      title.textContent = ev.title || '';
+      title.textContent = calendarEventTitle(ev);
 
       const loc = document.createElement('span');
       loc.className = 'cal-location';
-      loc.textContent = ev.location || formatDuration(ev.start, ev.end);
+      const locRaw = (ev.location || ev.locationName || '').trim();
+      loc.textContent = locRaw || formatDuration(start, end) || 'Calendar';
 
       info.appendChild(title);
       info.appendChild(loc);
@@ -2156,7 +2367,7 @@ function renderCalExpanded() {
   }
   el.hidden = false;
   el.innerHTML = lastCalendarList.map(ev =>
-    '<div style="margin:10px 0;"><strong>' + esc(ev.title || '') + '</strong><br/>' + esc(ev.description || ev.notes || '') + '</div>'
+    '<div style="margin:10px 0;"><strong>' + esc(calendarEventTitle(ev)) + '</strong><br/>' + esc(ev.description || ev.notes || '') + '</div>'
   ).join('') || '<span class="empty">No descriptions</span>';
 }
 
@@ -2438,13 +2649,13 @@ function initSidebar() {
 
 function setView(view) {
   document.body.dataset.mcView = view;
-  const titles = { dashboard: 'Mission Control', trading: 'Trading', events: 'Events', digest: 'Digest', settings: 'Settings' };
+  const titles = { dashboard: 'Mission Control', services: 'Services', trading: 'Trading', events: 'Events', digest: 'Digest', settings: 'Settings' };
   const tt = document.getElementById('topbar-title');
   if (tt) tt.textContent = titles[view] || 'Mission Control';
 
   document.querySelectorAll('.view-panel').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  const map = { dashboard: 'view-dashboard', events: 'view-events', digest: 'view-digest', trading: 'view-trading', settings: 'view-settings' };
+  const map = { dashboard: 'view-dashboard', services: 'view-services', events: 'view-events', digest: 'view-digest', trading: 'view-trading', settings: 'view-settings' };
   const panel = document.getElementById(map[view]);
   if (panel) panel.classList.add('active');
   const nav = document.getElementById('nav-' + view);
@@ -2453,6 +2664,7 @@ function setView(view) {
   if (view === 'digest') loadDigestFullPanel();
   if (view === 'trading') loadTradingView();
   if (view === 'settings') loadSettingsPanel();
+  if (view === 'services') fetchServices();
 }
 
 function renderMarkdownHtml(text) {
@@ -2511,48 +2723,170 @@ async function loadDigestFullPanel() {
   }
 }
 
-const TRADING_VIEW_CACHE_KEY = 'mc_trading_view_v1';
+const TRADING_VIEW_CACHE_KEY = 'mc_trading_view_v2';
 
-function buildTradingViewHtml(posData, catData, botData, botOffline) {
+function tradingPolymarketLink(slug) {
+  if (!slug) return '';
+  const s = String(slug).trim();
+  if (!s) return '';
+  return 'https://polymarket.com/event/' + encodeURIComponent(s);
+}
+
+function renderTradingTabBadges(posData, catData, botData, botOffline, copyData, lessonsData, timelineData) {
+  const sum = catData.summary || {};
+  const nv = sum.net_pnl;
+  let overviewBadge = '—';
+  if (nv != null && nv !== '' && !isNaN(Number(nv))) {
+    const v = Number(nv);
+    overviewBadge = (v >= 0 ? '+' : '') + '$' + Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+  const ov = document.getElementById('trading-tab-badge-overview');
+  if (ov) ov.textContent = overviewBadge;
+  const bp = document.getElementById('trading-tab-badge-positions');
+  if (bp) bp.textContent = String(posData.count ?? 0);
+  const bc = document.getElementById('trading-tab-badge-categories');
+  if (bc) bc.textContent = String(Object.keys(catData.categories || {}).length);
+  const bb = document.getElementById('trading-tab-badge-bot');
+  if (bb) bb.textContent = botOffline ? '!' : 'OK';
+  const bcp = document.getElementById('trading-tab-badge-copytrade');
+  const topW = copyData.top_wallets || [];
+  if (bcp) bcp.textContent = String(copyData.qualifying_wallets != null ? copyData.qualifying_wallets : topW.length);
+  const bpl = document.getElementById('trading-tab-badge-playbook');
+  const nLess = (lessonsData.lessons || []).length;
+  const nTl = (timelineData.events || []).length;
+  if (bpl) bpl.textContent = nLess + '/' + nTl;
+}
+
+function renderTradingOverview(posData, catData, botData, botOffline, aggData, copyData) {
+  const sum = catData.summary || {};
+  const nv = sum.net_pnl;
+  let netStr = '—';
+  let heroClass = '';
+  if (nv != null && nv !== '' && !isNaN(Number(nv))) {
+    const v = Number(nv);
+    netStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    heroClass = v >= 0 ? 'pos' : 'neg';
+  }
   let html = '';
   if (botOffline) {
-    html += '<div class="offline-banner">Trading bot unreachable — last known bot JSON below if any.</div>';
+    html += '<div class="offline-banner">Trading bot unreachable — status and strategies may be stale.</div>';
   }
-  html += '<h3 class="view-sub">Open positions (' + (posData.count || 0) + ')</h3>';
-  if (posData.error) {
-    html += '<p class="empty">' + esc(posData.error) + '</p>';
+  if (catData.error) {
+    html += '<div class="offline-banner">' + esc(catData.error) + '</div>';
   }
-  const plist = posData.positions || [];
-  if (plist.length) {
-    html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Market</th><th>Side</th><th>Value</th><th>Price</th><th>P&amp;L</th></tr></thead><tbody>';
-    plist.slice(0, 120).forEach(p => {
-      const pnl = p.cashPnl;
-      let pnlStr = '—';
-      if (pnl != null && pnl !== '' && !isNaN(Number(pnl))) {
-        const v = Number(pnl);
-        pnlStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      }
-      html += '<tr><td>' + esc(p.title) + '</td><td>' + esc(p.outcome) + '</td><td>' + esc(formatMoney(p.currentValue)) + '</td><td>' + esc(String(p.curPrice ?? '')) + '</td><td>' + esc(pnlStr) + '</td></tr>';
-    });
-    html += '</tbody></table></div>';
-  } else if (!posData.error) {
-    html += '<p class="empty">No positions with current value &gt; 0.</p>';
+  html += '<div class="trading-hero-wrap"><div class="trading-hero ' + heroClass + '">' + esc(netStr) + '</div>';
+  html += '<span class="trading-pos-tag">Net P&amp;L (categories)</span></div>';
+
+  html += '<div class="trading-kpi-grid">';
+  html += '<div class="trading-kpi"><div class="kpi-label">Open value</div><div class="kpi-val">' + esc(formatMoney(sum.open_value ?? 0)) + '</div></div>';
+  html += '<div class="trading-kpi"><div class="kpi-label">Open positions</div><div class="kpi-val">' + String(posData.count ?? 0) + '</div><div class="kpi-sub">Polymarket API</div></div>';
+  html += '<div class="trading-kpi"><div class="kpi-label">Activity rows</div><div class="kpi-val">' + esc(String(sum.activity_count ?? '—')) + '</div></div>';
+  html += '<div class="trading-kpi"><div class="kpi-label">Trades (all-time)</div><div class="kpi-val">' + esc(String(sum.total_trades ?? '—')) + '</div></div>';
+  html += '</div>';
+
+  html += '<div class="trading-mini-stats">';
+  if (catData.as_of) {
+    html += '<span>Data as of <span class="trading-mono">' + esc(formatEventWhen(catData.as_of) || String(catData.as_of)) + '</span></span>';
+  }
+  html += '<span class="sep">·</span><span>Source <strong>' + esc(catData.source || '—') + '</strong></span>';
+  html += '</div>';
+
+  if (aggData && aggData.pnl) {
+    html += '<h3 class="view-sub">Bot P&amp;L (live)</h3><pre class="view-pre">' + esc(JSON.stringify(aggData.pnl, null, 2)) + '</pre>';
+  }
+  if (copyData && (copyData.qualifying_wallets != null || (copyData.top_wallets && copyData.top_wallets.length))) {
+    html += '<h3 class="view-sub">Copy-trade snapshot</h3>';
+    html += '<p class="trading-mini-stats">Qualifying wallets <strong>' + String(copyData.qualifying_wallets ?? 0) + '</strong>';
+    if (copyData.last_scan_time) html += ' · last scan <span class="trading-mono">' + esc(String(copyData.last_scan_time)) + '</span>';
+    html += ' · status <strong>' + esc(copyData.status || '—') + '</strong></p>';
   }
 
+  const st = botData && botData.status;
+  html += '<h3 class="view-sub">Bot heartbeat</h3>';
+  if (st && typeof st === 'object') {
+    html += '<dl class="trading-dl">';
+    Object.keys(st).slice(0, 28).forEach(function (k) {
+      const v = st[k];
+      let disp = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      if (disp.length > 220) disp = disp.slice(0, 220) + '…';
+      html += '<dt>' + esc(k) + '</dt><dd>' + esc(disp) + '</dd>';
+    });
+    html += '</dl>';
+  } else {
+    html += '<p class="empty">' + (botOffline ? 'Bot status unavailable.' : 'No status payload.') + '</p>';
+  }
+  return html;
+}
+
+function renderTradingPositions(posData) {
+  let html = '<h3 class="view-sub">Open positions (' + esc(String(posData.count || 0)) + ')</h3>';
+  if (posData.error) {
+    html += '<p class="empty">' + esc(posData.error) + '</p>';
+    return html;
+  }
+  const plist = posData.positions || [];
+  if (!plist.length) {
+    html += '<p class="empty">No positions with current value &gt; 0.</p>';
+    return html;
+  }
+  html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Market</th><th>Side</th><th>Size</th><th>Value</th><th>Avg</th><th>Price</th><th>P&amp;L</th><th>Link</th></tr></thead><tbody>';
+  plist.slice(0, 200).forEach(function (p) {
+    const pnl = p.cashPnl;
+    let pnlStr = '—';
+    if (pnl != null && pnl !== '' && !isNaN(Number(pnl))) {
+      const v = Number(pnl);
+      pnlStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    const slug = p.slug || '';
+    const url = tradingPolymarketLink(slug);
+    const linkCell = url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener" style="color:var(--accent);">Open</a>' : '—';
+    html += '<tr><td>' + esc(p.title) + '</td><td>' + esc(p.outcome) + '</td><td>' + esc(p.size != null ? String(p.size) : '—') + '</td><td>' + esc(formatMoney(p.currentValue)) + '</td><td>' + esc(String(p.avgPrice ?? '—')) + '</td><td>' + esc(String(p.curPrice ?? '')) + '</td><td>' + esc(pnlStr) + '</td><td>' + linkCell + '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  if (posData.as_of) {
+    html += '<p class="trading-mini-stats" style="margin-top:10px;">As of <span class="trading-mono">' + esc(formatEventWhen(posData.as_of) || posData.as_of) + '</span></p>';
+  }
+  return html;
+}
+
+function renderTradingCategories(catData) {
+  let html = '';
   const cats = catData.categories || {};
-  const keys = Object.keys(cats);
-  html += '<h3 class="view-sub">Category P&amp;L</h3>';
+  const keys = Object.keys(cats).sort();
+  html += '<h3 class="view-sub">By category</h3>';
   if (keys.length) {
-    html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Category</th><th>P&amp;L</th><th>Open</th><th>Positions</th></tr></thead><tbody>';
-    keys.forEach(k => {
+    html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Category</th><th>P&amp;L</th><th>Open value</th><th>Positions</th><th>Mult</th></tr></thead><tbody>';
+    keys.forEach(function (k) {
       const c = cats[k] || {};
-      html += '<tr><td>' + esc(k) + '</td><td>' + esc(String(c.total_pnl ?? '')) + '</td><td>' + esc(formatMoney(c.open_value ?? 0)) + '</td><td>' + esc(String(c.open_count ?? '')) + '</td></tr>';
+      const mult = c.multiplier != null && c.multiplier !== '' ? String(c.multiplier) : '—';
+      html += '<tr><td>' + esc(k) + '</td><td>' + esc(String(c.total_pnl ?? '')) + '</td><td>' + esc(formatMoney(c.open_value ?? 0)) + '</td><td>' + esc(String(c.open_count ?? '')) + '</td><td>' + esc(mult) + '</td></tr>';
     });
     html += '</tbody></table></div>';
   } else {
     html += '<p class="empty">' + esc(catData.error || 'No category data (API or cache).') + '</p>';
   }
-
+  const hints = catData.playbook_hints || {};
+  const hintKeys = Object.keys(hints).sort();
+  if (hintKeys.length) {
+    html += '<h3 class="view-sub" style="margin-top:20px;">Playbook (by category)</h3>';
+    html += '<p style="font-size:var(--fs-secondary);color:var(--text-muted);margin:0 0 12px;">Lessons from the trading playbook, grouped by category flag.</p>';
+    hintKeys.forEach(function (cat) {
+      const arr = hints[cat] || [];
+      if (!arr.length) return;
+      html += '<article class="lesson-card" style="margin-bottom:12px;"><h4 style="margin:0 0 8px;font-size:15px;">' + esc(cat) + '</h4>';
+      arr.forEach(function (h) {
+        const svc = String(h.severity || '').toLowerCase().replace(/\s+/g, '');
+        html += '<p style="margin:6px 0 2px;display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;"><span class="lesson-sev ' + esc(svc) + '">' + esc(h.severity || '') + '</span><strong>' + esc(h.title || '') + '</strong></p>';
+        if (h.lesson) {
+          html += '<p style="margin:0 0 8px;color:var(--text-secondary);font-size:var(--fs-secondary);">' + esc(h.lesson) + '</p>';
+        }
+        if (h.fix) {
+          html += '<p style="margin:0 0 8px;font-size:var(--fs-secondary);color:var(--text-muted);"><em>Fix:</em> ' + esc(h.fix) + '</p>';
+        }
+      });
+      html += '</article>';
+    });
+  }
   const sum = catData.summary || {};
   const nv = sum.net_pnl;
   let netStr = '—';
@@ -2560,32 +2894,169 @@ function buildTradingViewHtml(posData, catData, botData, botOffline) {
     const v = Number(nv);
     netStr = (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  html += '<p style="font-size:var(--fs-secondary);color:var(--text-muted);margin:12px 0;">Open value ' + esc(formatMoney(sum.open_value ?? 0)) + ' · Net P&amp;L ' + esc(netStr) + '</p>';
-
-  html += '<h3 class="view-sub">Polymarket bot</h3>';
-  html += '<pre class="view-pre">' + esc(JSON.stringify(botData, null, 2)) + '</pre>';
+  html += '<p style="font-size:var(--fs-secondary);color:var(--text-muted);margin:16px 0 0;">Open value ' + esc(formatMoney(sum.open_value ?? 0)) + ' · Net P&amp;L ' + esc(netStr) + '</p>';
+  if (catData.as_of) {
+    html += '<p class="trading-mini-stats">As of <span class="trading-mono">' + esc(formatEventWhen(catData.as_of) || catData.as_of) + '</span> · source ' + esc(catData.source || '—') + '</p>';
+  }
   return html;
 }
 
+function renderTradingBot(botData, botOffline) {
+  let html = '';
+  if (botOffline) {
+    html += '<div class="offline-banner">Trading bot HTTP unreachable from Mission Control.</div>';
+  }
+  html += '<h3 class="view-sub">Status</h3>';
+  if (botData && botData.status && typeof botData.status === 'object') {
+    html += '<dl class="trading-dl">';
+    Object.keys(botData.status).forEach(function (k) {
+      const v = botData.status[k];
+      let disp = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
+      if (disp.length > 2000) disp = disp.slice(0, 2000) + '…';
+      html += '<dt>' + esc(k) + '</dt><dd><pre class="view-pre" style="margin:0;white-space:pre-wrap;">' + esc(disp) + '</pre></dd>';
+    });
+    html += '</dl>';
+  } else {
+    html += '<p class="empty">No status JSON.</p>';
+  }
+  html += '<h3 class="view-sub">Strategies</h3>';
+  if (botData && botData.strategies != null) {
+    html += '<pre class="view-pre">' + esc(JSON.stringify(botData.strategies, null, 2)) + '</pre>';
+  } else {
+    html += '<p class="empty">No strategies payload.</p>';
+  }
+  html += '<details style="margin-top:12px;"><summary style="cursor:pointer;color:var(--text-secondary);">Raw response</summary><pre class="view-pre">' + esc(JSON.stringify(botData, null, 2)) + '</pre></details>';
+  return html;
+}
+
+function renderTradingCopytrade(copyData) {
+  let html = '<h3 class="view-sub">Wallet cache</h3>';
+  html += '<p class="trading-mini-stats">Qualifying <strong>' + String(copyData.qualifying_wallets ?? 0) + '</strong>';
+  if (copyData.last_scan_time) html += ' · last scan <span class="trading-mono">' + esc(String(copyData.last_scan_time)) + '</span>';
+  html += ' · status <strong>' + esc(copyData.status || '—') + '</strong></p>';
+
+  const tops = copyData.top_wallets || [];
+  if (tops.length) {
+    html += '<div class="trading-table-wrap"><table class="pos-table"><thead><tr><th>Address</th><th>Score</th><th>Win%</th><th>Resolved</th><th>Volume</th></tr></thead><tbody>';
+    tops.forEach(function (w) {
+      const addr = (w.address || '');
+      const short = addr.length > 14 ? addr.slice(0, 10) + '…' + addr.slice(-4) : addr;
+      html += '<tr><td class="trading-mono" title="' + esc(addr) + '">' + esc(short) + '</td><td>' + esc(String(w.score ?? '')) + '</td><td>' + esc(String(w.win_rate ?? '')) + '</td><td>' + esc(String(w.total_resolved ?? '')) + '</td><td>' + esc(String(w.total_volume ?? '')) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  } else {
+    html += '<p class="empty">No top wallets in cache.</p>';
+  }
+
+  const rc = copyData.recent_copies || [];
+  html += '<h3 class="view-sub">Recent copies</h3>';
+  if (rc.length) {
+    html += '<pre class="view-pre">' + esc(JSON.stringify(rc.slice(0, 40), null, 2)) + '</pre>';
+  } else {
+    html += '<p class="empty">No recent copies from bot.</p>';
+  }
+
+  const op = copyData.open_positions || [];
+  html += '<h3 class="view-sub">Open copy positions</h3>';
+  if (op.length) {
+    html += '<pre class="view-pre">' + esc(JSON.stringify(op, null, 2)) + '</pre>';
+  } else {
+    html += '<p class="empty">None reported.</p>';
+  }
+  return html;
+}
+
+function renderTradingPlaybook(lessonsData, timelineData) {
+  let html = '<h3 class="view-sub">Lessons</h3>';
+  const lessons = lessonsData.lessons || [];
+  if (lessons.length) {
+    lessons.forEach(function (L) {
+      const sv = String(L.severity || 'medium').toLowerCase();
+      const svc = sv === 'critical' || sv === 'high' || sv === 'medium' ? sv : 'medium';
+      html += '<article class="lesson-card"><h4><span class="lesson-sev ' + svc + '">' + esc(L.severity || '') + '</span> ' + esc(L.title || '') + '</h4>';
+      html += '<p style="font-size:var(--fs-secondary);color:var(--text-secondary);margin:0 0 0.5rem;">' + esc(L.category || '') + '</p>';
+      html += '<p style="margin:0 0 0.5rem;">' + esc(L.description || '') + '</p>';
+      if (L.fix) html += '<p style="margin:0;font-size:var(--fs-secondary);"><strong>Fix:</strong> ' + esc(L.fix) + '</p>';
+      html += '</article>';
+    });
+  } else {
+    html += '<p class="empty">No lessons.</p>';
+  }
+
+  html += '<h3 class="view-sub">Timeline</h3>';
+  const evs = timelineData.events || [];
+  if (evs.length) {
+    evs.forEach(function (ev) {
+      const ty = (ev.type || 'neutral').toLowerCase();
+      let cls = 't-neutral';
+      if (ty === 'bad') cls = 't-bad';
+      else if (ty === 'good') cls = 't-good';
+      else if (ty === 'fix') cls = 't-fix';
+      html += '<div class="timeline-item ' + cls + '"><div class="ti-time">' + esc(ev.time || '') + '</div>';
+      html += '<div class="ti-ev">' + esc(ev.event || '') + '</div>';
+      html += '<div style="color:var(--text-secondary);font-size:var(--fs-secondary);">' + esc(ev.detail || '') + '</div></div>';
+    });
+  } else {
+    html += '<p class="empty">No timeline events.</p>';
+  }
+  return html;
+}
+
+function renderTradingViewAll(payload) {
+  const posData = payload.posData || {};
+  const catData = payload.catData || {};
+  const botData = payload.botData;
+  const botOffline = !!payload.botOffline;
+  const aggData = payload.aggData || {};
+  const copyData = payload.copyData || {};
+  const lessonsData = payload.lessonsData || {};
+  const timelineData = payload.timelineData || {};
+
+  renderTradingTabBadges(posData, catData, botData, botOffline, copyData, lessonsData, timelineData);
+
+  const pO = document.getElementById('panel-trading-overview');
+  if (pO) pO.innerHTML = renderTradingOverview(posData, catData, botData, botOffline, aggData, copyData);
+  const pP = document.getElementById('panel-trading-positions');
+  if (pP) pP.innerHTML = renderTradingPositions(posData);
+  const pC = document.getElementById('panel-trading-categories');
+  if (pC) pC.innerHTML = renderTradingCategories(catData);
+  const pB = document.getElementById('panel-trading-bot');
+  if (pB) pB.innerHTML = renderTradingBot(botData, botOffline);
+  const pX = document.getElementById('panel-trading-copytrade');
+  if (pX) pX.innerHTML = renderTradingCopytrade(copyData);
+  const pL = document.getElementById('panel-trading-playbook');
+  if (pL) pL.innerHTML = renderTradingPlaybook(lessonsData, timelineData);
+}
+
 async function loadTradingView() {
-  const el = document.getElementById('trading-view-body');
-  if (!el) return;
-  el.innerHTML = '<span class="empty">Loading…</span>';
-  var cachedHTML = '';
+  const wrap = document.getElementById('trading-view-body');
+  if (!wrap) return;
+  var cachedPayload = null;
   try {
     const raw = localStorage.getItem(TRADING_VIEW_CACHE_KEY);
     if (raw) {
       const c = JSON.parse(raw);
-      cachedHTML = c.html || '';
+      if (c && c.payload) cachedPayload = c;
     }
   } catch (e) {
-    cachedHTML = '';
+    cachedPayload = null;
   }
+
+  const panels = ['panel-trading-overview', 'panel-trading-positions', 'panel-trading-categories', 'panel-trading-bot', 'panel-trading-copytrade', 'panel-trading-playbook'];
+  panels.forEach(function (id) {
+    const p = document.getElementById(id);
+    if (p) p.innerHTML = '<span class="empty">Loading…</span>';
+  });
+
   try {
-    const [posRes, catRes, botRes] = await Promise.all([
+    const [posRes, catRes, botRes, aggRes, copyRes, lessonsRes, timelineRes] = await Promise.all([
       fetch('/api/trading/positions'),
       fetch('/api/trading/categories?nocache=1'),
-      fetch('/api/trading/bot-status').catch(function () { return { ok: false }; })
+      fetch('/api/trading/bot-status').catch(function () { return { ok: false }; }),
+      fetch('/api/trading').catch(function () { return { ok: false }; }),
+      fetch('/api/trading/copytrade').catch(function () { return { ok: false }; }),
+      fetch('/api/trading/lessons').catch(function () { return { ok: false }; }),
+      fetch('/api/trading/timeline').catch(function () { return { ok: false }; })
     ]);
     const posData = await posRes.json();
     const catData = await catRes.json();
@@ -2594,16 +3065,50 @@ async function loadTradingView() {
     if (botRes && botRes.ok) {
       try { botData = await botRes.json(); } catch (e2) { botData = null; botOffline = true; }
     }
-    var html = buildTradingViewHtml(posData, catData, botData, botOffline);
+    var aggData = {};
+    if (aggRes && aggRes.ok) {
+      try { aggData = await aggRes.json(); } catch (e3) { aggData = {}; }
+    }
+    var copyData = {};
+    if (copyRes && copyRes.ok) {
+      try { copyData = await copyRes.json(); } catch (e4) { copyData = {}; }
+    }
+    var lessonsData = { lessons: [] };
+    if (lessonsRes && lessonsRes.ok) {
+      try { lessonsData = await lessonsRes.json(); } catch (e5) { lessonsData = { lessons: [] }; }
+    }
+    var timelineData = { events: [] };
+    if (timelineRes && timelineRes.ok) {
+      try { timelineData = await timelineRes.json(); } catch (e6) { timelineData = { events: [] }; }
+    }
+
+    const payload = {
+      posData: posData,
+      catData: catData,
+      botData: botData,
+      botOffline: botOffline,
+      aggData: aggData,
+      copyData: copyData,
+      lessonsData: lessonsData,
+      timelineData: timelineData
+    };
     try {
-      localStorage.setItem(TRADING_VIEW_CACHE_KEY, JSON.stringify({ html: html, ts: Date.now() }));
-    } catch (e3) {
+      localStorage.setItem(TRADING_VIEW_CACHE_KEY, JSON.stringify({ payload: payload, ts: Date.now() }));
+    } catch (e7) {
       /* ignore quota */
     }
-    el.innerHTML = html;
+    renderTradingViewAll(payload);
   } catch (e) {
-    el.innerHTML = '<div class="offline-banner">Trading data offline — showing last cached view</div>' +
-      (cachedHTML || '<div class="empty">No cached data available</div>');
+    if (cachedPayload && cachedPayload.payload) {
+      renderTradingViewAll(cachedPayload.payload);
+      const ov = document.getElementById('panel-trading-overview');
+      if (ov) ov.insertAdjacentHTML('afterbegin', '<div class="offline-banner">Trading data offline — showing last cached view.</div>');
+    } else {
+      panels.forEach(function (id) {
+        const p = document.getElementById(id);
+        if (p) p.innerHTML = '<span class="empty">Trading data unavailable.</span>';
+      });
+    }
   }
 }
 
@@ -2615,6 +3120,13 @@ function initNav() {
       setView(view);
     });
   });
+  const openSvc = document.getElementById('nav-open-services');
+  if (openSvc) {
+    openSvc.addEventListener('click', () => {
+      document.body.classList.remove('sidebar-mobile-open');
+      setView('services');
+    });
+  }
 }
 
 async function fetchEventsLog() {
@@ -2650,7 +3162,6 @@ async function refreshAll() {
   touchRefresh();
   await Promise.allSettled([
     fetchServices(),
-    fetchTrading(true),
     fetchEmails(),
     fetchCalendar(),
     fetchFollowups(),
@@ -2718,7 +3229,6 @@ function initQuickActions() {
 function startPolling() {
   Promise.allSettled([
     fetchServices(),
-    fetchTrading(),
     fetchEmails(),
     fetchCalendar(),
     fetchFollowups(),
@@ -2727,13 +3237,29 @@ function startPolling() {
   ]).then(() => touchRefresh());
 
   setInterval(fetchServices, 30_000);
-  setInterval(fetchTrading, 5 * 60_000);
   setInterval(fetchEmails, 60_000);
   setInterval(fetchCalendar, 2 * 60_000);
   setInterval(fetchFollowups, 2 * 60_000);
   setInterval(fetchSystem, 30_000);
   setInterval(fetchEventsLog, 45_000);
 }
+
+// ── Dashboard sub-tab switching ────────────────────────────────────────────
+(function initSubTabs() {
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.sub-tab');
+    if (!btn) return;
+    var tabBar = btn.parentElement;
+    var tabId = btn.getAttribute('data-subtab');
+    if (!tabId) return;
+    tabBar.querySelectorAll('.sub-tab').forEach(function(t) { t.classList.remove('active'); });
+    btn.classList.add('active');
+    var container = tabBar.parentElement;
+    container.querySelectorAll('.sub-panel').forEach(function(p) { p.classList.remove('active'); });
+    var panel = document.getElementById('panel-' + tabId);
+    if (panel) panel.classList.add('active');
+  });
+})();
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 

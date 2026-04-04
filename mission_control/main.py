@@ -182,37 +182,63 @@ async def api_trading():
     return result
 
 
-# Category multipliers — bot config
+# Category multipliers — aligned with playbook lessons (Kelly / risk posture)
 CATEGORY_MULTIPLIERS = {
     "crypto": 1.2,
-    "sports": 1.3,
+    "crypto_updown": 0.15,
+    "sports": 0.25,
+    "esports": 0.5,
     "weather": 0.8,
     "politics": 1.5,
     "economics": 1.0,
     "geopolitics": 1.0,
     "entertainment": 1.0,
+    "science": 1.0,
+    "culture": 1.0,
+    "legal": 1.0,
+    "health": 1.0,
+    "energy": 1.0,
     "other": 1.0,
 }
 
 
 def _categorize(title: str) -> str:
-    """Assign a category to a market based on keyword matching."""
-    t = title.lower()
-    # Crypto — coins, up/down markets
-    if any(k in t for k in [
-        "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "xrp",
-        "crypto", "up or down", "bnb", "hyperliquid", "dogecoin", "doge",
-        "dip to", "price of solana", "price of bitcoin", "price of ethereum",
-        "price of xrp",
-    ]):
+    """Assign a market category from title keywords (split 'other'; playbook-aligned)."""
+    t = (title or "").lower()
+
+    if any(u in t for u in ("up or down", "up/down")):
+        if any(
+            tok in t
+            for tok in (
+                "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "xrp",
+                "bnb", "dogecoin", "doge", "hyperliquid",
+            )
+        ) or any(
+            m in t
+            for m in (
+                "5m", "5 m", "5-minute", "5 minute", "15m", "15 m", "15-minute", "15 minute",
+                "1h", "1 h", "minute", "min:", "pm et", "am et",
+            )
+        ):
+            return "crypto_updown"
+
+    if any(
+        k in t
+        for k in [
+            "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "xrp",
+            "crypto", "bnb", "hyperliquid", "dogecoin", "doge",
+            "dip to", "price of solana", "price of bitcoin", "price of ethereum",
+            "price of xrp",
+        ]
+    ):
         return "crypto"
-    # Weather — temperature, precipitation
+
     if any(k in t for k in [
         "temperature", "weather", "rain", "celsius", "fahrenheit",
         "°c", "°f", "highest temp",
     ]):
         return "weather"
-    # Politics — elections, politicians, parties
+
     if any(k in t for k in [
         "president", "election", "congress", "senate", "trump", "biden",
         "governor", "democrat", "republican", "prime minister", "ndp",
@@ -220,37 +246,70 @@ def _categorize(title: str) -> str:
         "canadian", "magyar", "hungary",
     ]):
         return "politics"
-    # Sports — leagues, teams, matchups, spreads, esports
+
+    if any(k in t for k in [
+        "counter-strike", "cs2", "cs:go", "csgo", "league of legends", "lol:", "lol ",
+        "valorant", "dota", "dota 2", "esports", "cblol", "overwatch", "starcraft",
+        "rocket league", "arena of valor", "riot games", "esl",
+    ]):
+        return "esports"
+
     if any(k in t for k in [
         "nba", "nfl", "mlb", "nhl", "soccer", "football", "basketball",
-        "tennis", "golf", "ufc", "counter-strike", "esports", "vs.",
-        "win on", "spread:", "split:", "celtics", "hornets", "penguins",
+        "tennis", "golf", "ufc", "vs.", "win on", "spread:", "split:", "celtics", "hornets", "penguins",
         "senators", "ducks", "flames", "nuggets", "ncaa", "tournament",
-        "hart memorial", "mcdavid", "valorant", "cblol", "lol:",
-        "charleston open", "boilermakers", "alicante", "carreno",
+        "hart memorial", "mcdavid", "charleston open", "boilermakers", "alicante", "carreno",
         "kalieva", "urhobo", "bo3", "match", " vs ",
         "real racing", "liberia", "benin", "italy win", "france win",
         "ghana", "austria", "o/u ", "f1 ", "grand prix",
         "pole position", "leclerc", "hamilton", "verstappen",
     ]):
         return "sports"
-    # Entertainment — YouTube, social media, pop culture
+
+    if any(k in t for k in [
+        "openai", "anthropic", "gpt", "gpt-4", "gpt-5", "claude", "llm", "agi", "artificial intelligence",
+        "spacex", "nasa", " mars", " moon", "rocket", "moon landing", "telescope",
+        "asteroid", "satellite", "nobel", "scientific",
+    ]):
+        return "science"
+
+    if any(k in t for k in [
+        "oscar", "grammy", "emmy", "golden globe", "billboard", "box office", "grossing",
+    ]):
+        return "culture"
+
     if any(k in t for k in [
         "mrbeast", "youtube", "views", "subscribers", "tiktok",
     ]):
         return "entertainment"
-    # Economics — fed, rates, IPOs
+
     if any(k in t for k in [
         "fed ", "interest rate", "inflation", "gdp", "fomc",
         "ipo market cap", "ipo",
     ]):
         return "economics"
-    # Geopolitics — wars, conflicts
+
     if any(k in t for k in [
         "war", "conflict", "nato", "iran", "israel", "houthi",
         "ceasefire", "strike on", "putin",
     ]):
         return "geopolitics"
+
+    if any(k in t for k in [
+        "sec ", "lawsuit", "indict", "trial", "court", "doj", "ftc", "subpoena", "appeal",
+    ]):
+        return "legal"
+
+    if any(k in t for k in [
+        "fda", "vaccine", "clinical trial", "cdc ", "pandemic", "covid",
+    ]):
+        return "health"
+
+    if any(k in t for k in [
+        "opec", "oil", "crude", "wti", "brent", "natural gas", "gas price", "barrel",
+    ]):
+        return "energy"
+
     return "other"
 
 
@@ -312,7 +371,7 @@ async def api_trading_categories(nocache: bool = Query(False, description="Bypas
         and _categories_cache["data"]
         and now - _categories_cache["fetched_at"] < 300
     ):
-        return _categories_cache["data"]
+        return _categories_payload_with_hints(_categories_cache["data"])
 
     try:
         positions, activities = await _fetch_polymarket_data()
@@ -440,17 +499,17 @@ async def api_trading_categories(nocache: bool = Query(False, description="Bypas
 
         _categories_cache["data"] = result
         _categories_cache["fetched_at"] = now
-        return result
+        return _categories_payload_with_hints(result)
 
     except Exception as exc:
         logger.warning("Polymarket API fetch failed: %s", exc)
-        return {
+        return _categories_payload_with_hints({
             "categories": {},
             "summary": {},
             "as_of": datetime.now().isoformat(),
             "source": "error",
             "error": str(exc),
-        }
+        })
 
 
 @app.get("/api/trading/positions")
@@ -518,7 +577,7 @@ LESSONS = [
         "title": "Esports Low-Liquidity Trap",
         "severity": "high",
         "loss": 0,
-        "category": "sports",
+        "category": "esports",
         "description": "Esports markets had very low liquidity and wide spreads. The bot was copying wallets into markets where exit was nearly impossible. Most positions expired worthless because the markets were too thin to sell before resolution.",
         "fix": "Applied 0.5x reduction factor for esports. Sports multiplier lowered to 0.25x. Added per-category circuit breakers: sports stops at -$15 daily loss.",
         "example": "Multiple League of Legends and CS2 match markets — bot entered at unfavorable prices, couldn't exit, and most resolved as losses."
@@ -578,6 +637,33 @@ LESSONS = [
         "example": "Shanghai 15°C: 15.47 shares sitting unredeemed for 2 days. Standard CTF calls succeeded (status=OK) but returned $0. NegRiskAdapter call recovered $15.47 instantly."
     }
 ]
+
+
+def _playbook_hints_for_categories() -> dict:
+    """Group playbook LESSONS by category for the Categories API (skip ``all``)."""
+    from collections import defaultdict
+
+    by_cat: dict[str, list[dict]] = defaultdict(list)
+    for L in LESSONS:
+        cat = (L.get("category") or "other").strip()
+        if cat == "all":
+            continue
+        by_cat[cat].append({
+            "title": L.get("title"),
+            "severity": L.get("severity"),
+            "lesson": L.get("description"),
+            "fix": L.get("fix"),
+            "loss": L.get("loss"),
+        })
+    return dict(sorted(by_cat.items()))
+
+
+def _categories_payload_with_hints(payload: dict) -> dict:
+    """Attach static playbook hints (derived from LESSONS) to categories API responses."""
+    out = dict(payload)
+    out["playbook_hints"] = _playbook_hints_for_categories()
+    return out
+
 
 # ── Email, Calendar, Follow-ups, System endpoints ──
 
