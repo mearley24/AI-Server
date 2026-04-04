@@ -977,6 +977,7 @@ When starting work on D-Tools or proposals:
 - Gap checker search: multi-word AND logic (e.g., "C4 dimmer", "araknis 48 poe") across full SnapOne catalog
 - D-Tools Cloud REST API: only DTOOLS_API_KEY needed (from Settings > Integration > Developer); Basic Auth is fixed
 - Runtime under `data/` (SQLite, WAL, polymarket JSON/CSV, email-monitor DB, intel feeds, transcripts, `network_watch/`, OpenClaw live exports) is **gitignored** — stays on Bob; never commit it.
+- Machine-local / experiments: **`symphonysh-web/`**, **`redis/`**, **`knowledge/cortex/`**, **`scratch/`**, **`.cursor/local/`** are gitignored. Put WIP sites, Redis dumps, generated cortex, and scratch files there. Shared Cursor prompts stay under **`.cursor/prompts/`** as normal filenames; drafts use **`scratch/`**, **`.cursor/local/`**, or the ignored name patterns in **`.gitignore`** (e.g. `*-part2.md`).
 - Overnight learner requires Playwright: `pip3 install playwright && playwright install chromium`; launchd uses `/usr/bin/python3`
 - Overnight learner SKUs: extend via `knowledge/learning/overnight_skus.json` (optional merge with built-in lists)
 - iOS signing recovery: if `CodeSign failed` due to revoked `Apple Development` cert and Xcode delete is grayed out, open Keychain Access -> `login` -> `My Certificates`, search `Apple Development`, then delete affected Apple Development cert entries and matching private keys, regenerate cert in Xcode Accounts, and rebuild.

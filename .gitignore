@@ -46,3 +46,15 @@ data/proposals/*.pdf
 # Intel + email SQLite trees (paths beyond *.db if added)
 data/intel_feeds/
 data/email-monitor/
+
+# --- Machine-local / experiments (Bob or M2 — not shared via this repo) ---
+symphonysh-web/
+redis/
+knowledge/cortex/
+scratch/
+.cursor/local/
+
+# Cursor prompt drafts (tracked prompts stay as single files; part2 / perplexity scratch stay local)
+.cursor/prompts/*-part2.md
+.cursor/prompts/perplexity-next-level*.md
+.cursor/prompts/close-the-loop-part*.md
