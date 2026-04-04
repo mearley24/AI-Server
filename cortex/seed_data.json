@@ -1,0 +1,582 @@
+{
+  "timeline": [
+    {
+      "date": "2026-02-27",
+      "phase": "Foundation",
+      "entries": [
+        {
+          "title": "Initial Vision & Setup",
+          "summary": "Established the vision for Symphony Smart Homes AI infrastructure. Discussed building Bob (Mac Mini M4) as an AI employee. Set goals: email monitoring, proposal generation, D-Tools integration, calendar management. Also outlined the long-term vision for a private local LLM appliance for client homes.",
+          "outcome": "success",
+          "details": "Created the AI-Server repo foundation. Discussed Mission Control dashboard concept. Identified pending tasks: get Ollama running on Maestro (64GB iMac), wipe/rename iMacs, generate D-Tools Cloud API key, build OpenClaw framework.",
+          "problems_downstream": "Many of these initial plans took weeks to materialize. The scope was ambitious from day one.",
+          "tags": ["bob", "ai-server", "vision", "setup"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-06",
+      "phase": "Foundation",
+      "entries": [
+        {
+          "title": "Browser Agent & D-Tools Integration",
+          "summary": "Added browser_agent service to AI-Server repo to automate D-Tools Cloud web UI tasks. Playwright-based Python FastAPI app running in Docker on port 9091. Replaced the previously planned HARPA AI automation with a custom solution.",
+          "outcome": "success",
+          "details": "Service requires DTOOLS_EMAIL and DTOOLS_PASSWORD env vars. Bob delegates tasks via @browser command. This replaced the Stagehand/HARPA approach entirely.",
+          "problems_downstream": "D-Tools integration remained limited since there's no free API — browser automation is fragile and dependent on UI changes.",
+          "tags": ["browser-agent", "d-tools", "playwright", "docker"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-24",
+      "phase": "Building the Stack",
+      "entries": [
+        {
+          "title": "OpenClaw Agent Integration",
+          "summary": "Integrated OpenClaw into AI-Server docker-compose on port 8099. Built autonomous 5-minute orchestration loop checking email-monitor, calendar-agent, dtools-bridge. Daily briefing set for 6 AM MT. Agent configs mounted read-only in agents/*.yml.",
+          "outcome": "partial",
+          "details": "Bob's full stack now comprised 16 services. The orchestration loop was running but many downstream services weren't returning useful data yet.",
+          "problems_downstream": "The orchestration loop ran but most modules returned empty data. Jobs DB was never populated, which blocked follow-ups, payments, and proposals.",
+          "tags": ["openclaw", "orchestration", "docker-compose"]
+        },
+        {
+          "title": "Tier 1 Services Deployed",
+          "summary": "Added proposals (port 8091), email-monitor (port 8092), and voice-receptionist (port 8093) to the compose stack. 1,174 new lines across 11 files.",
+          "outcome": "partial",
+          "details": "Proposals agent wraps existing proposal engine. Email monitor watches Zoho inbox. Voice receptionist scaffolded but never fully activated.",
+          "problems_downstream": "Voice receptionist was never fully wired up. Email monitor needed multiple rounds of fixes over the following week.",
+          "tags": ["proposals", "email-monitor", "voice-receptionist", "tier-1"]
+        },
+        {
+          "title": "IOI Inventory Tracking Project",
+          "summary": "Built the IOI (In Out In) RFID/NFC tracking system. 1,531 lines across 10 files. Full simulation with 5-phase day-in-the-life scenario. Deployed to github.com/mearley24/IOI.",
+          "outcome": "success",
+          "details": "System tracks items through zones using RFID readers. Includes dashboard for real-time visualization. Using tscircuit for custom PCB design.",
+          "problems_downstream": "Project paused after initial build — focus shifted to Bob's operational infrastructure.",
+          "tags": ["ioi", "rfid", "hardware", "side-project"]
+        },
+        {
+          "title": "Kraken Crypto Trading Bot",
+          "summary": "Set up Kraken trading bot with Avellaneda market making strategy on XRP/USDT. Dashboard showed live trades. Initial spread was too wide (100bps) — tightened to 35bps.",
+          "outcome": "failure",
+          "details": "Bot quoted but got no fills initially. Spread adjustments helped but the fundamental approach had problems — stale inventory, losses accumulated.",
+          "problems_downstream": "Kraken losses contaminated P/L reporting for days. Had to be fully removed from mission control, iMessage notifications, and all dashboards. Kept sending hourly Kraken updates even after removal attempts.",
+          "tags": ["kraken", "trading", "market-making", "failure"]
+        },
+        {
+          "title": "Mission Control Dashboard Deployed",
+          "summary": "Built and deployed the Mission Control dashboard. Initially showed Kraken paper trades and service health.",
+          "outcome": "partial",
+          "details": "Dashboard lived in /dashboard/ of the repo. Later went through multiple redesigns — Kraken removal, Polymarket playbook, Apple-style tiles, responsive sizing fixes.",
+          "problems_downstream": "Dashboard needed constant rebuilds. Font sizing issues, Invalid Date bugs, employees showing as idle, cached Docker builds not picking up changes.",
+          "tags": ["mission-control", "dashboard", "ui"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-26",
+      "phase": "Polymarket Launch",
+      "entries": [
+        {
+          "title": "VPN/Redis Networking Crisis",
+          "summary": "Polymarket bot couldn't reach Redis or notification-hub. Root cause: WireGuard VPN routes ALL traffic through tunnel, including Docker internal traffic. Redis connections timed out going through Netherlands VPN.",
+          "outcome": "success",
+          "details": "Fix: Added extra_hosts mapping to VPN container. But the real fix was using the direct container IP (172.18.0.4:6379) instead of host.docker.internal. This IP must be re-verified after every docker compose restart.",
+          "problems_downstream": "This direct IP approach is fragile — breaks on every restart. Created a recurring maintenance burden that persists.",
+          "tags": ["vpn", "redis", "networking", "docker", "debugging"]
+        },
+        {
+          "title": "Polymarket Bot Research & Improvements",
+          "summary": "Researched 6 priority upgrades: smart exit strategy, Kelly Criterion sizing, wallet quality scoring overhaul, real-time market data, liquidity rewards, LLM trade validation. Key finding: top wallets hold 18-72 hours, P/L ratio matters more than win rate.",
+          "outcome": "success",
+          "details": "Research saved to polymarket-bot-evolution.pplx.md. Identified that copying market makers was a trap — they buy both sides.",
+          "problems_downstream": "Many of these improvements were planned but implementation was incremental and some never fully deployed.",
+          "tags": ["polymarket", "research", "trading-strategy"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-27",
+      "phase": "Polymarket Optimization",
+      "entries": [
+        {
+          "title": "Kraken Removal & Polymarket-Only P/L",
+          "summary": "Discovered Kraken losses were contaminating all P/L figures. Removed all Kraken references from mission control, iMessage bridge, and dashboard. Replaced with Polymarket-only data.",
+          "outcome": "partial",
+          "details": "Committed fixes in cf5506c, f73f6f9, d22209d. Category sizing multipliers adjusted. Anti-pattern checks added (both-sides crypto, penny lottery, contradictory positions).",
+          "problems_downstream": "Kraken iMessage updates KEPT coming back even after multiple removal attempts. The iMessage server runs natively, not in Docker, so code changes required manual restart.",
+          "tags": ["kraken-removal", "polymarket", "p-and-l", "imessage"]
+        },
+        {
+          "title": "Trading Playbook Built",
+          "summary": "Created comprehensive Polymarket Trading Playbook from all trades. Category breakdown: crypto_updown -$57 (biggest loss), sports -$25, weather -$11, politics +$3, other +$3. 8 lessons documented with severity badges.",
+          "outcome": "success",
+          "details": "Dashboard replaced with full playbook: category performance, lessons, timeline, trade explorer, open positions. Entry price range narrowed to $0.15-$0.90.",
+          "problems_downstream": "The playbook was accurate but the trading strategy still needed refinement. Weather eventually became the profitable niche.",
+          "tags": ["trading-playbook", "lessons-learned", "polymarket"]
+        },
+        {
+          "title": "Bot Stopped Trading",
+          "summary": "Bot stopped placing new trades ~11 hours after optimization. Only redeeming won positions. Still sending Kraken updates despite removal.",
+          "outcome": "failure",
+          "details": "Multiple issues: code not deployed on Bob (iMessage server runs natively), overly aggressive filters blocking everything.",
+          "problems_downstream": "Pattern of code being pushed to repo but not deployed on Bob became a recurring issue.",
+          "tags": ["bot-stopped", "deployment-gap", "trading"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-29",
+      "phase": "Bob QA & Stabilization",
+      "entries": [
+        {
+          "title": "Polymarket Dead Positions Fix",
+          "summary": "Closed positions still showing as active. Redeemer was only processing winners — losers (33 positions) were left showing forever with $0 payout.",
+          "outcome": "success",
+          "details": "Fixed redeemer to also process losing positions. Redemption transactions clear them from the UI.",
+          "tags": ["polymarket", "redeemer", "dead-positions", "bug-fix"]
+        },
+        {
+          "title": "Bob Autostart & iMessage Bridge Fixes",
+          "summary": "Multiple rounds of QA on Bob's Mac Mini. Found: bob_autostart.plist had /Users/matt/ hardcoded (wrong user). iMessage bridge had SQLite WAL locking conflicts. Status pane escaping was broken.",
+          "outcome": "success",
+          "details": "Fixed paths to /Users/bob/. iMessage bridge now copies chat.db + WAL + SHM to temp before reads. Multiple Cursor prompts used for targeted fixes. Each fix required separate verification.",
+          "problems_downstream": "iMessage bridge remained fragile. Lost entirely during a later refactor.",
+          "tags": ["bob-autostart", "imessage-bridge", "sqlite", "path-fix"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-30",
+      "phase": "Email System & Client Work",
+      "entries": [
+        {
+          "title": "Email Routing System Built",
+          "summary": "Built full email routing for Zoho Mail. Auto-sorts emails into folders: Projects/Topletz, Projects/Shaw - Timber Ridge, Projects/MMH - 42 Red Spruce, Bids/Active, Vendor/Snap One, Vendor/Accounting, Marketing-Ignore.",
+          "outcome": "success",
+          "details": "Router created IMAP folders and moved emails in real time. Active client detection for Steve (stopletz1@gmail.com), Austin (austin@shaw), Samantha. Bid triage for BuildingConnected invites.",
+          "problems_downstream": "Steve's emails getting routed to project folder meant they disappeared from inbox — kept getting missed. Active client categorization broke multiple times (CLIENT_INQUIRY vs ACTIVE_CLIENT).",
+          "tags": ["email-routing", "zoho", "imap", "automation"]
+        },
+        {
+          "title": "Deep Mailbox Cleanup",
+          "summary": "Ran aggressive cleanup of all Zoho mailboxes. Migrated old folders (Snap One → Vendor/Snap One, D-tools → Vendor/D-Tools, etc.). Categorized all inbox emails. Marked handled emails as read.",
+          "outcome": "success",
+          "details": "First attempt (cleanup_all_mail.py) only moved 40 emails — too conservative. Second attempt (deep_cleanup.py) did full migration, consolidation, read-marking, and empty folder deletion.",
+          "problems_downstream": "None — the cleanup worked well and established a clean baseline.",
+          "tags": ["email-cleanup", "zoho", "mailbox-organization"]
+        },
+        {
+          "title": "Dropbox Integration Connected",
+          "summary": "Connected Dropbox for Symphony project file management. Structure: [Project]/Client/ (shared), [Project]/Internal/ (background), [Project]/Archive/ (old versions).",
+          "outcome": "success",
+          "details": "Each document gets its own share link. Client folder shared once, files replaced in place when updated.",
+          "problems_downstream": "Bob couldn't autonomously push files to Dropbox in practice — still required manual intervention.",
+          "tags": ["dropbox", "file-management", "client-folders"]
+        },
+        {
+          "title": "Linear Project Templates",
+          "summary": "Created Shaw/Timber Ridge project in Linear. Built standardized 22-issue project template (4 phases: Pre-Sale, Pre-Wire, Trim, Commissioning).",
+          "outcome": "success",
+          "details": "Template codified in openclaw/project_template.py. Auto-creates when job enters WON phase.",
+          "problems_downstream": "Auto-creation never fired because jobs DB remained empty — D-Tools sync logged opportunities but never created jobs.",
+          "tags": ["linear", "project-template", "automation"]
+        },
+        {
+          "title": "Topletz Addendum Response Drafted",
+          "summary": "Steve sent an addendum with 11 sections. Drafted comprehensive single response covering all sections plus lighting (C4 vs Lutron), security coordination, TV options teaser, timeline, and 5 open decisions.",
+          "outcome": "success",
+          "details": "Multiple rounds of refinement: wire labeling standards, temp labels, commissioning approach. Pushed to Zoho drafts via API.",
+          "problems_downstream": "The TV options were teased but not fully developed at this point. Became a significant workstream later.",
+          "tags": ["topletz", "client-email", "addendum", "drafting"]
+        }
+      ]
+    },
+    {
+      "date": "2026-03-31",
+      "phase": "Topletz Deep Dive",
+      "entries": [
+        {
+          "title": "Steve Confirms All Decisions",
+          "summary": "Steve answered every open question: C4 lighting, shade prewire in scope, security prewire alongside AV, cameras prewire only (no Luma), iPads replace T5 touchscreens. Panel at garage entry. Ready to sign.",
+          "outcome": "success",
+          "details": "7 decisions confirmed. Panel location: garage entry primary, master bed secondary. Qolsys IQ Panel 4 with native C4 driver via DriverCentral.",
+          "problems_downstream": "None on the decisions. But processing Steve's emails became a recurring battle with the email monitor.",
+          "tags": ["topletz", "decisions-confirmed", "steve", "scope-locked"]
+        },
+        {
+          "title": "TV Options & Mount Analysis",
+          "summary": "Steve sent back TV schedule with mount changes (MI-393 → Sanus MLL11 flat mount). Analyzed compatibility, identified flat mount + recessed box conflict. Built three TV package tiers: Essential ($13,193), Recommended ($14,393).",
+          "outcome": "success",
+          "details": "All Samsung TVs with native C4 SDDP. VLT7 mounts. Explored AWALL for 100\" MicroLED locations. Created TV options PDF for Dropbox.",
+          "problems_downstream": "Steve hadn't asked for TV recommendations yet — had to hold the PDF as a draft. Mount recommendation workflow needed refinement.",
+          "tags": ["tv-options", "mounts", "samsung", "c4-sddp"]
+        },
+        {
+          "title": "Daily Briefing Cron Duplicated 4x",
+          "summary": "The cron entry for daily briefing was added 4 times. Each run of the setup command appended another line instead of checking if it existed.",
+          "outcome": "failure",
+          "details": "Fixed by compacting to a single entry. Also discovered the cron was set to 1 PM UTC (7 AM MDT) when 6 AM was intended.",
+          "problems_downstream": "Cron management remained manual and error-prone. No idempotent setup.",
+          "tags": ["cron", "daily-briefing", "duplicate", "bug"]
+        },
+        {
+          "title": "SOW Gap Analysis & V4 Created",
+          "summary": "Did full gap analysis between confirmed decisions and current SOW. Found missing: shade prewire, camera prewire, security panel prewire, Qolsys C4 integration, iPad replacements, conduit, VLAN 40.",
+          "outcome": "success",
+          "details": "Built V4 SOW with all gaps filled. Added change log table for tracking. Established workflow: confirmed decision → logged with timestamp → SOW updated → cross-checked before sending.",
+          "problems_downstream": "SOW versions continued to evolve (V4 → V5 → V6) as scope refined.",
+          "tags": ["sow", "gap-analysis", "scope-management"]
+        },
+        {
+          "title": "Knowledge Layer, SOW Assembler, Pre-flight Checker Built",
+          "summary": "Created product catalog (every product from Topletz + Cindev Qolsys driver), SOW building blocks, operations runbook, and pre-flight checker. Designed so someone new could walk in and use the system.",
+          "outcome": "success",
+          "details": "Topletz established as the benchmark project. All tools standardized for reuse across every Symphony project.",
+          "problems_downstream": "These tools existed in the repo but were never fully tested end-to-end with Bob's orchestration loop.",
+          "tags": ["knowledge-layer", "sow-assembler", "preflight", "runbook"]
+        },
+        {
+          "title": "Steve's Email Missed (Again)",
+          "summary": "Steve emailed but it was missed because emails get routed to Projects/Topletz folder, not the inbox. The auto-responder didn't fire because the code wasn't deployed on Bob.",
+          "outcome": "failure",
+          "details": "Pattern: code pushed to repo → not pulled on Bob → old code still running → Steve categorized as VENDOR not ACTIVE_CLIENT.",
+          "problems_downstream": "This exact pattern repeated multiple times. Became a major source of frustration.",
+          "tags": ["email-missed", "deployment-gap", "steve", "active-client"]
+        },
+        {
+          "title": "Polymarket Bot Down Since 8 AM",
+          "summary": "Bot appeared down but Polymarket status page showed all systems operational. Issue was on Bob's side — either container restart, WebSocket disconnect, or code not deployed.",
+          "outcome": "partial",
+          "details": "Required manual diagnosis via docker logs and docker ps.",
+          "problems_downstream": "Bot monitoring was reactive, not proactive. No automatic restart or alerting.",
+          "tags": ["polymarket", "downtime", "monitoring"]
+        },
+        {
+          "title": "Business Pivot: Residential Only",
+          "summary": "Decided to pivot Symphony Smart Homes to focus exclusively on residential smart home projects. Abandoned commercial bid work due to low ROI. Polymarket trading as supplementary revenue.",
+          "outcome": "success",
+          "details": "Strategic decision that simplified focus. All automation efforts now targeted at residential workflow.",
+          "tags": ["business-strategy", "pivot", "residential-focus"]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-01",
+      "phase": "Integration Hell",
+      "entries": [
+        {
+          "title": "iMessage Notifications Gone",
+          "summary": "Discovered iMessage notification module was completely missing — no notifications directory, no iMessage references anywhere in the codebase. Lost in a refactor or never properly built.",
+          "outcome": "failure",
+          "details": "Had to rebuild from scratch at 12:40 AM. Created notifications module, wired into polymarket bot signal handler. But couldn't push to Bob autonomously — needed user to paste commands.",
+          "problems_downstream": "iMessage infrastructure remained fragile and dependent on Mac-native osascript.",
+          "tags": ["imessage", "notifications", "lost-code", "late-night"]
+        },
+        {
+          "title": "Code Not Deployed on Bob (Pattern)",
+          "summary": "Multiple fixes pushed to GitHub but not pulled on Bob. Steve's ACTIVE_CLIENT fix, marketing filter for Linq, knowledge layer, SOW assembler, VPN guardrail — none deployed.",
+          "outcome": "failure",
+          "details": "Root cause: no auto-deploy mechanism. Every fix requires manual: git pull → docker compose build → docker compose up. This gap caused Steve's emails to be miscategorized repeatedly.",
+          "problems_downstream": "This is the single biggest recurring problem. Code exists but isn't running.",
+          "tags": ["deployment-gap", "git-pull", "recurring-issue"]
+        },
+        {
+          "title": "Steve Final Alignment Response",
+          "summary": "Steve sent 5 final alignment items. Drafted response addressing: security coordination with Superior, 90-day post-install support (vs 60 in agreement), TV supply/mounting, flat mount concerns.",
+          "outcome": "success",
+          "details": "Confirmed Symphony supplies TVs and mounts (not owner-supplied). Explored Strong Carbon Series mounts via Snap One dealer network.",
+          "problems_downstream": "Agreement terms (90 vs 60 day tuning) needed careful handling.",
+          "tags": ["topletz", "final-alignment", "steve", "agreement"]
+        },
+        {
+          "title": "Email Monitor Routing Not Firing",
+          "summary": "Email monitor scanning 36 messages every cycle but routing zero — routing config hadn't been pulled on Bob. Same deployment gap problem.",
+          "outcome": "failure",
+          "details": "Required: git pull → docker compose restart → verify config inside container → rebuild. Multiple cycles of 'try and check logs'.",
+          "problems_downstream": "Hours spent debugging the same root cause: code not deployed.",
+          "tags": ["email-routing", "deployment-gap", "debugging-loop"]
+        },
+        {
+          "title": "Polymarket Notification Wiring",
+          "summary": "Confirmed notification-hub and iMessage bridge were running and healthy. Wired NOTIFICATION_CHANNEL=imessage into bot env. Tested Redis pub/sub notification pipeline.",
+          "outcome": "success",
+          "details": "notification-hub on port 8095, iMessage bridge on port 8199. Both healthy with two-way mode.",
+          "problems_downstream": "The notification pipeline worked when tested manually but reliability in production was inconsistent.",
+          "tags": ["notifications", "imessage", "redis-pubsub", "polymarket"]
+        },
+        {
+          "title": "Redis Static IP Problem",
+          "summary": "Polymarket bot uses direct container IP (172.18.0.4:6379) for Redis due to VPN routing. This IP changes on docker compose restart.",
+          "outcome": "partial",
+          "details": "Workaround: verify IP after every restart. Proper fix would be a static Docker network configuration.",
+          "problems_downstream": "Every restart required manual IP verification. Not sustainable for autonomous operation.",
+          "tags": ["redis", "static-ip", "vpn", "maintenance-burden"]
+        },
+        {
+          "title": "Bob's Neural Map Vision",
+          "summary": "Discussed the bigger picture: Bob's neural map isn't just AV/automation — it's a learning system across all domains. Every decision becomes training data. Trading patterns, mount compatibility, client preferences all feed into the same intelligence layer.",
+          "outcome": "success",
+          "details": "Vision: system compatibility intelligence layer that validates components against each other, includes reference checklists and connection maps, eventually powers automated pre-verified 3D layouts.",
+          "problems_downstream": "Vision is solid but execution is still in early stages.",
+          "tags": ["neural-map", "vision", "system-intelligence"]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-02",
+      "phase": "Frustration & Fixes",
+      "entries": [
+        {
+          "title": "Auto-Responder Broken — Container Import Issue",
+          "summary": "Auto-responder never fired because it lives in openclaw container but email-monitor tries to import from ../openclaw/ which doesn't exist inside its container. Silent failure via try/except.",
+          "outcome": "failure",
+          "details": "The import path was wrong across containers. Emails processed during monitor restarts were indexed silently without triggering auto-responder. Steve's emails consistently missed.",
+          "problems_downstream": "Major frustration point. Same issue debugged multiple times.",
+          "tags": ["auto-responder", "container-import", "silent-failure", "frustration"]
+        },
+        {
+          "title": "User Frustration: 'Setting Up Same Shit 7 Times'",
+          "summary": "User expressed significant frustration about repeatedly fixing the same email routing and auto-responder issues. Direct quote: 'why the fuck are we setting up this shit 7 times each. this is bullshit.'",
+          "outcome": "failure",
+          "details": "Root causes: (1) code pushed to repo but not deployed, (2) import paths broken across Docker containers, (3) silent failures hiding errors, (4) no end-to-end testing before declaring 'done'.",
+          "problems_downstream": "Led to demand for proper autonomous operation: 'make Bob fucking do it, fix it now'.",
+          "tags": ["frustration", "recurring-bugs", "deployment-gap", "quality"]
+        },
+        {
+          "title": "Polymarket Over-Trading Crisis",
+          "summary": "242 buys, 17 sells in 24 hours. $1,923 deployed, $65 recovered. Strategy filters (temp clustering, crypto filter, category blacklist) never deployed despite being in the code.",
+          "outcome": "failure",
+          "details": "Filters were in the code but not active because container wasn't rebuilt. Bot was buying cheap positions at high prices with no exit strategy. Weather bets ($331 deployed) were the main exposure.",
+          "problems_downstream": "Significant capital deployed in positions that needed to be recovered. Exit engine had bugs (stuck retry loops).",
+          "tags": ["polymarket", "over-trading", "filters-not-deployed", "capital-at-risk"]
+        },
+        {
+          "title": "Proposal V5 Finalized",
+          "summary": "Topletz proposal V5 (Q-196) finalized at $57,683.09 with 60% deposit required. Scope: C4/NoSecurity. RMGC as general contractor.",
+          "outcome": "success",
+          "details": "Version numbers kept internal — client-facing docs use generic 'updated proposal' language.",
+          "tags": ["topletz", "proposal", "v5", "finalized"]
+        },
+        {
+          "title": "Zoho OAuth Token Issues",
+          "summary": "Attempted to push Steve's reply via Zoho API. Token from one-liner didn't capture properly. Got INVALID_OAUTHTOKEN errors.",
+          "outcome": "partial",
+          "details": "Had to use token directly in curl command rather than variable capture. Zoho's OAuth flow requires careful token handling.",
+          "tags": ["zoho", "oauth", "api", "token-issue"]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-03",
+      "phase": "Stabilization & Roadmap",
+      "entries": [
+        {
+          "title": "Polymarket Exit Engine Fix",
+          "summary": "Two positions stuck in retry loops: ct-760c1eb1f80b losing value on each retry (sell price dropping 22¢ → 15¢), ct-447c52cb2bf9 with zero balance looping forever.",
+          "outcome": "success",
+          "details": "Quick fix applied, bot rebuilt. Clean startup with open_positions: 0 (drift problem — loses position memory on restart). LLM validation returning 400 from OpenAI (prompt formatting issue, not urgent).",
+          "problems_downstream": "open_positions: 0 on restart means bot doesn't know about existing positions. Auto-21 Cursor prompt planned to fix this.",
+          "tags": ["polymarket", "exit-engine", "retry-loop", "position-drift"]
+        },
+        {
+          "title": "Proposal Checker Logic",
+          "summary": "Built proposal checker that distinguishes between D-Tools items (hardware, labor) and email-agreed items (TV installation, mount recommendations, service terms). Email-agreed items excluded from 'missing' flag logic.",
+          "outcome": "success",
+          "details": "Important nuance: not everything in the proposal comes from D-Tools. Some items are agreed via email and shouldn't trigger missing flags.",
+          "tags": ["proposal-checker", "d-tools", "email-agreed-items"]
+        },
+        {
+          "title": "32 Cursor Prompts Roadmap",
+          "summary": "Created comprehensive 32-prompt roadmap across 6 tiers. From fixing today's exit bug all the way to a self-sustaining AI-powered business. The flywheel: business → revenue → trading → profits → operations → win more business.",
+          "outcome": "success",
+          "details": "Covers: API-11 (Bob's Brain — central event bus), Auto-21 (position recovery), strategy improvements, client lifecycle automation, and more.",
+          "problems_downstream": "Ambitious roadmap. Execution depends on running Cursor prompts sequentially and deploying each fix.",
+          "tags": ["roadmap", "cursor-prompts", "flywheel", "vision"]
+        },
+        {
+          "title": "Git Workflow Conflicts",
+          "summary": "Repeated git pull --rebase failures due to unstaged changes, data files, and submodules. Error: 'cannot pull with rebase: You have unstaged changes.'",
+          "outcome": "partial",
+          "details": "Workaround: git stash → git pull --rebase → git stash pop. Eventually created scripts/pull.sh to handle this properly.",
+          "problems_downstream": "Led to mandate: always use 'bash scripts/pull.sh' instead of bare 'git pull'.",
+          "tags": ["git", "rebase-conflicts", "workflow", "pull-script"]
+        },
+        {
+          "title": "Proposal V6 Updated",
+          "summary": "V6 same total as V5 ($57,683.09) but with more detailed scope language about RMGC coordination, Qolsys SDDP, iPad locations, 60-day tuning period, exclusions.",
+          "outcome": "success",
+          "details": "Deliverables package needed to match V6. Required: PDF to Dropbox, agreement update, scope summary update, old versions archived.",
+          "tags": ["topletz", "proposal", "v6", "scope-language"]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-04",
+      "phase": "Dashboard & Operations Activation",
+      "entries": [
+        {
+          "title": "Mission Control Dashboard Redesign",
+          "summary": "Multiple rounds of fixes: fonts too small, Invalid Date bug, need for responsive sizing with clamp(), menu additions, plugins. Created Cursor prompt for comprehensive single-pass fix.",
+          "outcome": "partial",
+          "details": "Kept running into Docker cached builds not picking up changes. Cursor changes to index.html needed force --no-cache rebuild. Data file conflicts on pull.",
+          "problems_downstream": "Dashboard still not fully polished. Employees show as idle because services don't emit events to Mission Control /event endpoint.",
+          "tags": ["mission-control", "fonts", "responsive", "docker-cache"]
+        },
+        {
+          "title": "Git Auth & Workflow Fixes",
+          "summary": "Git remote had placeholder token (ghp_YOUR_TOKEN). Fixed with gh auth login --web. Established bash scripts/pull.sh as the mandatory workflow.",
+          "outcome": "success",
+          "details": "gh auth setup-git configured for HTTPS. pull.sh handles stash, rebase conflicts, and data file merges properly.",
+          "tags": ["git-auth", "github-cli", "pull-script", "workflow"]
+        },
+        {
+          "title": "Services Audit: What's Built But Not Active",
+          "summary": "Comprehensive audit revealed: follow_up_tracker (3/7/14 day auto-follow-ups), payment_tracker, client_tracker, daily_briefing, dropbox_integration, research_agent, sow_assembler, proposal_checker, knowledge_base — all code exists but not active.",
+          "outcome": "partial",
+          "details": "Root cause for everything: Jobs DB has 0 rows. D-Tools sync logs opportunities but never creates jobs. Follow-ups, payments, proposals all depend on jobs existing. This is THE bottleneck.",
+          "problems_downstream": "Nothing downstream works without jobs being populated. Single point of failure for the entire operations pipeline.",
+          "tags": ["services-audit", "jobs-db-empty", "bottleneck", "operations"]
+        },
+        {
+          "title": "Daily Briefing: Wrong Time, Wrong Paths",
+          "summary": "Briefing cron at 1 PM UTC (7 AM MDT) instead of 6 AM MT. Email DB path wrong inside Docker (/data/emails.db vs /app/data/email-monitor/emails.db). Cron runs outside Docker so env vars not available.",
+          "outcome": "failure",
+          "details": "Briefing ran on 4/3 but failed on D-Tools fetch (returned None). Phone number is set in .env but crontab doesn't source it.",
+          "tags": ["daily-briefing", "cron", "wrong-path", "env-vars"]
+        },
+        {
+          "title": "Activate Operations Cursor Prompt Created",
+          "summary": "Created .cursor/prompts/activate-operations.md to fix four things: auto-create jobs from D-Tools Won/On Hold opportunities, fix daily briefing paths, wire follow-up/payment trackers, emit events to Mission Control.",
+          "outcome": "pending",
+          "details": "This is the key unlock. Once jobs exist, the entire downstream pipeline activates. Manual fix still needed: iCloud Watch dead because Mac Mini not signed into iCloud.",
+          "tags": ["activate-operations", "cursor-prompt", "jobs-creation", "unlock"]
+        },
+        {
+          "title": "LaunchD Scripts Pointing to Nonexistent Files",
+          "summary": "efficiency_audit.py and daily_market_scan.py referenced in launchd plists but never created by Cursor. Unloaded dead plists.",
+          "outcome": "success",
+          "details": "Cursor generated the plists but never created the actual Python scripts. Cleaned up to prevent error spam.",
+          "tags": ["launchd", "dead-scripts", "cleanup"]
+        },
+        {
+          "title": "Data File Merge Conflicts (Recurring)",
+          "summary": "data/network_watch/dropout_watch_status.json keeps conflicting on git pull. Runtime data files shouldn't be tracked in git.",
+          "outcome": "partial",
+          "details": "Workaround: git checkout --theirs and continue. Should be added to .gitignore.",
+          "tags": ["git", "merge-conflicts", "data-files", "gitignore"]
+        }
+      ]
+    }
+  ],
+  "recurring_problems": [
+    {
+      "id": "deployment-gap",
+      "title": "Code Pushed But Not Deployed on Bob",
+      "description": "The single most recurring problem. Fixes are committed to GitHub but not pulled/rebuilt on Bob. No auto-deploy mechanism exists. Every fix requires manual: git pull → docker compose build → docker compose up.",
+      "occurrences": "2026-03-27, 2026-03-31, 2026-04-01, 2026-04-02, 2026-04-03, 2026-04-04",
+      "severity": "critical",
+      "status": "unresolved",
+      "fix": "scripts/pull.sh created as workaround. No auto-deploy yet."
+    },
+    {
+      "id": "email-active-client",
+      "title": "Steve's Emails Miscategorized / Missed",
+      "description": "Steve's emails repeatedly categorized as CLIENT_INQUIRY or VENDOR instead of ACTIVE_CLIENT. Routed to project folder but missed from inbox. Auto-responder never fires.",
+      "occurrences": "2026-03-31, 2026-04-01, 2026-04-02, 2026-04-03",
+      "severity": "critical",
+      "status": "partially-fixed",
+      "fix": "ACTIVE_CLIENT_EMAILS env var set, but auto-responder import path broken across containers."
+    },
+    {
+      "id": "docker-cache",
+      "title": "Docker Cached Builds Ignore Changes",
+      "description": "Docker compose build uses cache and doesn't pick up file changes. Must use --no-cache flag. Especially problematic for config files baked into images.",
+      "occurrences": "2026-03-30, 2026-04-01, 2026-04-04",
+      "severity": "major",
+      "status": "known-workaround",
+      "fix": "Always use docker compose build --no-cache [service] for config changes."
+    },
+    {
+      "id": "git-rebase-conflicts",
+      "title": "Git Pull Rebase Failures",
+      "description": "git pull --rebase fails due to unstaged changes from runtime data files and submodules. Blocks deployments.",
+      "occurrences": "2026-04-03, 2026-04-04 (multiple times)",
+      "severity": "major",
+      "status": "fixed",
+      "fix": "bash scripts/pull.sh — handles stash, conflicts, and data files. Bare git pull forbidden."
+    },
+    {
+      "id": "redis-vpn-ip",
+      "title": "Redis IP Changes on VPN Restart",
+      "description": "Polymarket bot uses direct container IP for Redis due to VPN routing. IP changes on every docker compose restart.",
+      "occurrences": "2026-03-26, 2026-04-01",
+      "severity": "major",
+      "status": "known-workaround",
+      "fix": "Manually verify IP after restarts. Needs static Docker network config."
+    },
+    {
+      "id": "jobs-db-empty",
+      "title": "Jobs Database Empty — Blocks All Operations",
+      "description": "D-Tools sync logs 100 opportunities but creates 0 jobs. Follow-ups, payments, proposals, and the entire operations pipeline depend on jobs existing.",
+      "occurrences": "2026-04-04",
+      "severity": "critical",
+      "status": "cursor-prompt-created",
+      "fix": "activate-operations.md Cursor prompt created to auto-create jobs from Won/On Hold opportunities."
+    },
+    {
+      "id": "silent-failures",
+      "title": "Silent Failures Hide Errors",
+      "description": "try/except blocks catch errors and log nothing. Auto-responder import fails silently. Services report healthy while core functionality is broken.",
+      "occurrences": "2026-04-01, 2026-04-02",
+      "severity": "critical",
+      "status": "unresolved",
+      "fix": "Need proper error reporting and alerting."
+    },
+    {
+      "id": "kraken-ghost",
+      "title": "Kraken References Keep Coming Back",
+      "description": "Despite multiple removal attempts, Kraken iMessage updates and dashboard references kept reappearing. iMessage server runs natively so code changes require manual restart.",
+      "occurrences": "2026-03-27 (multiple commits)",
+      "severity": "minor",
+      "status": "fixed",
+      "fix": "All Kraken code removed. iMessage server restarted."
+    }
+  ],
+  "projects": [
+    {
+      "id": "topletz",
+      "name": "Topletz — 84 Aspen Meadow",
+      "client": "Steve Topletz",
+      "gc": "RMGC (Rocky Mountain Construction Group)",
+      "gc_contact": "David",
+      "status": "Agreement pending signature",
+      "proposal_total": "$57,683.09",
+      "deposit": "60% ($34,609.85)",
+      "scope": "C4/NoSecurity — Control4 ecosystem, iPads, shade/camera/security prewire, Qolsys integration",
+      "key_decisions": "C4 lighting (not Lutron), iPads (not T5 touchscreens), prewire only for cameras, garage entry for Qolsys panel, 60-day tuning period",
+      "benchmark": true
+    },
+    {
+      "id": "timber-ridge",
+      "name": "Shaw Construction — Timber Ridge",
+      "client": "Austin Hukill",
+      "status": "Active construction",
+      "scope": "Access control wiring, low-voltage pathways",
+      "notes": "Conduit work signed via DocuSign (P-122, Q-205)"
+    },
+    {
+      "id": "ioi",
+      "name": "IOI — In Out In RFID Tracking",
+      "status": "Paused after initial build",
+      "scope": "RFID/NFC inventory tracking system with custom PCB boards",
+      "notes": "Using tscircuit for PCB design. Simulation built. On hold while Bob infrastructure is priority."
+    }
+  ],
+  "services": {
+    "running": ["redis", "email-monitor", "openclaw", "polymarket-bot", "vpn", "notification-hub", "uptime-kuma", "open-webui", "remediator", "browser-agent", "mission-control", "telegram-bot", "btc-assistant"],
+    "built_not_active": ["follow_up_tracker", "payment_tracker", "client_tracker", "research_agent", "sow_assembler", "proposal_checker", "knowledge_base", "voice_receptionist"],
+    "total": 16
+  }
+}
