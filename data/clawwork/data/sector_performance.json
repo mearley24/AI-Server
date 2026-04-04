@@ -40,7 +40,7 @@
     "avg_net_profit": 0.0
   },
   "Retail Trade": {
-    "tasks": 4,
+    "tasks": 5,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,

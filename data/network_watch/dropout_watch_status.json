@@ -1,0 +1,29 @@
+{
+  "success": true,
+  "running": true,
+  "pid": 24740,
+  "updated_at": "2026-04-04T16:06:27.833172",
+  "health": "lan_or_router_down",
+  "targets": {
+    "gateway": "192.168.1.1",
+    "wan": "1.1.1.1",
+    "control4": "",
+    "sonos": ""
+  },
+  "sample": {
+    "gateway": {
+      "host": "192.168.1.1",
+      "ok": false,
+      "latency_ms": null,
+      "error": "[Errno 2] No such file or directory: 'ping'",
+      "duration_ms": 4.27
+    },
+    "wan": {
+      "host": "1.1.1.1",
+      "ok": false,
+      "latency_ms": null,
+      "error": "[Errno 2] No such file or directory: 'ping'",
+      "duration_ms": 3.46
+    }
+  }
+}
