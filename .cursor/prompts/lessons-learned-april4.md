@@ -88,6 +88,106 @@ This documents every manual fix Matt or Computer had to make during the April 4 
 - **Root cause:** Cursor may have created files locally but they were never committed/pushed. Or Cursor reported planning to create them but didn't actually do it.
 - **Bob should:** After every Cursor prompt, run a verification: for each file the prompt claims to create, check `ls -la [file]` and `wc -l [file]`. If it doesn't exist or is 0 lines, it wasn't created.
 
+### 13. Redis IP changes after every Docker restart — Polymarket bot breaks
+- **Frequency:** 5+ times across April 1-4. Every single container restart.
+- **Reality:** Polymarket bot connects to Redis via hardcoded container IP (172.18.0.x) because it runs through VPN (network_mode: service:vpn) and can't use Docker DNS. After any compose restart, Redis gets a new IP. Bot silently fails to send notifications.
+- **Time wasted:** ~2 hours total debugging across multiple sessions. Same fix applied 3+ times.
+- **Manual fix:** `docker inspect redis` to get new IP, update polymarket-bot/.env, restart bot.
+- **Root cause:** VPN routing captures all traffic (AllowedIPs = 0.0.0.0/0), blocking host.docker.internal resolution. Redis bound to 127.0.0.1 initially, then changed to 0.0.0.0 but VPN still blocked it.
+- **Bob should:** After EVERY `docker compose up/restart`, automatically check Redis IP and update bot .env if changed. Add to `symphony-ship.sh` verification. Or better: assign Redis a static IP in docker-compose.yml via `networks: default: ipv4_address: 172.18.0.100`.
+
+### 14. Zoho token expiration — breaks email sending every hour
+- **Frequency:** Every session that tried to send email via API
+- **Reality:** Zoho access tokens expire in 1 hour. Every curl command to send/draft email required a manual token refresh first.
+- **Time wasted:** ~30 min per session on token refresh dance
+- **Manual fix:** curl to Zoho OAuth refresh endpoint, get new token, paste into next command
+- **Root cause:** No automatic token refresh in the email sending flow
+- **Bob should:** The email-monitor and orchestrator should auto-refresh Zoho tokens using the refresh_token in .env. Never require manual token refresh.
+
+### 15. Auto-responder couldn't import across Docker containers
+- **Claimed:** Auto-responder generates draft replies to client emails
+- **Reality:** Auto-responder lives in openclaw container, email-monitor is a separate container. `from auto_responder import ...` fails with ModuleNotFoundError because containers don't share filesystems.
+- **Time wasted:** ~1 hour debugging + user frustration
+- **Root cause:** Architecture assumes shared filesystem between containers. Should use HTTP API calls between services, not Python imports.
+- **Bob should:** Services communicate via HTTP endpoints, never cross-container Python imports. If openclaw has the auto-responder, email-monitor should POST to openclaw's API, not try to import its code.
+
+### 16. Strategy filters never deployed — bot burned through $1,900 in one day
+- **Claimed:** Temperature clustering, crypto filter, category blacklist all working
+- **Reality:** None of the strategy filters were active because the bot container was never rebuilt after the code was pushed. 242 buys, 17 sells in 24 hours.
+- **Time wasted:** Real money lost. $1,900+ deployed in one day with almost no exits.
+- **Manual fix:** `docker compose up -d --build polymarket-bot`
+- **Root cause:** Config changes baked into Docker images require `--build` flag. Simple restart doesn't pick up code changes.
+- **Bob should:** After ANY code push to a service, ALWAYS rebuild: `docker compose up -d --build [service]`. Never bare restart. Add to pull.sh and symphony-ship.sh.
+
+### 17. Sell haircut rounding error — positions stuck in exit loops
+- **Frequency:** Ongoing since early April
+- **Reality:** Bot tried to sell 9.94M token units but only held 9.62M on-chain. The 0.995 haircut wasn't enough. Positions retried every minute for 25+ minutes, losing value while looping.
+- **Time wasted:** ~1 hour debugging + real money lost as sell price dropped during loop
+- **Manual fix:** Changed haircut from 0.995 to 0.96
+- **Root cause:** Internal share tracking doesn't match on-chain balance (slippage, rounding in CTF token math)
+- **Bob should:** Before ANY sell order, query on-chain balance first. Sell min(internal_shares * haircut, on_chain_balance). If on-chain is 0, drop the position from tracking.
+
+### 18. Multiple .env entries — first one wins, duplicates ignored
+- **Frequency:** 3 times during Redis IP fix
+- **Reality:** `echo "REDIS_URL=..." >> .env` appends a new line but Docker uses the FIRST occurrence. So the broken old value kept loading.
+- **Time wasted:** 30+ min running the same fix multiple times
+- **Manual fix:** `sed -i '' '/REDIS_URL/d' .env` to delete all, then add one clean entry
+- **Root cause:** Appending to .env instead of replacing
+- **Bob should:** NEVER append to .env. Always delete the key first, then add: `sed -i '' '/KEY/d' .env && echo 'KEY=value' >> .env`
+
+### 19. Shell escaping breaks every multi-line curl command
+- **Frequency:** Every session that involves Zoho API, Dropbox API, or any JSON POST
+- **Reality:** Quotes, apostrophes, and special characters get mangled when pasting curl commands into terminal. JSON parse errors, invalid_client errors.
+- **Time wasted:** ~1 hour total across sessions
+- **Manual fix:** Save JSON to file first (`cat > /tmp/payload.json << 'EOF'`), then `curl -d @/tmp/payload.json`
+- **Root cause:** Complex quoting in shell commands
+- **Bob should:** NEVER inline JSON in curl commands. Always write to a temp file first, then reference with `-d @file`. This is now a hard rule.
+
+### 20. Cursor claims work is done but files don't exist
+- **Frequency:** At least 3 times (next-level modules, finish-line files, continuous learning)
+- **Reality:** Cursor reports "implemented" in status docs but actual .py files were never created. Or files were created locally but never committed.
+- **Time wasted:** Multiple hours writing follow-up prompts to build what was supposedly already built
+- **Root cause:** Cursor may plan to create files but not execute, or creates in a temp context that doesn't persist. Status docs written optimistically.
+- **Bob should:** After EVERY Cursor prompt, run verification: `for f in [expected files]; do [ -f "$f" ] && echo "OK: $f" || echo "MISSING: $f"; done`. Never trust status docs — check the filesystem.
+
+### 21. Dashboard rebuilt 4+ times before it looked right
+- **Frequency:** 4 iterations (original build, Apple tiles, font fix, final polish)
+- **Reality:** First build was too big, second too small, third fonts too tiny, fourth still needed work. Each iteration required a full Docker rebuild + wait.
+- **Time wasted:** ~2 hours of rebuild cycles
+- **Root cause:** No visual QA before deploying. No screenshot review. Prompts described design but didn't verify output.
+- **Bob should:** After any UI change, take a screenshot via Playwright at 1280px and 375px BEFORE deploying. Fix issues in the same prompt, not in follow-up prompts.
+
+### 22. git pull fails every single time
+- **Frequency:** EVERY git pull on Bob. 10+ times this session alone.
+- **Reality:** `data/network_watch/dropout_watch_status.json` conflicts on every pull. Required stash/checkout/rebase dance each time.
+- **Time wasted:** ~1 hour total, 5+ min per occurrence
+- **Manual fix:** Created `scripts/pull.sh` that nukes the file first
+- **Root cause:** Runtime data files tracked by git, modified by running services between pulls
+- **Bob should:** `scripts/pull.sh` is the ONLY pull method. Also add ALL runtime data files to .gitignore permanently.
+
+### 23. Launchd services reference nonexistent scripts
+- **Claimed:** efficiency, morning_scan launchd jobs running
+- **Reality:** Exit code 2 because `orchestrator/efficiency_audit.py` and `orchestrator/daily_market_scan.py` don't exist. Cursor created the plists but never the scripts.
+- **Time wasted:** 15 min diagnosing
+- **Manual fix:** Unloaded the broken plists
+- **Root cause:** Launchd plists generated without verifying target scripts exist
+- **Bob should:** Every launchd plist must verify its target exists before loading: `[ -f /path/to/script ] && launchctl load plist || echo "SKIP: script missing"`
+
+### 24. VPN guard couldn't find docker command
+- **Claimed:** VPN guard monitoring every 5 min
+- **Reality:** Launchd runs with minimal PATH. `docker` is at `/usr/local/bin/docker` but launchd's PATH doesn't include that.
+- **Time wasted:** 15 min
+- **Manual fix:** `sed` to replace `docker` with `/usr/local/bin/docker` in the script
+- **Root cause:** Scripts written for interactive shell, not launchd environment
+- **Bob should:** ALL scripts run by launchd must use full paths for every command: `/usr/local/bin/docker`, `/opt/homebrew/bin/python3`, etc. Never assume PATH.
+
+### 25. pip install fails on macOS — externally managed environment
+- **Frequency:** Every time a Python package needs installing on Bob
+- **Reality:** PEP 668 prevents `pip install` on macOS managed Python. Requires `--break-system-packages` or venv.
+- **Time wasted:** 10 min each time
+- **Root cause:** macOS Sonoma+ enforces PEP 668
+- **Bob should:** Use `pip3 install --break-system-packages [pkg]` or maintain a venv at `~/AI-Server/.venv/` for all host-side Python work.
+
 ---
 
 ## System Changes Needed (Cursor Prompt Below)
@@ -133,6 +233,83 @@ When D-Tools pricing changes or scope changes are confirmed:
 - Update the relevant Linear issues with new pricing
 - Close resolved scope issues
 - Open new issues for document regeneration tasks
+
+### G. Redis Static IP
+In `docker-compose.yml`, assign Redis a static IP so the polymarket bot never loses connection:
+```yaml
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+
+redis:
+  networks:
+    default:
+      ipv4_address: 172.18.0.100
+```
+Then set `REDIS_URL=redis://172.18.0.100:6379` in the polymarket-bot environment. No more IP hunting.
+
+### H. Auto Token Refresh for Zoho
+Create `openclaw/zoho_auth.py` — a helper that reads ZOHO_REFRESH_TOKEN from .env and auto-refreshes the access token before any Zoho API call. Cache the access token in memory with its expiry time. If token is within 5 min of expiry, refresh proactively. Every service that calls Zoho (email-monitor, orchestrator, daily briefing) imports this helper.
+
+### I. Inter-Service Communication via HTTP Only
+Add to AGENTS.md as a hard rule: "Services NEVER import Python modules from other containers. All inter-service communication is via HTTP endpoints. If openclaw needs email-monitor data, it calls GET http://email-monitor:8092/api/endpoint. If email-monitor needs auto-responder logic, it POSTs to http://openclaw:3000/api/auto-respond."
+
+### J. Mandatory Rebuild After Code Push
+Edit `scripts/pull.sh` — after pulling, detect which service directories changed and auto-rebuild:
+```bash
+changed=$(git diff --name-only HEAD~1 HEAD | cut -d/ -f1 | sort -u)
+for svc in openclaw mission_control polymarket-bot email-monitor; do
+  if echo "$changed" | grep -q "$svc\|mission.control\|polymarket.bot\|email.monitor"; then
+    echo "Rebuilding $svc..."
+    docker compose up -d --build $svc
+  fi
+done
+```
+
+### K. Cursor Verification Script
+Create `scripts/verify-cursor.sh` — takes a list of expected files as args, checks each exists and has >10 lines:
+```bash
+#!/bin/bash
+for f in "$@"; do
+  if [ ! -f "$f" ]; then
+    echo "MISSING: $f"
+  elif [ $(wc -l < "$f") -lt 10 ]; then
+    echo "STUB (<10 lines): $f"
+  else
+    echo "OK ($(wc -l < $f) lines): $f"
+  fi
+done
+```
+Run after every Cursor prompt: `bash scripts/verify-cursor.sh openclaw/file1.py openclaw/file2.py ...`
+
+### L. .env Management
+Create `scripts/set-env.sh` — safe .env setter that deletes then appends:
+```bash
+#!/bin/bash
+# Usage: bash scripts/set-env.sh KEY value [file]
+KEY=$1; VAL=$2; FILE=${3:-.env}
+sed -i '' "/^${KEY}=/d" "$FILE"
+echo "${KEY}=${VAL}" >> "$FILE"
+echo "Set ${KEY} in ${FILE}"
+```
+
+### M. JSON Payload Helper
+Create `scripts/api-post.sh` — writes JSON to temp file then curls:
+```bash
+#!/bin/bash
+# Usage: bash scripts/api-post.sh URL '{"key":"value"}' [auth_header]
+URL=$1; JSON=$2; AUTH=${3:-}
+TMP=$(mktemp /tmp/api-XXXXXX.json)
+echo "$JSON" > "$TMP"
+if [ -n "$AUTH" ]; then
+  curl -s -X POST "$URL" -H "$AUTH" -H "Content-Type: application/json" -d @"$TMP"
+else
+  curl -s -X POST "$URL" -H "Content-Type: application/json" -d @"$TMP"
+fi
+rm "$TMP"
+```
 
 ### F. Startup Health Verification
 Add to orchestrator first-tick:
