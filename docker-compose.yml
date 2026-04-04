@@ -404,6 +404,8 @@ services:
       - ./data/openclaw:/app/data
       - ./data/email-monitor:/data/email-monitor:ro
       - ./integrations/dtools:/app/integrations/dtools:ro
+      - ./tools:/app/tools:ro
+      - ./knowledge:/app/knowledge:ro
       - "${SYMPHONY_DOCS_PATH:-/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/SymphonySH}:/data/symphony_docs:ro"
     depends_on:
       redis:

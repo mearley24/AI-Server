@@ -11,6 +11,7 @@ Requires DTOOLS_API_KEY from env. Gracefully skips if not set.
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -229,6 +230,14 @@ class DToolsSync:
 
         # Specifically look for Topletz
         await self._search_topletz()
+
+        try:
+            from doc_staleness import get_tracker
+
+            ds = get_tracker(Path(os.getenv("DATA_DIR", "/app/data"))).process_dtools_pipeline(pipeline)
+            stats["doc_staleness"] = ds
+        except Exception as e:
+            logger.debug("doc_staleness hook: %s", e)
 
         logger.info("D-Tools sync complete: %s", stats)
         return {"status": "ok", **stats}

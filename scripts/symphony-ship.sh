@@ -47,6 +47,10 @@ verify() {
   curl -sfS --connect-timeout 3 "http://127.0.0.1:8430/health" | head -c 400 || echo "(fail)"
   echo ""
   set -e
+  echo "=== verify-deploy ==="
+  if [ -x "$ROOT/scripts/verify-deploy.sh" ]; then
+    bash "$ROOT/scripts/verify-deploy.sh" || true
+  fi
   echo "=== Done ==="
 }
 

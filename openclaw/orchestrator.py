@@ -124,7 +124,9 @@ class Orchestrator:
         self._data_dir = data_dir or Path(os.getenv("DATA_DIR", "/app/data"))
         self._redis_url = redis_url or os.getenv("REDIS_URL", "")
         self._token_tracker = token_tracker
+        self._linear_sync = linear_sync
         self._silent_alert_at: dict[str, float] = {}  # source -> last alert time (epoch)
+        self._startup_health_done: bool = False
         self._last_pattern_run: float = 0.0
         if job_mgr:
             from job_worker import JobWorker
@@ -189,6 +191,50 @@ class Orchestrator:
         except Exception as e:
             logger.debug("redis_log_only: %s", e)
 
+
+    async def _validate_dropbox_in_message(self, text: str) -> tuple[bool, str]:
+        """Block client-facing content with bad Dropbox links (/preview/) or unreachable URLs."""
+        import re
+
+        if not text or "dropbox.com" not in text.lower():
+            return True, ""
+        urls = re.findall(r"https?://[^\s\]\)]+", text)
+        bad = [u for u in urls if "dropbox.com" in u.lower() and "/preview/" in u.lower()]
+        if bad:
+            return False, "Blocked: use Dropbox share links (scl/fi/), not /preview/: " + bad[0][:120]
+        for u in urls:
+            if "dropbox.com" not in u.lower():
+                continue
+            if "/scl/fi/" not in u and "dropbox.com/s/" not in u:
+                continue
+            try:
+                r = await self.http.head(u, timeout=10.0, follow_redirects=True)
+                if r.status_code >= 400:
+                    return False, f"Dropbox URL not reachable ({r.status_code}): {u[:100]}"
+            except Exception as e:
+                logger.debug("dropbox head %s: %s", u[:80], e)
+        return True, ""
+
+    async def run_startup_health_checks(self) -> None:
+        """One-time checks: DB paths, signature file, optional iCloud/Dropbox on host mounts."""
+        if self._startup_health_done:
+            return
+        self._startup_health_done = True
+        lines = []
+        email, follow, pay = self._tracker_db_paths()
+        for label, path in (("email_db", email), ("follow_ups", follow), ("payments", pay)):
+            ok = Path(path).is_file() if path else False
+            lines.append(f"{label}={'ok' if ok else 'missing'} path={path}")
+        sig = Path(os.getenv("MATT_SIGNATURE_PATH", "/app/knowledge/brand/matt_earley_signature.png"))
+        lines.append(f"signature={'ok' if sig.is_file() else 'missing'} path={sig}")
+        icloud = Path("/data/symphony_docs")
+        lines.append(f"symphony_docs_mount={'ok' if icloud.exists() else 'missing'} {icloud}")
+        msg = "startup_health: " + "; ".join(lines)
+        logger.info(msg)
+        await self._redis_log_only({"source": "openclaw", "kind": "startup_health", "detail": msg})
+        if "missing" in msg:
+            await self.notify("health", "Startup health: some paths missing — check logs / mounts.")
+
     async def run_loop(self):
         """Main orchestration loop — runs every 5 minutes."""
         logger.info("Orchestrator starting autonomous loop")
@@ -206,6 +252,7 @@ class Orchestrator:
     async def tick(self):
         """Single orchestration cycle."""
         logger.info("Orchestrator tick at %s", datetime.now().isoformat())
+        await self.run_startup_health_checks()
 
         try:
             confidence.calibrate_from_journal(self._journal())
@@ -723,6 +770,23 @@ class Orchestrator:
                         },
                     },
                 )
+                ds = result.get("doc_staleness") or {}
+                n_stale = int(ds.get("stale_events") or 0)
+                if n_stale > 0:
+                    await self.notify(
+                        "documents",
+                        f"D-Tools pricing changed — {n_stale} document staleness event(s). See Redis channel events:documents (doc.stale). Regenerate agreement + deliverables.",
+                    )
+                    ls = getattr(self, "_linear_sync", None)
+                    if ls:
+                        try:
+                            await ls.create_doc_regeneration_issue(
+                                title="Regenerate client documents after D-Tools price change",
+                                description="Agreement and deliverables may be out of date. Confirm totals in D-Tools, then run doc regeneration pipeline.",
+                                client_name="",
+                            )
+                        except Exception as e:
+                            logger.debug("linear doc issue: %s", e)
         except Exception as e:
             logger.debug("D-Tools sync failed: %s", e)
 
@@ -1009,6 +1073,18 @@ class Orchestrator:
     # ------------------------------------------------------------------
     async def notify(self, channel: str, message: str):
         """Publish notification via notification-hub."""
+        ok, err = await self._validate_dropbox_in_message(message)
+        if not ok:
+            logger.warning("notify blocked: %s", err)
+            await self._redis_log_only({"source": "openclaw", "kind": "dropbox_blocked", "detail": err})
+            try:
+                await self.http.post(
+                    f"{SERVICES['notifications']}/notify",
+                    json={"title": "Bob [blocked]", "body": err, "priority": "high"},
+                )
+            except Exception as e:
+                logger.debug("Notification send failed: %s", e)
+            return
         try:
             await self.http.post(
                 f"{SERVICES['notifications']}/notify",

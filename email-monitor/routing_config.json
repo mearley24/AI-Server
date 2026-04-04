@@ -10,7 +10,10 @@
     "snaponeaccounting@adiglobal.com": "Vendor/Snap One",
     "FirstBank@eFirstBank.com": "Banking",
     "support@vyde.io": "Vendor/Accounting",
-    "message-service@sender.zohosubscriptions.com": "Vendor/Accounting"
+    "message-service@sender.zohosubscriptions.com": "Vendor/Accounting",
+    "noreply@linqapp.com": "Marketing-Ignore",
+    "trevor@linqapp.com": "Marketing-Ignore",
+    "support@linqapp.com": "Marketing-Ignore"
   },
   "domain_routes": {
     "snapav.com": "Vendor/Snap One",
@@ -43,6 +46,7 @@
     "netlify.com",
     "linqapp.com",
     "gauntletai.com",
+<<<<<<< Updated upstream
     "carfax.com",
     "bstock.com",
     "govplanet.com",
@@ -57,6 +61,11 @@
     "uphold.com",
     "con.sonos.com",
     "screeninnovations.com"
+=======
+    "linqapp.com",
+    "linq",
+    "sandbox trial"
+>>>>>>> Stashed changes
   ],
   "active_bids": {
     "Nordstrom Rack - Dillon": {

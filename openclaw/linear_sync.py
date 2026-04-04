@@ -237,5 +237,46 @@ class LinearSync:
         except Exception as e:
             logger.warning("Linear phase advance failed for job #%d: %s", job_id, e)
 
+
+    async def create_doc_regeneration_issue(
+        self,
+        *,
+        title: str,
+        description: str,
+        client_name: str = "",
+    ) -> Optional[str]:
+        """Create a one-off Linear issue when client docs need regeneration (pricing/scope)."""
+        if not self._available:
+            return None
+        if all(v.startswith("f2a1d2c1") for v in LINEAR_STATES.values()):
+            await self._fetch_workflow_states()
+        state_id = LINEAR_STATES.get("Todo", LINEAR_STATES.get("Backlog", ""))
+        full_title = f"[Docs] {title}"
+        if client_name:
+            full_title = f"{client_name}: {full_title}"[:255]
+        desc = description
+        if client_name:
+            desc = f"Client: {client_name}\n\n{desc}"
+        data = await self._graphql("""
+            mutation($input: IssueCreateInput!) {
+                issueCreate(input: $input) {
+                    success
+                    issue { id identifier title }
+                }
+            }
+        """, {"input": {
+            "title": full_title[:255],
+            "description": desc[:4000],
+            "teamId": LINEAR_TEAM_ID,
+            "stateId": state_id,
+        }})
+        result = data.get("issueCreate", {})
+        if result.get("success"):
+            ident = result.get("issue", {}).get("identifier", "")
+            logger.info("Linear doc issue created: %s", ident)
+            return result.get("issue", {}).get("id")
+        logger.warning("Linear doc issue create failed")
+        return None
+
     async def close(self):
         await self._http.aclose()

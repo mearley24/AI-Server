@@ -985,3 +985,31 @@ When starting work on D-Tools or proposals:
 - Overnight learner requires Playwright: `pip3 install playwright && playwright install chromium`; launchd uses `/usr/bin/python3`
 - Overnight learner SKUs: extend via `knowledge/learning/overnight_skus.json` (optional merge with built-in lists)
 - iOS signing recovery: if `CodeSign failed` due to revoked `Apple Development` cert and Xcode delete is grayed out, open Keychain Access -> `login` -> `My Certificates`, search `Apple Development`, then delete affected Apple Development cert entries and matching private keys, regenerate cert in Xcode Accounts, and rebuild.
+
+---
+
+## System reliability (April 2026 lessons)
+
+**Inter-service communication:** Services **never** import Python modules from other containers. Use **HTTP only** (e.g. `GET http://email-monitor:8092/...`, `POST http://openclaw:3000/...`). See `.cursor/prompts/lessons-learned-april4.md`.
+
+**Git / env:** Use `scripts/pull.sh` for pulls (handles noisy `data/` files). Use `scripts/set-env.sh KEY value` to change `.env` keys (never blindly append duplicates).
+
+**Shell + APIs:** Prefer `scripts/api-post.sh` for JSON POSTs; avoid inline JSON in `curl`.
+
+**Deploy:** After code changes to a service, use `docker compose up -d --build <service>`. `scripts/pull.sh` attempts auto-rebuild when the last commit touched a service directory. Run `scripts/verify-deploy.sh` after bring-up; `scripts/symphony-ship.sh verify` includes it.
+
+**Redis / bot:** Redis uses static IP `172.18.0.100` on compose network; `polymarket-bot` uses `REDIS_URL=redis://172.18.0.100:6379`.
+
+**Zoho REST:** Use `openclaw/zoho_auth.py` (`get_access_token`, `auth_header`) for OAuth refresh — set `ZOHO_REFRESH_TOKEN`, `ZOHO_CLIENT_ID`, `ZOHO_CLIENT_SECRET`.
+
+**Documents:** `openclaw/doc_staleness.py` emits `events:documents` / `doc.stale` when D-Tools opportunity prices change. `openclaw/doc_generator.py` wraps `tools/generate_agreement.py` (mount `./tools` and `./knowledge` into OpenClaw). Orchestrator validates **Dropbox links** in notifications (blocks `/preview/`; prefers `scl/fi/`).
+
+**Verification:** After Cursor work, run `bash scripts/verify-cursor.sh <files...>` to confirm files exist and are not empty stubs.
+
+### Priority order (reliability work)
+
+1. **Money / trading** — After `docker-compose.yml` or `polymarket-bot/` changes, run `docker compose up -d --build polymarket-bot` (see `scripts/pull.sh` auto-block). Verify Redis: `scripts/verify-deploy.sh` (PING + static IP `172.18.0.100`).
+2. **Git pull** — Use `scripts/pull.sh`. If `data/network_watch/dropout_watch_status.json` still breaks pulls, run once: `bash scripts/untrack-runtime-json.sh` then commit.
+3. **Deploy smoke** — `bash scripts/verify-deploy.sh` or `./scripts/symphony-ship.sh verify`.
+4. **Zoho REST** — Use `openclaw/zoho_auth.py` when adding Mail API calls (IMAP-only paths unchanged).
+
