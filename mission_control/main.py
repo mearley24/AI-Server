@@ -479,6 +479,129 @@ LESSONS = [
     }
 ]
 
+# ── Email, Calendar, Follow-ups, System endpoints ──
+
+@app.get("/api/emails")
+async def api_emails():
+    """Proxy to email-monitor for recent emails."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for path in ["/emails/recent", "/api/emails", "/emails"]:
+                try:
+                    resp = await client.get(f"http://email-monitor:8092{path}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        emails = data if isinstance(data, list) else data.get("emails", data.get("recent", []))
+                        unread = sum(1 for e in emails if not e.get("read") and not e.get("processed"))
+                        return {"emails": emails[:20], "unread_count": unread}
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return {"emails": [], "unread_count": 0}
+
+
+@app.get("/api/calendar")
+async def api_calendar():
+    """Proxy to calendar-agent for today's events."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for path in ["/calendar/today", "/api/events", "/events", "/calendar"]:
+                try:
+                    resp = await client.get(f"http://calendar-agent:8094{path}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        events = data if isinstance(data, list) else data.get("events", data.get("upcoming", []))
+                        return {"events": events}
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return {"events": []}
+
+
+@app.get("/api/followups")
+async def api_followups():
+    """Proxy to OpenClaw for pending follow-ups / jobs."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for path in ["/api/jobs", "/api/tasks", "/jobs", "/tasks"]:
+                try:
+                    resp = await client.get(f"http://openclaw:3000{path}")
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        items = data if isinstance(data, list) else data.get("followups", data.get("jobs", data.get("tasks", [])))
+                        overdue = sum(1 for i in items if i.get("overdue"))
+                        return {"followups": items, "overdue_count": overdue}
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return {"followups": [], "overdue_count": 0}
+
+
+@app.get("/api/system")
+async def api_system():
+    """System resource info + employee status. Reads /proc inside container."""
+    result = {
+        "cpu_percent": None,
+        "memory_percent": None,
+        "disk_percent": None,
+        "containers": [],
+        "employees": event_server.manager.employee_status,
+        "connections": len(event_server.manager.active_connections),
+    }
+    # Disk (works in any Linux container)
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage("/")
+        result["disk_percent"] = round(used / total * 100, 1)
+        result["disk_used"] = f"{used // (1024**3)}GB"
+        result["disk_total"] = f"{total // (1024**3)}GB"
+    except Exception:
+        pass
+    # Memory from /proc/meminfo
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    meminfo[parts[0].rstrip(":")] = int(parts[1])
+            total_kb = meminfo.get("MemTotal", 0)
+            avail_kb = meminfo.get("MemAvailable", 0)
+            if total_kb > 0:
+                result["memory_percent"] = round((total_kb - avail_kb) / total_kb * 100, 1)
+                result["memory_used"] = f"{(total_kb - avail_kb) // 1024}MB"
+                result["memory_total"] = f"{total_kb // 1024}MB"
+    except Exception:
+        pass
+    # CPU from /proc/stat (snapshot — shows cumulative, but gives a rough idle%)
+    try:
+        with open("/proc/stat") as f:
+            line = f.readline()
+            parts = line.split()
+            if parts[0] == "cpu":
+                vals = [int(v) for v in parts[1:]]
+                idle = vals[3] if len(vals) > 3 else 0
+                total_cpu = sum(vals)
+                if total_cpu > 0:
+                    result["cpu_percent"] = round((1 - idle / total_cpu) * 100, 1)
+    except Exception:
+        pass
+    # Container list via service health (reuse existing check)
+    try:
+        svc_data = await api_services()
+        for svc in svc_data.get("services", []):
+            result["containers"].append({
+                "name": svc["name"],
+                "status": "running" if svc["status"] == "healthy" else svc["status"]
+            })
+    except Exception:
+        pass
+    return result
+
+
 @app.get("/api/trading/lessons")
 async def api_trading_lessons():
     """Lessons learned from trading history analysis."""
