@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 
@@ -24,19 +24,20 @@ COPYTRADE_WALLET_FILE = Path("/trading-data/copytrade_wallets.json")
 WALLET_ADDRESS = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
 
 # Service map: name -> (container_hostname, internal_port, external_port)
+# compose = docker compose service name for `docker compose restart <compose>` on the AI-Server host
 SERVICES = [
-    {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000},
-    {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090},
-    {"name": "Proposals", "host": "proposals", "port": 8091, "ext_port": 8091},
-    {"name": "Email Monitor", "host": "email-monitor", "port": 8092, "ext_port": 8092},
-    {"name": "Voice Receptionist", "host": "voice-receptionist", "port": 3000, "ext_port": 8093},
-    {"name": "Calendar Agent", "host": "calendar-agent", "port": 8094, "ext_port": 8094},
-    {"name": "Notification Hub", "host": "notification-hub", "port": 8095, "ext_port": 8095},
-    {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096},
-    {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097},
-    {"name": "Polymarket Bot", "host": "vpn", "port": 8430, "ext_port": 8430},
-    {"name": "OpenClaw", "host": "openclaw", "port": 3000, "ext_port": 8099},
-    {"name": "Knowledge Scanner", "host": "knowledge-scanner", "port": 8100, "ext_port": 8100},
+    {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000, "compose": "openwebui"},
+    {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "compose": "remediator"},
+    {"name": "Proposals", "host": "proposals", "port": 8091, "ext_port": 8091, "compose": "proposals"},
+    {"name": "Email Monitor", "host": "email-monitor", "port": 8092, "ext_port": 8092, "compose": "email-monitor"},
+    {"name": "Voice Receptionist", "host": "voice-receptionist", "port": 3000, "ext_port": 8093, "compose": "voice-receptionist"},
+    {"name": "Calendar Agent", "host": "calendar-agent", "port": 8094, "ext_port": 8094, "compose": "calendar-agent"},
+    {"name": "Notification Hub", "host": "notification-hub", "port": 8095, "ext_port": 8095, "compose": "notification-hub"},
+    {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096, "compose": "dtools-bridge"},
+    {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097, "compose": "clawwork"},
+    {"name": "Polymarket Bot", "host": "vpn", "port": 8430, "ext_port": 8430, "compose": "polymarket-bot", "compose_alt": "vpn"},
+    {"name": "OpenClaw", "host": "openclaw", "port": 3000, "ext_port": 8099, "compose": "openclaw"},
+    {"name": "Knowledge Scanner", "host": "knowledge-scanner", "port": 8100, "ext_port": 8100, "compose": "knowledge-scanner"},
 ]
 
 
@@ -49,11 +50,35 @@ async def check_service_health(service: dict) -> dict:
             if resp.status_code == 200:
                 ct = resp.headers.get("content-type", "")
                 details = resp.json() if "json" in ct else {}
-                return {"name": service["name"], "status": "healthy", "port": service["ext_port"], "details": details}
+                return {
+                    "name": service["name"],
+                    "status": "healthy",
+                    "port": service["ext_port"],
+                    "details": details,
+                    "compose": service.get("compose"),
+                    "compose_alt": service.get("compose_alt"),
+                    "health_path": "/health",
+                }
             else:
-                return {"name": service["name"], "status": "degraded", "port": service["ext_port"], "details": {"http_status": resp.status_code}}
+                return {
+                    "name": service["name"],
+                    "status": "degraded",
+                    "port": service["ext_port"],
+                    "details": {"http_status": resp.status_code},
+                    "compose": service.get("compose"),
+                    "compose_alt": service.get("compose_alt"),
+                    "health_path": "/health",
+                }
     except Exception:
-        return {"name": service["name"], "status": "down", "port": service["ext_port"], "details": {}}
+        return {
+            "name": service["name"],
+            "status": "down",
+            "port": service["ext_port"],
+            "details": {},
+            "compose": service.get("compose"),
+            "compose_alt": service.get("compose_alt"),
+            "health_path": "/health",
+        }
 
 
 # Import the existing event_server — but override DB path before init
@@ -222,16 +247,31 @@ def _categorize(title: str) -> str:
 _categories_cache: dict = {"data": None, "fetched_at": 0}
 
 
-async def _fetch_polymarket_data() -> tuple[list, list]:
-    """Fetch both positions and full activity history from Polymarket."""
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        # Fetch current positions (includes open + recently resolved)
+async def _fetch_all_polymarket_positions(client: httpx.AsyncClient) -> list:
+    """Paginate /positions — default API page size is small; we need every open position."""
+    positions: list = []
+    offset = 0
+    limit = 500
+    while True:
         pos_resp = await client.get(
             "https://data-api.polymarket.com/positions",
-            params={"user": WALLET_ADDRESS},
+            params={"user": WALLET_ADDRESS, "limit": limit, "offset": offset},
         )
         pos_resp.raise_for_status()
-        positions = pos_resp.json()
+        batch = pos_resp.json()
+        if not batch:
+            break
+        positions.extend(batch)
+        if len(batch) < limit:
+            break
+        offset += len(batch)
+    return positions
+
+
+async def _fetch_polymarket_data() -> tuple[list, list]:
+    """Fetch both positions and full activity history from Polymarket."""
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        positions = await _fetch_all_polymarket_positions(client)
 
         # Fetch ALL activity history (buys, sells, redeems)
         activities = []
@@ -254,10 +294,14 @@ async def _fetch_polymarket_data() -> tuple[list, list]:
 
 
 @app.get("/api/trading/categories")
-async def api_trading_categories():
+async def api_trading_categories(nocache: bool = Query(False, description="Bypass 5-minute cache")):
     """Category P/L — combines activity history (buys/sells/redeems) with open positions. Cached 5 min."""
     now = time.time()
-    if _categories_cache["data"] and now - _categories_cache["fetched_at"] < 300:
+    if (
+        not nocache
+        and _categories_cache["data"]
+        and now - _categories_cache["fetched_at"] < 300
+    ):
         return _categories_cache["data"]
 
     try:
@@ -307,16 +351,20 @@ async def api_trading_categories():
                 min_cash = running_cash
 
         # ── Open positions from /positions endpoint ──
+        # Do NOT filter by curPrice band: API uses values like 0.0005 and 0.9995 for live
+        # positions; the old 0.001–0.999 rule dropped almost everything.
         cat_open_value = defaultdict(float)
         cat_open_count = defaultdict(int)
         for p in positions:
-            cur_price = p.get("curPrice", 0) or 0
-            current_value = p.get("currentValue", 0) or 0
-            # Only count truly open positions (not resolved at 0 or 1)
-            if 0.001 < cur_price < 0.999 and current_value > 0:
-                cat = _categorize(p.get("title", ""))
-                cat_open_value[cat] += current_value
-                cat_open_count[cat] += 1
+            size = float(p.get("size") or 0)
+            if size <= 0:
+                continue
+            current_value = float(p.get("currentValue") or 0)
+            if current_value <= 0:
+                continue
+            cat = _categorize(p.get("title", ""))
+            cat_open_value[cat] += current_value
+            cat_open_count[cat] += 1
 
         # ── Combine into category stats ──
         all_cats = set(
@@ -392,6 +440,48 @@ async def api_trading_categories():
             "as_of": datetime.now().isoformat(),
             "source": "error",
             "error": str(exc),
+        }
+
+
+@app.get("/api/trading/positions")
+async def api_trading_positions():
+    """Slim Polymarket positions for the Trading view (same proxy wallet as category P/L)."""
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            raw = await _fetch_all_polymarket_positions(client)
+        slim: list = []
+        for p in raw:
+            size = float(p.get("size") or 0)
+            if size <= 0:
+                continue
+            cv = float(p.get("currentValue") or 0)
+            if cv <= 0:
+                continue
+            slim.append(
+                {
+                    "title": p.get("title") or "",
+                    "outcome": p.get("outcome") or "",
+                    "size": round(size, 4),
+                    "currentValue": round(cv, 4),
+                    "curPrice": p.get("curPrice"),
+                    "cashPnl": p.get("cashPnl"),
+                    "avgPrice": p.get("avgPrice"),
+                    "slug": p.get("slug"),
+                }
+            )
+        slim.sort(key=lambda x: -x["currentValue"])
+        return {
+            "positions": slim,
+            "count": len(slim),
+            "as_of": datetime.now().isoformat(),
+        }
+    except Exception as exc:
+        logger.warning("Polymarket positions list failed: %s", exc)
+        return {
+            "positions": [],
+            "count": 0,
+            "error": str(exc),
+            "as_of": datetime.now().isoformat(),
         }
 
 

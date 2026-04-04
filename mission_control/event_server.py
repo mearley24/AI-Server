@@ -267,7 +267,10 @@ app.add_middleware(
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    """Serve the dashboard."""
+    """Serve the dashboard (prefer Mission Control index.html, else legacy dashboard)."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
     html_path = STATIC_DIR / "dashboard.html"
     if html_path.exists():
         return FileResponse(html_path)
