@@ -664,32 +664,13 @@
       "end_date": "2020-11-04T00:00:00Z",
       "event_slug": "highest-temperature-in-chicago-on-april-4-2026-62-63f",
       "thesis": "Copying this trade makes sense because the source wallet has a strong win rate and historical profitability, suggesting they have a solid understanding of weather patterns and forecasting.. METAR: chicago actual 6.1\u00b0C/43.0\u00b0F"
-    },
-    {
-      "position_id": "ct-05623bc831ad",
-      "source_wallet": "0x30cecdf29f069563ea21b8ae94492e41e53a6b2b",
-      "token_id": "19580052420576170376392398645920660218543594968596985120527642971935513090110",
-      "market_question": "Will the highest temperature in Wellington be 21\u00b0C on April 4?",
-      "condition_id": "0xf2b460d7acfabeceba49906de776f2aef0e8ff46f3f61e3bbeac16178586f1a9",
-      "side": "BUY",
-      "entry_price": 0.141,
-      "size_usd": 1.3,
-      "size_shares": 9.29,
-      "copied_at": 1775260630.4182765,
-      "source_trade_id": "0x104e9f2e2844a04ca2ebfebf136b4c37d26b7373ecd6790532dd22a06b50226b",
-      "order_id": "0x2b25643ab67ff7bcfc7adca846947dcfb657be2341856d3ad553ae0485e0f7a8",
-      "category": "weather",
-      "wallet_win_rate": 0.6233766233766234,
-      "end_date": "2020-11-04T00:00:00Z",
-      "event_slug": "highest-temperature-in-wellington-on-april-4-2026-21c",
-      "thesis": "Copying this trade makes sense because the historical performance of the source wallet suggests a higher likelihood of favorable weather conditions than the current market price indicates.. METAR: wellington actual 21.0\u00b0C/69.8\u00b0F | Edge: +0.86 (high)"
     }
   ],
   "category_pnl": {
     "crypto": 65.48,
     "crypto_updown": 65.48,
     "sports": 25.04,
-    "weather": 6.953600000000001,
+    "weather": 5.653600000000001,
     "politics": 2.85,
     "other": 2.73,
     "geopolitics": 0.0,
