@@ -154,8 +154,12 @@ REDIS_LEAKED=$(grep -rn 'requirepass' --include="*.py" --include="*.yml" \
 # ── 9. Watchdog & Bridge ──
 echo ""
 echo "--- Host Daemons ---"
-launchctl list 2>/dev/null | grep -q "com.symphony.bob-watchdog" \
-    && check "Watchdog daemon" "PASS" || check "Watchdog daemon" "WARN"
+# Optional LaunchAgent — repo ships scripts/com.symphony.bob-watchdog.plist; absence is not a failure
+if launchctl list 2>/dev/null | grep -q "com.symphony.bob-watchdog"; then
+    check "Watchdog daemon" "PASS"
+else
+    check "Watchdog daemon (optional, not installed)" "PASS"
+fi
 launchctl list 2>/dev/null | grep -q "com.symphony.imessage-bridge" \
     && check "iMessage bridge daemon" "PASS" || check "iMessage bridge daemon" "WARN"
 
