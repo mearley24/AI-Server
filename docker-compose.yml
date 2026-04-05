@@ -108,7 +108,7 @@ services:
     # redis via host.docker.internal since Docker DNS unavailable in vpn network
     environment:
       - TZ=America/Denver
-      - REDIS_URL=redis://172.18.0.100:6379
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket}
       - POLY_PRIVATE_KEY=${POLY_PRIVATE_KEY:-}
       - POLY_PROXY_ADDRESS=${POLY_PROXY_ADDRESS:-}
