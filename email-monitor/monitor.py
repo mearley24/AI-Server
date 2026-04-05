@@ -10,6 +10,7 @@ import asyncio
 import email
 import email.header
 import email.utils
+from email.utils import parseaddr
 import imaplib
 import json
 import logging
@@ -40,6 +41,18 @@ CATEGORIES = {
         ],
         "priority": "high",
     },
+    "MARKETING": {
+        "keywords": [
+            "unsubscribe", "view in browser", "email preferences",
+            "newsletter", "weekly digest", "monthly update",
+            "recommended for you", "new properties", "now live on",
+            "introducing", "announcing", "flash sale", "promo code",
+            "manage subscriptions", "opt out", "update preferences",
+            "you might like", "just launched", "limited time",
+        ],
+        "priority": "none",
+    },
+
     "CLIENT_INQUIRY": {
         "keywords": [
             "consultation", "new client", "inquiry", "interested in",
@@ -81,24 +94,114 @@ CATEGORIES = {
 
 HIGH_PRIORITY_CATEGORIES = {"BID_INVITE", "CLIENT_INQUIRY", "ACTIVE_CLIENT"}
 
-# Active client senders loaded from routing_config.json project_routes
+# Active client senders loaded from routing_config.json (project_routes + active_clients)
 _ACTIVE_CLIENT_EMAILS: set[str] = set()
+
+_ROUTING_CONFIG_CACHE: dict | None = None
+_ROUTING_CONFIG_MTIME: float = 0.0
+_ROUTING_CONFIG_LOADED_AT: float = 0.0
+_ROUTING_CONFIG_TTL_SEC = 300.0
+
+
+def _routing_config_path() -> str:
+    return os.path.join(os.path.dirname(__file__), "routing_config.json")
+
+
+def _get_routing_config() -> dict:
+    """Load routing_config.json with mtime-based cache (~5 min TTL)."""
+    global _ROUTING_CONFIG_CACHE, _ROUTING_CONFIG_MTIME, _ROUTING_CONFIG_LOADED_AT
+    path = _routing_config_path()
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        mtime = 0.0
+    now = time.time()
+    if (
+        _ROUTING_CONFIG_CACHE is not None
+        and (now - _ROUTING_CONFIG_LOADED_AT) < _ROUTING_CONFIG_TTL_SEC
+        and mtime <= _ROUTING_CONFIG_MTIME
+    ):
+        return _ROUTING_CONFIG_CACHE
+    try:
+        with open(path, encoding="utf-8") as f:
+            _ROUTING_CONFIG_CACHE = json.load(f)
+        _ROUTING_CONFIG_MTIME = mtime if mtime else now
+        _ROUTING_CONFIG_LOADED_AT = now
+    except Exception as e:
+        logger.warning("Could not load routing_config: %s", e)
+        if _ROUTING_CONFIG_CACHE is None:
+            _ROUTING_CONFIG_CACHE = {}
+    return _ROUTING_CONFIG_CACHE or {}
+
+
+def _sender_email_addr(sender: str) -> str:
+    _, addr = parseaddr(sender)
+    a = (addr or sender or "").strip().lower()
+    return a
+
+
+def _route_label_to_category(route: str) -> tuple[str, str]:
+    """Map IMAP folder / route label from routing_config to (category, priority)."""
+    r = (route or "").strip()
+    if not r:
+        return "GENERAL", "low"
+    if r.startswith("Marketing") or r == "Marketing-Ignore":
+        return "MARKETING", "none"
+    if r == "Marketing":
+        return "MARKETING", "none"
+    if r.startswith("Vendor"):
+        return "VENDOR", "low"
+    if r.startswith("Bids"):
+        return "BID_INVITE", "high"
+    if r in ("Notes",) or r.startswith("Personal/") or r.startswith("Banking"):
+        return "MARKETING", "none"
+    if r.startswith("Projects/"):
+        return "ACTIVE_CLIENT", "high"
+    if r == "_project_match":
+        return "GENERAL", "low"
+    if r.startswith("Industry/"):
+        return "GENERAL", "low"
+    return "GENERAL", "low"
+
+
+def _lookup_route_for_sender(sender_raw: str) -> str | None:
+    cfg = _get_routing_config()
+    email_addr = _sender_email_addr(sender_raw)
+    if not email_addr:
+        return None
+    cat_routes = cfg.get("category_routes") or {}
+    for key, route in cat_routes.items():
+        if key.lower() == email_addr:
+            return route
+    dom_routes = cfg.get("domain_routes") or {}
+    if email_addr in dom_routes:
+        return dom_routes[email_addr]
+    domain = email_addr.split("@", 1)[-1] if "@" in email_addr else email_addr
+    return dom_routes.get(domain)
 
 
 def _load_active_client_emails() -> None:
-    """Load project_routes sender emails from routing_config.json."""
+    """Load project_routes and active_clients sender emails from routing_config.json."""
     global _ACTIVE_CLIENT_EMAILS
-    config_path = os.path.join(os.path.dirname(__file__), "routing_config.json")
     try:
-        with open(config_path) as f:
-            config = json.load(f)
-        _ACTIVE_CLIENT_EMAILS = {
-            addr.lower() for addr in config.get("project_routes", {})
-        }
+        config = _get_routing_config()
+        addrs: set[str] = set()
+        for addr in (config.get("project_routes") or {}):
+            addrs.add(addr.lower())
+        for addr in (config.get("active_clients") or {}):
+            addrs.add(addr.lower())
+        _ACTIVE_CLIENT_EMAILS = addrs
         if _ACTIVE_CLIENT_EMAILS:
-            logger.info("Loaded %d active client emails from routing_config", len(_ACTIVE_CLIENT_EMAILS))
+            logger.info(
+                "Loaded %d active client emails from routing_config",
+                len(_ACTIVE_CLIENT_EMAILS),
+            )
     except Exception as e:
         logger.warning("Could not load routing_config for active clients: %s", e)
+
+
+# Populate active-client set on import so categorize_email works in one-off tests / CLI.
+_load_active_client_emails()
 
 
 DB_PATH = os.getenv("EMAIL_DB_PATH", "/data/emails.db")
@@ -181,23 +284,42 @@ def set_scan_state(key: str, value: str, db_path: str = DB_PATH) -> None:
 
 def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple[str, str]:
     """
-    Categorize an email based on keyword matching.
+    Categorize an email: active clients, routed senders, marketing patterns, then keywords.
 
     Returns:
         (category, priority)
     """
-    # Check active client list first (highest priority — these are project contacts)
-    if sender.lower() in _ACTIVE_CLIENT_EMAILS:
+    email_addr = _sender_email_addr(sender)
+    if email_addr and email_addr in _ACTIVE_CLIENT_EMAILS:
         return "ACTIVE_CLIENT", "high"
 
-    text = f"{subject} {sender} {body_snippet}".lower()
+    route = _lookup_route_for_sender(sender)
+    if route:
+        cat, pri = _route_label_to_category(route)
+        if cat != "GENERAL" or route == "_project_match":
+            return cat, pri
 
+    patterns = _get_routing_config().get("marketing_patterns") or []
+    text_lower = f"{subject} {body_snippet}".lower()
+    if any(p.lower() in text_lower for p in patterns):
+        return "MARKETING", "none"
+
+    text = f"{subject} {sender} {body_snippet}".lower()
     for category, config in CATEGORIES.items():
         for keyword in config["keywords"]:
             if keyword in text:
                 return category, config["priority"]
 
     return "GENERAL", "low"
+
+
+def _skip_notification_noise(category: str, priority: str) -> bool:
+    """Skip LLM analysis and Redis publish for marketing / no-priority noise."""
+    if category == "MARKETING":
+        return True
+    if (priority or "").lower() == "none":
+        return True
+    return False
 
 
 def decode_header_value(value: str) -> str:
@@ -451,14 +573,15 @@ class EmailMonitor:
                         )
                         # No Redis publish — catchup is silent, just indexes
 
-                        # Analyze emails that don't have analysis yet
-                        try:
-                            await analyze_and_store(
-                                message_id, sender_email_addr, sender_name,
-                                subject, snippet, category,
-                            )
-                        except Exception as e:
-                            logger.error("Catchup analysis failed for %s: %s", subject[:50], e)
+                        # Analyze emails that don't have analysis yet (skip marketing noise)
+                        if not _skip_notification_noise(category, priority):
+                            try:
+                                await analyze_and_store(
+                                    message_id, sender_email_addr, sender_name,
+                                    subject, snippet, category,
+                                )
+                            except Exception as e:
+                                logger.error("Catchup analysis failed for %s: %s", subject[:50], e)
 
                 except Exception as e:
                     logger.error("Catchup error processing email %s: %s", num, e)
@@ -559,14 +682,16 @@ class EmailMonitor:
                         )
 
                         # Run LLM analysis (non-blocking — runs in thread)
-                        try:
-                            analysis = await analyze_and_store(
-                                message_id, sender_email, sender_name,
-                                subject, snippet, category,
-                            )
-                        except Exception as e:
-                            logger.error("Analysis failed for %s: %s", subject[:50], e)
-                            analysis = None
+                        analysis = None
+                        if not _skip_notification_noise(category, priority):
+                            try:
+                                analysis = await analyze_and_store(
+                                    message_id, sender_email, sender_name,
+                                    subject, snippet, category,
+                                )
+                            except Exception as e:
+                                logger.error("Analysis failed for %s: %s", subject[:50], e)
+                                analysis = None
 
                         # Run bid triage for BuildingConnected invites
                         if category == "BID_INVITE":
@@ -598,15 +723,16 @@ class EmailMonitor:
                             except Exception as e:
                                 logger.error("Auto-respond failed: %s", e)
 
-                        # Publish high-priority to Redis urgent channel
-                        if category in HIGH_PRIORITY_CATEGORIES:
-                            await publish_urgent(redis_client, category, sender_name or sender_email, subject)
+                        if not _skip_notification_noise(category, priority):
+                            # Publish high-priority to Redis urgent channel
+                            if category in HIGH_PRIORITY_CATEGORIES:
+                                await publish_urgent(redis_client, category, sender_name or sender_email, subject)
 
-                        # Publish ALL new emails to email:new channel
-                        await publish_new_email(
-                            redis_client, category, priority,
-                            sender_name or sender_email, subject, analysis,
-                        )
+                            # Publish actionable new emails to email:new channel
+                            await publish_new_email(
+                                redis_client, category, priority,
+                                sender_name or sender_email, subject, analysis,
+                            )
 
                 except Exception as e:
                     logger.error("Error processing email %s: %s", num, e)

@@ -45,14 +45,32 @@ def calibrate_from_journal(journal: Any) -> None:
 
 
 def _heuristic_email(email_data: dict[str, Any], classification: str, known_client: bool) -> int:
-    score = 60
+    """Fixed policy scores for email orchestration (journal adjustment applied below)."""
     cat = (classification or "").upper()
-    if cat in ("BID_INVITE", "CLIENT_INQUIRY"):
-        score += 15
-    if email_data.get("priority") == "high":
-        score += 10
+    if cat == "ACTIVE_CLIENT":
+        return 90
     if known_client:
-        score += 10
+        return 85
+    if cat == "MARKETING":
+        return 95
+    if cat == "VENDOR":
+        return 70
+    if cat == "GENERAL":
+        subject = (email_data.get("subject") or "").lower()
+        project_keywords = [
+            "84 aspen", "topletz", "proposal", "agreement", "contract",
+            "payment", "deposit", "prewire", "install",
+        ]
+        if any(kw in subject for kw in project_keywords):
+            return 45
+        return 65
+    if cat == "CLIENT_INQUIRY":
+        return 50
+    if cat in ("BID_INVITE",):
+        return 72
+    if cat in ("FOLLOW_UP_NEEDED", "SCHEDULING", "INVOICE"):
+        return 62
+    score = 60
     subj = (email_data.get("subject") or "") + " " + (email_data.get("snippet") or "")
     if re.search(r"\$\s*[\d,]+|\b\d{4,}\b", subj):
         score -= 15

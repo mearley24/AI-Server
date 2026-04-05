@@ -38,6 +38,18 @@ SERVICES = {
     "notification-hub": os.getenv("NOTIFICATION_HUB_URL", "http://notification-hub:8095"),
 }
 
+def _orchestrator_skip_email(em: dict) -> bool:
+    """Skip decision logging / notifications for marketing and low-signal vendor mail."""
+    cat = (em.get("category") or "GENERAL").upper()
+    subj = (em.get("subject") or "").lower()
+    if cat == "MARKETING":
+        return True
+    if cat == "VENDOR":
+        if not any(kw in subj for kw in ("order", "shipping", "tracking", "invoice")):
+            return True
+    return False
+
+
 # Critical services that trigger alerts when down
 CRITICAL_SERVICES = {"polymarket-bot", "notification-hub"}
 
@@ -345,6 +357,8 @@ class Orchestrator:
 
             for em in new_emails:
                 try:
+                    if _orchestrator_skip_email(em):
+                        continue
                     cat = em.get("category", "GENERAL")
                     known = self._match_email_to_active_client(em) is not None
                     conf = float(confidence.score_email_action(em, cat, known_client=known))
@@ -400,6 +414,8 @@ class Orchestrator:
             medium_priority_cats = {"FOLLOW_UP_NEEDED", "SCHEDULING"}
 
             for em in new_emails:
+                if _orchestrator_skip_email(em):
+                    continue
                 category = em.get("category", "GENERAL")
                 priority = em.get("priority", "low")
                 sender = em.get("sender_name") or em.get("sender", "unknown")
@@ -418,8 +434,10 @@ class Orchestrator:
                     await self.notify("email", f"{label} from {sender}: {subject}")
 
             # Send a summary digest of ALL new emails
-            summary_lines = [f"You have {len(new_emails)} new email(s):"]
-            for em in new_emails:
+            actionable = [em for em in new_emails if not _orchestrator_skip_email(em)]
+            noise_n = len(new_emails) - len(actionable)
+            summary_lines = [f"You have {len(new_emails)} new email(s)" + (f" ({noise_n} filtered as marketing/vendor noise)" if noise_n else "") + ":"]
+            for em in actionable:
                 sender = em.get("sender_name") or em.get("sender", "unknown")
                 subject = em.get("subject", "(no subject)")
                 category = em.get("category", "GENERAL")
@@ -528,6 +546,8 @@ class Orchestrator:
             client_names = {j["client_name"].lower(): j["client_name"] for j in active_jobs}
 
             for em in emails:
+                if (em.get("category") or "").upper() == "MARKETING":
+                    continue
                 sender_name = (em.get("sender_name") or "").strip()
                 sender_addr = (em.get("sender") or "").strip()
                 subject = em.get("subject", "")

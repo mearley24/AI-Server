@@ -6,7 +6,9 @@ evaluates phase transition triggers, and sends notifications about progress.
 Lightweight — no LLM calls on routine ticks.
 """
 
+import json
 import logging
+from pathlib import Path
 import os
 import re
 from datetime import datetime, timedelta
@@ -23,6 +25,45 @@ SERVICES = {
     "notifications": os.getenv("NOTIFICATION_HUB_URL", "http://notification-hub:8095"),
     "calendar": os.getenv("CALENDAR_AGENT_URL", "http://calendar-agent:8094"),
 }
+
+_ROUTING_CFG_CACHE: dict | None = None
+
+
+def _email_routing_config_path() -> str:
+    return os.getenv(
+        "EMAIL_ROUTING_CONFIG",
+        str(Path(__file__).resolve().parents[1] / "email-monitor" / "routing_config.json"),
+    )
+
+
+def _load_routing_cfg() -> dict:
+    global _ROUTING_CFG_CACHE
+    if _ROUTING_CFG_CACHE is not None:
+        return _ROUTING_CFG_CACHE
+    try:
+        with open(_email_routing_config_path(), encoding="utf-8") as f:
+            _ROUTING_CFG_CACHE = json.load(f)
+    except Exception:
+        _ROUTING_CFG_CACHE = {}
+    return _ROUTING_CFG_CACHE
+
+
+def _lead_scan_skip_sender(sender_addr: str) -> bool:
+    """Skip lead noise from known vendor/marketing domains already in routing_config."""
+    if not (sender_addr or "").strip():
+        return False
+    em = sender_addr.strip().lower()
+    dom = em.split("@", 1)[-1] if "@" in em else em
+    cfg = _load_routing_cfg()
+    cat = cfg.get("category_routes") or {}
+    if any(k.lower() == em for k in cat):
+        return True
+    dr = cfg.get("domain_routes") or {}
+    if em in dr or dom in dr:
+        return True
+    return False
+
+
 
 # Vendor keywords for procurement tracking
 VENDOR_KEYWORDS = [
@@ -115,6 +156,12 @@ class JobWorker:
             sender_addr = email.get("sender", "").strip()
             subject = email.get("subject", "")
             summary = email.get("summary", "")
+
+            if _lead_scan_skip_sender(sender_addr):
+                continue
+            subjl = (subject or "").lower()
+            if any(h in subjl for h in ("newsletter", "unsubscribe", "digest")):
+                continue
 
             if not sender_name:
                 sender_name = sender_addr.split("@")[0].replace(".", " ").title()
