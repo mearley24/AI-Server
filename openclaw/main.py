@@ -867,16 +867,18 @@ async def health():
         "agents": agent_list,
         "uptime": "running",
     }
-    # Briefing delivery state
+    # Briefing delivery state (written by orchestrator after daily notify)
     try:
         bpath = DATA_DIR / "briefing_status.json"
         if bpath.is_file():
-            import json as _json
-            body["briefing"] = _json.loads(bpath.read_text(encoding="utf-8"))
+            body["briefing"] = json.loads(bpath.read_text(encoding="utf-8"))
         else:
-            body["briefing"] = {"status": "unknown"}
+            body["briefing"] = {
+                "delivered": None,
+                "message": "No briefing sent yet — file missing under DATA_DIR",
+            }
     except Exception:
-        body["briefing"] = {"status": "unknown"}
+        body["briefing"] = {"delivered": None, "message": "Could not read briefing_status.json"}
     # Auto-responder stats
     if orchestrator and hasattr(orchestrator, "_auto_responder_stats"):
         body["auto_responder"] = orchestrator._auto_responder_stats
