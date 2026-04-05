@@ -117,3 +117,17 @@ Only propose changes backed by resolved data. If too few trades have resolved, r
             logger.error("parameter_tuner_error", error=str(e))
 
         return []
+
+
+def evaluate_pause_rules(strategy_reviews: list[dict]) -> list[str]:
+    """Auto-20: simple rules — win rate <45% or 7d negative streak."""
+    recs: list[str] = []
+    for s in strategy_reviews:
+        name = s.get("name", "unknown")
+        wr = float(s.get("win_rate", 0) or 0)
+        if wr and wr < 0.45:
+            recs.append(f"pause_candidate:{name}: win_rate {wr:.2f} < 0.45")
+        streak = int(s.get("negative_day_streak", 0) or 0)
+        if streak >= 7:
+            recs.append(f"auto_pause:{name}: negative P/L 7 consecutive days")
+    return recs
