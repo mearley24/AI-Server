@@ -28,7 +28,7 @@ MIN_COMPLEMENT_SPREAD = float(os.environ.get("ARB_MIN_COMPLEMENT_SPREAD", "0.015
 MIN_NEGATIVE_RISK_EDGE = float(os.environ.get("ARB_MIN_NEG_RISK_EDGE", "0.02"))  # 2%
 CONTRARIAN_DROP_PCT = float(os.environ.get("ARB_CONTRARIAN_DROP", "0.15"))  # 15% price drop
 MAX_POSITION_USD = float(os.environ.get("ARB_MAX_POSITION", "50"))
-MAX_DAILY_TRADES = int(os.environ.get("ARB_MAX_DAILY_TRADES", "10"))
+MAX_DAILY_TRADES = int(os.environ.get("ARB_MAX_DAILY_TRADES", "100"))
 MAX_TOTAL_EXPOSURE = float(os.environ.get("ARB_MAX_EXPOSURE", "2000"))
 SCAN_INTERVAL = int(os.environ.get("ARB_SCAN_INTERVAL", "300"))  # 5 min between scans
 
@@ -36,6 +36,20 @@ SCAN_INTERVAL = int(os.environ.get("ARB_SCAN_INTERVAL", "300"))  # 5 min between
 GAS_FEE = 0.05  # per trade
 WINNER_TAX = 0.02  # 2% on profit
 SLIPPAGE = 0.005  # 0.5%
+
+
+def _parse_clob_ids(raw: Any) -> list[str]:
+    """Parse clobTokenIds from Gamma API (may be JSON string or list)."""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            return []
+    if isinstance(raw, list):
+        return [str(x).strip().strip('"') for x in raw if x]
+    return []
 
 
 @dataclass
@@ -48,6 +62,7 @@ class ArbOpportunity:
     expected_profit_usd: float
     cost_usd: float
     tokens: list[dict] = field(default_factory=list)
+    token_ids: list[str] = field(default_factory=list)  # decimal clobTokenIds from Gamma API
     metadata: dict = field(default_factory=dict)
     detected_at: float = field(default_factory=time.time)
 
@@ -175,6 +190,7 @@ class SpreadArbScanner:
             size = min(MAX_POSITION_USD, self._bankroll * 0.05)
             profit_usd = size * (net_spread / total)
 
+            clob_ids = _parse_clob_ids(m.get("clobTokenIds"))
             opps.append(ArbOpportunity(
                 opp_type="complement",
                 market_title=m.get("question", "")[:80],
@@ -183,6 +199,7 @@ class SpreadArbScanner:
                 expected_profit_usd=round(profit_usd, 2),
                 cost_usd=round(size, 2),
                 tokens=[{"outcome": "Yes", "price": yes_p}, {"outcome": "No", "price": no_p}],
+                token_ids=clob_ids,
                 metadata={"total": round(total, 4), "spread": round(spread, 4), "net_spread": round(net_spread, 4)},
             ))
 
@@ -217,10 +234,12 @@ class SpreadArbScanner:
                     prices = json.loads(op) if isinstance(op, str) else op
                     no_p = float(prices[1]) if len(prices) > 1 else None
                     if no_p and no_p > 0:
+                        m_clob = _parse_clob_ids(m.get("clobTokenIds"))
                         no_prices.append({
                             "price": no_p,
                             "market": m.get("question", "")[:50],
                             "condition_id": m.get("conditionId", ""),
+                            "no_token_id": m_clob[1] if len(m_clob) > 1 else "",
                         })
                     else:
                         all_have_prices = False
@@ -256,6 +275,7 @@ class SpreadArbScanner:
             size = min(MAX_POSITION_USD, self._bankroll * 0.03)
             scale = size / total_no_cost if total_no_cost > 0 else 0
 
+            all_no_token_ids = [p["no_token_id"] for p in no_prices if p.get("no_token_id")]
             opps.append(ArbOpportunity(
                 opp_type="negative_risk",
                 market_title=evt.get("title", "")[:80],
@@ -263,7 +283,8 @@ class SpreadArbScanner:
                 expected_profit_pct=round(profit_pct, 2),
                 expected_profit_usd=round(net_profit * scale, 2),
                 cost_usd=round(total_no_cost * scale, 2),
-                tokens=[{"condition_id": p["condition_id"], "no_price": p["price"], "market": p["market"]} for p in no_prices],
+                tokens=[{"condition_id": p["condition_id"], "no_price": p["price"], "market": p["market"], "no_token_id": p.get("no_token_id", "")} for p in no_prices],
+                token_ids=all_no_token_ids,
                 metadata={
                     "outcomes": n,
                     "total_no_cost": round(total_no_cost, 4),
@@ -321,6 +342,7 @@ class SpreadArbScanner:
             potential_return = (max_recent / current_price - 1) * 100 if current_price > 0 else 0
             size = min(MAX_POSITION_USD * 0.5, self._bankroll * 0.02)  # Smaller size for contrarian
 
+            clob_ids = _parse_clob_ids(m.get("clobTokenIds"))
             opps.append(ArbOpportunity(
                 opp_type="contrarian",
                 market_title=m.get("question", "")[:80],
@@ -329,6 +351,7 @@ class SpreadArbScanner:
                 expected_profit_usd=round(size * drop_pct, 2),
                 cost_usd=round(size, 2),
                 tokens=[{"outcome": "Yes", "price": current_price}],
+                token_ids=clob_ids,
                 metadata={
                     "drop_pct": round(drop_pct * 100, 1),
                     "max_1hr": round(max_recent, 3),
@@ -390,6 +413,7 @@ class SpreadArbScanner:
 
             size = min(MAX_POSITION_USD * 0.3, self._bankroll * 0.01)
 
+            clob_ids = _parse_clob_ids(m.get("clobTokenIds"))
             opps.append(ArbOpportunity(
                 opp_type="consolidation_breakout",
                 market_title=m.get("question", "")[:80],
@@ -398,6 +422,7 @@ class SpreadArbScanner:
                 expected_profit_usd=round(size * 0.3, 2),
                 cost_usd=round(size, 2),
                 tokens=[{"outcome": "Yes", "price": current_price}],
+                token_ids=clob_ids,
                 metadata={
                     "hours_flat": round(hours_flat, 1),
                     "range_pct": round(range_pct * 100, 2),
@@ -478,21 +503,69 @@ class SpreadArbScanner:
             try:
                 from src.signer import SIDE_BUY
 
-                if opp.opp_type in ("complement", "negative_risk"):
-                    # Buy both sides / all NOs
-                    tokens = opp.tokens
+                if opp.opp_type == "complement":
+                    # Complement arb: buy YES (token_ids[0]) + buy NO (token_ids[1])
+                    if len(opp.token_ids) < 2:
+                        logger.warning("arb_skip_no_token_ids", market=opp.market_title[:60], type=opp.opp_type, ids=len(opp.token_ids))
+                        skipped += 1
+                        continue
+
+                    results = await asyncio.gather(
+                        self._client.place_order(
+                            token_id=str(opp.token_ids[0]),
+                            price=round(opp.tokens[0]["price"] + SLIPPAGE, 4),
+                            size=round(size / opp.tokens[0]["price"], 2),
+                            side=SIDE_BUY,
+                            order_type="FOK",
+                        ),
+                        self._client.place_order(
+                            token_id=str(opp.token_ids[1]),
+                            price=round(opp.tokens[1]["price"] + SLIPPAGE, 4),
+                            size=round(size / opp.tokens[1]["price"], 2),
+                            side=SIDE_BUY,
+                            order_type="FOK",
+                        ),
+                        return_exceptions=True,
+                    )
+                    errors = [r for r in results if isinstance(r, Exception)]
+                    if not errors:
+                        self._positions[opp.condition_id] = {
+                            "type": opp.opp_type, "cost": opp.cost_usd,
+                            "expected_profit": opp.expected_profit_usd,
+                            "entered_at": time.time(), "market": opp.market_title,
+                        }
+                        self._trades_count += 1
+                        self._bankroll -= opp.cost_usd
+                        executed += 1
+                        total_exposure += opp.cost_usd
+                        logger.info("arb_trade_executed", market=opp.market_title[:60], type="complement", size=round(size, 2), expected_profit_pct=opp.expected_profit_pct, orders=2)
+                    else:
+                        logger.warning("arb_trade_partial_fail", type="complement", errors=[str(e) for e in errors])
+                        skipped += 1
+
+                elif opp.opp_type == "negative_risk":
+                    # Negative risk arb: buy NO on every sub-market
+                    if not opp.token_ids:
+                        logger.warning("arb_skip_no_token_ids", market=opp.market_title[:60], type=opp.opp_type)
+                        skipped += 1
+                        continue
+
                     results = []
-                    for tok in tokens:
-                        token_id = tok.get("token_id") or tok.get("condition_id", "")
-                        price = tok.get("price") or tok.get("no_price", 0)
-                        if not token_id or price <= 0:
+                    for idx, tok in enumerate(opp.tokens):
+                        no_tid = tok.get("no_token_id", "")
+                        if not no_tid and idx < len(opp.token_ids):
+                            no_tid = opp.token_ids[idx]
+                        if not no_tid:
                             continue
-                        shares = round(size / price, 2)
+                        no_price = tok.get("no_price") or tok.get("price", 0)
+                        if no_price <= 0:
+                            continue
+                        shares = round(size / no_price, 2)
                         if shares < 1:
                             continue
                         result = await self._client.place_order(
-                            token_id=token_id,
-                            price=round(price + SLIPPAGE, 4),
+                            token_id=str(no_tid),
+                            price=round(no_price + SLIPPAGE, 4),
                             size=shares,
                             side=SIDE_BUY,
                             order_type="FOK",
@@ -502,61 +575,48 @@ class SpreadArbScanner:
                     errors = [r for r in results if isinstance(r, Exception)]
                     if not errors and results:
                         self._positions[opp.condition_id] = {
-                            "type": opp.opp_type,
-                            "cost": opp.cost_usd,
+                            "type": opp.opp_type, "cost": opp.cost_usd,
                             "expected_profit": opp.expected_profit_usd,
-                            "entered_at": time.time(),
-                            "market": opp.market_title,
+                            "entered_at": time.time(), "market": opp.market_title,
                         }
                         self._trades_count += 1
                         self._bankroll -= opp.cost_usd
                         executed += 1
                         total_exposure += opp.cost_usd
-                        logger.info(
-                            "arb_trade_executed",
-                            market=opp.market_title[:60],
-                            type=opp.opp_type,
-                            size=round(size, 2),
-                            expected_profit_pct=opp.expected_profit_pct,
-                            orders=len(results),
-                        )
+                        logger.info("arb_trade_executed", market=opp.market_title[:60], type="negative_risk", size=round(size, 2), expected_profit_pct=opp.expected_profit_pct, orders=len(results))
                     else:
-                        logger.warning("arb_trade_partial_fail", errors=[str(e) for e in errors])
+                        logger.warning("arb_trade_partial_fail", type="negative_risk", errors=[str(e) for e in errors])
                         skipped += 1
 
                 else:
-                    # Contrarian / consolidation — buy YES on the underpriced side
-                    tok = opp.tokens[0] if opp.tokens else {}
-                    token_id = tok.get("token_id") or opp.condition_id
-                    price = tok.get("price", 0)
-                    if token_id and price > 0:
+                    # Contrarian / consolidation — buy YES (token_ids[0])
+                    if not opp.token_ids:
+                        logger.warning("arb_skip_no_token_ids", market=opp.market_title[:60], type=opp.opp_type)
+                        skipped += 1
+                        continue
+
+                    yes_tid = str(opp.token_ids[0])
+                    price = opp.tokens[0].get("price", 0) if opp.tokens else 0
+                    if price > 0:
                         shares = round(size / price, 2)
                         if shares >= 1:
                             result = await self._client.place_order(
-                                token_id=token_id,
+                                token_id=yes_tid,
                                 price=round(price + SLIPPAGE, 4),
                                 size=shares,
                                 side=SIDE_BUY,
                                 order_type="FOK",
                             )
                             self._positions[opp.condition_id] = {
-                                "type": opp.opp_type,
-                                "cost": round(size, 2),
+                                "type": opp.opp_type, "cost": round(size, 2),
                                 "expected_profit": opp.expected_profit_usd,
-                                "entered_at": time.time(),
-                                "market": opp.market_title,
+                                "entered_at": time.time(), "market": opp.market_title,
                             }
                             self._trades_count += 1
                             self._bankroll -= size
                             executed += 1
                             total_exposure += size
-                            logger.info(
-                                "arb_trade_executed",
-                                market=opp.market_title[:60],
-                                type=opp.opp_type,
-                                size=round(size, 2),
-                                expected_profit_pct=opp.expected_profit_pct,
-                            )
+                            logger.info("arb_trade_executed", market=opp.market_title[:60], type=opp.opp_type, size=round(size, 2), expected_profit_pct=opp.expected_profit_pct)
 
             except Exception as exc:
                 logger.error("arb_trade_error", market=opp.market_title[:60], error=str(exc)[:200])
