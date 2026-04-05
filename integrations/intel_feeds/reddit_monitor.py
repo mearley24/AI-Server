@@ -1,3 +1,4 @@
+import os
 """
 Reddit Monitor
 ==============
@@ -29,7 +30,7 @@ logger = logging.getLogger("intel_feeds.reddit")
 # Configuration
 # ---------------------------------------------------------------------------
 
-REDIS_URL = "redis://172.18.0.100:6379"
+REDIS_URL = os.environ.get("REDIS_URL", "redis://172.18.0.100:6379")
 REDIS_CHANNEL = "intel:reddit"
 POLL_INTERVAL_SEC = 15 * 60  # 15 minutes
 

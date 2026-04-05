@@ -500,6 +500,21 @@ class SpreadArbScanner:
 
         total_exposure = sum(p.get("cost", 0) for p in self._positions.values())
 
+        usdc_balance = 999999.0
+        try:
+            from web3 import Web3
+            _w3 = Web3(Web3.HTTPProvider("https://polygon-bor-rpc.publicnode.com"))
+            _usdc = _w3.eth.contract(
+                address=Web3.to_checksum_address("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"),
+                abi=[{"constant": True, "inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}],
+            )
+            wallet = os.environ.get("POLY_PROXY_ADDRESS", os.environ.get("POLY_SAFE_ADDRESS", ""))
+            if wallet:
+                usdc_balance = _usdc.functions.balanceOf(Web3.to_checksum_address(wallet)).call() / 1e6
+                logger.info("arb_wallet_balance", usdc=round(usdc_balance, 2))
+        except Exception:
+            pass
+
         for opp in sorted_opps[:MAX_PER_TICK]:
             if opp.expected_profit_pct < MIN_PROFIT_PCT:
                 skipped += 1
@@ -519,6 +534,11 @@ class SpreadArbScanner:
 
             size = min(MAX_PER_SIDE, opp.cost_usd, (self._bankroll * 0.25 - total_exposure) / 5)
             if size < 1.0:
+                skipped += 1
+                continue
+
+            if opp.cost_usd > usdc_balance * 0.9:
+                logger.info("arb_skip_insufficient_balance", market=opp.market_title[:40], cost=opp.cost_usd, balance=round(usdc_balance, 2))
                 skipped += 1
                 continue
 

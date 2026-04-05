@@ -245,6 +245,34 @@ class CopiedPosition:
         return asdict(self)
 
 
+# ── On-chain CTF balance query ────────────────────────────────────────
+CTF_CONTRACT_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+_ERC1155_BALANCE_ABI = [{"constant": True, "inputs": [{"name": "account", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}]
+_w3_instance = None
+_ctf_contract_instance = None
+
+def _get_onchain_balance(token_id: str, wallet: str) -> float | None:
+    """Query ERC1155 balance for a CTF token. Returns shares or None on error."""
+    global _w3_instance, _ctf_contract_instance
+    if not wallet or not token_id:
+        return None
+    try:
+        from web3 import Web3
+        if _w3_instance is None:
+            _w3_instance = Web3(Web3.HTTPProvider("https://polygon-bor-rpc.publicnode.com"))
+            _ctf_contract_instance = _w3_instance.eth.contract(
+                address=Web3.to_checksum_address(CTF_CONTRACT_ADDRESS),
+                abi=_ERC1155_BALANCE_ABI,
+            )
+        balance = _ctf_contract_instance.functions.balanceOf(
+            Web3.to_checksum_address(wallet),
+            int(token_id),
+        ).call()
+        return balance / 1e6
+    except Exception:
+        return None
+
+
 # ── Strategy ─────────────────────────────────────────────────────────────────
 
 class PolymarketCopyTrader:
@@ -3129,7 +3157,22 @@ class PolymarketCopyTrader:
 
         # Haircut sell size by 0.5% to avoid 'not enough balance' errors from
         # CTF token rounding — on-chain balance can be slightly less than recorded
-        sell_shares = round(pos.size_shares * signal.sell_fraction * 0.93, 2)  # 7% haircut — on-chain balance drifts from recorded
+        _wallet = os.environ.get("POLY_PROXY_ADDRESS", os.environ.get("POLY_SAFE_ADDRESS", ""))
+        if not _wallet and self._client:
+            _wallet = getattr(self._client, "wallet_address", "")
+        onchain = _get_onchain_balance(pos.token_id, _wallet) if pos.token_id else None
+
+        if onchain is not None and onchain > 0:
+            sell_shares = round(min(onchain, pos.size_shares) * signal.sell_fraction * 0.995, 2)
+            if abs(onchain - pos.size_shares) > 1.0:
+                logger.info("balance_drift_detected", position_id=position_id,
+                            internal=pos.size_shares, onchain=round(onchain, 2))
+        elif onchain == 0:
+            logger.info("zero_balance_cleanup", position_id=position_id, market=pos.market_question[:50])
+            del self._positions[position_id]
+            return
+        else:
+            sell_shares = round(pos.size_shares * signal.sell_fraction * 0.90, 2)
         if sell_shares < 1:
             sell_shares = 1.0
         sell_usd = pos.size_usd * signal.sell_fraction

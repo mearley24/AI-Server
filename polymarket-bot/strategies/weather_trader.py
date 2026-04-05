@@ -468,6 +468,9 @@ class WeatherTraderStrategy(BaseStrategy):
         # Step 3: Scan Polymarket for weather bracket markets
         poly_markets = await self._scan_polymarket_weather()
 
+        # Step 3b: Enrich with live CLOB mid-prices (Gamma API doesn't include them)
+        poly_markets = await self._enrich_with_clob_prices(poly_markets)
+
         # Step 4: Group markets by city+date event
         event_groups = self._group_by_event(poly_markets)
 
@@ -966,6 +969,75 @@ class WeatherTraderStrategy(BaseStrategy):
                 return (low, high)
 
         return None
+
+    _clob_price_cache: dict[str, tuple[float, float]] = {}  # token_id -> (price, timestamp)
+
+    async def _enrich_with_clob_prices(self, markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Fetch live mid-prices from CLOB for each market's YES token."""
+        import httpx
+        now = time.time()
+        enriched = 0
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            for mkt in markets:
+                clob_raw = mkt.get("clobTokenIds", "")
+                if isinstance(clob_raw, str):
+                    try:
+                        clob_ids = json.loads(clob_raw) if clob_raw.startswith("[") else []
+                    except (json.JSONDecodeError, ValueError):
+                        clob_ids = []
+                elif isinstance(clob_raw, list):
+                    clob_ids = clob_raw
+                else:
+                    clob_ids = []
+
+                if not clob_ids:
+                    continue
+
+                yes_tid = str(clob_ids[0]).strip().strip('"')
+
+                cached = self._clob_price_cache.get(yes_tid)
+                if cached and now - cached[1] < 60:
+                    mid = cached[0]
+                else:
+                    try:
+                        resp = await http.get(
+                            "https://clob.polymarket.com/midpoint",
+                            params={"token_id": yes_tid},
+                        )
+                        if resp.status_code == 200:
+                            mid = float(resp.json().get("mid", 0))
+                            self._clob_price_cache[yes_tid] = (mid, now)
+                        else:
+                            continue
+                    except Exception:
+                        continue
+                    await asyncio.sleep(0.05)
+
+                if mid <= 0:
+                    continue
+
+                if not mkt.get("tokens"):
+                    mkt["tokens"] = []
+                if len(mkt["tokens"]) == 0:
+                    mkt["tokens"].append({"token_id": yes_tid, "price": mid})
+                else:
+                    mkt["tokens"][0]["price"] = mid
+                    mkt["tokens"][0]["token_id"] = yes_tid
+
+                if len(clob_ids) > 1:
+                    no_tid = str(clob_ids[1]).strip().strip('"')
+                    no_mid = round(1.0 - mid, 6)
+                    if len(mkt["tokens"]) < 2:
+                        mkt["tokens"].append({"token_id": no_tid, "price": no_mid})
+                    else:
+                        mkt["tokens"][1]["price"] = no_mid
+                        mkt["tokens"][1]["token_id"] = no_tid
+
+                enriched += 1
+
+        if enriched:
+            logger.info("weather_clob_prices_enriched", enriched=enriched, total=len(markets))
+        return markets
 
     def _get_market_price(self, mkt: dict[str, Any], platform: str) -> float:
         """Extract YES ask price from a market."""

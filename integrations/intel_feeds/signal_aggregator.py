@@ -38,7 +38,7 @@ logger = logging.getLogger("intel_feeds.aggregator")
 # Configuration
 # ---------------------------------------------------------------------------
 
-REDIS_URL = "redis://172.18.0.100:6379"
+REDIS_URL = os.environ.get("REDIS_URL", "redis://172.18.0.100:6379")
 INTEL_CHANNEL_PATTERN = "intel:*"
 NOTIFICATIONS_CHANNEL = "notifications:trading"
 DB_PATH = Path("/data/intel_feeds/signals.db")

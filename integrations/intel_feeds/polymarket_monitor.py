@@ -1,3 +1,4 @@
+import os
 """
 Polymarket Monitor
 ==================
@@ -33,7 +34,7 @@ logger = logging.getLogger("intel_feeds.polymarket")
 # Configuration
 # ---------------------------------------------------------------------------
 
-REDIS_URL = "redis://172.18.0.100:6379"
+REDIS_URL = os.environ.get("REDIS_URL", "redis://172.18.0.100:6379")
 REDIS_CHANNEL = "intel:polymarket"
 POLL_INTERVAL_SEC = 5 * 60  # 5 minutes
 
