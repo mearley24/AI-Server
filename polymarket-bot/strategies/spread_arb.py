@@ -28,6 +28,7 @@ MIN_COMPLEMENT_SPREAD = float(os.environ.get("ARB_MIN_COMPLEMENT_SPREAD", "0.015
 MIN_NEGATIVE_RISK_EDGE = float(os.environ.get("ARB_MIN_NEG_RISK_EDGE", "0.02"))  # 2%
 CONTRARIAN_DROP_PCT = float(os.environ.get("ARB_CONTRARIAN_DROP", "0.15"))  # 15% price drop
 MAX_POSITION_USD = float(os.environ.get("ARB_MAX_POSITION", "50"))
+MAX_PER_SIDE = float(os.environ.get("ARB_MAX_PER_SIDE", "25"))
 MAX_DAILY_TRADES = int(os.environ.get("ARB_MAX_DAILY_TRADES", "100"))
 MAX_TOTAL_EXPOSURE = float(os.environ.get("ARB_MAX_EXPOSURE", "2000"))
 SCAN_INTERVAL = int(os.environ.get("ARB_SCAN_INTERVAL", "300"))  # 5 min between scans
@@ -79,7 +80,7 @@ class PriceSnapshot:
 class SpreadArbScanner:
     """Scans Polymarket for arbitrage and spread opportunities."""
 
-    def __init__(self, bankroll: float = 12500.0, dry_run: bool = True, paper_mode: bool = False, client: Any = None):
+    def __init__(self, bankroll: float = 250.0, dry_run: bool = False, paper_mode: bool = False, client: Any = None):
         self._bankroll = bankroll
         self._dry_run = dry_run
         self._paper_mode = paper_mode
@@ -301,7 +302,7 @@ class SpreadArbScanner:
             scale = size / total_no_cost if total_no_cost > 0 else 0
 
             all_no_token_ids = [p["no_token_id"] for p in no_prices if p.get("no_token_id")]
-            is_neg_risk = evt.get("negRisk", False) or evt.get("neg_risk", False) or True  # multi-outcome events are always neg risk on Polymarket
+            is_neg_risk = evt.get("negRisk", False) or evt.get("neg_risk", False)
             opps.append(ArbOpportunity(
                 opp_type="negative_risk",
                 market_title=evt.get("title", "")[:80],
@@ -544,8 +545,9 @@ class SpreadArbScanner:
                     order_results = []
                     for i in range(2):
                         tid = str(opp.token_ids[i])
-                        price = round(opp.tokens[i]["price"] + SLIPPAGE, 4)
-                        shares = round(size / opp.tokens[i]["price"], 2)
+                        price = min(0.99, min(0.99, max(0.01, round(opp.tokens[i]["price"] + SLIPPAGE, 4))))
+                        logger.info("arb_order_debug", market=opp.condition_id[:20], side=i, size=size, price=price, shares=shares, cost_usd=round(shares*price,2))
+                        shares = min(round(min(size, MAX_PER_SIDE) / max(0.01, opp.tokens[i]["price"]), 2), 500)
                         if shares < 1:
                             continue
                         args = OrderArgs(token_id=tid, price=price, size=shares, side="BUY")
@@ -582,10 +584,10 @@ class SpreadArbScanner:
                         no_price = tok.get("no_price") or tok.get("price", 0)
                         if no_price <= 0:
                             continue
-                        shares = round(size / no_price, 2)
+                        shares = min(round(size / max(0.01, no_price), 2), 500)
                         if shares < 1:
                             continue
-                        args = OrderArgs(token_id=str(no_tid), price=round(no_price + SLIPPAGE, 4), size=shares, side="BUY")
+                        args = OrderArgs(token_id=str(no_tid), price=min(0.99, min(0.99, max(0.01, round(no_price + SLIPPAGE, 4)))), size=shares, side="BUY")
                         resp = await loop.run_in_executor(
                             None, lambda a=args, o=options: self._clob_client.create_and_post_order(a, o),
                         )
@@ -615,9 +617,9 @@ class SpreadArbScanner:
                     yes_tid = str(opp.token_ids[0])
                     price = opp.tokens[0].get("price", 0) if opp.tokens else 0
                     if price > 0:
-                        shares = round(size / price, 2)
+                        shares = min(round(size / max(0.01, price), 2), 500)
                         if shares >= 1:
-                            args = OrderArgs(token_id=yes_tid, price=round(price + SLIPPAGE, 4), size=shares, side="BUY")
+                            args = OrderArgs(token_id=yes_tid, price=min(0.99, min(0.99, max(0.01, round(price + SLIPPAGE, 4)))), size=shares, side="BUY")
                             resp = await loop.run_in_executor(
                                 None, lambda a=args, o=options: self._clob_client.create_and_post_order(a, o),
                             )
