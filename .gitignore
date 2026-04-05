@@ -70,3 +70,4 @@ polymarket-bot/vpn/
 # SQLite journal files (anywhere)
 *.db-journal
 *.db-wal
+data/backups*.tar.gz
