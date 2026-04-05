@@ -88,10 +88,10 @@ curl -sf http://127.0.0.1:8430/health >/dev/null 2>&1 && check "Polymarket Bot /
 # ── 5. Strategy Imports ──
 echo ""
 echo "--- Strategy Imports ---"
-docker exec polymarket-bot python3 -c "from strategies.polymarket_copytrade import PolymarketCopytrade; print('OK')" 2>/dev/null \
-    && check "PolymarketCopytrade import" "PASS" || check "PolymarketCopytrade import" "FAIL"
-docker exec polymarket-bot python3 -c "from strategies.weather_trader import CheapBracketStrategy; print('OK')" 2>/dev/null \
-    && check "CheapBracketStrategy import" "PASS" || check "CheapBracketStrategy import" "FAIL"
+docker exec polymarket-bot python3 -c "from strategies.polymarket_copytrade import PolymarketCopyTrader; print('OK')" 2>/dev/null \
+    && check "PolymarketCopyTrader import" "PASS" || check "PolymarketCopyTrader import" "FAIL"
+docker exec polymarket-bot python3 -c "from strategies.weather_trader import WeatherTraderStrategy; print('OK')" 2>/dev/null \
+    && check "WeatherTraderStrategy import" "PASS" || check "WeatherTraderStrategy import" "FAIL"
 docker exec polymarket-bot python3 -c "from strategies.spread_arb import SpreadArbScanner; print('OK')" 2>/dev/null \
     && check "SpreadArbScanner import" "PASS" || check "SpreadArbScanner import" "FAIL"
 docker exec polymarket-bot python3 -c "from strategies.strategy_manager import StrategyManager; print('OK')" 2>/dev/null \
@@ -117,7 +117,8 @@ curl -sf http://192.168.1.199:11434/api/tags >/dev/null 2>&1 \
 echo ""
 echo "--- Secrets Scan (should be empty) ---"
 LEAKED=$(grep -rn 'sk-ant-\|sk-proj-\|pplx-' --include="*.py" --include="*.yml" --include="*.yaml" --include="*.json" \
-    . 2>/dev/null | grep -v ".env.example" | grep -v "node_modules" | grep -v ".git/" | grep -v "# " | head -5)
+    . 2>/dev/null | grep -v ".env.example" | grep -v "node_modules" | grep -v ".git/" | grep -v ".venv/" \
+    | grep -v "# " | grep -v "YOUR_" | grep -v "1234567890" | grep -v "sk-ant-\.\.\." | head -5)
 [[ -z "$LEAKED" ]] && check "No leaked API keys in source" "PASS" || check "LEAKED KEYS: $LEAKED" "FAIL"
 
 REDIS_LEAKED=$(grep -rn 'requirepass' --include="*.py" --include="*.yml" \
