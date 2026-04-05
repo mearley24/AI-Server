@@ -420,9 +420,111 @@ print(categorize_email('Smart home estimate', 'john@gmail.com', 'interested in a
 
 ---
 
+## Bug 3: Intel Alert — Raw JSON Dumped to iMessage
+
+### Problem
+
+The intel_feeds `signal_aggregator.py` publishes critical alerts to `notifications:trading` with this payload:
+```json
+{"type": "intel_alert", "urgency": "critical", "source": "polymarket:odds_movement", "summary": "Odds movement [UP 30.0%]...", "relevance_score": 100, ...}
+```
+
+The notification-hub's `redis_subscriber()` (in `notification-hub/main.py`) receives it and does:
+```python
+title = data.get("title", data.get("type", "Notification"))
+body = data.get("body", data.get("message", json.dumps(data)))
+```
+
+The payload has no `title`, `body`, or `message` key. So:
+- `title` = `"intel_alert"` (from the `type` field)
+- `body` = `json.dumps(data)` — the entire raw JSON blob
+
+This gets sent as-is to iMessage. Matt sees raw JSON.
+
+### Fix Option A — Fix at source (signal_aggregator.py)
+
+In `integrations/intel_feeds/signal_aggregator.py`, around line 291, where the notification dict is built, add `title` and `body` keys that the notification-hub expects:
+
+```python
+        if relevance >= self.critical_threshold:
+            # Format human-readable alert for notification-hub
+            urgency_icon = {"critical": "🚨", "high": "⚠️", "medium": "📊"}.get(urgency, "📌")
+            source_label = signal.get("source", "unknown").replace("polymarket:", "").replace("_", " ").title()
+
+            notification = {
+                "type": "intel_alert",
+                "title": f"{urgency_icon} Intel Alert: {source_label}",
+                "body": summary,
+                "urgency": urgency,
+                "priority": "high" if urgency == "critical" else "normal",
+                "source": signal.get("source", ""),
+                "summary": summary,
+                "relevance_score": relevance,
+                "category": signal.get("category", ""),
+                "markets_affected": signal.get("markets_affected", []),
+                "timestamp": signal.get("timestamp", ""),
+            }
+```
+
+This way the notification-hub's existing `data.get("title")` and `data.get("body")` will find real values instead of falling through to raw JSON.
+
+### Fix Option B — Fix at receiver (notification-hub/main.py)
+
+In `notification-hub/main.py`, in the `redis_subscriber()` function, add intel_alert formatting before the generic fallback. Around line 238:
+
+Replace:
+```python
+                    title = data.get("title", data.get("type", "Notification"))
+                    body = data.get("body", data.get("message", json.dumps(data)))
+                    priority = data.get("priority", "normal")
+                    await dispatch(title, body, priority, source=channel)
+```
+
+With:
+```python
+                    # Format known notification types into human-readable messages
+                    msg_type = data.get("type", "")
+                    if msg_type == "intel_alert":
+                        urgency = data.get("urgency", "medium")
+                        icon = {"critical": "🚨", "high": "⚠️", "medium": "📊"}.get(urgency, "📌")
+                        source_label = data.get("source", "unknown").replace("polymarket:", "").replace("_", " ").title()
+                        title = f"{icon} Intel Alert: {source_label}"
+                        body = data.get("summary", "No summary available")
+                        markets = data.get("markets_affected", [])
+                        if markets:
+                            body += f"\nMarkets: {len(markets)} affected"
+                        body += f"\nRelevance: {data.get('relevance_score', 'N/A')}%"
+                        priority = "high" if urgency == "critical" else "normal"
+                    else:
+                        title = data.get("title", data.get("type", "Notification"))
+                        body = data.get("body", data.get("message", json.dumps(data)))
+                        priority = data.get("priority", "normal")
+                    await dispatch(title, body, priority, source=channel)
+```
+
+### Recommended: Do BOTH fixes
+
+Fix A ensures the payload is well-formed at the source. Fix B ensures the notification-hub never sends raw JSON for any known type — defense in depth.
+
+### Expected iMessage after fix:
+```
+🚨 Intel Alert: Odds Movement
+Odds movement [UP 30.0%] on "US x Iran ceasefire by April 15?" 0.10 → 0.13
+Relevance: 100%
+```
+
+Instead of raw JSON.
+
+### Rebuild:
+```bash
+docker compose up -d --build intel-feeds notification-hub
+```
+
+---
+
 ## Rules
 
 - **Read before writing.** Every file listed above must be read before editing.
-- **Config change = rebuild.** `docker compose up -d --build email-monitor x-intake` then `--force-recreate openclaw`.
+- **Config change = rebuild.** `docker compose up -d --build email-monitor x-intake intel-feeds notification-hub` then `--force-recreate openclaw`.
 - **No secrets in code.** All credentials from `.env` via `os.environ.get()`.
-- **Test after each fix.** Don't batch — fix x-intake, test, then fix email, test.
+- **Test after each fix.** Don't batch — fix x-intake, test, then fix email, test, then fix intel alerts, test.
