@@ -357,11 +357,16 @@ Then in `research_link()`, replace the OpenAI section with:
 
 ## Part 4: Install Dependencies on Bob
 
+Bob uses Homebrew Python which is externally-managed (PEP 668). All pip installs MUST go into the repo venv at `~/AI-Server/.venv/`.
+
 Run on Bob after code changes:
 
 ```bash
+cd ~/AI-Server
+source .venv/bin/activate
+
 # Install mlx-whisper for local transcription (M4 optimized)
-pip3 install mlx-whisper
+pip install mlx-whisper
 
 # Pre-download the whisper model so first transcription isn't slow
 python3 -c "import mlx_whisper; mlx_whisper.transcribe('/dev/null', path_or_hf_repo='mlx-community/whisper-base-mlx')" 2>/dev/null || true
@@ -374,7 +379,30 @@ print('Models:', models)
 assert 'qwen3:8b' in models or any('qwen' in m for m in models), 'qwen3:8b not found!'
 print('OK — Ollama ready for analysis')
 "
+
+deactivate
 ```
+
+### IMPORTANT: Update shebangs and launchd plists
+
+Any host-side Python scripts (not Docker) must use the venv Python, not system Python.
+
+**imessage-server.py shebang** — change line 1:
+```python
+#!/Users/bob/AI-Server/.venv/bin/python3
+```
+
+**All launchd plists** that invoke Python scripts must use the venv path. Check:
+```bash
+grep -l 'python3' ~/Library/LaunchAgents/com.symphony.*.plist | while read f; do
+  echo "--- $f ---"
+  grep 'python3\|ProgramArguments' "$f" | head -5
+done
+```
+
+Any plist that uses `/usr/bin/python3` or `/opt/homebrew/bin/python3` should be updated to `/Users/bob/AI-Server/.venv/bin/python3` so it can import mlx-whisper and other pip packages.
+
+**Docker containers are unaffected** — they have their own Python and requirements.txt. Only host-side scripts need the venv path.
 
 ---
 
