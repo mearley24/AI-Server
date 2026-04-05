@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     debate_max_debate_time_seconds: float = Field(default=10.0, description="Max debate duration")
 
     # --- Redis ---
-    redis_url: str = Field(default="redis://redis:6379", description="Redis connection URL")
+    redis_url: str = Field(default="redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379", description="Redis connection URL")
 
     # Polygon chain id
     chain_id: int = Field(default=137)

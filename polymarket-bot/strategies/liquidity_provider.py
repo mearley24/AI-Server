@@ -57,7 +57,7 @@ def _notify(title: str, body: str) -> None:
     try:
         import json as _json
         import redis
-        url = os.environ.get("REDIS_URL", "redis://redis:6379")
+        url = os.environ.get("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379")
         r = redis.from_url(url, decode_responses=True, socket_timeout=2)
         r.publish("notifications:trading", _json.dumps({"title": title, "body": body}))
     except Exception:

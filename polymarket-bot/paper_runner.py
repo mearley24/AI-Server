@@ -38,7 +38,7 @@ GAS_PER_TRADE = 0.05
 def _paper_notify(title: str, body: str) -> None:
     """Send paper trading notification via Redis -> iMessage."""
     try:
-        url = os.environ.get("REDIS_URL", "redis://redis:6379")
+        url = os.environ.get("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379")
         r = _redis.from_url(url, decode_responses=True, socket_timeout=2)
         r.publish("notifications:trading", json.dumps({"title": title, "body": body}))
     except Exception:

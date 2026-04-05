@@ -18,7 +18,7 @@ from strategies.kelly_sizing import fetch_onchain_bankroll
 logger = structlog.get_logger(__name__)
 _log = logging.getLogger(__name__)
 
-REDIS_URL_DEFAULT = "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379"
+REDIS_URL_DEFAULT = "redis://172.18.0.100:6379"
 SNAPSHOT_INTERVAL_SEC = float(os.environ.get("PORTFOLIO_SYNC_INTERVAL_SEC", "300"))
 HISTORY_MAX = 1000
 

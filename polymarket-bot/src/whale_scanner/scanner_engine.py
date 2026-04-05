@@ -252,7 +252,7 @@ class ScannerEngine:
         try:
             import redis as _redis
             import os
-            url = os.environ.get("REDIS_URL", "redis://host.docker.internal:6379")
+            url = os.environ.get("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379")
             r = _redis.from_url(url, decode_responses=True, socket_timeout=2)
 
             wallet_short = record.wallet[:6] + "..." + record.wallet[-4:] if len(record.wallet) > 10 else record.wallet

@@ -10,7 +10,7 @@ from .base import Notifier
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379")
 NOTIFICATION_CHANNEL = "notifications:trading"
 
 

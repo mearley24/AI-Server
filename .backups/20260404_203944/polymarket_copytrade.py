@@ -184,7 +184,7 @@ def _notify(title: str, body: str) -> None:
     try:
         import json as _json
         import redis
-        url = os.environ.get("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379")
+        url = os.environ.get("REDIS_URL", "redis://host.docker.internal:6379")
         r = redis.from_url(url, decode_responses=True, socket_timeout=2)
         r.publish("notifications:trading", _json.dumps({"title": title, "body": body}))
     except Exception:
@@ -3102,7 +3102,7 @@ class PolymarketCopyTrader:
 
         # Haircut sell size by 0.5% to avoid 'not enough balance' errors from
         # CTF token rounding — on-chain balance can be slightly less than recorded
-        sell_shares = round(pos.size_shares * signal.sell_fraction * 0.93, 2)  # 7% haircut — on-chain balance drifts from recorded
+        sell_shares = round(pos.size_shares * signal.sell_fraction * 0.995, 2)
         if sell_shares < 1:
             sell_shares = 1.0
         sell_usd = pos.size_usd * signal.sell_fraction
