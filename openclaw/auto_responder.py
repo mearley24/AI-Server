@@ -165,7 +165,7 @@ def _notify_draft_ready(subject: str, sender_name: str, sender_email: str) -> No
     msg = f"[DRAFT] Response to {sender_name or sender_email} re: {subject} — review in Zoho"
     payload = {"title": "[DRAFT]", "body": msg}
     try:
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"), decode_responses=True, socket_timeout=2)
+        r = redis.from_url(os.environ.get("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"), decode_responses=True, socket_timeout=2)
         r.publish("notifications:email", json.dumps(payload))
         logger.info("Published draft notification: %s", msg)
     except Exception as exc:

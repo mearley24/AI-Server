@@ -802,7 +802,7 @@ class EmailMonitor:
             # Follow-up tracker: alert on overdue client responses.
             try:
                 import sys as _sys
-                _openclaw_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "openclaw"))
+                _openclaw_dir = "/app/openclaw"  # volume mount: ./openclaw:/app/openclaw
                 if os.path.isdir(_openclaw_dir) and _openclaw_dir not in _sys.path:
                     _sys.path.insert(0, _openclaw_dir)
                 from follow_up_tracker import run_cycle as follow_up_run_cycle
@@ -819,7 +819,7 @@ class EmailMonitor:
             # Payment tracker: monitor agreement/deposit/payment status.
             try:
                 import sys as _sys
-                _openclaw_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "openclaw"))
+                _openclaw_dir = "/app/openclaw"  # volume mount: ./openclaw:/app/openclaw
                 if os.path.isdir(_openclaw_dir) and _openclaw_dir not in _sys.path:
                     _sys.path.insert(0, _openclaw_dir)
                 from payment_tracker import run_cycle as payment_run_cycle

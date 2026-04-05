@@ -15,7 +15,7 @@ logger = logging.getLogger("openclaw.follow_up_tracker")
 
 DB_PATH = os.environ.get("FOLLOW_UP_DB_PATH", "/data/email-monitor/follow_ups.db")
 EMAIL_DB_PATH = os.environ.get("EMAIL_DB_PATH", "/data/emails.db")
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379")
 NOTIFY_CHANNEL = "notifications:email"
 TZ = ZoneInfo("America/Denver")
 

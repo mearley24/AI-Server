@@ -188,7 +188,7 @@ def learn_from_moves(mail: imaplib.IMAP4_SSL) -> int:
             try:
                 import redis as _redis
                 r = _redis.from_url(
-                    os.environ.get("REDIS_URL", "redis://172.18.0.100:6379"),
+                    os.environ.get("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"),
                     decode_responses=True, socket_timeout=2,
                 )
                 r.publish("notifications:email", json.dumps({

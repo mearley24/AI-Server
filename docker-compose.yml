@@ -49,7 +49,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
-      - "0.0.0.0:6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       default:
         ipv4_address: 172.18.0.100
@@ -201,7 +201,7 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
       - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID:-1000.MO1TLB2AXFHH2YABDD2TSSIJ68SK5J}
       - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET:-1be316a2f0448b2a62bc9659f5a4e01fc800936810}
@@ -270,7 +270,7 @@ services:
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
       - ZOHO_CALENDAR_UID=${ZOHO_CALENDAR_UID}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - TZ=America/Denver
     ports:
       - "127.0.0.1:8094:8094"
@@ -298,7 +298,7 @@ services:
       - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OWNER_PHONE_NUMBER=${OWNER_PHONE_NUMBER:-}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
     ports:
       - "127.0.0.1:8095:8095"
     volumes:
@@ -385,7 +385,7 @@ services:
       - OLLAMA_HOST=${OLLAMA_HOST:-}
       - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - AGENTS_DIR=/app/agents
       - DATA_DIR=/app/data
       - DTOOLS_API_KEY=${DTOOLS_API_KEY:-}
@@ -406,7 +406,7 @@ services:
       - ./integrations/dtools:/app/integrations/dtools:ro
       - ./tools:/app/tools:ro
       - ./knowledge:/app/knowledge:ro
-      - "${SYMPHONY_DOCS_PATH:-/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/SymphonySH}:/data/symphony_docs:ro"
+      - "${SYMPHONY_DOCS_PATH:-/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH}:/data/symphony_docs:ro"
     depends_on:
       redis:
         condition: service_healthy
@@ -431,7 +431,7 @@ services:
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OLLAMA_HOST=${OLLAMA_HOST:-}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - TZ=America/Denver
       - SCAN_INTERVAL_HOURS=6
     ports:
@@ -460,10 +460,10 @@ services:
     restart: unless-stopped
     environment:
       - PORT=8098
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - TZ=America/Denver
     ports:
-      - "0.0.0.0:8098:8098"
+      - "127.0.0.1:8098:8098"
     volumes:
       # Host source so new API routes (e.g. /api/events-log) apply without image rebuild
       - ./mission_control:/app
@@ -490,7 +490,7 @@ services:
     container_name: intel-feeds
     restart: unless-stopped
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - TZ=America/Denver
     ports:
       - "127.0.0.1:8765:8765"
@@ -517,7 +517,7 @@ services:
     container_name: context-preprocessor
     restart: unless-stopped
     ports:
-      - "0.0.0.0:8028:8028"
+      - "127.0.0.1:8028:8028"
     environment:
       - TZ=America/Denver
     logging:

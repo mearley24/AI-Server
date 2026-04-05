@@ -61,7 +61,7 @@ class ContextStore:
             redis_url
             or os.getenv("CONTEXT_REDIS_URL")
             or os.getenv("REDIS_URL")
-            or "redis://172.18.0.100:6379"
+            or "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"
         )
         self._data_dir = Path(data_dir or os.getenv("DATA_DIR", "/app/data"))
         self._snapshot_dir = self._data_dir / "context_snapshots"

@@ -64,7 +64,7 @@ class LifecycleCoordinator:
         self.client_tracker = client_tracker
         self.follow_up_tracker = follow_up_tracker
         self.payment_tracker = payment_tracker
-        self.redis = redis.from_url(redis_url or os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True, socket_timeout=2)
+        self.redis = redis.from_url(redis_url or os.getenv("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"), decode_responses=True, socket_timeout=2)
         self.payment_tracker.set_on_confirm(self._on_payment_confirm)
 
     @staticmethod

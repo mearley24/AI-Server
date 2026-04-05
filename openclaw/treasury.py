@@ -14,7 +14,7 @@ import redis.asyncio as aioredis
 
 logger = logging.getLogger("openclaw.treasury")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://172.18.0.100:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379")
 NOTIFY_ALERTS_CHANNEL = "notifications:alerts"
 NOTIFY_TRADING_CHANNEL = "notifications:trading"
 

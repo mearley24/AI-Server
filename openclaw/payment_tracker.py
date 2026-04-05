@@ -19,7 +19,7 @@ ROUTING_CONFIG_PATH = os.environ.get(
     "EMAIL_ROUTING_CONFIG",
     str(Path(__file__).resolve().parents[1] / "email-monitor" / "routing_config.json"),
 )
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379")
 NOTIFY_CHANNEL = "notifications:email"
 
 

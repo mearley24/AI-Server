@@ -10,7 +10,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL_DEFAULT = "redis://172.18.0.100:6379"
+REDIS_URL_DEFAULT = "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"
 
 
 class LLMCache:
