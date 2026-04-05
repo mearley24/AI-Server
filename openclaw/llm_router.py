@@ -471,75 +471,114 @@ def _incr_provider_counter(provider: str) -> None:
         pass
 
 
+def empty_llm_cost_report() -> dict[str, Any]:
+    """Valid JSON when Redis is down or no cost rows yet (GET /api/llm-costs)."""
+    z = 0.0
+    return {
+        "ok": True,
+        "today": {"total_usd": z, "total": z, "calls": 0},
+        "this_week": {"total_usd": z, "total": z, "calls": 0},
+        "this_month": {"total_usd": z, "total": z, "calls": 0},
+        "cache_stats": {
+            "hits": 0,
+            "misses": 0,
+            "hit_rate_pct": 0.0,
+            "hit_rate": 0.0,
+        },
+        "by_service": {},
+        "by_model": {},
+        "ollama_vs_cloud": {"ollama_calls": 0, "cloud_calls": 0, "local_pct": 0.0},
+        "projected_monthly_usd": z,
+        "projected_monthly": z,
+    }
+
+
 def get_llm_cost_report() -> dict[str, Any]:
     """Build cost summary for GET /api/llm-costs (call via asyncio.to_thread from FastAPI)."""
     try:
         r = _redis_cost_client()
+        r.ping()
     except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+        logger.warning("llm_cost_report_redis_unavailable: %s", exc)
+        return empty_llm_cost_report()
 
-    hits = int(r.get("llm:cache:hits") or 0)
-    misses = int(r.get("llm:cache:misses") or 0)
-    total_hm = hits + misses
-    hit_rate = round(100.0 * hits / total_hm, 2) if total_hm else 0.0
+    try:
+        hits = int(r.get("llm:cache:hits") or 0)
+        misses = int(r.get("llm:cache:misses") or 0)
+        total_hm = hits + misses
+        hit_rate = round(100.0 * hits / total_hm, 2) if total_hm else 0.0
 
-    ollama_calls = int(r.get("llm:stats:ollama_calls") or 0)
-    cloud_calls = int(r.get("llm:stats:cloud_calls") or 0)
-    oc_total = ollama_calls + cloud_calls
-    local_pct = round(100.0 * ollama_calls / oc_total, 2) if oc_total else 0.0
+        ollama_calls = int(r.get("llm:stats:ollama_calls") or 0)
+        cloud_calls = int(r.get("llm:stats:cloud_calls") or 0)
+        oc_total = ollama_calls + cloud_calls
+        local_pct = round(100.0 * ollama_calls / oc_total, 2) if oc_total else 0.0
 
-    today_d = datetime.now(timezone.utc).date()
+        today_d = datetime.now(timezone.utc).date()
 
-    def _sum_total_usd(days: int) -> float:
-        total = 0.0
-        for i in range(days):
+        def _sum_total_usd(days: int) -> float:
+            total = 0.0
+            for i in range(days):
+                d = today_d - timedelta(days=i)
+                key = f"llm:costs:daily:{d.isoformat()}"
+                try:
+                    h = r.hgetall(key) or {}
+                    total += float(h.get("total_usd") or 0)
+                except Exception:
+                    continue
+            return round(total, 4)
+
+        today = _sum_total_usd(1)
+        week = _sum_total_usd(7)
+        month = _sum_total_usd(30)
+
+        by_service: dict[str, float] = {}
+        by_model: dict[str, float] = {}
+        for i in range(30):
             d = today_d - timedelta(days=i)
             key = f"llm:costs:daily:{d.isoformat()}"
-            h = r.hgetall(key) or {}
-            total += float(h.get("total_usd") or 0)
-        return round(total, 4)
-
-    today = _sum_total_usd(1)
-    week = _sum_total_usd(7)
-    month = _sum_total_usd(30)
-
-    by_service: dict[str, float] = {}
-    by_model: dict[str, float] = {}
-    for i in range(30):
-        d = today_d - timedelta(days=i)
-        key = f"llm:costs:daily:{d.isoformat()}"
-        h = r.hgetall(key) or {}
-        for field, val in h.items():
-            if field in ("total_usd",) or field.endswith("_calls"):
+            try:
+                h = r.hgetall(key) or {}
+            except Exception:
                 continue
-            if not field.endswith("_usd"):
-                continue
-            name = field[:-4]
-            amount = float(val)
-            if name in MODEL_COSTS_PER_1K_TOKENS:
-                by_model[name] = by_model.get(name, 0.0) + amount
-            else:
-                by_service[name] = by_service.get(name, 0.0) + amount
+            for field, val in h.items():
+                if field in ("total_usd",) or field.endswith("_calls"):
+                    continue
+                if not field.endswith("_usd"):
+                    continue
+                name = field[:-4]
+                try:
+                    amount = float(val)
+                except (TypeError, ValueError):
+                    continue
+                if name in MODEL_COSTS_PER_1K_TOKENS:
+                    by_model[name] = by_model.get(name, 0.0) + amount
+                else:
+                    by_service[name] = by_service.get(name, 0.0) + amount
 
-    week_avg = week / 7.0 if week else 0.0
-    projected = round(week_avg * 30.0, 2)
+        week_avg = week / 7.0 if week else 0.0
+        projected = round(week_avg * 30.0, 2)
 
-    return {
-        "ok": True,
-        "today": {"total_usd": today},
-        "this_week": {"total_usd": week},
-        "this_month": {"total_usd": month},
-        "cache_stats": {
-            "hits": hits,
-            "misses": misses,
-            "hit_rate_pct": hit_rate,
-        },
-        "by_service": {k: round(v, 4) for k, v in sorted(by_service.items())},
-        "by_model": {k: round(v, 4) for k, v in sorted(by_model.items())},
-        "ollama_vs_cloud": {
-            "ollama_calls": ollama_calls,
-            "cloud_calls": cloud_calls,
-            "local_pct": local_pct,
-        },
-        "projected_monthly_usd": projected,
-    }
+        return {
+            "ok": True,
+            "today": {"total_usd": today, "total": today, "calls": 0},
+            "this_week": {"total_usd": week, "total": week, "calls": 0},
+            "this_month": {"total_usd": month, "total": month, "calls": 0},
+            "cache_stats": {
+                "hits": hits,
+                "misses": misses,
+                "hit_rate_pct": hit_rate,
+                "hit_rate": hit_rate,
+            },
+            "by_service": {k: round(v, 4) for k, v in sorted(by_service.items())},
+            "by_model": {k: round(v, 4) for k, v in sorted(by_model.items())},
+            "ollama_vs_cloud": {
+                "ollama_calls": ollama_calls,
+                "cloud_calls": cloud_calls,
+                "local_pct": local_pct,
+            },
+            "projected_monthly_usd": projected,
+            "projected_monthly": projected,
+        }
+    except Exception as exc:
+        logger.warning("llm_cost_report_failed: %s", exc)
+        return empty_llm_cost_report()

@@ -19,6 +19,7 @@ Usage:
 """
 
 import argparse
+import logging
 import asyncio
 import json
 import os
@@ -688,6 +689,11 @@ async def main():
         print("   Run: pip install playwright && playwright install chromium")
         sys.exit(1)
     
+    if not (DTOOLS_EMAIL and DTOOLS_PASSWORD):
+        logging.warning(
+            "DTOOLS_EMAIL/DTOOLS_PASSWORD not set — browser login will fail until credentials are configured"
+        )
+
     agent = DToolsBrowserAgent(headless=not args.visible)
     
     if not await agent.start():

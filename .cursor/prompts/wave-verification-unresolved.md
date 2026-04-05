@@ -99,9 +99,9 @@ Run these to verify the entire stack is coherent:
 ```bash
 # All strategy imports
 python -c "
-from strategies.polymarket_copytrade import PolymarketCopytrade
+from strategies.polymarket_copytrade import PolymarketCopyTrader
 from strategies.strategy_manager import StrategyManager
-from strategies.weather_trader import CheapBracketStrategy
+from strategies.weather_trader import WeatherTraderStrategy
 from strategies.spread_arb import SpreadArbScanner
 from strategies.exit_engine import ExitEngine
 from strategies.kelly_sizing import KellySizer

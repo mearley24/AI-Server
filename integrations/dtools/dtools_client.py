@@ -38,11 +38,17 @@ class DToolsCloudClient:
     """Thin REST client for D-Tools Cloud API."""
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("DTOOLS_API_KEY", "")
-        if not self.api_key:
-            raise ValueError(
-                "D-Tools API key required. Set DTOOLS_API_KEY env var or pass api_key."
+        raw = (api_key or os.getenv("DTOOLS_API_KEY", "") or "").strip()
+        placeholders = {"", "your-api-key-here", "your_dtools_api_key_here"}
+        self._stub = (not raw) or raw.lower() in {x.lower() for x in placeholders if x} or raw in placeholders
+        if self._stub:
+            self.api_key = ""
+            self.session = None  # type: ignore[assignment]
+            logger.warning(
+                "dtools_api_key_missing — D-Tools API key not configured; stub mode (no cloud calls)"
             )
+            return
+        self.api_key = raw
         self.session = self._build_session()
 
     # ---------- session setup ----------
@@ -60,18 +66,27 @@ class DToolsCloudClient:
         return s
 
     def _get(self, url: str, params: Optional[Dict] = None) -> Dict:
+        if getattr(self, "_stub", False):
+            logger.debug("dtools_stub_skip GET %s", url)
+            return {}
         logger.info("GET %s  params=%s", url, params)
         r = self.session.get(url, params=params, timeout=30)
         r.raise_for_status()
         return r.json()
 
     def _post(self, url: str, payload: Dict) -> Dict:
+        if getattr(self, "_stub", False):
+            logger.debug("dtools_stub_skip POST %s", url)
+            return {"status": "stub", "message": "D-Tools API key not configured"}
         logger.info("POST %s", url)
         r = self.session.post(url, json=payload, timeout=30)
         r.raise_for_status()
         return r.json()
 
     def _put(self, url: str, payload: Dict) -> Dict:
+        if getattr(self, "_stub", False):
+            logger.debug("dtools_stub_skip PUT %s", url)
+            return {"status": "stub", "message": "D-Tools API key not configured"}
         logger.info("PUT %s", url)
         r = self.session.put(url, json=payload, timeout=30)
         r.raise_for_status()
@@ -82,6 +97,8 @@ class DToolsCloudClient:
         Try multiple relative endpoint paths and return first success.
         Useful when D-Tools endpoint names differ across accounts/versions.
         """
+        if getattr(self, "_stub", False):
+            return {"status": "stub", "message": "D-Tools API key not configured", "errors": []}
         errors: List[str] = []
         for rel in paths:
             url = rel if rel.startswith("http") else f"{CLOUD_BASE}/{rel.lstrip('/')}"

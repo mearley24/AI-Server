@@ -35,6 +35,19 @@ MAX_DAILY_TRADES = int(os.environ.get("ARB_MAX_DAILY_TRADES", "100"))
 MAX_TOTAL_EXPOSURE = float(os.environ.get("ARB_MAX_EXPOSURE", "2000"))
 SCAN_INTERVAL = int(os.environ.get("ARB_SCAN_INTERVAL", "300"))  # 5 min between scans
 
+LOW_BALANCE_MODE = os.environ.get("LOW_BALANCE_MODE", "false").lower() in ("true", "1", "yes")
+
+
+def effective_min_complement_spread() -> float:
+    """Double minimum edge when LOW_BALANCE_MODE is on."""
+    return MIN_COMPLEMENT_SPREAD * 2 if LOW_BALANCE_MODE else MIN_COMPLEMENT_SPREAD
+
+
+def effective_scan_interval_sec() -> int:
+    """15 min between scans when low-balance mode (vs 5 min default)."""
+    return SCAN_INTERVAL * 3 if LOW_BALANCE_MODE else SCAN_INTERVAL
+
+
 # Fee assumptions for profitability calc
 GAS_FEE = 0.05  # per trade
 WINNER_TAX = 0.02  # 2% on profit
@@ -147,9 +160,12 @@ class SpreadArbScanner:
             neg_risk = self._scan_negative_risk(events)
             opps.extend(neg_risk)
 
-            # 3. Contrarian bounce
-            contrarian = self._scan_contrarian(markets)
-            opps.extend(contrarian)
+            # 3. Contrarian bounce (skip in low-balance mode — too risky)
+            if not LOW_BALANCE_MODE:
+                contrarian = self._scan_contrarian(markets)
+                opps.extend(contrarian)
+            else:
+                logger.info("arb_contrarian_skipped_low_balance_mode")
 
             # 4. Consolidation breakout (MoonDev extreme consolidation)
             consolidation = self._scan_consolidation(markets)
@@ -284,7 +300,7 @@ class SpreadArbScanner:
             fee_cost = (GAS_FEE * 2) + (total * SLIPPAGE * 2)
             net_spread = spread - fee_cost
 
-            if net_spread / total < MIN_COMPLEMENT_SPREAD:
+            if net_spread / total < effective_min_complement_spread():
                 continue
 
             profit_pct = (net_spread / total) * 100
@@ -592,6 +608,18 @@ class SpreadArbScanner:
             pass
 
         for opp in sorted_opps[:MAX_PER_TICK]:
+            min_profitable = (GAS_FEE * 2) + (SLIPPAGE * opp.cost_usd) + 0.01
+            if opp.expected_profit_usd < min_profitable:
+                logger.info(
+                    "arb_skipped_unprofitable",
+                    market=opp.market_title[:60],
+                    expected_profit=round(opp.expected_profit_usd, 4),
+                    min_required=round(min_profitable, 4),
+                    reason="fees_exceed_edge",
+                )
+                skipped += 1
+                continue
+
             if opp.expected_profit_pct < MIN_PROFIT_PCT:
                 skipped += 1
                 continue
@@ -613,8 +641,14 @@ class SpreadArbScanner:
                 skipped += 1
                 continue
 
-            if opp.cost_usd > usdc_balance * 0.9:
-                logger.info("arb_skip_insufficient_balance", market=opp.market_title[:40], cost=opp.cost_usd, balance=round(usdc_balance, 2))
+            available = usdc_balance
+            if opp.cost_usd > available * 0.9:
+                logger.info(
+                    "arb_skipped_low_balance",
+                    market=opp.market_title[:60],
+                    cost=opp.cost_usd,
+                    available=round(available, 2),
+                )
                 skipped += 1
                 continue
 
@@ -642,8 +676,16 @@ class SpreadArbScanner:
                     for i in range(2):
                         tid = str(opp.token_ids[i])
                         price = min(0.99, min(0.99, max(0.01, round(opp.tokens[i]["price"] + SLIPPAGE, 4))))
-                        logger.info("arb_order_debug", market=opp.condition_id[:20], side=i, size=size, price=price, shares=shares, cost_usd=round(shares*price,2))
                         shares = min(round(min(size, MAX_PER_SIDE) / max(0.01, opp.tokens[i]["price"]), 2), 500)
+                        logger.info(
+                            "arb_order_debug",
+                            market=opp.condition_id[:20],
+                            side=i,
+                            size=size,
+                            price=price,
+                            shares=shares,
+                            cost_usd=round(shares * price, 2),
+                        )
                         if shares < 1:
                             continue
                         args = OrderArgs(token_id=tid, price=price, size=shares, side="BUY")
@@ -739,7 +781,13 @@ class SpreadArbScanner:
     async def run(self) -> None:
         """Main loop — scan and execute continuously."""
         self._running = True
-        logger.info("spread_arb_started", bankroll=self._bankroll, dry_run=self._dry_run)
+        logger.info("spread_arb_started", bankroll=self._bankroll, dry_run=self._dry_run, low_balance_mode=LOW_BALANCE_MODE)
+        if LOW_BALANCE_MODE:
+            logger.info(
+                "low_balance_mode_active",
+                min_complement_spread=effective_min_complement_spread(),
+                scan_interval_sec=effective_scan_interval_sec(),
+            )
 
         while self._running:
             try:
@@ -772,7 +820,7 @@ class SpreadArbScanner:
             except Exception as e:
                 logger.error("arb_scan_error", error=str(e)[:200])
 
-            await asyncio.sleep(SCAN_INTERVAL)
+            await asyncio.sleep(effective_scan_interval_sec())
 
     def _record_paper_trade(self, opp: ArbOpportunity) -> None:
         """Record a paper trade for the opportunity."""

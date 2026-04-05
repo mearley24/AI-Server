@@ -1113,11 +1113,15 @@ async def token_usage():
 async def api_llm_costs():
     """LLM cost breakdown, cache stats, and projections (Auto-23)."""
     try:
-        from llm_router import get_llm_cost_report
+        from llm_router import get_llm_cost_report, empty_llm_cost_report
     except ImportError:
-        from openclaw.llm_router import get_llm_cost_report
+        from openclaw.llm_router import get_llm_cost_report, empty_llm_cost_report
 
-    return await asyncio.to_thread(get_llm_cost_report)
+    try:
+        return await asyncio.to_thread(get_llm_cost_report)
+    except Exception as exc:
+        logger.warning("api_llm_costs failed: %s", exc)
+        return empty_llm_cost_report()
 
 
 @app.post("/api/analyze-links")

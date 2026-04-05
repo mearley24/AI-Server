@@ -12,7 +12,7 @@ app = Flask(__name__)
 
 @app.route('/health')
 def health():
-    return 'ok', 200
+    return jsonify({'status': 'ok', 'service': 'context-preprocessor'}), 200
 
 
 @app.route('/')

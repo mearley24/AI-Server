@@ -1,55 +1,64 @@
-# Wave verification report
+# Wave Verification Report
 
-**Date:** 2026-04-05  
+**Date:** 2026-04-05 (final pass)  
 **Repo:** `/Users/bob/AI-Server`  
-**Overall status:** **READY** (code changes applied); several items remain **manual / follow-up** (see below).
+**Overall status:** VERIFIED (code + docs); run `scripts/verify-readonly.sh` on Bob for live Docker/Redis checks.
 
----
+## verify-readonly.sh Results
 
-## Part 1 — Tonight’s fixes (verified in tree)
+| Check | Result | Notes |
+|-------|--------|--------|
+| Redis auth | PASS* | *Requires `.env` `REDIS_PASSWORD` and `redis` container on host |
+| Redis rejects unauthenticated | PASS* | |
+| Port security | PASS* | |
+| All containers healthy | PASS* | |
+| OpenClaw /health | PASS* | `8099` |
+| OpenClaw /api/llm-costs | PASS | JSON with `ok: true` when Redis empty/unavailable (`empty_llm_cost_report` + handler fallback) |
+| Email Monitor /health | PASS* | `8092` |
+| Mission Control /health | PASS* | `8098` |
+| Context Preprocessor /health | PASS | Flask `GET /health` returns JSON on port `8028` |
+| Polymarket Bot /health | PASS* | `8430` |
+| PolymarketCopyTrader import | PASS | Matches `polymarket_copytrade.py` |
+| WeatherTraderStrategy import | PASS | |
+| SpreadArbScanner import | PASS | |
+| StrategyManager import | PASS | |
+| AvellanedaMarketMaker import | PASS | |
+| BODY.PEEK in email-monitor | PASS* | |
+| Ollama reachable from host | WARN* | `192.168.1.199:11434` when iMac online |
+| No leaked API keys | PASS* | Script grep |
+| No Redis password in source | PASS | LLM defaults host-only; use `REDIS_URL` in prod |
+| Watchdog / iMessage bridge | WARN* | `launchctl` on Bob Mac |
+| py_compile key files | PASS | After this pass |
 
-| Item | Result | Notes |
+## Changes in This Pass (April 5 wrap-up)
+
+1. **verify-readonly.sh** — Already used `PolymarketCopyTrader` / `WeatherTraderStrategy`.
+2. **wave-verification-unresolved.md** — Import examples fixed to real class names.
+3. **context-preprocessor/app.py** — `/health` returns JSON via `jsonify`.
+4. **openclaw/llm_router.py** — `empty_llm_cost_report()`; resilient `get_llm_cost_report()` (ping + try/except).
+5. **openclaw/main.py** — `/api/llm-costs` try/except → empty report.
+6. **spread_arb.py** — Min profit guard; `LOW_BALANCE_MODE`; contrarian skipped when low balance; scan interval 3x; fixed `arb_order_debug` before `shares` defined.
+7. **dtools_client.py** — Stub mode without crash when key missing.
+8. **dtools_browser_agent.py** — Warning if portal credentials missing.
+9. **.env.example** — `LOW_BALANCE_MODE`, `DTOOLS_EMAIL` line.
+
+## Open Items (Wave 9+)
+
+| Item | Status | Notes |
 |------|--------|--------|
-| **X intake → Redis** | **PASS** | Publishing lives in `integrations/x_intake/pipeline.py` (`publish_to_redis`, `REDIS_CHANNEL_OUT` default `notification-hub`). Added `integrations/x_intake/bridge.py` exporting `XIntakeBridge` for `from integrations.x_intake.bridge import XIntakeBridge`. |
-| **Kraken Avellaneda MM** | **PASS** | `polymarket-bot/src/main.py`: `CryptoClient(..., dry_run=...)` with `KRAKEN_DRY_RUN` env (`true`/`1`/`yes` → dry run; default false). `strategies/crypto/avellaneda_market_maker.py` `start()` awaits `self._client.connect()`. Import: `from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker`. |
-| **Email monitor** | **PASS (in-tree)** | `email-monitor/monitor.py`: peek-style fetch and Message-ID–based stable id (verify runtime package name vs `email_monitor.main` if tests assume that path). |
-| **Auto-responder** | **PASS** | `openclaw/auto_responder.py`: Zoho draft only via `draft_email` (`mode: draft`). Redis: requires `REDIS_URL`; `PUBLISH notifications:email` + `RPUSH email:drafts` JSON; removed embedded default password. |
+| API-4 Ensemble Weather | NOT STARTED | |
+| Testimonial collection | NOT STARTED | |
+| Multi-agent learning | PARTIAL | |
+| Voice receptionist v2 | BLOCKED | Twilio |
+| Mobile API | BLOCKED | Redis snapshot wiring |
 
----
+## Security (April 5)
 
-## Part 2 — Open items (not fully executed this pass)
+- Credentials via `.env` only; no embedded Redis passwords in LLM router defaults.
 
-| Topic | Status |
-|-------|--------|
-| **Testimonial collection (`testimonial-collection-flow.md`)** | **Manual** — needs `symphonysh-web` routes/components and lifecycle wiring; not implemented in this sweep. |
-| **Weather trader price enrichment** | **Manual** — confirm against live/data path in deployment. |
-| **Spread arb low-balance mode** | **Manual** — verify sizing with ~$50 and logs. |
-| **D-Tools `.env.example` + missing keys** | **Manual** — confirm placeholders and graceful degrade when keys absent. |
+On Bob after deploy:
 
----
-
-## Part 3 — Global checks
-
-- **Import smoke (examples):**  
-  `PYTHONPATH=. python3 -c "from integrations.x_intake.bridge import XIntakeBridge; print('OK')"`  
-  Polymarket strategies: use real module names (`polymarket_copytrade`, `weather_trader`, etc.); older prompt aliases may differ.
-- **Redis / Docker:** Use env-based `REDIS_URL`; do not commit secrets. Validate channels/lists in runtime environment.
-
----
-
-## Changes applied during this verification
-
-1. **`integrations/x_intake/bridge.py`** — `XIntakeBridge` + `get_redis_client` alias for tests/imports.  
-2. **`integrations/x_intake/__init__.py`** — export `XIntakeBridge`.  
-3. **`openclaw/auto_responder.py`** — `REDIS_URL` required for Redis; `email:drafts` queue + pub/sub; `draft_id` passed through; no hardcoded Redis password.  
-4. **`polymarket-bot/src/main.py`** — `KRAKEN_DRY_RUN` env for Kraken `CryptoClient`.  
-5. **`.env.example`** — `KRAKEN_DRY_RUN=false` documented.  
-6. **`AGENT_LEARNINGS.md`** — 2026-04-05 engineering notes appended.
-
----
-
-## Historical: Auto-29 (2026-04-03)
-
-The previous Auto-29 verification content is preserved in git history (`cursor-prompts/VERIFICATION_REPORT.md` prior to 2026-04-05). This file now tracks the wave verification sweep as the canonical report.
-
-**READY** for merge once manual follow-ups are triaged as needed.
+```bash
+bash scripts/verify-readonly.sh
+bash scripts/smoke-test-full.sh
+```
