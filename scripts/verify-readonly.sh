@@ -98,6 +98,11 @@ curl -sf http://127.0.0.1:8099/api/llm-costs >/dev/null 2>&1 && check "OpenClaw 
 curl -sf http://127.0.0.1:8092/health >/dev/null 2>&1 && check "Email Monitor /health" "PASS" || check "Email Monitor /health" "FAIL"
 curl -sf http://127.0.0.1:8098/health >/dev/null 2>&1 && check "Mission Control /health" "PASS" || check "Mission Control /health" "WARN"
 CP_HTTP=$(curl -4 -sS -o /dev/null -w "%{http_code}" --max-time 5 -L http://127.0.0.1:8028/health 2>/dev/null || echo "000")
+if [[ "$CP_HTTP" != "200" ]] && docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^context-preprocessor$'; then
+    if docker exec context-preprocessor python -c "import urllib.request as u,sys; r=u.urlopen('http://127.0.0.1:8028/health'); sys.exit(0 if getattr(r,'status',200)==200 else 1)" 2>/dev/null; then
+        CP_HTTP="200"
+    fi
+fi
 if [[ "$CP_HTTP" == "200" ]]; then
     check "Context Preprocessor /health" "PASS"
 else
