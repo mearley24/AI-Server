@@ -34,6 +34,9 @@ data/manual_digest/
 
 # Transcript drops, polymarket live state, OpenClaw live exports
 data/transcripts/
+# Broad JSON ignore (keep tracked placeholder)
+data/**/*.json
+!data/.gitkeep
 data/polymarket/*.json
 data/polymarket/*.csv
 data/notes_index.json
@@ -63,3 +66,7 @@ scratch/
 .cursor/prompts/perplexity-next-level*.md
 .cursor/prompts/close-the-loop-part*.md
 polymarket-bot/vpn/
+.backups/
+# SQLite journal files (anywhere)
+*.db-journal
+*.db-wal
