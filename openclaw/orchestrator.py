@@ -487,7 +487,8 @@ class Orchestrator:
             from follow_up_tracker import run_cycle as run_followups
 
             email_db, follow_db, _ = self._tracker_db_paths()
-            res = await asyncio.to_thread(run_followups, follow_db, email_db)
+            jobs_db = str(self._data_dir / "jobs.db")
+            res = await asyncio.to_thread(run_followups, follow_db, email_db, jobs_db)
             if res and (res.get("overdue_alerts") or res.get("followup_alerts")):
                 await self._redis_publish(
                     "events:clients",

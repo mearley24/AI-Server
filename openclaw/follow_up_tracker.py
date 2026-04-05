@@ -15,7 +15,8 @@ logger = logging.getLogger("openclaw.follow_up_tracker")
 
 DB_PATH = os.environ.get("FOLLOW_UP_DB_PATH", "/data/email-monitor/follow_ups.db")
 EMAIL_DB_PATH = os.environ.get("EMAIL_DB_PATH", "/data/emails.db")
-REDIS_URL = os.environ.get("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379")
+JOBS_DB_PATH = os.environ.get("JOBS_DB_PATH", "/app/data/jobs.db")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 NOTIFY_CHANNEL = "notifications:email"
 TZ = ZoneInfo("America/Denver")
 
@@ -95,18 +96,66 @@ def _upsert_client_email(
         )
 
 
-def sync_from_email_db(email_db_path: str = EMAIL_DB_PATH, db_path: str = DB_PATH) -> None:
-    """Sync inbound client email activity from email monitor DB."""
+# ---------------------------------------------------------------
+# NEW: Load known client emails from jobs.db for cross-referencing
+# ---------------------------------------------------------------
+
+def _load_known_client_emails(jobs_db_path: str = "") -> dict[str, str]:
+    """Load client emails from jobs.db clients table.
+
+    Returns dict of {email_lower: client_name}.
+    """
+    db = jobs_db_path or JOBS_DB_PATH
+    if not os.path.exists(db):
+        return {}
+    try:
+        jconn = sqlite3.connect(db)
+        jconn.row_factory = sqlite3.Row
+        rows = jconn.execute(
+            "SELECT name, email FROM clients WHERE email != '' AND email IS NOT NULL"
+        ).fetchall()
+        result = {}
+        for row in rows:
+            email_addr = (row["email"] or "").strip().lower()
+            name = (row["name"] or "").strip()
+            if email_addr:
+                result[email_addr] = name
+        jconn.close()
+        return result
+    except Exception as exc:
+        logger.warning("Could not load known client emails from jobs.db: %s", exc)
+        return {}
+
+
+# ---------------------------------------------------------------
+# CHANGED: Widened category filter + cross-reference GENERAL emails
+# ---------------------------------------------------------------
+
+def sync_from_email_db(
+    email_db_path: str = EMAIL_DB_PATH,
+    db_path: str = DB_PATH,
+    jobs_db_path: str = "",
+) -> None:
+    """Sync inbound client email activity from email monitor DB.
+
+    Pulls from multiple client-relevant categories (not just ACTIVE_CLIENT).
+    Also cross-references GENERAL emails against known job clients from jobs.db.
+    """
     init_db(db_path)
     if not os.path.exists(email_db_path):
         return
     conn = sqlite3.connect(db_path)
     src = sqlite3.connect(email_db_path)
+
+    # 1. Pull from explicitly client-relevant categories
     rows = src.execute(
         """
         SELECT sender, sender_name, subject, received_at
         FROM emails
-        WHERE category = 'ACTIVE_CLIENT'
+        WHERE category IN (
+            'ACTIVE_CLIENT', 'CLIENT_INQUIRY',
+            'FOLLOW_UP_NEEDED', 'SCHEDULING'
+        )
         ORDER BY received_at DESC
         LIMIT 500
         """
@@ -121,9 +170,117 @@ def sync_from_email_db(email_db_path: str = EMAIL_DB_PATH, db_path: str = DB_PAT
             subject=(subject or "").strip(),
             received_at=(received_at or datetime.now(timezone.utc).isoformat()),
         )
+
+    # 2. Cross-reference GENERAL emails against known job client emails
+    known_clients = _load_known_client_emails(jobs_db_path)
+    if known_clients:
+        general_rows = src.execute(
+            """
+            SELECT sender, sender_name, subject, received_at
+            FROM emails
+            WHERE category = 'GENERAL'
+            ORDER BY received_at DESC
+            LIMIT 500
+            """
+        ).fetchall()
+        for sender, sender_name, subject, received_at in general_rows:
+            if not sender:
+                continue
+            email_lower = sender.strip().lower()
+            if email_lower in known_clients:
+                _upsert_client_email(
+                    conn=conn,
+                    client_email=email_lower,
+                    client_name=known_clients[email_lower] or (sender_name or "").strip(),
+                    subject=(subject or "").strip(),
+                    received_at=(received_at or datetime.now(timezone.utc).isoformat()),
+                )
+
     conn.commit()
     src.close()
     conn.close()
+
+
+# ---------------------------------------------------------------
+# NEW: Seed follow_ups from active D-Tools jobs
+# ---------------------------------------------------------------
+
+def seed_from_jobs(db_path: str = DB_PATH, jobs_db_path: str = "") -> int:
+    """Seed follow_ups with active job clients from jobs.db.
+
+    Creates placeholder rows for clients with active jobs so the SLA
+    tracker doesn't stay empty waiting for a perfectly-classified email.
+    Idempotent — only inserts clients not already tracked.
+
+    Returns number of new rows inserted.
+    """
+    init_db(db_path)
+    db = jobs_db_path or JOBS_DB_PATH
+    if not os.path.exists(db):
+        logger.info("seed_from_jobs: jobs.db not found at %s", db)
+        return 0
+
+    try:
+        conn = sqlite3.connect(db_path)
+        jconn = sqlite3.connect(db)
+        jconn.row_factory = sqlite3.Row
+
+        # Get active jobs (not COMPLETED or WARRANTY)
+        jobs = jconn.execute(
+            """
+            SELECT DISTINCT client_name FROM jobs
+            WHERE phase NOT IN ('COMPLETED', 'WARRANTY')
+              AND client_name != ''
+            """
+        ).fetchall()
+
+        # Build client_name -> email lookup from clients table
+        clients: dict[str, str] = {}
+        try:
+            for row in jconn.execute(
+                "SELECT name, email FROM clients WHERE email != '' AND email IS NOT NULL"
+            ).fetchall():
+                clients[row["name"].strip().lower()] = row["email"].strip().lower()
+        except Exception:
+            pass  # clients table may not have data yet
+
+        inserted = 0
+        now = datetime.now(timezone.utc).isoformat()
+
+        for job in jobs:
+            client_name = job["client_name"].strip()
+            if not client_name:
+                continue
+            client_email = clients.get(client_name.lower(), "")
+            if not client_email:
+                # Placeholder so the row exists for name-based matching later
+                slug = client_name.lower().replace(" ", "_").replace("'", "")
+                client_email = f"pending+{slug}@symphony.placeholder"
+
+            existing = conn.execute(
+                "SELECT client_email FROM follow_ups WHERE client_email = ?",
+                (client_email,),
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    """
+                    INSERT INTO follow_ups (
+                        client_email, client_name, updated_at
+                    ) VALUES (?, ?, ?)
+                    """,
+                    (client_email, client_name, now),
+                )
+                inserted += 1
+                logger.info("Seeded follow_up: %s (%s)", client_name, client_email)
+
+        conn.commit()
+        jconn.close()
+        conn.close()
+        logger.info("seed_from_jobs: inserted %d new rows", inserted)
+        return inserted
+    except Exception as exc:
+        logger.error("seed_from_jobs failed: %s", exc)
+        return 0
 
 
 def list_overdue(db_path: str = DB_PATH) -> list[dict]:
@@ -145,9 +302,20 @@ def list_overdue(db_path: str = DB_PATH) -> list[dict]:
     return out
 
 
-def run_cycle(db_path: str = DB_PATH, email_db_path: str = EMAIL_DB_PATH) -> dict:
+# ---------------------------------------------------------------
+# CHANGED: run_cycle now accepts jobs_db_path, seeds + wider sync
+# ---------------------------------------------------------------
+
+def run_cycle(
+    db_path: str = DB_PATH,
+    email_db_path: str = EMAIL_DB_PATH,
+    jobs_db_path: str = "",
+) -> dict:
     """Run follow-up checks and publish overdue alerts."""
-    sync_from_email_db(email_db_path=email_db_path, db_path=db_path)
+    # Seed from active jobs (idempotent — only inserts new clients)
+    seed_from_jobs(db_path=db_path, jobs_db_path=jobs_db_path)
+
+    sync_from_email_db(email_db_path=email_db_path, db_path=db_path, jobs_db_path=jobs_db_path)
     init_db(db_path)
     now = datetime.now(timezone.utc)
     conn = sqlite3.connect(db_path)

@@ -810,6 +810,7 @@ class EmailMonitor:
                     follow_up_run_cycle,
                     os.environ.get("FOLLOW_UP_DB_PATH", "/data/email-monitor/follow_ups.db"),
                     DB_PATH,
+                    os.environ.get("JOBS_DB_PATH", "/app/data/jobs.db"),
                 )
                 if (follow_up_result or {}).get("overdue_alerts", 0) or (follow_up_result or {}).get("followup_alerts", 0):
                     logger.info("Follow-up tracker alerts: %s", follow_up_result)
