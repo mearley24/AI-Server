@@ -26,6 +26,14 @@ if DTOOLS_CLIENT_PATH not in sys.path:
     sys.path.insert(0, DTOOLS_CLIENT_PATH)
 
 
+# D-Tools Cloud API key — future REST API integration
+DTOOLS_CLOUD_API_KEY = os.environ.get("DTOOLS_CLOUD_API_KEY", "")
+if DTOOLS_CLOUD_API_KEY:
+    logger.info("dtools_mode: api — Using D-Tools Cloud REST API")
+else:
+    logger.info("dtools_mode: browser_agent — No Cloud API key, falling back to browser automation")
+
+
 # Client name aliases — maps job names to D-Tools names when they differ
 CLIENT_ALIASES = {
     "topletz": ["toplets", "topletz", "stopletz", "stopletz1", "steve toplets", "steve topletz"],

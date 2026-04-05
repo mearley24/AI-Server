@@ -226,8 +226,54 @@ def create_project_from_template(
     }
     gql_url = "https://api.linear.app/graphql"
 
-    # 1. Create the project
+    # ── Duplicate guard: skip if a project for this client already exists ──
+    # To archive the existing duplicate Topletz project (SYM-41 thru SYM-62), use Linear UI or API
     project_name = f"{client_name} — {address}"
+    try:
+        search_query = """
+        query SearchProjects($filter: ProjectFilter) {
+            projects(filter: $filter) {
+                nodes { id name }
+            }
+        }
+        """
+        search_resp = requests.post(
+            gql_url,
+            headers=headers,
+            json={
+                "query": search_query,
+                "variables": {
+                    "filter": {
+                        "name": {"containsIgnoreCase": client_name},
+                    }
+                },
+            },
+        )
+        existing_projects = (
+            search_resp.json()
+            .get("data", {})
+            .get("projects", {})
+            .get("nodes", [])
+        )
+        if existing_projects:
+            existing = existing_projects[0]
+            logger.warning(
+                "duplicate_project_skipped: client=%s existing_project=%s (id=%s)",
+                client_name,
+                existing["name"],
+                existing["id"],
+            )
+            return {
+                "project_id": existing["id"],
+                "project_name": existing["name"],
+                "issues": [],
+                "skipped": True,
+                "reason": "duplicate_project_exists",
+            }
+    except Exception as e:
+        logger.debug("duplicate_project_check_failed (proceeding): %s", e)
+
+    # 1. Create the project
     create_project_mutation = """
     mutation CreateProject($input: ProjectCreateInput!) {
         projectCreate(input: $input) {

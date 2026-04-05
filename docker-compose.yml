@@ -329,6 +329,7 @@ services:
     environment:
       - DTOOLS_API_KEY=${DTOOLS_API_KEY}
       - DTOOLS_BASE_URL=${DTOOLS_BASE_URL:-https://api.d-tools.com/v2}
+      - DTOOLS_CLOUD_API_KEY=${DTOOLS_CLOUD_API_KEY:-}
       - DTOOLS_BRIDGE_PORT=5050
       - LOG_LEVEL=INFO
     ports:
