@@ -78,6 +78,7 @@
     "netlify.com",
     "linqapp.com",
     "gauntletai.com",
+<<<<<<< Updated upstream
     "carfax.com",
     "bstock.com",
     "govplanet.com",
@@ -130,6 +131,11 @@
     "Personal/Crypto",
     "Banking",
     "Banking/Payments"
+=======
+    "linqapp.com",
+    "linq",
+    "sandbox trial"
+>>>>>>> Stashed changes
   ],
   "active_bids": {
     "Nordstrom Rack - Dillon": {
