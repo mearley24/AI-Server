@@ -204,6 +204,8 @@ async def lifespan(app: FastAPI):
     platform_strategies: list[Any] = []  # strategies with start/stop lifecycle
     managed_strategies: list[tuple[str, Any]] = []
     strategy_manager = None
+    rbi_pipeline = None
+    rbi_task = None
     strategy_manager_enabled = os.environ.get("STRATEGY_MANAGER_ENABLED", "true").lower() in {"1", "true", "yes"}
 
     # Log any platform import failures
@@ -464,6 +466,17 @@ async def lifespan(app: FastAPI):
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
 
+    # RBI pipeline — paper-backtest pending ideas from ideas.txt (30 min interval)
+    if os.environ.get("RBI_PIPELINE_ENABLED", "true").lower() in {"1", "true", "yes"}:
+        try:
+            from strategies.rbi_pipeline import RBIPipeline
+
+            rbi_pipeline = RBIPipeline()
+            rbi_task = asyncio.create_task(rbi_pipeline.run_forever())
+            log.info("rbi_pipeline_task_started", interval_sec=1800)
+        except Exception as exc:
+            log.warning("rbi_pipeline_start_failed", error=str(exc))
+
     # ── Heartbeat scheduler ────────────────────────────────────────────────
     heartbeat_scheduler = None
     try:
@@ -519,6 +532,18 @@ async def lifespan(app: FastAPI):
         try:
             heartbeat_scheduler.shutdown(wait=False)
         except Exception:
+            pass
+
+    if rbi_pipeline is not None:
+        try:
+            rbi_pipeline.stop()
+        except Exception:
+            pass
+    if rbi_task and not rbi_task.done():
+        rbi_task.cancel()
+        try:
+            await rbi_task
+        except asyncio.CancelledError:
             pass
 
     if redis_task and not redis_task.done():
