@@ -34,10 +34,11 @@ logger = structlog.get_logger(__name__)
 # ── Bankroll splits ────────────────────────────────────────────────────────────
 
 STRATEGY_ALLOCATIONS: dict[str, float] = {
-    "weather_trader": 0.40,   # 40% — cheap bracket ladder
-    "copytrade": 0.35,        # 35% — whale wallet following
-    "cvd_arb": 0.25,          # 25% — CVD divergence + cross-market arbitrage
-    "arb": 0.25,              # backward-compatible alias
+    "weather_trader": 0.35,   # reduced for presolution (Auto-7)
+    "copytrade": 0.30,
+    "cvd_arb": 0.15,          # CVD + spread/arb scanner
+    "mean_reversion": 0.05,   # Auto-6 fade (uses arb slice)
+    "presolution_scalp": 0.15,
 }
 
 # ── Correlation alert threshold ────────────────────────────────────────────────

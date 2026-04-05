@@ -283,6 +283,36 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("strategy_load_failed", strategy="cvd_arb", error=str(exc))
 
+    # Mean reversion — Auto-6 fade on thin-volume spikes
+    try:
+        from strategies.mean_reversion import MeanReversionStrategy
+        mean_reversion = MeanReversionStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        if strategy_manager_enabled:
+            managed_strategies.append(("mean_reversion", mean_reversion))
+        else:
+            platform_strategies.append(("mean_reversion", mean_reversion))
+        log.info("strategy_loaded", strategy="mean_reversion")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="mean_reversion", error=str(exc))
+
+    # Pre-resolution scalp — Auto-7
+    try:
+        from strategies.presolution_scalp import PresolutionScalpStrategy
+        presolution_scalp = PresolutionScalpStrategy(
+            client=client, settings=settings, scanner=scanner,
+            orderbook=orderbook, pnl_tracker=pnl_tracker,
+        )
+        if strategy_manager_enabled:
+            managed_strategies.append(("presolution_scalp", presolution_scalp))
+        else:
+            platform_strategies.append(("presolution_scalp", presolution_scalp))
+        log.info("strategy_loaded", strategy="presolution_scalp")
+    except Exception as exc:
+        log.warning("strategy_load_failed", strategy="presolution_scalp", error=str(exc))
+
     # Sports Arb — zero-risk arbitrage buying both sides when combined < $0.98
     try:
         from strategies.sports_arb import SportsArbStrategy
