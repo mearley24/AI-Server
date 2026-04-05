@@ -859,7 +859,7 @@ async def shutdown():
 async def health():
     agent_count = len(registry.agents) if registry else 0
     agent_list = list(registry.agents.keys()) if registry else []
-    return {
+    body: dict = {
         "status": "ok",
         "service": "openclaw",
         "version": "1.0.0",
@@ -867,6 +867,35 @@ async def health():
         "agents": agent_list,
         "uptime": "running",
     }
+    # Briefing delivery state
+    try:
+        bpath = DATA_DIR / "briefing_status.json"
+        if bpath.is_file():
+            import json as _json
+            body["briefing"] = _json.loads(bpath.read_text(encoding="utf-8"))
+        else:
+            body["briefing"] = {"status": "unknown"}
+    except Exception:
+        body["briefing"] = {"status": "unknown"}
+    # Auto-responder stats
+    if orchestrator and hasattr(orchestrator, "_auto_responder_stats"):
+        body["auto_responder"] = orchestrator._auto_responder_stats
+    else:
+        body["auto_responder"] = {"enabled": False}
+    return body
+
+
+@app.get("/briefing/status")
+async def briefing_status():
+    """Return latest briefing delivery state."""
+    try:
+        bpath = DATA_DIR / "briefing_status.json"
+        if bpath.is_file():
+            import json as _json
+            return _json.loads(bpath.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {"last_date": None, "delivered": False, "message": "No briefing sent yet"}
 
 
 class InternalApprovalBody(BaseModel):

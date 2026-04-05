@@ -173,9 +173,6 @@ class PolymarketRedeemer:
         # Track already-redeemed condition IDs to avoid redundant txns
         self._redeemed_conditions: set[str] = set()
 
-        # Nonce tracker — avoids race conditions when sending multiple txns
-        self._next_nonce: Optional[int] = None
-
         # NegRiskAdapter for neg risk market redemptions
         self._neg_adapter = self._w3.eth.contract(
             address=Web3.to_checksum_address(NEG_RISK_ADAPTER_ADDRESS),
@@ -286,9 +283,6 @@ class PolymarketRedeemer:
         Returns summary of redemption attempt.
         """
         assert self._http is not None
-
-        # Reset nonce tracker at start of each cycle
-        self._next_nonce = None
 
         # 1. Check gas price
         gas_price = self._w3.eth.gas_price
@@ -430,7 +424,6 @@ class PolymarketRedeemer:
                     )
             except Exception as exc:
                 err_msg = str(exc)
-                self._next_nonce = None  # Reset nonce on error to re-fetch
                 errors.append({"condition_id": condition_id[:20], "error": err_msg[:80]})
                 logger.error(
                     "redeemer_redeem_error",
@@ -474,11 +467,7 @@ class PolymarketRedeemer:
 
         def _do_redeem() -> str:
             cid_bytes = bytes.fromhex(condition_id[2:]) if condition_id.startswith("0x") else bytes.fromhex(condition_id)
-            # Use tracked nonce to avoid race conditions between rapid txns
-            if self._next_nonce is not None:
-                nonce = self._next_nonce
-            else:
-                nonce = self._w3.eth.get_transaction_count(self._wallet_address)
+            nonce = self._w3.eth.get_transaction_count(self._wallet_address)
 
             if neg_risk and token_balance > 0:
                 # Neg risk: use NegRiskAdapter.redeemPositions(conditionId, amounts)
@@ -524,11 +513,8 @@ class PolymarketRedeemer:
 
             receipt = self._w3.eth.wait_for_transaction_receipt(tx_hash, timeout=90)
             if receipt.status != 1:
-                self._next_nonce = None  # Reset on failure
                 raise RuntimeError(f"Transaction reverted: {tx_hash_hex}")
 
-            # Increment tracked nonce for next txn
-            self._next_nonce = nonce + 1
             return tx_hash_hex
 
         return await loop.run_in_executor(None, _do_redeem)

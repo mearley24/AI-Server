@@ -140,6 +140,12 @@ class Orchestrator:
         self._silent_alert_at: dict[str, float] = {}  # source -> last alert time (epoch)
         self._startup_health_done: bool = False
         self._last_pattern_run: float = 0.0
+        self._auto_responder_stats: dict[str, Any] = {
+            "enabled": os.getenv("AUTO_RESPONDER_ENABLED", "").lower() in ("1", "true", "yes"),
+            "last_draft_at": None,
+            "drafts_created_today": 0,
+            "errors_today": 0,
+        }
         if job_mgr:
             from job_worker import JobWorker
             self._job_worker = JobWorker(job_mgr, self.http, linear_sync=linear_sync)
@@ -190,6 +196,10 @@ class Orchestrator:
             await asyncio.to_thread(_pub)
         except Exception as e:
             logger.debug("redis_publish %s: %s", channel, e)
+
+    async def _publish(self, channel: str, payload: dict) -> None:
+        """Alias — legacy call sites that used _publish instead of _redis_publish."""
+        return await self._redis_publish(channel, payload)
 
     async def _redis_log_only(self, entry: dict) -> None:
         if not self._redis_url:
@@ -448,6 +458,14 @@ class Orchestrator:
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)
 
+            try:
+                from scope_tracker import process_new_emails as _scope_scan
+                scope_hits = await _scope_scan(new_emails, self, str(self._data_dir))
+                if scope_hits:
+                    logger.info("scope_tracker found %d change(s)", scope_hits)
+            except Exception as e:
+                logger.debug("scope_tracker skip: %s", e)
+
             await self._redis_publish(
                 "events:email",
                 {
@@ -466,14 +484,22 @@ class Orchestrator:
                         mid = em.get("id", em.get("message_id", ""))
                         if not mid:
                             continue
-                        await asyncio.to_thread(
-                            auto_respond,
-                            em.get("sender", ""),
-                            em.get("sender_name") or "",
-                            em.get("subject", ""),
-                            em.get("snippet", ""),
-                            mid,
-                        )
+                        logger.info("auto_responder drafting for message_id=%s", str(mid)[:48])
+                        try:
+                            await asyncio.to_thread(
+                                auto_respond,
+                                em.get("sender", ""),
+                                em.get("sender_name") or "",
+                                em.get("subject", ""),
+                                em.get("snippet", ""),
+                                mid,
+                            )
+                            self._auto_responder_stats["last_draft_at"] = datetime.now().isoformat()
+                            self._auto_responder_stats["drafts_created_today"] += 1
+                            logger.info("auto_responder completed message_id=%s", str(mid)[:48])
+                        except Exception as ar_err:
+                            self._auto_responder_stats["errors_today"] += 1
+                            logger.warning("auto_responder failed: %s", ar_err)
                         break
                 except Exception as e:
                     logger.debug("auto_responder: %s", e)
@@ -980,139 +1006,168 @@ class Orchestrator:
     # Daily briefing
     # ------------------------------------------------------------------
     async def maybe_send_briefing(self):
-        """Send daily briefing at 6 AM MT."""
+        """Send daily briefing at 6 AM MT. Persists delivery state and retries on failure."""
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
         if self.last_briefing_date == today:
             return
 
-        # Check if it's between 6:00-6:10 AM (accounting for 5-min loop)
-        if now.hour == 6 and now.minute < 10:
-            logger.info("Generating daily briefing")
+        # Reset daily auto-responder counters once per day
+        self._auto_responder_stats["drafts_created_today"] = 0
+        self._auto_responder_stats["errors_today"] = 0
 
-            briefing_parts = ["Good morning — here's your daily briefing:\n"]
+        hour = int(os.getenv("BRIEFING_HOUR", "6"))
+        if not (now.hour == hour and now.minute < 10):
+            return
 
-            # Email summary
+        logger.info("Generating daily briefing")
+
+        briefing_parts = ["Good morning — here's your daily briefing:\n"]
+
+        try:
+            resp = await self.http.get(f"{SERVICES['email']}/emails/summary")
+            if resp.status_code == 200:
+                briefing_parts.append(f"Emails: {resp.json()}")
+        except Exception:
+            pass
+
+        try:
+            resp = await self.http.get(f"{SERVICES['calendar']}/calendar/today")
+            if resp.status_code == 200:
+                cal = resp.json()
+                events = cal if isinstance(cal, list) else cal.get("events", [])
+                briefing_parts.append(f"Calendar: {len(events)} events today")
+                for e in events[:5]:
+                    title = e.get("title", e.get("summary", ""))
+                    start = e.get("start", e.get("start_time", ""))
+                    briefing_parts.append(f"  - {title} at {start}")
+        except Exception:
+            pass
+
+        try:
+            resp = await self.http.get(f"{SERVICES['dtools']}/pipeline")
+            if resp.status_code == 200:
+                pipe = resp.json()
+                opps = pipe.get("opportunities", [])
+                briefing_parts.append(f"Pipeline: {len(opps)} open opportunities")
+        except Exception:
+            pass
+
+        if self._memory:
             try:
-                resp = await self.http.get(f"{SERVICES['email']}/emails/summary")
-                if resp.status_code == 200:
-                    summary = resp.json()
-                    briefing_parts.append(f"Emails: {summary}")
+                trading_mem = self._memory.recall("trading_bot_status", category="trading_insight", limit=1)
+                if trading_mem:
+                    briefing_parts.append(f"Trading: {trading_mem[0]['value']}")
             except Exception:
                 pass
 
-            # Today's calendar
+        if self._job_worker:
             try:
-                resp = await self.http.get(f"{SERVICES['calendar']}/calendar/today")
-                if resp.status_code == 200:
-                    cal = resp.json()
-                    events = cal if isinstance(cal, list) else cal.get("events", [])
-                    briefing_parts.append(f"Calendar: {len(events)} events today")
-                    for e in events[:5]:
-                        title = e.get("title", e.get("summary", ""))
-                        start = e.get("start", e.get("start_time", ""))
-                        briefing_parts.append(f"  - {title} at {start}")
+                active = self._job_worker._jobs.get_active_jobs()
+                if active:
+                    briefing_parts.append(f"Active jobs: {len(active)}")
+                    for j in active[:5]:
+                        briefing_parts.append(
+                            f"  - {j['client_name']}: {j['project_name'] or '(unnamed)'} [{j['phase']}]"
+                        )
             except Exception:
                 pass
 
-            # Pipeline
+        if self._health_failures:
+            down = [f"{k} ({v} ticks)" for k, v in self._health_failures.items()]
+            briefing_parts.append(f"Services down: {', '.join(down)}")
+        else:
+            briefing_parts.append("All services healthy")
+
+        try:
+            from pattern_engine import load_patterns
+
+            briefing_parts.append("\n— This week (decisions) —")
+            briefing_parts.append(
+                self._journal().weekly_digest_text(patterns=load_patterns(self._data_dir))
+            )
+        except Exception:
+            pass
+        if self._token_tracker:
             try:
-                resp = await self.http.get(f"{SERVICES['dtools']}/pipeline")
-                if resp.status_code == 200:
-                    pipe = resp.json()
-                    opps = pipe.get("opportunities", [])
-                    briefing_parts.append(f"Pipeline: {len(opps)} open opportunities")
-            except Exception:
-                pass
-
-            # Trading summary from memory
-            if self._memory:
-                try:
-                    trading_mem = self._memory.recall("trading_bot_status", category="trading_insight", limit=1)
-                    if trading_mem:
-                        briefing_parts.append(f"Trading: {trading_mem[0]['value']}")
-                except Exception:
-                    pass
-
-            # Active jobs summary
-            if self._job_worker:
-                try:
-                    active = self._job_worker._jobs.get_active_jobs()
-                    if active:
-                        briefing_parts.append(f"Active jobs: {len(active)}")
-                        for j in active[:5]:
-                            briefing_parts.append(f"  - {j['client_name']}: {j['project_name'] or '(unnamed)'} [{j['phase']}]")
-                except Exception:
-                    pass
-
-            # Health summary
-            if self._health_failures:
-                down = [f"{k} ({v} ticks)" for k, v in self._health_failures.items()]
-                briefing_parts.append(f"Services down: {', '.join(down)}")
-            else:
-                briefing_parts.append("All services healthy")
-
-            try:
-                from pattern_engine import load_patterns
-
-                briefing_parts.append("\n— This week (decisions) —")
+                ts = self._token_tracker.summary()
                 briefing_parts.append(
-                    self._journal().weekly_digest_text(patterns=load_patterns(self._data_dir))
+                    "Tokens today: %(tokens_used)d / %(budget)d (remaining %(remaining)d)" % ts
                 )
             except Exception:
                 pass
-            if self._token_tracker:
-                try:
-                    ts = self._token_tracker.summary()
-                    briefing_parts.append(
-                        "Tokens today: %(tokens_used)d / %(budget)d (remaining %(remaining)d)"
-                        % ts
-                    )
-                except Exception:
-                    pass
-            try:
-                from cost_tracker import CostTracker
+        try:
+            from cost_tracker import CostTracker
 
-                ws = CostTracker(self._data_dir).get_weekly_summary()
-                if ws:
-                    briefing_parts.append("Costs (7d) by category: " + ", ".join(f"{k}=${v:.2f}" for k, v in ws.items()))
-            except Exception:
-                pass
+            ws = CostTracker(self._data_dir).get_weekly_summary()
+            if ws:
+                briefing_parts.append(
+                    "Costs (7d) by category: " + ", ".join(f"{k}=${v:.2f}" for k, v in ws.items())
+                )
+        except Exception:
+            pass
 
-            briefing = "\n".join(briefing_parts)
-            await self.notify("briefing", briefing)
+        briefing = "\n".join(briefing_parts)
+        result = await self.notify("briefing", briefing)
+
+        delivered = isinstance(result, dict) and result.get("ok", False)
+        status = {
+            "last_date": today,
+            "delivered": delivered,
+            "length": len(briefing),
+            "timestamp": datetime.now().isoformat(),
+            "http_status": result.get("status_code") if isinstance(result, dict) else None,
+        }
+
+        try:
+            status_path = self._data_dir / "briefing_status.json"
+            status_path.parent.mkdir(parents=True, exist_ok=True)
+            status_path.write_text(json.dumps(status), encoding="utf-8")
+        except Exception as exc:
+            logger.debug("briefing_status write: %s", exc)
+
+        if delivered:
             self.last_briefing_date = today
-            logger.info("Daily briefing sent")
+            logger.info("Daily briefing delivered for %s (%d chars)", today, len(briefing))
             await self._redis_publish(
                 "events:system",
-                {"type": "briefing.sent", "data": {"date": today}},
+                {"type": "briefing.delivered", "data": {"date": today, "length": len(briefing)}},
+            )
+        else:
+            logger.warning("Briefing delivery failed — will retry next tick")
+            await self._redis_publish(
+                "events:system",
+                {"type": "briefing.delivery_failed", "data": {"date": today, "error": str(result)}},
             )
 
     # ------------------------------------------------------------------
     # Notification helper
     # ------------------------------------------------------------------
-    async def notify(self, channel: str, message: str):
-        """Publish notification via notification-hub."""
+    async def notify(self, channel: str, message: str) -> dict:
+        """Publish notification via notification-hub. Returns delivery result dict."""
         ok, err = await self._validate_dropbox_in_message(message)
         if not ok:
             logger.warning("notify blocked: %s", err)
             await self._redis_log_only({"source": "openclaw", "kind": "dropbox_blocked", "detail": err})
             try:
-                await self.http.post(
+                resp = await self.http.post(
                     f"{SERVICES['notifications']}/notify",
                     json={"title": "Bob [blocked]", "body": err, "priority": "high"},
                 )
+                return {"ok": resp.status_code == 200, "status_code": resp.status_code, "channel": "notification-hub"}
             except Exception as e:
                 logger.debug("Notification send failed: %s", e)
-            return
+                return {"ok": False, "error": str(e), "channel": "notification-hub"}
         try:
-            await self.http.post(
+            resp = await self.http.post(
                 f"{SERVICES['notifications']}/notify",
                 json={"title": f"Bob [{channel}]", "body": message, "priority": "normal"},
             )
+            return {"ok": resp.status_code == 200, "status_code": resp.status_code, "channel": "notification-hub"}
         except Exception as e:
             logger.debug("Notification send failed: %s", e)
+            return {"ok": False, "error": str(e), "channel": "notification-hub"}
 
     async def resolve_approval(self, decision_id: int, granted: bool, edit_note: str = "") -> None:
         """Complete a pending approval from iMessage or Redis (outcome_listener)."""

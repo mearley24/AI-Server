@@ -2393,33 +2393,6 @@ class PolymarketCopyTrader:
                             hold_time_hours=hold_hours,
                         )))
 
-                # Dust sweeper: sell positions worth less than $1, or under $2 and held >24h
-                if not signal and pos_id not in [e[0] for e in exits_to_execute]:
-                    est_value = current_price * pos.size_shares if hasattr(pos, 'size_shares') else 0
-                    hold_hours_dust = (time.time() - pos.copied_at) / 3600
-                    is_dust = est_value < DUST_VALUE_THRESHOLD
-                    is_stale_dust = est_value < 2.0 and hold_hours_dust > STALE_DUST_HOURS
-
-                    if is_dust or is_stale_dust:
-                        reason = "dust_sweep" if is_dust else "stale_dust_sweep"
-                        logger.info(
-                            "copytrade_dust_sweep",
-                            position_id=pos_id,
-                            market=pos.market_question[:50],
-                            est_value=round(est_value, 2),
-                            hold_hours=round(hold_hours_dust, 1),
-                            reason=reason,
-                        )
-                        exits_to_execute.append((pos_id, ExitSignal(
-                            position_id=pos_id,
-                            reason=reason,
-                            sell_fraction=1.0,
-                            current_price=current_price,
-                            entry_price=pos.entry_price,
-                            pnl_pct=(current_price - pos.entry_price) / pos.entry_price if pos.entry_price > 0 else 0,
-                            hold_time_hours=hold_hours_dust,
-                        )))
-
             except Exception as exc:
                 logger.error("copytrade_position_check_error", position_id=pos_id, error=str(exc))
 
@@ -3177,7 +3150,7 @@ class PolymarketCopyTrader:
                 order_id = result.get("orderID", "")
                 status = result.get("status", "")
                 if not order_id and status not in ("matched", "filled", ""):
-                    if signal.reason in ("market_resolved", "force_stale_cleanup", "dust_sweep", "stale_dust_sweep"):
+                    if signal.reason in ("market_resolved", "force_stale_cleanup"):
                         # Resolved/stale markets may have no orderbook — FOK fails.
                         # Fall through to cleanup; redeemer handles on-chain USDC recovery.
                         logger.info(
@@ -3296,8 +3269,6 @@ class PolymarketCopyTrader:
             "market_resolved": "Resolved",
             "source_wallet_exit": "Wallet Sold",
             "force_stale_cleanup": "Force Cleaned",
-            "dust_sweep": "Dust Swept",
-            "stale_dust_sweep": "Stale Dust Swept",
         }.get(signal.reason, signal.reason)
         _notify(
             f"[EXIT - {reason_label}]",

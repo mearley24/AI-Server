@@ -46,6 +46,7 @@ OWNER_HANDLES = os.environ.get("OWNER_HANDLES", "").split(",")
 OWNER_HANDLES = [h.strip() for h in OWNER_HANDLES if h.strip()]
 OWNER_HANDLES.append(OWNER_PHONE)
 OWNER_HANDLES.append("mearley24@me.com")
+OWNER_HANDLES.append("+16074259277")
 REPLY_TO = os.environ.get("REPLY_TO", "+19705193013")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://127.0.0.1:8099")
 PORT = 8199
@@ -1237,9 +1238,9 @@ def monitor_loop():
 
                 log.info("[monitor] Responding: %s...", response[:100])
                 if send_queue:
-                    send_queue.enqueue(REPLY_TO, response)
+                    send_queue.enqueue(msg.get("from", REPLY_TO), response)
                 else:
-                    send_imessage(REPLY_TO, response)
+                    send_imessage(msg.get("from", REPLY_TO), response)
         except Exception as e:
             log.error("[monitor] Error: %s", e)
 
