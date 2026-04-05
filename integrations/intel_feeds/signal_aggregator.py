@@ -300,9 +300,22 @@ class SignalAggregator:
             await self._redis_pub.publish(
                 NOTIFICATIONS_CHANNEL, json.dumps(notification)
             )
+            # Publish to trading bot signal channel
+            trading_signal = {
+                "type": "intel_signal",
+                "source": signal.get("source", ""),
+                "relevance": relevance,
+                "summary": summary,
+                "markets": signal.get("markets_affected", []),
+                "category": signal.get("category", ""),
+                "timestamp": signal.get("timestamp", ""),
+            }
+            await self._redis_pub.publish(
+                "polymarket:intel_signals", json.dumps(trading_signal)
+            )
             self._append_pending_idea(signal)
             logger.warning(
-                "CRITICAL ALERT published: relevance=%d summary=%s",
+                "CRITICAL ALERT published: relevance=%d summary=%s (also to polymarket:intel_signals)",
                 relevance,
                 summary[:80],
             )
@@ -314,6 +327,23 @@ class SignalAggregator:
                 signal.get("source", ""),
                 summary[:80],
             )
+
+        # Publish volume spikes to dedicated channel for arb scanner
+        if signal.get("source") == "polymarket_volume" or "volume" in signal.get("category", "").lower():
+            volume_alert = {
+                "type": "volume_spike",
+                "market_id": signal.get("market_id", ""),
+                "summary": summary,
+                "relevance": relevance,
+                "markets": signal.get("markets_affected", []),
+                "timestamp": signal.get("timestamp", ""),
+            }
+            try:
+                await self._redis_pub.publish(
+                    "polymarket:volume_alerts", json.dumps(volume_alert)
+                )
+            except Exception:
+                pass
 
     def _resolve_ideas_path(self) -> Path:
         """Pick the first usable ideas.txt path."""

@@ -95,22 +95,59 @@ async def _start_redis_listener(settings, signal_bus, log) -> asyncio.Task | Non
         try:
             client = aioredis.from_url(settings.redis_url, decode_responses=True)
             pubsub = client.pubsub()
-            await pubsub.subscribe("polymarket:ta_signals")
-            log.info("redis_ta_listener_started", channel="polymarket:ta_signals")
+            await pubsub.subscribe(
+                "polymarket:ta_signals",
+                "polymarket:intel_signals",
+                "polymarket:volume_alerts",
+            )
+            log.info(
+                "redis_listener_started",
+                channels=["polymarket:ta_signals", "polymarket:intel_signals", "polymarket:volume_alerts"],
+            )
 
             async for message in pubsub.listen():
                 if message["type"] != "message":
                     continue
+                channel = message.get("channel", "")
                 try:
                     data = json.loads(message["data"])
-                    signal = Signal(
-                        signal_type=SignalType.TA_INDICATOR,
-                        source=data.get("source", "redis"),
-                        data=data,
-                    )
-                    await signal_bus.publish(signal)
+
+                    if channel == "polymarket:intel_signals":
+                        relevance = data.get("relevance", 0)
+                        if relevance >= 80:
+                            signal = Signal(
+                                signal_type=SignalType.MARKET_DATA,
+                                source=data.get("source", "intel"),
+                                data=data,
+                            )
+                            await signal_bus.publish(signal)
+                            log.info(
+                                "intel_signal_received",
+                                source=data.get("source"),
+                                relevance=relevance,
+                                summary=str(data.get("summary", ""))[:80],
+                            )
+                    elif channel == "polymarket:volume_alerts":
+                        signal = Signal(
+                            signal_type=SignalType.MARKET_DATA,
+                            source="volume_alert",
+                            data=data,
+                        )
+                        await signal_bus.publish(signal)
+                        log.info(
+                            "volume_spike_received",
+                            market_id=data.get("market_id", ""),
+                            summary=str(data.get("summary", ""))[:80],
+                        )
+                    else:
+                        signal = Signal(
+                            signal_type=SignalType.TA_INDICATOR,
+                            source=data.get("source", "redis"),
+                            data=data,
+                        )
+                        await signal_bus.publish(signal)
                 except (json.JSONDecodeError, Exception) as exc:
-                    log.error("redis_ta_parse_error", error=str(exc))
+                    log.error("redis_signal_parse_error", channel=channel, error=str(exc))
         except Exception as exc:
             log.error("redis_listener_error", error=str(exc))
 
