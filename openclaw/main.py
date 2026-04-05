@@ -900,22 +900,49 @@ async def briefing_status():
 
 @app.get("/learning/trading")
 async def trading_learning():
-    """Latest trading learning report."""
+    """Latest trading learning report. Generates on first request if missing."""
     path = DATA_DIR / "polymarket" / "weekly_learning.json"
+    if not path.is_file():
+        try:
+            from trade_learner import generate_trading_summary
+
+            await asyncio.to_thread(generate_trading_summary, REDIS_URL or None)
+        except Exception as e:
+            logger.warning("learning/trading refresh failed: %s", e)
+            return {
+                "message": "Could not generate trading learning report",
+                "error": str(e),
+                "hint": "Ensure ./data/polymarket is mounted at DATA_DIR/polymarket (see docker-compose openclaw volumes)",
+            }
     if path.is_file():
-        import json as _json
-        return _json.loads(path.read_text(encoding="utf-8"))
-    return {"message": "No learning report yet — runs daily at briefing time"}
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "message": "No trading data yet",
+        "hint": "Add or mount trades.csv under DATA_DIR/polymarket/trades.csv",
+    }
 
 
 @app.get("/learning/projects")
 async def project_learning():
-    """Latest project health report."""
+    """Latest project health report. Generates on first request if missing."""
     path = DATA_DIR / "project_health.json"
+    if not path.is_file():
+        try:
+            from project_learner import generate_project_health
+
+            await asyncio.to_thread(generate_project_health, REDIS_URL or None)
+        except Exception as e:
+            logger.warning("learning/projects refresh failed: %s", e)
+            return {
+                "message": "Could not generate project health report",
+                "error": str(e),
+            }
     if path.is_file():
-        import json as _json
-        return _json.loads(path.read_text(encoding="utf-8"))
-    return {"message": "No project health report yet — runs weekly Sunday morning"}
+        return json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "message": "No project health file written",
+        "hint": "Ensure jobs.db exists under DATA_DIR (OpenClaw data volume)",
+    }
 
 
 class InternalApprovalBody(BaseModel):
