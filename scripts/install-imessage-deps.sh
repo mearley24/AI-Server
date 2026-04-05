@@ -23,3 +23,6 @@ echo ""
 echo "LaunchAgent: copy scripts/com.symphony.imessage-bridge.plist.example → ~/Library/LaunchAgents/com.symphony.imessage-bridge.plist"
 echo "  cp \"$ROOT/scripts/com.symphony.imessage-bridge.plist.example\" ~/Library/LaunchAgents/com.symphony.imessage-bridge.plist"
 echo "  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.symphony.imessage-bridge.plist"
+
+echo "LaunchAgent (one command): bash \"$ROOT/scripts/install-imessage-launchagent.sh\""
+

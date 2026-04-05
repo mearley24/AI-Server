@@ -1,22 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!--
-  1. Adjust paths if your home directory is not /Users/bob
-  2. cp scripts/com.symphony.imessage-bridge.plist.example ~/Library/LaunchAgents/com.symphony.imessage-bridge.plist
-  3. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.symphony.imessage-bridge.plist
-  4. launchctl kickstart -k gui/$(id -u)/com.symphony.imessage-bridge
--->
 <plist version="1.0">
 <dict>
   <key>Label</key>
   <string>com.symphony.imessage-bridge</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/bob/AI-Server/.venv-imessage/bin/python3</string>
-    <string>/Users/bob/AI-Server/scripts/imessage-server.py</string>
+    <string>REPLACE_WITH_VENV_PYTHON</string>
+    <string>REPLACE_WITH_IMESSAGE_SERVER_PY</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/bob/AI-Server</string>
+  <string>REPLACE_WITH_REPO_ROOT</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
