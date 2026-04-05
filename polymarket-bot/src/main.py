@@ -292,6 +292,24 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("strategy_load_failed", strategy="liquidity_provider", error=str(exc))
 
+    # ── Kraken Avellaneda Market Maker ─────────────────────────────────
+    kraken_strategy = None
+    if os.environ.get("KRAKEN_API_KEY"):
+        try:
+            from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
+            kraken_pair = os.environ.get("KRAKEN_TRADING_PAIR", "XRP/USD")
+            kraken_strategy = AvellanedaMarketMaker(
+                api_key=os.environ["KRAKEN_API_KEY"],
+                api_secret=os.environ.get("KRAKEN_SECRET", ""),
+                pair=kraken_pair,
+            )
+            platform_strategies.append(("kraken_mm", kraken_strategy))
+            log.info("kraken_market_maker_enabled", pair=kraken_pair)
+        except Exception as exc:
+            log.error("kraken_market_maker_failed", error=str(exc))
+    else:
+        log.info("kraken_market_maker_disabled", reason="no API key")
+
     # Polymarket position redeemer — automatically redeems resolved winning positions
     redeemer = None
     if settings.poly_private_key:
@@ -315,6 +333,7 @@ async def lifespan(app: FastAPI):
     deps.sandbox = sandbox
     deps.platform_clients = platform_clients
     deps.redeemer = redeemer
+    deps.kraken_strategy = kraken_strategy
     deps.whale_scanner = whale_scanner
     deps.strategies = {}
     for name, strat in platform_strategies:
@@ -359,6 +378,23 @@ async def lifespan(app: FastAPI):
             log.info("platform_strategy_started", strategy=name)
         except Exception as exc:
             log.error("platform_strategy_start_failed", strategy=name, error=str(exc))
+
+    # Position recovery — log a summary of restored positions
+    try:
+        from src.position_syncer import sync_positions as _sync_pos
+        _snap = await _sync_pos(client)
+        _by_strat = {}
+        for _p in _snap.positions:
+            _s = _p.source or "unknown"
+            _by_strat[_s] = _by_strat.get(_s, 0) + 1
+        log.info(
+            "startup_positions_restored",
+            count=len(_snap.positions),
+            strategies=list(_by_strat.keys()),
+            total_value=_snap.total_position_value,
+        )
+    except Exception as _exc:
+        log.debug("startup_position_sync_skipped", error=str(_exc))
 
     # Start StrategyManager for the 3-strategy architecture (weather/copytrade/cvd_arb)
     if strategy_manager_enabled and managed_strategies:

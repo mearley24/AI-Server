@@ -91,6 +91,30 @@ event_server.STATIC_DIR = STATIC_DIR
 # Re-use the existing app from event_server (has WebSocket, events, status, digest)
 app = event_server.app
 
+# ── Auth middleware — protects LAN-exposed dashboard ──
+_MC_TOKEN = os.getenv("MISSION_CONTROL_TOKEN", "").strip()
+
+if _MC_TOKEN:
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse as StarletteJSONResponse
+
+    class _AuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            path = request.url.path
+            if path == "/health" or path.startswith("/health"):
+                return await call_next(request)
+            token = request.query_params.get("token", "")
+            if not token:
+                auth = request.headers.get("authorization", "")
+                if auth.lower().startswith("bearer "):
+                    token = auth[7:].strip()
+            if token != _MC_TOKEN:
+                return StarletteJSONResponse({"error": "unauthorized"}, status_code=401)
+            return await call_next(request)
+
+    app.add_middleware(_AuthMiddleware)
+    logger.info("Mission Control auth enabled (token required on all endpoints except /health)")
+
 # ── Add new routes ──
 
 @app.get("/health")

@@ -145,6 +145,9 @@ services:
       - MAX_TRADES_PER_HOUR=${MAX_TRADES_PER_HOUR:-10}
       - MAX_TRADES_PER_WALLET_PER_DAY=${MAX_TRADES_PER_WALLET_PER_DAY:-30}
       - MAX_POSITIONS_PER_CATEGORY=${MAX_POSITIONS_PER_CATEGORY:-50}
+      - KRAKEN_API_KEY=${KRAKEN_API_KEY:-}
+      - KRAKEN_SECRET=${KRAKEN_SECRET:-}
+      - KRAKEN_TRADING_PAIR=${KRAKEN_TRADING_PAIR:-XRP/USD}
     volumes:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro
@@ -462,8 +465,9 @@ services:
       - PORT=8098
       - REDIS_URL=redis://:d1fff1065992d132b000c01d6012fa52@redis:6379
       - TZ=America/Denver
+      - MISSION_CONTROL_TOKEN=${MISSION_CONTROL_TOKEN:-}
     ports:
-      - "127.0.0.1:8098:8098"
+      - "0.0.0.0:8098:8098"
     volumes:
       # Host source so new API routes (e.g. /api/events-log) apply without image rebuild
       - ./mission_control:/app
@@ -520,6 +524,34 @@ services:
       - "127.0.0.1:8028:8028"
     environment:
       - TZ=America/Denver
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  x-intake:
+    build:
+      context: ./integrations/x_intake
+    container_name: x-intake
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8101:8101"
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://:d1fff1065992d132b000c01d6012fa52@redis:6379}
+      - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - default
     logging:
       driver: "json-file"
       options:

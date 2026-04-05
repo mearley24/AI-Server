@@ -393,12 +393,45 @@ class WeatherTraderStrategy(BaseStrategy):
         )
         await self._noaa.initialize()
         await super().start(params)
+
+        # Reconcile with on-chain positions so the count is correct after restart
+        try:
+            from src.position_syncer import sync_positions as _ps
+            snap = await _ps(self._client)
+            restored = 0
+            for p in snap.positions:
+                title = (p.market_title or "").lower()
+                is_weather = any(kw in title for kw in ("temperature", "°c", "°f", "weather", "rain", "celsius", "fahrenheit", "highest temp"))
+                if not is_weather:
+                    continue
+                if self._position_tracker.has_position(p.token_id):
+                    continue
+                self._position_tracker.positions[p.token_id] = WeatherPosition(
+                    market_ticker=p.token_id,
+                    token_id=p.token_id,
+                    condition_id=p.condition_id,
+                    outcome="YES",
+                    size=p.shares * p.current_price if p.current_price > 0 else p.shares * p.avg_entry_price,
+                    entry_price=p.avg_entry_price,
+                    entered_at=datetime.now(timezone.utc),
+                    city="",
+                    date_str="",
+                    bracket_label=p.market_title[:80],
+                    event_key="",
+                )
+                restored += 1
+            if restored:
+                logger.info("weather_positions_restored_from_chain", count=restored)
+        except Exception as exc:
+            logger.debug("weather_position_restore_skip", error=str(exc))
+
         logger.info(
             "weather_strategy_started",
             mode="cheap_bracket_ladder",
             max_price=self._cheap_bracket_max_price,
             bracket_size=self._bracket_default_size,
             max_per_event=self._max_per_event,
+            open_positions=len(self._position_tracker.positions),
         )
 
     async def stop(self) -> None:

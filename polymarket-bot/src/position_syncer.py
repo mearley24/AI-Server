@@ -187,6 +187,19 @@ async def sync_positions(client: Any) -> PositionSnapshot:
         unrealized_pnl=round(total_upnl, 2),
         raw_count=len(raw_list),
     )
+
+    by_strategy: dict[str, int] = {}
+    for p in positions:
+        src = p.source or "unknown"
+        by_strategy[src] = by_strategy.get(src, 0) + 1
+    logger.info(
+        "position_sync_summary",
+        total=len(positions),
+        total_value=round(total_pv, 2),
+        usdc=round(usdc, 2),
+        by_strategy=by_strategy,
+    )
+
     return snap
 
 

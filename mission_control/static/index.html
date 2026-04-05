@@ -1300,6 +1300,22 @@ h3.view-settings-h3 {
   100% { background-position: -200% 0; }
 }
 </style>
+<script>
+/* Auth: propagate ?token= to all fetch/API calls */
+(function(){
+  var p = new URLSearchParams(window.location.search);
+  var t = p.get('token') || '';
+  if (!t) return;
+  var _fetch = window.fetch;
+  window.fetch = function(url, opts) {
+    if (typeof url === 'string' && url.startsWith('/')) {
+      var sep = url.indexOf('?') === -1 ? '?' : '&';
+      url = url + sep + 'token=' + encodeURIComponent(t);
+    }
+    return _fetch.call(this, url, opts);
+  };
+})();
+</script>
 </head>
 <body class="sidebar-open-desktop">
 

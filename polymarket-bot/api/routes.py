@@ -677,3 +677,23 @@ async def heartbeat_reports(
         return {"reports": []}
     files = sorted(reports_dir.glob("*.json"), reverse=True)[:limit]
     return {"reports": [f.name for f in files]}
+
+
+# ── Kraken Market Maker endpoints ─────────────────────────────────
+
+@router.get("/kraken/status")
+async def kraken_status() -> dict[str, Any]:
+    """Get Kraken Avellaneda market maker status."""
+    ks = getattr(deps, "kraken_strategy", None)
+    if ks is None:
+        return {"enabled": False, "reason": "KRAKEN_API_KEY not set"}
+    try:
+        status = ks.get_status() if hasattr(ks, "get_status") else {}
+    except Exception:
+        status = {}
+    return {
+        "enabled": True,
+        "pair": getattr(ks, "pair", os.environ.get("KRAKEN_TRADING_PAIR", "XRP/USD")),
+        **status,
+    }
+

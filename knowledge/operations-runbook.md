@@ -481,6 +481,16 @@ Verify no ports are exposed:
 docker ps --format '{{.Ports}}' | grep '0.0.0.0' && echo "EXPOSED PORTS FOUND" || echo "All safe"
 ```
 
+### Mission Control LAN Access
+
+Mission Control (port 8098) is the **one exception** to the `127.0.0.1` port-binding rule. It binds to `0.0.0.0:8098` so it can be reached from other devices on the LAN (iPad, phone, laptop), but is **protected by an auth token**.
+
+Access via: `http://<Bob-Tailscale-IP>:8098/dashboard?token=YOUR_TOKEN`
+
+- Set the token in `.env`: `MISSION_CONTROL_TOKEN=<openssl rand -hex 16>`
+- `/health` is exempt from auth (needed for Docker healthcheck)
+- If `MISSION_CONTROL_TOKEN` is empty, auth is disabled (backward-compatible)
+
 ### Redis Authentication
 
 Redis requires a password (set in `.env` as `REDIS_PASSWORD` and in `redis/redis.conf`). Dangerous commands (`FLUSHALL`, `FLUSHDB`, `DEBUG`) are disabled.
