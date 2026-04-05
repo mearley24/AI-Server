@@ -697,3 +697,16 @@ async def kraken_status() -> dict[str, Any]:
         **status,
     }
 
+
+# ── Sports Arb endpoints ─────────────────────────────────────────────
+
+@router.get("/arb/status")
+async def arb_status() -> dict[str, Any]:
+    """Sports arb strategy status: arbs found/executed/skipped today."""
+    strat = (getattr(deps, "strategies", None) or {}).get("sports_arb")
+    if strat is None:
+        return {"enabled": False, "reason": "sports_arb not loaded"}
+    if hasattr(strat, "get_arb_status"):
+        return strat.get_arb_status()
+    return {"enabled": True, "status": strat.status}
+

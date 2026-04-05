@@ -79,6 +79,13 @@ class StinkBidStrategy(BaseStrategy):
         # Manage open positions (take-profit / stop-loss)
         await self._manage_positions()
 
+        logger.info(
+            "stink_bid_tick_complete",
+            active_bids=len(self._active_bids),
+            filled_positions=len(self._filled_positions),
+            tick=self._tick_count,
+        )
+
     async def _scan_and_place_bids(self) -> None:
         """Scan for markets and place stink bids on new ones."""
         result = await self._scanner.scan()

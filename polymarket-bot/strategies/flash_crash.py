@@ -90,6 +90,13 @@ class FlashCrashStrategy(BaseStrategy):
         # Manage open positions
         await self._manage_positions()
 
+        logger.info(
+            "flash_crash_tick_complete",
+            monitored_tokens=len(self._monitored_tokens),
+            open_positions=len(self._positions),
+            tick=self._tick_count,
+        )
+
     async def _scan_and_subscribe(self) -> None:
         """Scan for markets and subscribe to their orderbook feeds."""
         result = await self._scanner.scan()

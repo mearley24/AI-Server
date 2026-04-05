@@ -69,13 +69,37 @@ class SportsArbStrategy(BaseStrategy):
         # Internal tracking
         self._active_arbs: dict[str, dict[str, Any]] = {}  # condition_id -> arb info
         self._settled_events: set[str] = set()
+        self._arbs_found_today: int = 0
+        self._arbs_executed_today: int = 0
+        self._arbs_skipped_today: int = 0
+        self._last_arb: dict[str, Any] = {}
+        self._last_skip_reason: str = ""
+
+    def get_arb_status(self) -> dict[str, Any]:
+        """Status dict for /arb/status endpoint."""
+        return {
+            "enabled": self._state.value == "running",
+            "arbs_found_today": self._arbs_found_today,
+            "arbs_executed_today": self._arbs_executed_today,
+            "arbs_skipped_today": self._arbs_skipped_today,
+            "active_arbs": len(self._active_arbs),
+            "settled_events": len(self._settled_events),
+            "last_arb": self._last_arb,
+            "last_skip_reason": self._last_skip_reason,
+            "params": self._params,
+        }
 
     async def on_tick(self) -> None:
         """Execute the 5-step arbitrage loop."""
         # Step 1 — Scan for binary sports markets
         binary_markets = await self._scan_sports_markets()
         if not binary_markets:
+            logger.info("sports_arb_tick_complete", scanned=0, arbs_found=0)
             return
+
+        tick_found = 0
+        tick_executed = 0
+        tick_skipped = 0
 
         for event in binary_markets:
             condition_id = event.get("condition_id", event.get("id", ""))
@@ -87,23 +111,58 @@ class SportsArbStrategy(BaseStrategy):
             if arb is None:
                 continue
 
+            tick_found += 1
+            self._arbs_found_today += 1
+            self._last_arb = {
+                "market": arb.get("question", "")[:100],
+                "arb_type": arb.get("arb_type"),
+                "combined": arb.get("combined"),
+                "net_profit_per_share": arb.get("net_profit_per_share"),
+                "found_at": time.time(),
+            }
+
             # Step 3 — Size position
             size_a, size_b = self._size_position(arb)
             if size_a <= 0 or size_b <= 0:
+                tick_skipped += 1
+                self._arbs_skipped_today += 1
+                self._last_skip_reason = "sizing_returned_zero"
+                logger.info(
+                    "sports_arb_skipped",
+                    market=arb.get("question", "")[:80],
+                    reason="sizing_returned_zero",
+                    price_a=arb.get("price_a"),
+                    price_b=arb.get("price_b"),
+                )
                 continue
 
             # Step 4 — Execute simultaneously
             success = await self._execute_arb(arb, size_a, size_b)
             if success:
+                tick_executed += 1
+                self._arbs_executed_today += 1
                 self._active_arbs[condition_id] = {
                     **arb,
                     "size_a": size_a,
                     "size_b": size_b,
                     "entered_at": time.time(),
                 }
+            else:
+                tick_skipped += 1
+                self._arbs_skipped_today += 1
+                self._last_skip_reason = "execution_failed"
 
         # Step 5 — Check settled events
         await self._check_settlements()
+
+        logger.info(
+            "sports_arb_tick_complete",
+            scanned=len(binary_markets),
+            arbs_found=tick_found,
+            arbs_executed=tick_executed,
+            arbs_skipped=tick_skipped,
+            active_arbs=len(self._active_arbs),
+        )
 
     async def _scan_sports_markets(self) -> list[dict[str, Any]]:
         """Poll Gamma API for active binary sports markets."""

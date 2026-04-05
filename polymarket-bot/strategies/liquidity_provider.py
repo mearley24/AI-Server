@@ -100,6 +100,10 @@ class LiquidityProvider:
         # Active quotes
         self._quoted_markets: dict[str, QuotedMarket] = {}
 
+        # Tick tracking
+        self._tick_count: int = 0
+        self._last_tick_time: float = 0.0
+
         # P/L tracking for circuit breaker
         self._daily_pnl: float = 0.0
         self._halted: bool = False
@@ -176,6 +180,16 @@ class LiquidityProvider:
                 break
             except Exception as exc:
                 logger.error("lp_loop_error", error=str(exc))
+
+            self._tick_count += 1
+            self._last_tick_time = time.time()
+            logger.info(
+                "lp_tick_complete",
+                tick=self._tick_count,
+                quoted_markets=len(self._quoted_markets),
+                daily_pnl=round(self._daily_pnl, 2),
+                halted=self._halted,
+            )
 
             await asyncio.sleep(self._refresh_interval)
 
@@ -554,6 +568,8 @@ class LiquidityProvider:
         return {
             "running": self._running,
             "halted": self._halted,
+            "tick_count": self._tick_count,
+            "last_tick_time": self._last_tick_time,
             "quoted_markets": len(self._quoted_markets),
             "daily_pnl": round(self._daily_pnl, 2),
             "markets": [

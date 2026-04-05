@@ -498,6 +498,24 @@ class WeatherTraderStrategy(BaseStrategy):
         # Step 7: Manage existing positions
         await self._manage_positions()
 
+        # Log per-event diagnostics for debugging zero-entry ticks
+        if not all_candidates and event_groups:
+            for ek, mkts in list(event_groups.items())[:3]:
+                prices = []
+                for m in mkts:
+                    tokens = m.get("tokens", [])
+                    for tok in tokens:
+                        p = float(tok.get("price", 0))
+                        if p > 0:
+                            prices.append(round(p, 3))
+                logger.info(
+                    "weather_no_candidates_detail",
+                    event_key=ek[:60],
+                    market_count=len(mkts),
+                    token_prices=prices[:10],
+                    max_price_threshold=self._cheap_bracket_max_price,
+                )
+
         logger.info(
             "weather_tick_complete",
             stations=len(self._station_data),
@@ -507,6 +525,7 @@ class WeatherTraderStrategy(BaseStrategy):
             entered_this_tick=entered,
             open_positions=len(self._position_tracker.positions),
             total_exposure=round(self._position_tracker.total_exposure(), 2),
+            max_price_threshold=self._cheap_bracket_max_price,
         )
 
     # ── Market Scanning ───────────────────────────────────────────────────────
