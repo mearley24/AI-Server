@@ -10,6 +10,11 @@ from preprocessor import process
 app = Flask(__name__)
 
 
+@app.route('/health')
+def health():
+    return 'ok', 200
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
