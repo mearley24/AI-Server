@@ -21,6 +21,8 @@ from typing import Any
 import httpx
 import structlog
 
+from strategies import kalshi_client
+
 logger = structlog.get_logger(__name__)
 
 # Configurable thresholds
@@ -156,7 +158,81 @@ class SpreadArbScanner:
             # Update price history
             self._update_price_history(markets)
 
+            # 5. Cross-platform (Polymarket vs Kalshi) — Auto-1
+            cross = await self._scan_cross_platform(client, markets)
+            opps.extend(cross)
+
         self._opportunities = opps
+        return opps
+
+
+    async def _scan_cross_platform(
+        self, client: httpx.AsyncClient, poly_markets: list[dict]
+    ) -> list[ArbOpportunity]:
+        """Match Polymarket vs Kalshi titles; flag >3% mispricing after fees."""
+        try:
+            kalshi = await kalshi_client.fetch_kalshi_markets(limit=200)
+        except Exception as exc:
+            logger.warning("cross_platform_kalshi_failed", error=str(exc)[:120])
+            return []
+        if not kalshi:
+            return []
+
+        min_sim = float(os.environ.get("CROSS_PLATFORM_MIN_SIMILARITY", "0.72"))
+        min_gap = float(os.environ.get("CROSS_PLATFORM_MIN_GAP", "0.03"))
+        poly_fee = float(os.environ.get("CROSS_PLATFORM_POLY_FEE", "0.02"))
+        kalshi_fee = float(os.environ.get("CROSS_PLATFORM_KALSHI_FEE", "0.01"))
+
+        opps: list[ArbOpportunity] = []
+        for pm in poly_markets:
+            pq = (pm.get("question") or "")[:500]
+            if not pq:
+                continue
+            pyes = 0.0
+            try:
+                op = pm.get("outcomePrices")
+                if isinstance(op, str):
+                    import json as _json
+                    op = _json.loads(op)
+                if isinstance(op, list) and op:
+                    pyes = float(op[0])
+            except Exception:
+                continue
+            best_k = None
+            best_sim = 0.0
+            for km in kalshi:
+                title = km.get("title") or km.get("ticker") or ""
+                sim = kalshi_client.title_similarity(pq, title)
+                if sim > best_sim:
+                    best_sim = sim
+                    best_k = km
+            if best_k is None or best_sim < min_sim:
+                continue
+            k_mid = kalshi_client.kalshi_mid_price(best_k)
+            if k_mid is None or k_mid <= 0:
+                continue
+            gap = abs(pyes - k_mid)
+            net = gap - (poly_fee + kalshi_fee)
+            if net < min_gap:
+                continue
+            profit_pct = net * 100
+            size = min(MAX_POSITION_USD, self._bankroll * 0.05)
+            clob_ids = _parse_clob_ids(pm.get("clobTokenIds"))
+            opps.append(
+                ArbOpportunity(
+                    opp_type="cross_platform",
+                    market_title=f"{pq[:60]} | Kalshi: {best_k.get('ticker','')}",
+                    condition_id=pm.get("conditionId", ""),
+                    expected_profit_pct=round(profit_pct, 2),
+                    expected_profit_usd=round(size * net, 2),
+                    cost_usd=round(size, 2),
+                    tokens=[{"poly_yes": pyes, "kalshi_mid": k_mid, "similarity": best_sim}],
+                    token_ids=clob_ids,
+                    metadata={"kalshi_ticker": best_k.get("ticker", "")},
+                )
+            )
+        if opps:
+            logger.info("cross_platform_matches", count=len(opps))
         return opps
 
     async def _fetch_markets(self, client: httpx.AsyncClient) -> list[dict]:
