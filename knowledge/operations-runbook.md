@@ -334,20 +334,186 @@ When Symphony starts using a new product:
 
 ### Everything Is Down
 
-If all services are down (Mac Mini restarted, power outage, etc.):
+The **watchdog daemon** should handle this automatically within 60-120 seconds. Check if it's running:
+
+```bash
+launchctl list | grep symphony
+tail -20 /usr/local/var/log/bob-watchdog.log
+```
+
+If the watchdog is NOT running or you need manual recovery:
 
 ```bash
 # Start everything
-docker compose up -d
+cd ~/AI-Server && docker compose up -d
 
 # Verify all containers are running
 docker compose ps
 
-# Check Redis is healthy (many services depend on it)
-docker compose exec redis redis-cli ping
+# Check Redis is healthy (requires auth now)
+docker exec redis redis-cli -a "$(grep REDIS_PASSWORD .env | cut -d= -f2)" ping
 ```
 
-The startup script `./start_symphony.sh` can also be used to bring everything up in the correct order.
+### Docker Desktop Crashed
+
+**Symptoms**: Docker icon shows `?` or is missing. All containers down. Possibly DNS is dead too.
+
+**The watchdog handles this automatically.** If it doesn't:
+
+```bash
+# 1. Relaunch Docker
+open -a Docker
+# Wait 60 seconds
+
+# 2. Bring up containers
+cd ~/AI-Server && docker compose up -d
+
+# 3. If DNS is also broken (can't reach websites)
+nslookup google.com
+# If that fails:
+networksetup -setdnsservers Ethernet 1.1.1.1 8.8.8.8
+sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+
+# 4. After DNS recovers, restart email monitor (stale DNS in container)
+docker restart email-monitor
+```
+
+**Why DNS dies**: Bob routes DNS through Tailscale (100.100.100.100). When Docker crashes, Tailscale's network integration breaks, killing DNS for the entire Mac. The watchdog sets fallback DNS (1.1.1.1/8.8.8.8) automatically and restores Tailscale DNS when it recovers.
+
+### OpenClaw Won't Start (Volume Mount Error)
+
+**Symptoms**: `permission denied` error mentioning `Symphony SH` or `SymphonySH`.
+
+**Fix**: The iCloud folder name has a space. Check `.env`:
+```bash
+grep SYMPHONY .env
+# Should show: SYMPHONY_DOCS_PATH=/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH
+
+# Verify the folder exists:
+ls ~/Library/Mobile\ Documents/com~apple~CloudDocs/ | grep -i symph
+```
+
+If the `.env` path is wrong, fix it and restart:
+```bash
+# Edit .env, then:
+docker compose up -d openclaw
+```
+
+---
+
+## Self-Healing Watchdog
+
+Bob has a watchdog daemon that monitors the entire stack and auto-recovers from failures. It runs every 60 seconds as a macOS LaunchDaemon.
+
+### What It Monitors
+
+| Check | What Happens on Failure | Cooldown |
+|-------|------------------------|----------|
+| Tailscale | Relaunches Tailscale app + `tailscale up` | 120s |
+| DNS resolution | Flushes cache → sets fallback DNS (1.1.1.1/8.8.8.8) | 180s |
+| DNS restore | Restores Tailscale DNS when it recovers | — |
+| Docker Desktop | Kills stale processes, relaunches, waits up to 90s | 180s |
+| Missing containers | Runs `docker compose up -d --no-build` | 120s |
+| Unhealthy containers | Restarts individual unhealthy containers | 300s per container |
+| Email monitor DNS | Restarts email-monitor if container DNS is stale | 120s |
+
+### Managing the Watchdog
+
+```bash
+# Check if it's running
+launchctl list | grep symphony
+
+# View recent logs
+tail -50 /usr/local/var/log/bob-watchdog.log
+
+# Watch logs live
+tail -f /usr/local/var/log/bob-watchdog.log
+
+# Run manually (for testing)
+sudo bash /usr/local/bin/bob-watchdog.sh
+
+# Stop the watchdog
+sudo launchctl unload /Library/LaunchDaemons/com.symphony.bob-watchdog.plist
+
+# Start the watchdog
+sudo launchctl load /Library/LaunchDaemons/com.symphony.bob-watchdog.plist
+
+# Reinstall after updates
+cd ~/AI-Server && sudo bash bob-resilience-install.sh
+```
+
+### Recovery Timeline
+
+From a full crash (Docker + DNS), expected recovery:
+
+```
+0s    — Watchdog detects failure
+5s    — Tailscale restart triggered
+10s   — DNS cache flushed, fallback DNS set
+15s   — Docker Desktop relaunch triggered
+75s   — Docker ready, containers starting
+90s   — All containers up
+105s  — Email monitor DNS verified/restarted
+120s  — Full system operational
+```
+
+---
+
+## Security
+
+### Port Binding Policy
+
+ALL Docker ports MUST be bound to `127.0.0.1`. Never use `0.0.0.0`.
+
+```yaml
+# CORRECT
+ports:
+  - "127.0.0.1:8099:3000"
+
+# WRONG — exposes to entire LAN
+ports:
+  - "0.0.0.0:8099:3000"
+  - "8099:3000"          # also binds to 0.0.0.0 by default
+```
+
+Verify no ports are exposed:
+```bash
+docker ps --format '{{.Ports}}' | grep '0.0.0.0' && echo "EXPOSED PORTS FOUND" || echo "All safe"
+```
+
+### Redis Authentication
+
+Redis requires a password (set in `.env` as `REDIS_PASSWORD` and in `redis/redis.conf`). Dangerous commands (`FLUSHALL`, `FLUSHDB`, `DEBUG`) are disabled.
+
+```bash
+# This should FAIL (no auth)
+redis-cli -h 127.0.0.1 ping
+
+# This should return PONG
+docker exec redis redis-cli -a "$(grep REDIS_PASSWORD ~/AI-Server/.env | cut -d= -f2)" ping
+```
+
+All services connect via `REDIS_URL=redis://:<password>@redis:6379` set in `docker-compose.yml`.
+
+### Security Checklist (monthly)
+
+- [ ] No `0.0.0.0` port bindings: `grep '0.0.0.0:' docker-compose.yml`
+- [ ] Redis requires auth: `redis-cli -h 127.0.0.1 ping` should fail
+- [ ] Redis version patched: `docker exec redis redis-server --version` (need 7.2.11+ for CVE-2025-49844)
+- [ ] macOS firewall enabled: System Settings → Network → Firewall
+- [ ] No router port forwarding to Bob's IP
+- [ ] Watchdog running: `launchctl list | grep symphony`
+- [ ] Watchdog logs clean: `tail -50 /usr/local/var/log/bob-watchdog.log`
+
+---
+
+## Incident History
+
+See `knowledge/incidents/` for detailed incident reports.
+
+| Date | Incident | Resolution |
+|------|----------|------------|
+| 2026-04-04 | Docker crash cascade — full outage ~45 min, DNS dead, 3 exposed ports found | Watchdog daemon, Redis auth, port lockdown, DNS fallback |
 
 ---
 
@@ -397,5 +563,5 @@ Output format:
 
 ---
 
-*Last updated: March 31, 2026*
+*Last updated: April 4, 2026*
 *Maintained by: Matthew Earley / Bob*
