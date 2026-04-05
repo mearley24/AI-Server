@@ -898,6 +898,26 @@ async def briefing_status():
     return {"last_date": None, "delivered": False, "message": "No briefing sent yet"}
 
 
+@app.get("/learning/trading")
+async def trading_learning():
+    """Latest trading learning report."""
+    path = DATA_DIR / "polymarket" / "weekly_learning.json"
+    if path.is_file():
+        import json as _json
+        return _json.loads(path.read_text(encoding="utf-8"))
+    return {"message": "No learning report yet — runs daily at briefing time"}
+
+
+@app.get("/learning/projects")
+async def project_learning():
+    """Latest project health report."""
+    path = DATA_DIR / "project_health.json"
+    if path.is_file():
+        import json as _json
+        return _json.loads(path.read_text(encoding="utf-8"))
+    return {"message": "No project health report yet — runs weekly Sunday morning"}
+
+
 class InternalApprovalBody(BaseModel):
     decision_id: int
     granted: bool = True

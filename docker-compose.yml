@@ -407,6 +407,7 @@ services:
       - ./openclaw:/app
       - ./agents:/app/agents:ro
       - ./data/openclaw:/app/data
+      - ./data/polymarket:/app/data/polymarket
       - ./data/email-monitor:/data/email-monitor:ro
       - ./integrations/dtools:/app/integrations/dtools:ro
       - ./tools:/app/tools:ro

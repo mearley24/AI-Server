@@ -139,6 +139,7 @@ class Orchestrator:
         self._linear_sync = linear_sync
         self._silent_alert_at: dict[str, float] = {}  # source -> last alert time (epoch)
         self._startup_health_done: bool = False
+        self._last_weekly_deep_key: str | None = None
         self._last_pattern_run: float = 0.0
         self._auto_responder_stats: dict[str, Any] = {
             "enabled": os.getenv("AUTO_RESPONDER_ENABLED", "").lower() in ("1", "true", "yes"),
@@ -294,6 +295,7 @@ class Orchestrator:
         await self.check_silent_services()
         await self._maybe_run_weekly_patterns()
         await self.consolidate_memories()
+        await self._maybe_weekly_deep_learning()
         await self.maybe_send_briefing()
 
     async def _cached_get(self, cache_key: str, url: str, params: dict | None = None):
@@ -1003,6 +1005,29 @@ class Orchestrator:
         )
 
     # ------------------------------------------------------------------
+    # Weekly deep learning (Sunday ~8 AM MT)
+    # ------------------------------------------------------------------
+    async def _maybe_weekly_deep_learning(self) -> None:
+        try:
+            from zoneinfo import ZoneInfo
+
+            mt = datetime.now(ZoneInfo("America/Denver"))
+            if mt.weekday() != 6:
+                return
+            if mt.hour != 8 or mt.minute >= 25:
+                return
+            key = mt.strftime("%Y-%W")
+            if self._last_weekly_deep_key == key:
+                return
+            from trade_learner import run_weekly_deep_analysis
+
+            await asyncio.to_thread(run_weekly_deep_analysis, self._redis_url)
+            self._last_weekly_deep_key = key
+            logger.info("weekly_deep_learning ran key=%s", key)
+        except Exception as e:
+            logger.debug("weekly_deep_learning: %s", e)
+
+    # ------------------------------------------------------------------
     # Daily briefing
     # ------------------------------------------------------------------
     async def maybe_send_briefing(self):
@@ -1023,7 +1048,29 @@ class Orchestrator:
 
         logger.info("Generating daily briefing")
 
-        briefing_parts = ["Good morning — here's your daily briefing:\n"]
+        trading_summary = ""
+        project_health = ""
+        try:
+            from trade_learner import generate_trading_summary
+
+            trading_summary = await asyncio.to_thread(generate_trading_summary, self._redis_url)
+        except Exception as e:
+            logger.debug("trade_learner: %s", e)
+        try:
+            from project_learner import generate_project_health
+
+            project_health = await asyncio.to_thread(generate_project_health, self._redis_url)
+        except Exception as e:
+            logger.debug("project_learner: %s", e)
+
+        briefing_parts = [
+            f"=== Daily Briefing — {today} ===\n",
+            "TRADING:\n",
+            trading_summary or "(unavailable)",
+            "\nPROJECTS:\n",
+            project_health or "(unavailable)",
+            "\n---\nGood morning — here's your daily briefing:\n",
+        ]
 
         try:
             resp = await self.http.get(f"{SERVICES['email']}/emails/summary")
