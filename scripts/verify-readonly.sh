@@ -97,7 +97,12 @@ curl -sf http://127.0.0.1:8099/health >/dev/null 2>&1 && check "OpenClaw /health
 curl -sf http://127.0.0.1:8099/api/llm-costs >/dev/null 2>&1 && check "OpenClaw /api/llm-costs" "PASS" || check "OpenClaw /api/llm-costs" "WARN"
 curl -sf http://127.0.0.1:8092/health >/dev/null 2>&1 && check "Email Monitor /health" "PASS" || check "Email Monitor /health" "FAIL"
 curl -sf http://127.0.0.1:8098/health >/dev/null 2>&1 && check "Mission Control /health" "PASS" || check "Mission Control /health" "WARN"
-curl -sS -f --max-time 5 http://127.0.0.1:8028/health >/dev/null 2>&1 && check "Context Preprocessor /health" "PASS" || check "Context Preprocessor /health" "WARN"
+CP_HTTP=$(curl -4 -sS -o /dev/null -w "%{http_code}" --max-time 5 -L http://127.0.0.1:8028/health 2>/dev/null || echo "000")
+if [[ "$CP_HTTP" == "200" ]]; then
+    check "Context Preprocessor /health" "PASS"
+else
+    check "Context Preprocessor /health (HTTP ${CP_HTTP})" "WARN"
+fi
 curl -sf http://127.0.0.1:8430/health >/dev/null 2>&1 && check "Polymarket Bot /health" "PASS" || check "Polymarket Bot /health" "FAIL"
 
 # ── 5. Strategy Imports ──

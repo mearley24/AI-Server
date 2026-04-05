@@ -118,10 +118,11 @@ else
     check "Intel Feeds /health" "FAIL"
 fi
 
-if curl -sS -f --max-time 5 http://127.0.0.1:8028/health >/dev/null 2>&1; then
+CP_HTTP=$(curl -4 -sS -o /dev/null -w "%{http_code}" --max-time 5 -L http://127.0.0.1:8028/health 2>/dev/null || echo "000")
+if [[ "$CP_HTTP" == "200" ]]; then
     check "Context Preprocessor /health" "PASS"
 else
-    check "Context Preprocessor /health" "WARN"
+    check "Context Preprocessor /health (HTTP ${CP_HTTP})" "WARN"
 fi
 
 echo ""
