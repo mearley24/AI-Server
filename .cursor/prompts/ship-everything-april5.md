@@ -1,5 +1,24 @@
 # Ship Everything — April 5, 2026
 
+## CRITICAL: Commit Rules
+
+**YOU MUST commit and push after completing each priority tier.** Cursor worktrees get deleted — uncommitted work is lost forever.
+
+After finishing each tier (P0, P1, P2, P3), immediately run:
+```bash
+cd /Users/bob/AI-Server
+git add -A
+git commit -m "<tier>: <brief description of what was implemented>"
+git push origin main
+```
+
+Do NOT wait until the end. Do NOT skip the push. If a worktree is used, push from the worktree:
+```bash
+git add -A && git commit -m "<tier>: <description>" && git push origin HEAD:main
+```
+
+All file paths must be absolute, rooted at `/Users/bob/AI-Server/`.
+
 ## Context
 
 Bob (Mac Mini M4) runs the AI-Server Docker stack — 16 services, all healthy. Tonight we hardened the infrastructure (watchdog daemon, Redis auth, port lockdown, DNS auto-recovery). Now it's time to close every open gap in the system.
@@ -280,4 +299,9 @@ grep "project.*already.*exists\|duplicate.*project" openclaw/project_template.py
 - All Redis URLs use the authenticated format from env vars
 - All new services need `restart: unless-stopped` and healthchecks
 - Test each item independently before moving to the next
-- Commit after each priority level (P0, P1, P2, P3)
+- **COMMIT AND PUSH after each priority level (P0, P1, P2, P3) — do not skip this**
+- All file edits must use absolute paths rooted at `/Users/bob/AI-Server/`
+- After P0: `cd /Users/bob/AI-Server && git add -A && git commit -m "P0: scope tracker, testimonials, briefing verification, auto-responder" && git push origin main`
+- After P1: `cd /Users/bob/AI-Server && git add -A && git commit -m "P1: mission control auth, x-intake, kraken, position recovery" && git push origin main`
+- After P2: `cd /Users/bob/AI-Server && git add -A && git commit -m "P2: duplicate project guard, dtools api placeholder, position cleanup" && git push origin main`
+- After P3: `cd /Users/bob/AI-Server && git add -A && git commit -m "P3: rename imacs script, ollama setup script" && git push origin main`
