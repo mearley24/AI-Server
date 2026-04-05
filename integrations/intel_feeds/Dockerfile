@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # ---- Application code ------------------------------------------------------
 # Copy the entire integrations package
-COPY integrations/ ./integrations/
+COPY . ./integrations/intel_feeds/
 
 # Ensure the data directory exists (SQLite DB lives here)
 # In production this should be a mounted volume: -v /host/data:/data

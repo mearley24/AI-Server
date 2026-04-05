@@ -63,10 +63,11 @@ class PriceSnapshot:
 class SpreadArbScanner:
     """Scans Polymarket for arbitrage and spread opportunities."""
 
-    def __init__(self, bankroll: float = 12500.0, dry_run: bool = True, paper_mode: bool = False):
+    def __init__(self, bankroll: float = 12500.0, dry_run: bool = True, paper_mode: bool = False, client: Any = None):
         self._bankroll = bankroll
         self._dry_run = dry_run
         self._paper_mode = paper_mode
+        self._client = client
         self._opportunities: list[ArbOpportunity] = []
         self._price_history: dict[str, list[PriceSnapshot]] = {}  # condition_id -> snapshots
         self._positions: dict[str, dict] = {}  # active arb positions
@@ -434,14 +435,146 @@ class SpreadArbScanner:
             # Trim old entries
             self._price_history[cid] = [s for s in self._price_history[cid] if s.timestamp >= cutoff]
 
+    async def execute_opportunities(self, opps: list[ArbOpportunity]) -> tuple[int, int]:
+        """Execute up to 3 top opportunities. Returns (executed, skipped)."""
+        MIN_PROFIT_PCT = 1.0
+        MAX_PER_TICK = 3
+        MAX_PER_SIDE = 10.0
+
+        sorted_opps = sorted(opps, key=lambda o: -o.expected_profit_pct)
+        executed = 0
+        skipped = 0
+
+        total_exposure = sum(p.get("cost", 0) for p in self._positions.values())
+
+        for opp in sorted_opps[:MAX_PER_TICK]:
+            if opp.expected_profit_pct < MIN_PROFIT_PCT:
+                skipped += 1
+                continue
+
+            if opp.condition_id in self._positions:
+                skipped += 1
+                continue
+
+            if self._trades_count >= MAX_DAILY_TRADES:
+                logger.info("arb_daily_limit", trades=self._trades_count)
+                break
+
+            if total_exposure + opp.cost_usd > MAX_TOTAL_EXPOSURE:
+                skipped += 1
+                continue
+
+            size = min(MAX_PER_SIDE, opp.cost_usd, (self._bankroll * 0.25 - total_exposure) / 5)
+            if size < 1.0:
+                skipped += 1
+                continue
+
+            if self._dry_run or not self._client:
+                self._record_paper_trade(opp)
+                executed += 1
+                total_exposure += opp.cost_usd
+                continue
+
+            try:
+                from src.signer import SIDE_BUY
+
+                if opp.opp_type in ("complement", "negative_risk"):
+                    # Buy both sides / all NOs
+                    tokens = opp.tokens
+                    results = []
+                    for tok in tokens:
+                        token_id = tok.get("token_id") or tok.get("condition_id", "")
+                        price = tok.get("price") or tok.get("no_price", 0)
+                        if not token_id or price <= 0:
+                            continue
+                        shares = round(size / price, 2)
+                        if shares < 1:
+                            continue
+                        result = await self._client.place_order(
+                            token_id=token_id,
+                            price=round(price + SLIPPAGE, 4),
+                            size=shares,
+                            side=SIDE_BUY,
+                            order_type="FOK",
+                        )
+                        results.append(result)
+
+                    errors = [r for r in results if isinstance(r, Exception)]
+                    if not errors and results:
+                        self._positions[opp.condition_id] = {
+                            "type": opp.opp_type,
+                            "cost": opp.cost_usd,
+                            "expected_profit": opp.expected_profit_usd,
+                            "entered_at": time.time(),
+                            "market": opp.market_title,
+                        }
+                        self._trades_count += 1
+                        self._bankroll -= opp.cost_usd
+                        executed += 1
+                        total_exposure += opp.cost_usd
+                        logger.info(
+                            "arb_trade_executed",
+                            market=opp.market_title[:60],
+                            type=opp.opp_type,
+                            size=round(size, 2),
+                            expected_profit_pct=opp.expected_profit_pct,
+                            orders=len(results),
+                        )
+                    else:
+                        logger.warning("arb_trade_partial_fail", errors=[str(e) for e in errors])
+                        skipped += 1
+
+                else:
+                    # Contrarian / consolidation — buy YES on the underpriced side
+                    tok = opp.tokens[0] if opp.tokens else {}
+                    token_id = tok.get("token_id") or opp.condition_id
+                    price = tok.get("price", 0)
+                    if token_id and price > 0:
+                        shares = round(size / price, 2)
+                        if shares >= 1:
+                            result = await self._client.place_order(
+                                token_id=token_id,
+                                price=round(price + SLIPPAGE, 4),
+                                size=shares,
+                                side=SIDE_BUY,
+                                order_type="FOK",
+                            )
+                            self._positions[opp.condition_id] = {
+                                "type": opp.opp_type,
+                                "cost": round(size, 2),
+                                "expected_profit": opp.expected_profit_usd,
+                                "entered_at": time.time(),
+                                "market": opp.market_title,
+                            }
+                            self._trades_count += 1
+                            self._bankroll -= size
+                            executed += 1
+                            total_exposure += size
+                            logger.info(
+                                "arb_trade_executed",
+                                market=opp.market_title[:60],
+                                type=opp.opp_type,
+                                size=round(size, 2),
+                                expected_profit_pct=opp.expected_profit_pct,
+                            )
+
+            except Exception as exc:
+                logger.error("arb_trade_error", market=opp.market_title[:60], error=str(exc)[:200])
+                skipped += 1
+
+        return executed, skipped
+
     async def run(self) -> None:
-        """Main loop — scan continuously."""
+        """Main loop — scan and execute continuously."""
         self._running = True
         logger.info("spread_arb_started", bankroll=self._bankroll, dry_run=self._dry_run)
 
         while self._running:
             try:
                 opps = await self.scan_once()
+                executed = 0
+                skipped = 0
+
                 if opps:
                     for opp in sorted(opps, key=lambda o: -o.expected_profit_pct)[:5]:
                         logger.info(
@@ -452,13 +585,17 @@ class SpreadArbScanner:
                             cost=opp.cost_usd,
                             market=opp.market_title[:50],
                         )
-                        # In paper mode, record the trade
-                        if self._dry_run:
-                            self._record_paper_trade(opp)
-                        # In live mode, execute via CLOB
-                        # (wired up when ready to go live)
-                else:
-                    logger.debug("arb_no_opportunities")
+
+                    executed, skipped = await self.execute_opportunities(opps)
+
+                logger.info(
+                    "arb_tick_complete",
+                    found=len(opps),
+                    executed=executed,
+                    skipped=skipped,
+                    positions=len(self._positions),
+                    trades_today=self._trades_count,
+                )
 
             except Exception as e:
                 logger.error("arb_scan_error", error=str(e)[:200])

@@ -53,7 +53,7 @@ class CVDDetectorStrategy(BaseStrategy):
         self._signal_size_usd = float(os.environ.get("CVD_SIGNAL_SIZE_USD", "5"))
         self._history: dict[str, deque[CvdPoint]] = defaultdict(lambda: deque(maxlen=200))
         self._state_cache: dict[str, dict[str, float]] = {}
-        self._arb = SpreadArbScanner(bankroll=float(os.environ.get("CVD_ARB_BANKROLL", "250")), dry_run=settings.dry_run)
+        self._arb = SpreadArbScanner(bankroll=float(os.environ.get("CVD_ARB_BANKROLL", "250")), dry_run=settings.dry_run, client=client)
         self._redis = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=2)
 
     async def on_tick(self) -> None:
@@ -78,6 +78,11 @@ class CVDDetectorStrategy(BaseStrategy):
                     "timestamp": now,
                 }
             )
+
+        if arb_opps:
+            arb_executed, arb_skipped = await self._arb.execute_opportunities(arb_opps)
+            if arb_executed:
+                logger.info("cvd_arb_executed", count=arb_executed, skipped=arb_skipped)
 
     async def _fetch_markets(self) -> list[dict[str, Any]]:
         try:

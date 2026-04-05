@@ -503,11 +503,24 @@ class WeatherTraderStrategy(BaseStrategy):
             for ek, mkts in list(event_groups.items())[:3]:
                 prices = []
                 for m in mkts:
-                    tokens = m.get("tokens", [])
-                    for tok in tokens:
-                        p = float(tok.get("price", 0))
-                        if p > 0:
-                            prices.append(round(p, 3))
+                    op = m.get("outcomePrices", "")
+                    if op:
+                        try:
+                            import json as _j
+                            plist = _j.loads(op) if isinstance(op, str) else op
+                            if isinstance(plist, list):
+                                for pv in plist:
+                                    p = float(pv)
+                                    if p > 0:
+                                        prices.append(round(p, 3))
+                        except (ValueError, TypeError):
+                            pass
+                    else:
+                        tokens = m.get("tokens", [])
+                        for tok in tokens:
+                            p = float(tok.get("price", 0))
+                            if p > 0:
+                                prices.append(round(p, 3))
                 logger.info(
                     "weather_no_candidates_detail",
                     event_key=ek[:60],
@@ -959,23 +972,44 @@ class WeatherTraderStrategy(BaseStrategy):
         if platform == "kalshi":
             return float(mkt.get("yes_ask_dollars", 0) or 0)
 
-        # Polymarket
+        # Polymarket: outcomePrices is a JSON string like '["0.72","0.28"]'
+        op = mkt.get("outcomePrices", "")
+        if op:
+            try:
+                import json
+                prices = json.loads(op) if isinstance(op, str) else op
+                if isinstance(prices, list) and prices:
+                    return float(prices[0])
+            except (json.JSONDecodeError, ValueError, IndexError, TypeError):
+                pass
+
+        # Fallback: tokens array (some endpoints include this)
         tokens = mkt.get("tokens", [])
         if tokens:
             return float(tokens[0].get("price", 0) or 0)
 
-        # Fallback
-        return float(mkt.get("outcomePrices", [0])[0]) if mkt.get("outcomePrices") else 0.0
+        return 0.0
 
     def _get_token_id(self, mkt: dict[str, Any], platform: str) -> str:
         """Get the primary identifier for a market."""
         if platform == "kalshi":
             return mkt.get("ticker", mkt.get("market_id", ""))
 
+        # Polymarket: clobTokenIds is a JSON string like '["123...","456..."]'
+        clob_raw = mkt.get("clobTokenIds", "")
+        if clob_raw:
+            try:
+                import json
+                tids = json.loads(clob_raw) if isinstance(clob_raw, str) else clob_raw
+                if isinstance(tids, list) and tids:
+                    return str(tids[0]).strip().strip('"')
+            except (json.JSONDecodeError, ValueError, IndexError):
+                pass
+
         tokens = mkt.get("tokens", [])
         if tokens:
             return tokens[0].get("token_id", "")
-        return mkt.get("condition_id", "")
+        return mkt.get("conditionId", mkt.get("condition_id", ""))
 
     # ── Trade Execution ───────────────────────────────────────────────────────
 
