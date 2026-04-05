@@ -71,3 +71,5 @@ polymarket-bot/vpn/
 *.db-journal
 *.db-wal
 data/backups*.tar.gz
+# Local venv for iMessage bridge (scripts/install-imessage-deps.sh)
+.venv-imessage/

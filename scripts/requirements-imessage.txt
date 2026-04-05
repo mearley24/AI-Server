@@ -1,8 +1,4 @@
 # Native macOS iMessage bridge (scripts/imessage-server.py)
-#
-# Homebrew Python (PEP 668) blocks plain `pip install` into the system env.
-# Install with one of:
-#   python3 -m pip install -r scripts/requirements-imessage.txt --break-system-packages
-#   # or use a venv: python3 -m venv .venv-imessage && .venv-imessage/bin/pip install -r scripts/requirements-imessage.txt
-#
+# Install: bash scripts/install-imessage-deps.sh
+# (Or: python3 -m pip install -r scripts/requirements-imessage.txt --break-system-packages)
 redis>=5.0
