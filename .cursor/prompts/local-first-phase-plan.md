@@ -12,7 +12,80 @@
 
 **Why first:** The LLM router is already built with local_first mode. X intake and iMessage bridge are the simplest standalone services — no downstream dependencies. This phase proves the Ollama integration pattern that all later phases copy.
 
-### 1a. Verify Ollama connectivity from all networks
+### 1a. Fix stale Cursor Prompt classifications in email DB
+
+**Problem:** The `categorize_email()` fix is deployed and working — new emails with "Cursor Prompt" in the subject correctly classify as INTERNAL. But older rows in the emails DB still have `category='CLIENT_INQUIRY'` from before the fix. The orchestrator's `check_emails()` fetches recent emails from the DB via the email-monitor API, sees these stale CLIENT_INQUIRY rows, and re-notifies on them every cycle.
+
+**Fix — update stale rows in the DB:**
+
+Add this to `email-monitor/monitor.py` in the `init_db()` function, after the CREATE TABLE / migration block:
+
+```python
+    # One-time fix: reclassify self-sent emails that were incorrectly categorized
+    try:
+        own_addresses = (
+            "bob@symphonysh.com",
+            "admin@symphonysh.com",
+            "noreply@symphonysh.com",
+            os.environ.get("ZOHO_EMAIL", "").lower().strip(),
+        )
+        own_addresses = tuple(a for a in own_addresses if a)
+        placeholders = ",".join("?" for _ in own_addresses)
+        updated = conn.execute(
+            f"UPDATE emails SET category = 'INTERNAL', priority = 'none' "
+            f"WHERE category != 'INTERNAL' AND ("
+            f"  LOWER(sender) IN ({placeholders}) "
+            f"  OR LOWER(subject) LIKE '%cursor prompt%'"
+            f")",
+            own_addresses,
+        ).rowcount
+        if updated:
+            conn.commit()
+            logger.info("Reclassified %d self-sent/Cursor emails as INTERNAL", updated)
+    except Exception as e:
+        logger.debug("Self-email reclassify skip: %s", e)
+```
+
+This runs once at startup, fixes all historical misclassifications, and is idempotent (safe to run repeatedly).
+
+**Also fix:** The orchestrator's `check_emails()` uses an in-memory `processed_emails` set that resets on restart. After a restart, it re-processes all recent emails from the API, including ones that were already notified. The INTERNAL category fix handles this — but as a belt-and-suspenders measure, also add the subject check to `_orchestrator_skip_email()` in `openclaw/orchestrator.py`:
+
+```python
+def _orchestrator_skip_email(em: dict) -> bool:
+    """Skip decision logging / notifications for marketing, internal, and low-signal vendor mail."""
+    cat = (em.get("category") or "GENERAL").upper()
+    subj = (em.get("subject") or "").lower()
+    if cat in ("MARKETING", "INTERNAL"):
+        return True
+    # Belt-and-suspenders: skip Cursor Prompt even if DB wasn't updated yet
+    if "cursor prompt" in subj:
+        return True
+    if cat == "VENDOR":
+        if not any(kw in subj for kw in ("order", "shipping", "tracking", "invoice")):
+            return True
+    return False
+```
+
+**After code changes:**
+```bash
+docker compose up -d --build email-monitor
+docker compose up -d --force-recreate openclaw
+
+# Verify DB was cleaned
+docker exec email-monitor python3 -c "
+import sqlite3
+conn = sqlite3.connect('/data/emails.db')
+rows = conn.execute(\"SELECT category, COUNT(*) FROM emails WHERE LOWER(subject) LIKE '%cursor%' GROUP BY category\").fetchall()
+for r in rows:
+    print(f'{r[0]}: {r[1]}')
+conn.close()
+"
+# Expected: INTERNAL: N (no CLIENT_INQUIRY rows for Cursor)
+```
+
+**Gate:** Zero CLIENT_INQUIRY rows with "Cursor" in subject. No Cursor Prompt iMessage notifications for 10 minutes.
+
+### 1b. Verify Ollama connectivity from all networks
 
 **Files:** None — this is infrastructure verification only.
 
