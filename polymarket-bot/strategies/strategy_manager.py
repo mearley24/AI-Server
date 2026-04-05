@@ -785,14 +785,29 @@ class StrategyManager:
         self._last_dashboard_log = time.time()
 
         # Also log as structured event for monitoring systems
-        logger.info(
-            "pnl_snapshot",
-            strategies={name: pnl.snapshot() for name, pnl in self._pnl.items()},
-            total_pnl=round(total, 2),
-            total_trades=total_trades,
-            registry=self.registry.summary(),
-            dry_run=self.dry_run,
-        )
+        dashboard_data = {
+            "strategies": {name: pnl.snapshot() for name, pnl in self._pnl.items()},
+            "total_pnl": round(total, 2),
+            "total_trades": total_trades,
+            "registry": self.registry.summary(),
+            "dry_run": self.dry_run,
+        }
+        logger.info("pnl_snapshot", **dashboard_data)
+
+        # Publish to Redis for Mission Control and other consumers
+        try:
+            import redis as redis_sync
+
+            redis_url = os.environ.get("REDIS_URL", "")
+            if redis_url:
+                rc = redis_sync.from_url(redis_url, decode_responses=True, socket_timeout=2)
+                rc.publish(
+                    "events:trading",
+                    json.dumps({"type": "strategy_dashboard", "data": dashboard_data}),
+                )
+                rc.close()
+        except Exception as exc:
+            logger.debug("dashboard_redis_publish_error", error=str(exc))
 
     async def _ideas_queue_monitor_loop(self) -> None:
         """Check ideas.txt every 6 hours. Alert if 3+ pending ideas ready for review."""

@@ -1289,6 +1289,49 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+
+
+# ── Trading ideas from iMessage ──────────────────────────────────────
+import re as _idea_re
+
+_IDEA_PATTERNS = [
+    _idea_re.compile(r"(?:look into|research|check out|analyze)\s+(.+)", _idea_re.I),
+    _idea_re.compile(r"(?:bet on|trade|buy|sell)\s+(.+)", _idea_re.I),
+    _idea_re.compile(r"(?:what about|thoughts on)\s+(.+)", _idea_re.I),
+]
+
+_IDEAS_PATH = os.path.join(
+    os.environ.get("DATA_DIR", "/Users/bob/AI-Server/data/polymarket"),
+    "ideas.txt",
+)
+
+def _maybe_capture_idea(text: str) -> None:
+    """If the message matches a trading idea pattern, append to ideas.txt."""
+    for pat in _IDEA_PATTERNS:
+        m = pat.search(text)
+        if m:
+            topic = m.group(1).strip()[:200]
+            if len(topic) < 3:
+                return
+            from datetime import datetime, timezone
+            entry = (
+                f"\nIDEA: {topic}\n"
+                f"DATE: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n"
+                f"DESCRIPTION: iMessage request: {text[:200]}\n"
+                f"HYPOTHESIS: Manual trading idea from Matt\n"
+                f"STATUS: pending\n"
+                f"NOTES: via iMessage bridge\n"
+                "---\n"
+            )
+            try:
+                os.makedirs(os.path.dirname(_IDEAS_PATH), exist_ok=True)
+                with open(_IDEAS_PATH, "a") as f:
+                    f.write(entry)
+                print(f"[idea captured] {topic}")
+            except Exception as exc:
+                print(f"[idea capture failed] {exc}")
+            return
+
 if __name__ == "__main__":
     import signal
     try:

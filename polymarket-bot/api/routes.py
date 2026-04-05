@@ -710,3 +710,23 @@ async def arb_status() -> dict[str, Any]:
         return strat.get_arb_status()
     return {"enabled": True, "status": strat.status}
 
+
+# ── Strategy Manager endpoints ────────────────────────────────────────
+
+@router.get("/strategies/status")
+async def strategies_status() -> dict[str, Any]:
+    """Per-strategy status: bankroll allocation, P/L, positions, last tick."""
+    sm = getattr(deps, "strategy_manager", None)
+    if sm is not None and hasattr(sm, "get_status"):
+        return sm.get_status()
+    strats = getattr(deps, "strategies", None) or {}
+    if not strats:
+        return {"strategy_manager": "not_configured", "strategies": {}}
+    return {
+        "strategy_manager": "disabled",
+        "strategies": {
+            name: s.status if hasattr(s, "status") else {"name": name}
+            for name, s in strats.items()
+        },
+    }
+
