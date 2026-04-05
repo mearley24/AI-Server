@@ -47,19 +47,45 @@ deactivate
 
 **Files:** `integrations/x_intake/video_transcriber.py`
 
-**Changes:**
-- `transcribe_audio()` → local Whisper first (mlx-whisper → openai-whisper → OpenAI API fallback)
-- `analyze_transcript()` → Ollama qwen3:8b first → OpenAI GPT-4o-mini fallback
-- `analyze_images()` → keep cloud-only (no local vision model), add WARNING log
-- Add `_ollama_chat()` helper function using urllib (no new dependencies)
-- Add env vars: `WHISPER_MODEL=base`, `OLLAMA_HOST=http://192.168.1.199:11434`
+**Exact changes (already implemented by Cursor — verify these are present):**
 
-**Full implementation details:** See `.cursor/prompts/local-first-x-intake.md`
+1. **Environment variables at top of file:**
+   - `WHISPER_MODEL` from env (default `base`)
+   - `OLLAMA_HOST` from env (default `http://192.168.1.199:11434`)
+   - `OLLAMA_ANALYSIS_MODEL` from env (default `qwen3:8b`) — matches llm_router defaults
+
+2. **`transcribe_audio()` — local-first chain:**
+   - whisper.cpp CLI → mlx-whisper → Python openai-whisper → OpenAI Whisper API
+   - Each step tries and falls through silently on ImportError/missing binary
+   - OpenAI API step logs `logger.warning("using_openai_whisper_api — install local whisper to avoid cloud costs")`
+
+3. **`analyze_transcript()` — Ollama first:**
+   - `_ollama_chat()` helper using urllib `POST {OLLAMA_HOST}/api/chat`
+   - `_parse_json_maybe()` to handle fenced JSON blocks (```json ... ```) from Ollama responses
+   - `_build_analysis_prompt()` shared between Ollama and OpenAI paths
+   - Falls back to GPT-4o-mini with `logger.warning("using_openai_for_analysis — Ollama was unavailable")`
+
+4. **`analyze_images()` — stays cloud but warns:**
+   - `logger.warning("using_openai_vision — no local alternative available for image analysis")` before the GPT-4o vision call
+
+5. **Module docstring** updated to describe local-first behavior
+
+**Docker compose changes for x-intake service:**
+Add to `docker-compose.yml` under x-intake environment:
+```yaml
+- OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+- OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
+- WHISPER_MODEL=${WHISPER_MODEL:-base}
+```
+This lets the Docker container reach Ollama on Betty for video analysis.
 
 **Gate test:**
 ```bash
 # Rebuild
 docker compose up -d --build x-intake
+
+# Syntax check
+python3 -m py_compile integrations/x_intake/video_transcriber.py
 
 # Test analyze endpoint — check logs for "ollama" not "openai"
 curl -s -X POST http://127.0.0.1:8101/analyze \
@@ -74,36 +100,78 @@ docker logs x-intake --tail 10 2>&1 | grep -i "ollama\|openai\|whisper"
 
 **Files:** `scripts/imessage-server.py`
 
-**Changes:**
-- Add `_ollama_completion()` helper (same pattern as video_transcriber)
-- In `research_link()`: try Ollama first → OpenAI fallback
-- Update shebang to `/Users/bob/AI-Server/.venv/bin/python3`
+**Exact changes (already implemented by Cursor — verify these are present):**
+
+1. **Shebang** changed to: `#!/Users/bob/AI-Server/.venv/bin/python3`
+2. **`from typing import Optional`** added to imports
+3. **`OLLAMA_HOST`** read from env (default `http://192.168.1.199:11434`)
+4. **`_ollama_completion(prompt, model="qwen3:8b")`** helper — POST to `{OLLAMA_HOST}/api/chat`
+5. **`research_link()`** tries Ollama first, then OpenAI. No-key error message updated to:
+   `"Can't analyze — Ollama is down and no OpenAI API key."`
 
 **Gate test:**
 ```bash
-# Restart bridge
+# Syntax check
+python3 -m py_compile scripts/imessage-server.py
+
+# Restart bridge with venv Python
 pkill -f imessage-server.py; sleep 2
 nohup /Users/bob/AI-Server/.venv/bin/python3 ~/AI-Server/scripts/imessage-server.py &
 
 # Send yourself an X link via iMessage — should get analysis without OpenAI calls
-# Check bridge log for "ollama" references
 ```
 
 **Success:** Link analysis returns via Ollama. OpenAI not called.
 
+### 1e. Update .env.example
+
+Add/verify these entries:
+```bash
+# LLM Routing (local-first via Ollama on Betty/Maestro)
+LLM_ROUTER_MODE=local_first
+OLLAMA_HOST=http://192.168.1.199:11434
+# OLLAMA_ANALYSIS_MODEL=qwen3:8b  # optional override, defaults to qwen3:8b
+
+# Local Whisper transcription (no cloud API needed)
+WHISPER_MODEL=base  # base, small, medium, large-v3
+```
+
+### 1f. Host setup on Bob
+
+```bash
+# Install local whisper into venv (PEP 668 safe)
+cd ~/AI-Server
+source .venv/bin/activate
+pip install mlx-whisper
+# Optional broader fallback:
+pip install openai-whisper
+deactivate
+
+# Rebuild x-intake container
+docker compose up -d --build x-intake
+
+# Restart iMessage bridge (picks up new shebang + Ollama path)
+pkill -f imessage-server.py; sleep 2
+nohup /Users/bob/AI-Server/.venv/bin/python3 ~/AI-Server/scripts/imessage-server.py &
+```
+
 ### Phase 1 hardening
 
-After 1a–1d all pass:
+After 1a–1f all pass:
 ```bash
 # Full verify
 bash scripts/verify-readonly.sh
+
+# Syntax checks
+python3 -m py_compile integrations/x_intake/video_transcriber.py
+python3 -m py_compile scripts/imessage-server.py
 
 # Monitor for 1 hour — watch for fallback warnings
 docker logs x-intake --since 1h 2>&1 | grep -c "openai\|fallback"
 # Expected: 0 (all local)
 ```
 
-**Phase 1 DONE when:** verify-readonly.sh passes, x-intake uses Ollama, iMessage bridge uses Ollama, no cloud API calls in logs for 1 hour of normal operation.
+**Phase 1 DONE when:** verify-readonly.sh passes, py_compile succeeds on both files, x-intake uses Ollama, iMessage bridge uses Ollama, no cloud API calls in logs for 1 hour of normal operation.
 
 ---
 
