@@ -1,5 +1,6 @@
 """Auto responder that drafts decision-aware client replies in Zoho."""
 
+import asyncio
 import email
 import imaplib
 import json
@@ -9,12 +10,13 @@ import re
 import sys
 
 import redis
-from openai import OpenAI
 
 # Ensure openclaw/ is importable (module lives alongside email_workflow, client_tracker)
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
+
+from llm_router import completion
 
 logger = logging.getLogger("openclaw.auto_responder")
 
@@ -235,17 +237,19 @@ def auto_respond(
     )
 
     try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=1000,
-            temperature=0.4,
-        )
-        draft_html = (response.choices[0].message.content or "").strip()
+        async def _draft():
+            return await completion(
+                prompt=user_prompt,
+                complexity="medium",
+                cache_ttl=0,
+                service="auto_responder",
+                system_prompt=SYSTEM_PROMPT,
+                max_tokens=1000,
+                temperature=0.4,
+            )
+
+        out = asyncio.run(_draft())
+        draft_html = (out.get("content") or "").strip()
         draft_html = _strip_version_references(draft_html)
         draft_html = _link_products_and_skus(draft_html)
     except Exception as exc:

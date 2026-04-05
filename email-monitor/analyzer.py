@@ -7,11 +7,17 @@ and suggested replies for incoming emails. Gracefully degrades if
 OPENAI_API_KEY is not set.
 """
 
+import asyncio
 import json
 import logging
 import os
+import sys
+from pathlib import Path as _Path
 
-from openai import OpenAI
+_REPO = _Path(__file__).resolve().parents[1]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+from openclaw.llm_router import completion
 
 logger = logging.getLogger(__name__)
 
@@ -64,18 +70,19 @@ def analyze_email(
     )
 
     try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=300,
-            temperature=0.3,
-        )
+        async def _run():
+            return await completion(
+                prompt=user_prompt,
+                complexity="simple",
+                cache_ttl=3600,
+                service="email-monitor",
+                system_prompt=SYSTEM_PROMPT,
+                max_tokens=300,
+                temperature=0.3,
+            )
 
-        content = response.choices[0].message.content.strip()
+        out = asyncio.run(_run())
+        content = (out.get("content") or "").strip()
         # Strip markdown fences if the model wraps them anyway
         if content.startswith("```"):
             content = content.split("\n", 1)[1] if "\n" in content else content[3:]
@@ -136,15 +143,18 @@ def extract_client_preferences(
     )
 
     try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=100,
-            temperature=0.2,
-        )
+        async def _run_pref():
+            return await completion(
+                prompt=prompt,
+                complexity="simple",
+                cache_ttl=3600,
+                service="email-monitor-preferences",
+                max_tokens=100,
+                temperature=0.2,
+            )
 
-        content = response.choices[0].message.content.strip()
+        out = asyncio.run(_run_pref())
+        content = (out.get("content") or "").strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[1] if "\n" in content else content[3:]
             if content.endswith("```"):

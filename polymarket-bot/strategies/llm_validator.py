@@ -14,14 +14,20 @@ import asyncio
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
-import httpx
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from openclaw.llm_router import completion
 
 # Known esports keywords for detection
 ESPORTS_KEYWORDS = ["counter-strike", "cs2", "cs:go", "valorant", "dota", "lol ", "league of legends"]
@@ -308,7 +314,7 @@ class LLMValidator:
         category_pnl: float,
         anti_patterns: list[str],
     ) -> ValidationResult:
-        """Make the OpenAI API call with enhanced research context."""
+        """LLM research via central router (Auto-23: Ollama + cache + cost tracking)."""
         warnings_text = ""
         if anti_patterns:
             warnings_text = f"\nWarnings detected: {', '.join(anti_patterns)}"
@@ -331,24 +337,30 @@ Tasks:
 Respond in this exact JSON format:
 {{"probability": 0.XX, "positive_ev": true/false, "thesis": "1-sentence explanation of WHY this trade", "reasoning": "brief analysis"}}"""
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self._model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 300,
-                    "temperature": 0.3,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        out = await completion(
+            prompt=prompt,
+            complexity="medium",
+            cache_ttl=300,
+            service="llm_validator",
+            fallback="cloud",
+            max_tokens=300,
+            temperature=0.3,
+        )
+        content = (out.get("content") or "").strip()
+        model_used = out.get("model") or self._model
 
-        content = data["choices"][0]["message"]["content"]
+        if out.get("error"):
+            return ValidationResult(
+                approved=True,
+                llm_probability=0.5,
+                market_price=current_price,
+                expected_value=0.0,
+                reasoning=f"Router error: {out.get('error')}",
+                thesis=f"LLM router unavailable — copying {wallet_win_rate*100:.0f}% WR wallet at {current_price:.2f}",
+                model=model_used,
+                latency_ms=0.0,
+                error=str(out.get("error")),
+            )
 
         try:
             if "```" in content:
@@ -369,7 +381,7 @@ Respond in this exact JSON format:
                 expected_value=0.0,
                 reasoning=f"Parse error. Raw: {content[:100]}",
                 thesis=f"LLM parse error — copying {wallet_win_rate*100:.0f}% WR wallet at {current_price:.2f}",
-                model=self._model,
+                model=model_used,
                 latency_ms=0.0,
                 error="parse_error",
             )
@@ -394,6 +406,6 @@ Respond in this exact JSON format:
             expected_value=ev,
             reasoning=reasoning,
             thesis=thesis,
-            model=self._model,
+            model=model_used,
             latency_ms=0.0,
         )

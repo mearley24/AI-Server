@@ -99,3 +99,10 @@
 - **X intake:** Redis publish path is `integrations/x_intake/pipeline.py` (`publish_to_redis`, default out channel `notification-hub`). Added `integrations/x_intake/bridge.py` with `XIntakeBridge` so `from integrations.x_intake.bridge import XIntakeBridge` matches verification imports.
 - **Kraken Avellaneda MM:** `polymarket-bot/src/main.py` uses `CryptoClient` with `dry_run` from env `KRAKEN_DRY_RUN` (default false). `AvellanedaMarketMaker.start()` awaits `await self._client.connect()`.
 - **Auto-responder:** `draft_email` uses Zoho `mode: draft` only (no send). Redis notifications require `REDIS_URL`; publishes to `notifications:email` and pushes JSON to list `email:drafts` (no hardcoded Redis credentials in code).
+
+## 2026-04-05 — Wave 7 / Auto-23 (LLM router migration)
+
+- **`GET /api/llm-costs`** added in `openclaw/main.py` (wraps `get_llm_cost_report()`).
+- **Service migration** to `openclaw.llm_router.completion`: `polymarket-bot/strategies/llm_validator.py` (medium, TTL 300s), `email-monitor/analyzer.py` (simple, TTL 3600s), `openclaw/auto_responder.py` (medium, TTL 0).
+- **Redis defaults** in `llm_router.py` / `llm_cache.py`: no embedded passwords; default host `redis://172.18.0.100:6379` — set **`REDIS_URL`** in production.
+- **Remaining Wave 7 prompt items** (Auto-28 preprocessor, Auto-25 Apple Notes, API-3/4, Auto-22): not implemented in this pass — see `cursor-prompts/wave7-10-optimization-revenue-dreamland.md`.

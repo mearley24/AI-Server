@@ -20,7 +20,7 @@ except ImportError:  # package import path (e.g. from polymarket-bot cwd)
 logger = logging.getLogger(__name__)
 
 OLLAMA_BASE_DEFAULT = "http://192.168.1.199:11434"
-REDIS_URL_DEFAULT = "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"
+REDIS_URL_DEFAULT = "redis://172.18.0.100:6379"  # prefer REDIS_URL env; no secrets in code
 
 MODEL_COSTS_PER_1K_TOKENS: dict[str, dict[str, float]] = {
     "gpt-4o": {"input": 0.0025, "output": 0.010},
