@@ -160,17 +160,35 @@ def _strip_version_references(text: str) -> str:
     return text
 
 
-def _notify_draft_ready(subject: str, sender_name: str, sender_email: str) -> None:
-    """Send iMessage notification via Redis bridge."""
+def _notify_draft_ready(
+    subject: str,
+    sender_name: str,
+    sender_email: str,
+    draft_id: str = "",
+) -> None:
+    """Notify via Redis pub/sub and queue structured draft metadata (draft-only; no send)."""
+    redis_url = (os.environ.get("REDIS_URL") or "").strip()
+    if not redis_url:
+        logger.warning("REDIS_URL not set — skipping draft Redis publish")
+        return
+
     msg = f"[DRAFT] Response to {sender_name or sender_email} re: {subject} — review in Zoho"
-    payload = {"title": "[DRAFT]", "body": msg}
+    pub_payload = {"title": "[DRAFT]", "body": msg}
+    queue_payload = {
+        "type": "email_draft",
+        "subject": subject,
+        "sender_name": sender_name,
+        "sender_email": sender_email,
+        "draft_id": draft_id,
+        "notification": msg,
+    }
     try:
-        r = redis.from_url(os.environ.get("REDIS_URL", "redis://:d1fff1065992d132b000c01d6012fa52@redis:6379"), decode_responses=True, socket_timeout=2)
-        r.publish("notifications:email", json.dumps(payload))
+        r = redis.from_url(redis_url, decode_responses=True, socket_timeout=2)
+        r.publish("notifications:email", json.dumps(pub_payload))
+        r.rpush("email:drafts", json.dumps(queue_payload))
         logger.info("Published draft notification: %s", msg)
     except Exception as exc:
         logger.warning("Failed to publish draft notification: %s", exc)
-
 
 def auto_respond(
     sender_email: str,
@@ -247,7 +265,12 @@ def auto_respond(
         logger.error("Failed to create Zoho draft: %s", exc)
         return {"status": "error", "reason": f"zoho_draft_error: {exc}"}
 
-    _notify_draft_ready(subject=subject, sender_name=sender_name, sender_email=sender_email)
+    _notify_draft_ready(
+        subject=subject,
+        sender_name=sender_name,
+        sender_email=sender_email,
+        draft_id=str(result.get("draft_id", "")),
+    )
     logger.info("Auto-respond draft created: RE: %s -> %s", subject[:60], sender_email)
     return {
         "status": "draft_created",

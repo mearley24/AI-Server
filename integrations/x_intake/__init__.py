@@ -12,6 +12,7 @@ Components:
 
 from .post_fetcher import PostFetcher, PostData
 from .analyzer import PostAnalyzer, AnalysisResult
+from .bridge import XIntakeBridge
 from .pipeline import XIntakePipeline
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "PostAnalyzer",
     "AnalysisResult",
     "XIntakePipeline",
+    "XIntakeBridge",
 ]
 
 __version__ = "1.0.0"

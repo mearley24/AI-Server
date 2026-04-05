@@ -1,109 +1,55 @@
-# Auto-29 Verification Report
+# Wave verification report
 
-Date: 2026-04-03
-Repo: `/Users/bob/AI-Server`
+**Date:** 2026-04-05  
+**Repo:** `/Users/bob/AI-Server`  
+**Overall status:** **READY** (code changes applied); several items remain **manual / follow-up** (see below).
 
-## 1) DONE-1: Polymarket Strategy Fixes
+---
 
-- PASS: Temperature cluster dedup exists in `polymarket-bot/strategies/polymarket_copytrade.py`.
-- PASS: Entry price caps present (`weather=0.25`, `us_sports=0.75`, `crypto=0.60`).
-- PASS: Crypto binary filter for short-window markets exists (`<30min` block path).
-- PASS: Category blacklist includes politics/geopolitics gates.
-- PASS: Wallet quality floor implemented (`>=70% WR` OR `>=60% + P/L>=3.0` with trade floors).
-- PASS: Import smoke test now succeeds:
-  - `python3 -c "from strategies.polymarket_copytrade import PolymarketCopytrade; print('OK')"`
+## Part 1 — Tonight’s fixes (verified in tree)
 
-## 2) DONE-2: RBI Pipeline
+| Item | Result | Notes |
+|------|--------|--------|
+| **X intake → Redis** | **PASS** | Publishing lives in `integrations/x_intake/pipeline.py` (`publish_to_redis`, `REDIS_CHANNEL_OUT` default `notification-hub`). Added `integrations/x_intake/bridge.py` exporting `XIntakeBridge` for `from integrations.x_intake.bridge import XIntakeBridge`. |
+| **Kraken Avellaneda MM** | **PASS** | `polymarket-bot/src/main.py`: `CryptoClient(..., dry_run=...)` with `KRAKEN_DRY_RUN` env (`true`/`1`/`yes` → dry run; default false). `strategies/crypto/avellaneda_market_maker.py` `start()` awaits `self._client.connect()`. Import: `from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker`. |
+| **Email monitor** | **PASS (in-tree)** | `email-monitor/monitor.py`: peek-style fetch and Message-ID–based stable id (verify runtime package name vs `email_monitor.main` if tests assume that path). |
+| **Auto-responder** | **PASS** | `openclaw/auto_responder.py`: Zoho draft only via `draft_email` (`mode: draft`). Redis: requires `REDIS_URL`; `PUBLISH notifications:email` + `RPUSH email:drafts` JSON; removed embedded default password. |
 
-- PASS: `polymarket-bot/strategies/rbi_pipeline.py` exists and imports cleanly.
-- PASS: `polymarket-bot/ideas.txt` is used for pending entries.
-- PASS: Import smoke test succeeds:
-  - `python3 -c "from strategies.rbi_pipeline import RBIPipeline; print('OK')"`
+---
 
-## 3) DONE-3: Bob Autonomy
+## Part 2 — Open items (not fully executed this pass)
 
-- PASS: `openclaw/auto_responder.py` imports cleanly.
-- PASS: `email-monitor/routing_config.json` has 33 total routes (>=21).
-- PASS: Import smoke test succeeds:
-  - `python3 -c "from openclaw.auto_responder import AutoResponder; print('OK')"`
+| Topic | Status |
+|-------|--------|
+| **Testimonial collection (`testimonial-collection-flow.md`)** | **Manual** — needs `symphonysh-web` routes/components and lifecycle wiring; not implemented in this sweep. |
+| **Weather trader price enrichment** | **Manual** — confirm against live/data path in deployment. |
+| **Spread arb low-balance mode** | **Manual** — verify sizing with ~$50 and logs. |
+| **D-Tools `.env.example` + missing keys** | **Manual** — confirm placeholders and graceful degrade when keys absent. |
 
-## 4) DONE-4: iCloud File Watcher
+---
 
-- PASS: `integrations/icloud_watch.py` exists.
-- PASS: Syntax verification succeeds:
-  - `python3 -m py_compile integrations/icloud_watch.py`
+## Part 3 — Global checks
 
-## 5) DONE-5: X Video Transcription
+- **Import smoke (examples):**  
+  `PYTHONPATH=. python3 -c "from integrations.x_intake.bridge import XIntakeBridge; print('OK')"`  
+  Polymarket strategies: use real module names (`polymarket_copytrade`, `weather_trader`, etc.); older prompt aliases may differ.
+- **Redis / Docker:** Use env-based `REDIS_URL`; do not commit secrets. Validate channels/lists in runtime environment.
 
-- PASS: `integrations/x_intake/video_transcriber.py` exists and imports cleanly.
-- PASS: Uses standard `logging` (no `structlog` in this module).
-- PASS: Import smoke test succeeds:
-  - `python3 -c "from integrations.x_intake.video_transcriber import VideoTranscriber; print('OK')"`
+---
 
-## 6) API-1: Self-Improving Trading Bot
+## Changes applied during this verification
 
-- PASS: RBI pipeline monitors `ideas.txt`, backtests, and auto-promotes after validation streaks.
-- PASS: CVD detector exists (`polymarket-bot/src/order_flow_analyzer.py` and `polymarket-bot/strategies/crypto/cvd.py`).
-- PASS: `strategy_manager.py` allocation targets include weather/copytrade/cvd_arb at 40/35/25.
-- PASS: `SharedPositionRegistry` exists and is wired.
-- PASS: `src/main.py` initializes `StrategyManager`.
-- PASS: Intel feed auto-creates pending RBI ideas from critical signals (`integrations/intel_feeds/signal_aggregator.py`).
-- PASS: Strategy import checks succeed:
-  - `python3 -c "from strategies.strategy_manager import StrategyManager; print('OK')"`
-  - `python3 -c "from strategies.rbi_pipeline import RBIPipeline; print('OK')"`
+1. **`integrations/x_intake/bridge.py`** — `XIntakeBridge` + `get_redis_client` alias for tests/imports.  
+2. **`integrations/x_intake/__init__.py`** — export `XIntakeBridge`.  
+3. **`openclaw/auto_responder.py`** — `REDIS_URL` required for Redis; `email:drafts` queue + pub/sub; `draft_id` passed through; no hardcoded Redis password.  
+4. **`polymarket-bot/src/main.py`** — `KRAKEN_DRY_RUN` env for Kraken `CryptoClient`.  
+5. **`.env.example`** — `KRAKEN_DRY_RUN=false` documented.  
+6. **`AGENT_LEARNINGS.md`** — 2026-04-05 engineering notes appended.
 
-## 7) API-2: Bob Business Operator
+---
 
-- PASS: Relevant commit located in history:
-  - `a817eae Add iMessage business-operator commands for drafts, follow-ups, and payments`
-- PASS: Auto-responder drafts client replies (`openclaw/auto_responder.py`).
-- PASS: Email workflow imports and routing config are valid.
-- PASS: Daily briefing callable/importable.
+## Historical: Auto-29 (2026-04-03)
 
-## 8) API-3: Neural Map
+The previous Auto-29 verification content is preserved in git history (`cursor-prompts/VERIFICATION_REPORT.md` prior to 2026-04-05). This file now tracks the wave verification sweep as the canonical report.
 
-- PASS: API-3 commit identified:
-  - `1ccc7e2 Add neural compatibility engine and starter hardware catalogs`
-- PASS: Files from commit present and importable:
-  - `knowledge/hardware/system_graph.py`
-  - `knowledge/hardware/networking.json`
-  - `knowledge/hardware/mounts.json`
-  - `knowledge/hardware/tvs.json`
-- PASS: Added local graph utility module for compatibility/import workflows:
-  - `tools/knowledge_graph.py`
-
-## 9) Integration Test (Import Matrix)
-
-- PASS: `python3 -c "from src.main import main; print('Main imports OK')"`
-- PASS: all strategy imports command succeeds.
-- PASS: openclaw import matrix succeeds:
-  - `AutoResponder`, `DailyBriefing`, `SOWAssembler`, `ProposalChecker`, `PreflightCheck`
-
-## 10) Fixes Applied During Verification
-
-1. Added compatibility class wrappers for import-based checks:
-   - `openclaw/auto_responder.py` → `AutoResponder`
-   - `integrations/x_intake/video_transcriber.py` → `VideoTranscriber`
-   - `openclaw/daily_briefing.py` → `DailyBriefing`
-   - `openclaw/sow_assembler.py` → `SOWAssembler`
-   - `openclaw/proposal_checker.py` → `ProposalChecker`
-   - `openclaw/preflight_check.py` → `PreflightCheck`
-2. Fixed package import path robustness:
-   - `openclaw/llm_router.py` now falls back to `from openclaw.llm_cache import LLMCache`.
-3. Added `main()` entrypoint function in:
-   - `polymarket-bot/src/main.py`
-4. Added backward-compatible strategy aliases:
-   - `polymarket-bot/strategies/polymarket_copytrade.py` → `PolymarketCopytrade`
-   - `polymarket-bot/strategies/weather_trader.py` → `CheapBracketStrategy`
-5. ~~Added local structlog shim~~ **Removed** — a root-level `structlog.py` shadowed the real `structlog` package and broke `structlog.configure` in Docker. Use `structlog` from `polymarket-bot/requirements.txt` only.
-6. Added knowledge graph utility module:
-   - `tools/knowledge_graph.py`
-
-## 11) Known Issues / Manual Intervention
-
-- None blocking for verification/import checks.
-- Note: on macOS, prefer `pip install` into a venv or use Docker for polymarket-bot; do not add a `structlog.py` file in `polymarket-bot/` (name collision with the `structlog` package).
-
-## Overall Status
-
-READY
+**READY** for merge once manual follow-ups are triaged as needed.

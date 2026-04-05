@@ -368,11 +368,16 @@ async def lifespan(app: FastAPI):
             from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
             from src.platforms.crypto_client import CryptoClient
             kraken_pair = os.environ.get("KRAKEN_TRADING_PAIR", "XRP/USD")
+            _kraken_dry = os.environ.get("KRAKEN_DRY_RUN", "false").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
             kraken_crypto = CryptoClient(
                 exchange_id="kraken",
                 api_key=os.environ["KRAKEN_API_KEY"],
                 api_secret=os.environ.get("KRAKEN_SECRET", ""),
-                dry_run=False,
+                dry_run=_kraken_dry,
             )
             kraken_strategy = AvellanedaMarketMaker(
                 crypto_client=kraken_crypto,

@@ -93,3 +93,9 @@
 ---
 *This file is read by Claude Code at the start of every session.*
 *Auto-updates after each trading day from Polymarket activity + positions API.*
+
+## 2026-04-05 — Wave verification / infra notes
+
+- **X intake:** Redis publish path is `integrations/x_intake/pipeline.py` (`publish_to_redis`, default out channel `notification-hub`). Added `integrations/x_intake/bridge.py` with `XIntakeBridge` so `from integrations.x_intake.bridge import XIntakeBridge` matches verification imports.
+- **Kraken Avellaneda MM:** `polymarket-bot/src/main.py` uses `CryptoClient` with `dry_run` from env `KRAKEN_DRY_RUN` (default false). `AvellanedaMarketMaker.start()` awaits `await self._client.connect()`.
+- **Auto-responder:** `draft_email` uses Zoho `mode: draft` only (no send). Redis notifications require `REDIS_URL`; publishes to `notifications:email` and pushes JSON to list `email:drafts` (no hardcoded Redis credentials in code).
