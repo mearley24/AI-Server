@@ -82,10 +82,11 @@ async def analyze_endpoint(body: dict):
 
 
 async def _send_reply(text: str) -> None:
-    """Send analysis result back via iMessage bridge."""
+    """Send analysis result back via iMessage bridge (POST root — bridge has no /send)."""
     try:
+        base = IMESSAGE_BRIDGE_URL.rstrip("/")
         async with httpx.AsyncClient(timeout=10.0) as client:
-            await client.post(f"{IMESSAGE_BRIDGE_URL}/send", json={"text": text})
+            await client.post(base, json={"message": text})
     except Exception as exc:
         logger.warning("imessage_send_failed", error=str(exc))
 

@@ -34,6 +34,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.parse import quote
 
+import redis as _redis_lib
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -72,6 +74,27 @@ def _load_repo_env():
 
 
 _load_repo_env()
+
+# Redis publish for downstream consumers (e.g. Docker x-intake on events:imessage)
+_REDIS_URL = os.environ.get(
+    "REDIS_URL",
+    "redis://:d19c9b0faebeee9927555eb8d6b28ec9@127.0.0.1:6379",
+)
+_redis_pub = None
+
+
+def _get_redis_pub():
+    global _redis_pub
+    if _redis_pub is None:
+        try:
+            _redis_pub = _redis_lib.from_url(_REDIS_URL, decode_responses=True)
+            _redis_pub.ping()
+            log.info("[redis] Connected for publish")
+        except Exception as e:
+            log.warning("[redis] Publish connection failed: %s", e)
+            _redis_pub = None
+    return _redis_pub
+
 
 TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN", "")
@@ -794,11 +817,27 @@ def ask_openclaw(message: str) -> str:
         import re as _re
         urls = _re.findall(r'https?://[^\s<>"]+', message)
         if urls:
-            context = _re.sub(r'https?://[^\s<>"]+', '', message).strip()
-            results = []
-            for url in urls[:2]:
-                results.append(research_link(url, context))
-            return "\n\n---\n\n".join(results)
+            x_pattern = _re.compile(
+                r"https?://(?:x\.com|twitter\.com)/.+/status/", _re.I
+            )
+            x_urls = [u for u in urls if x_pattern.search(u)]
+            non_x_urls = [u for u in urls if not x_pattern.search(u)]
+
+            if x_urls and not non_x_urls:
+                return (
+                    "Analyzing your X link(s) — detailed analysis incoming shortly via x-intake."
+                )
+
+            if non_x_urls:
+                context = _re.sub(r'https?://[^\s<>"]+', "", message).strip()
+                results = []
+                for url in non_x_urls[:2]:
+                    results.append(research_link(url, context))
+                if x_urls:
+                    results.append(
+                        "X links are being analyzed separately — results incoming."
+                    )
+                return "\n\n---\n\n".join(results)
 
         approval_resp = try_approval_reply(message)
         if approval_resp is not None:
@@ -1233,6 +1272,23 @@ def monitor_loop():
                     continue
 
                 log.info("[monitor] Received: %s", text)
+
+                # Publish to Redis for x-intake and other downstream consumers
+                _rpub = _get_redis_pub()
+                if _rpub:
+                    try:
+                        _rpub.publish(
+                            "events:imessage",
+                            json.dumps(
+                                {
+                                    "text": text,
+                                    "from": msg.get("from", REPLY_TO),
+                                    "timestamp": time.time(),
+                                }
+                            ),
+                        )
+                    except Exception as _re:
+                        log.warning("[redis] Publish failed: %s", _re)
 
                 response = ask_openclaw(text)
 

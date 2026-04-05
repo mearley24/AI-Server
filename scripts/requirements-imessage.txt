@@ -1,0 +1,3 @@
+# Native macOS iMessage bridge (scripts/imessage-server.py)
+redis>=5.0
+
