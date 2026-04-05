@@ -177,6 +177,17 @@ class AvellanedaMarketMaker:
         """Start the market making loop."""
         if self._running:
             return
+
+        # Ensure CCXT exchange is connected (load_markets) before ticks
+        if self._client.exchange is None:
+            connected = await self._client.connect()
+            if not connected:
+                logger.error(
+                    "avellaneda_mm_connect_failed",
+                    msg="Could not connect to exchange — aborting start",
+                )
+                return
+
         self._running = True
         self._started_at = time.time()
 
