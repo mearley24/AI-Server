@@ -1209,7 +1209,7 @@ class Orchestrator:
         try:
             resp = await self.http.post(
                 f"{SERVICES['notifications']}/notify",
-                json={"title": f"Bob [{channel}]", "body": message, "priority": "normal"},
+                json={"title": "", "body": message, "priority": "normal"},
             )
             return {"ok": resp.status_code == 200, "status_code": resp.status_code, "channel": "notification-hub"}
         except Exception as e:
