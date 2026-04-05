@@ -11,6 +11,7 @@ import email
 import email.header
 import email.utils
 from email.utils import parseaddr
+import hashlib
 import imaplib
 import json
 import logging
@@ -282,6 +283,28 @@ def set_scan_state(key: str, value: str, db_path: str = DB_PATH) -> None:
         logger.error("Failed to save scan state %s: %s", key, e)
 
 
+def _generate_stable_message_id(sender: str, subject: str, date_str: str) -> str:
+    """Stable message ID when Message-ID header is missing (dedup across restarts)."""
+    raw = f"{sender}|{subject}|{date_str}".encode("utf-8", errors="replace")
+    return f"<generated-{hashlib.sha256(raw).hexdigest()[:16]}@email-monitor>"
+
+def _set_poll_uid_high_water_mark(mail: imaplib.IMAP4_SSL) -> None:
+    """Seed last_poll_uid from highest mailbox UID so poll_once skips already-indexed mail."""
+    try:
+        _, uid_data = mail.uid("search", None, "ALL")
+        if not uid_data or not uid_data[0]:
+            return
+        all_uids = uid_data[0].split()
+        if not all_uids:
+            return
+        last = all_uids[-1]
+        highest = last.decode() if isinstance(last, bytes) else str(last)
+        set_scan_state("last_poll_uid", highest)
+        logger.info("Set poll UID high-water mark to %s", highest)
+    except Exception as e:
+        logger.warning("Could not set poll UID high-water mark: %s", e)
+
+
 def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple[str, str]:
     """
     Categorize an email: active clients, routed senders, marketing patterns, then keywords.
@@ -512,6 +535,7 @@ class EmailMonitor:
                 logger.info("Catchup scan: no emails since %s", since_date)
                 # Still save the high-water mark so next restart skips this range
                 set_scan_state("last_catchup_date", datetime.now(timezone.utc).strftime("%d-%b-%Y"))
+                _set_poll_uid_high_water_mark(mail)
                 mail.logout()
                 return 0
 
@@ -530,7 +554,9 @@ class EmailMonitor:
                     header_data = msg_data[0][1] if isinstance(msg_data[0], tuple) else b""
                     msg = email.message_from_bytes(header_data)
 
-                    message_id = msg.get("Message-ID", f"unknown-{time.time()}")
+                    message_id = msg.get("Message-ID") or _generate_stable_message_id(
+                        msg.get("From", ""), msg.get("Subject", ""), msg.get("Date", "")
+                    )
                     raw_from = decode_header_value(msg.get("From", ""))
                     subject = decode_header_value(msg.get("Subject", "(no subject)"))
                     date_str = msg.get("Date", "")
@@ -587,6 +613,7 @@ class EmailMonitor:
                     logger.error("Catchup error processing email %s: %s", num, e)
                     continue
 
+            _set_poll_uid_high_water_mark(mail)
             mail.logout()
 
             # Save today as the high-water mark so next restart only scans from here
@@ -614,19 +641,46 @@ class EmailMonitor:
             mail = await asyncio.to_thread(self._connect_imap)
             mail.select("INBOX")
 
-            _, message_numbers = mail.search(None, "UNSEEN")
-            if not message_numbers[0]:
+            last_uid_raw = get_scan_state("last_poll_uid") or "0"
+            try:
+                last_uid_int = int(last_uid_raw)
+            except ValueError:
+                last_uid_int = 0
+
+            typ, data = mail.uid("search", None, "UNSEEN")
+            if typ != "OK" or not data or not data[0]:
                 mail.logout()
                 return 0
 
-            msg_nums = message_numbers[0].split()
-            logger.info("Found %d unread emails", len(msg_nums))
+            all_unseen = data[0].split()
+            msg_uids: list[str] = []
+            for u in all_unseen:
+                uid_s = u.decode() if isinstance(u, bytes) else str(u)
+                try:
+                    if int(uid_s) > last_uid_int:
+                        msg_uids.append(uid_s)
+                except ValueError:
+                    continue
+
+            if not msg_uids:
+                mail.logout()
+                return 0
+
+            msg_uids.sort(key=lambda x: int(x))
+            logger.info(
+                "Found %d unread email(s) with UID > %s (poll checkpoint)",
+                len(msg_uids),
+                last_uid_raw,
+            )
 
             redis_client = await self._get_redis()
+            max_uid_seen = last_uid_int
 
-            for num in msg_nums:
+            for uid in msg_uids:
                 try:
-                    _, msg_data = mail.fetch(num, "(RFC822.HEADER BODY.PEEK[TEXT]<0.4000>)")
+                    _, msg_data = mail.uid(
+                        "fetch", uid, "(RFC822.HEADER BODY.PEEK[TEXT]<0.4000>)"
+                    )
                     if not msg_data or not msg_data[0]:
                         continue
 
@@ -634,7 +688,11 @@ class EmailMonitor:
                     header_data = msg_data[0][1] if isinstance(msg_data[0], tuple) else b""
                     msg = email.message_from_bytes(header_data)
 
-                    message_id = msg.get("Message-ID", f"unknown-{time.time()}")
+                    message_id = msg.get("Message-ID") or _generate_stable_message_id(
+                        msg.get("From", ""),
+                        msg.get("Subject", ""),
+                        msg.get("Date", ""),
+                    )
                     raw_from = decode_header_value(msg.get("From", ""))
                     subject = decode_header_value(msg.get("Subject", "(no subject)"))
                     date_str = msg.get("Date", "")
@@ -673,6 +731,9 @@ class EmailMonitor:
                         received_at=received_at,
                         snippet=snippet,
                     )
+
+                    uid_int = int(uid)
+                    max_uid_seen = max(max_uid_seen, uid_int)
 
                     if is_new:
                         new_count += 1
@@ -735,19 +796,20 @@ class EmailMonitor:
                             )
 
                 except Exception as e:
-                    logger.error("Error processing email %s: %s", num, e)
+                    logger.error("Error processing email UID %s: %s", uid, e)
                     continue
 
-            mail.logout()
+            if max_uid_seen > last_uid_int:
+                set_scan_state("last_poll_uid", str(max_uid_seen))
 
-            # Update high-water mark so catchup scan knows where polling left off
-            if new_count > 0:
-                set_scan_state("last_catchup_date", datetime.now(timezone.utc).strftime("%d-%b-%Y"))
+            mail.logout()
 
         except imaplib.IMAP4.error as e:
             logger.error("IMAP error: %s", e)
         except Exception as e:
             logger.error("Email poll error: %s", e)
+
+        return new_count
 
         return new_count
 
