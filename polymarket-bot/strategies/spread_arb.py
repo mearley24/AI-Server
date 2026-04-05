@@ -63,6 +63,7 @@ class ArbOpportunity:
     cost_usd: float
     tokens: list[dict] = field(default_factory=list)
     token_ids: list[str] = field(default_factory=list)  # decimal clobTokenIds from Gamma API
+    neg_risk: bool = False
     metadata: dict = field(default_factory=dict)
     detected_at: float = field(default_factory=time.time)
 
@@ -276,6 +277,7 @@ class SpreadArbScanner:
             scale = size / total_no_cost if total_no_cost > 0 else 0
 
             all_no_token_ids = [p["no_token_id"] for p in no_prices if p.get("no_token_id")]
+            is_neg_risk = evt.get("negRisk", False) or evt.get("neg_risk", False) or True  # multi-outcome events are always neg risk on Polymarket
             opps.append(ArbOpportunity(
                 opp_type="negative_risk",
                 market_title=evt.get("title", "")[:80],
@@ -285,6 +287,7 @@ class SpreadArbScanner:
                 cost_usd=round(total_no_cost * scale, 2),
                 tokens=[{"condition_id": p["condition_id"], "no_price": p["price"], "market": p["market"], "no_token_id": p.get("no_token_id", "")} for p in no_prices],
                 token_ids=all_no_token_ids,
+                neg_risk=is_neg_risk,
                 metadata={
                     "outcomes": n,
                     "total_no_cost": round(total_no_cost, 4),
@@ -517,6 +520,7 @@ class SpreadArbScanner:
                             size=round(size / opp.tokens[0]["price"], 2),
                             side=SIDE_BUY,
                             order_type="FOK",
+                            neg_risk=opp.neg_risk,
                         ),
                         self._client.place_order(
                             token_id=str(opp.token_ids[1]),
@@ -524,6 +528,7 @@ class SpreadArbScanner:
                             size=round(size / opp.tokens[1]["price"], 2),
                             side=SIDE_BUY,
                             order_type="FOK",
+                            neg_risk=opp.neg_risk,
                         ),
                         return_exceptions=True,
                     )
@@ -569,6 +574,7 @@ class SpreadArbScanner:
                             size=shares,
                             side=SIDE_BUY,
                             order_type="FOK",
+                            neg_risk=opp.neg_risk,
                         )
                         results.append(result)
 
@@ -606,6 +612,7 @@ class SpreadArbScanner:
                                 size=shares,
                                 side=SIDE_BUY,
                                 order_type="FOK",
+                                neg_risk=opp.neg_risk,
                             )
                             self._positions[opp.condition_id] = {
                                 "type": opp.opp_type, "cost": round(size, 2),

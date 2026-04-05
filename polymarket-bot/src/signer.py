@@ -26,6 +26,15 @@ DOMAIN_DATA = {
     "verifyingContract": EXCHANGE_ADDRESS,
 }
 
+# Neg Risk CTF Exchange on Polygon (multi-outcome / neg-risk markets)
+NEG_RISK_EXCHANGE_ADDRESS = "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+NEG_RISK_DOMAIN_DATA = {
+    "name": "Polymarket CTF Exchange",
+    "version": "1",
+    "chainId": 137,
+    "verifyingContract": NEG_RISK_EXCHANGE_ADDRESS,
+}
+
 # Order type definition for EIP-712
 ORDER_TYPES = {
     "EIP712Domain": [
@@ -75,6 +84,7 @@ class OrderSigner:
         self._account = Account.from_key(bytes.fromhex(private_key))
         self.address = self._account.address
         self._domain = {**DOMAIN_DATA, "chainId": chain_id}
+        self._neg_risk_domain = {**NEG_RISK_DOMAIN_DATA, "chainId": chain_id}
 
     def build_order(
         self,
@@ -114,12 +124,13 @@ class OrderSigner:
             "signatureType": 0,  # EOA
         }
 
-    def sign_order(self, order: dict[str, Any]) -> str:
+    def sign_order(self, order: dict[str, Any], neg_risk: bool = False) -> str:
         """Sign an order using EIP-712 and return the hex signature."""
+        domain = self._neg_risk_domain if neg_risk else self._domain
         structured = {
             "types": ORDER_TYPES,
             "primaryType": "Order",
-            "domain": self._domain,
+            "domain": domain,
             "message": order,
         }
         encoded = encode_structured_data(structured)
@@ -135,6 +146,7 @@ class OrderSigner:
         fee_rate_bps: int = 0,
         nonce: int = 0,
         expiration: int = 0,
+        neg_risk: bool = False,
     ) -> tuple[dict[str, Any], str]:
         """Build and sign an order in one call. Returns (order, signature)."""
         order = self.build_order(
@@ -146,5 +158,5 @@ class OrderSigner:
             nonce=nonce,
             expiration=expiration,
         )
-        sig = self.sign_order(order)
+        sig = self.sign_order(order, neg_risk=neg_risk)
         return order, sig

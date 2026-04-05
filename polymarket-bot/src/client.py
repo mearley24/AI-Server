@@ -121,6 +121,7 @@ class PolymarketClient:
         size: float,
         side: int,
         order_type: str = ORDER_TYPE_GTC,
+        neg_risk: bool = False,
     ) -> dict[str, Any]:
         """Build, sign, and place an order on the CLOB."""
         if not self._signer:
@@ -131,6 +132,7 @@ class PolymarketClient:
             price=price,
             size=size,
             side=side,
+            neg_risk=neg_risk,
         )
 
         payload = {
