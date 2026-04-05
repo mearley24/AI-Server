@@ -155,6 +155,15 @@ async def dashboard_page():
     return HTMLResponse("<h1>Dashboard not found</h1>")
 
 
+@app.get("/trading", response_class=HTMLResponse)
+async def trading_page():
+    """Serve the trading dashboard."""
+    html_path = STATIC_DIR / "trading.html"
+    if html_path.exists():
+        return FileResponse(html_path)
+    return HTMLResponse("<h1>Trading dashboard not found</h1>")
+
+
 @app.get("/api/trading")
 async def api_trading():
     """Trading dashboard data — live from polymarket-bot."""

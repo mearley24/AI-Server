@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading — Mission Control</title>
+<script>
+(function(){
+  var p = new URLSearchParams(window.location.search);
+  var t = p.get('token') || '';
+  if (!t) return;
+  var _fetch = window.fetch;
+  window.fetch = function(url, opts) {
+    if (typeof url === 'string' && url.startsWith('/')) {
+      var sep = url.indexOf('?') === -1 ? '?' : '&';
+      url = url + sep + 'token=' + encodeURIComponent(t);
+    }
+    return _fetch.call(this, url, opts);
+  };
+})();
+</script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0a0a;--tile:#141414;--text:#ededed;--text2:rgba(255,255,255,.65);--green:#30d158;--red:#ff453a;--blue:#0a84ff;--border:rgba(255,255,255,.08)}
+body{background:var(--bg);color:var(--text);font-family:"Inter",-apple-system,system-ui,sans-serif;padding:20px;min-height:100vh;-webkit-font-smoothing:antialiased}
+h1{font-size:24px;margin-bottom:16px;font-weight:600}
+h2{font-size:16px;margin-bottom:8px;font-weight:500;color:var(--text2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:24px}
+.card{background:var(--tile);border:1px solid var(--border);border-radius:8px;padding:16px}
+.hero{font-size:32px;font-weight:700;margin:4px 0}
+.green{color:var(--green)}.red{color:var(--red)}.blue{color:var(--blue)}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+th,td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--text2);font-weight:500}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.badge-healthy{background:rgba(48,209,88,.15);color:var(--green)}
+.badge-down{background:rgba(255,69,58,.15);color:var(--red)}
+.updated{color:var(--text2);font-size:12px;text-align:right;margin-top:8px}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<h1>Trading Dashboard <a href="/dashboard" style="font-size:14px;margin-left:12px">← Ops</a></h1>
+<div id="status-msg" class="updated">Loading...</div>
+
+<div class="grid" id="summary-cards"></div>
+
+<h2>Strategy Performance</h2>
+<div class="card" id="strategies-card"><em>Loading strategies...</em></div>
+
+<h2>Open Positions</h2>
+<div class="card" id="positions-card"><em>Loading positions...</em></div>
+
+<h2>Kraken Market Maker</h2>
+<div class="card" id="kraken-card"><em>Loading...</em></div>
+
+<script>
+const BOT = 'http://vpn:8430';
+
+async function fetchJSON(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+function pnlClass(v) { return v >= 0 ? 'green' : 'red'; }
+function pnlStr(v) { return (v >= 0 ? '+' : '') + '$' + v.toFixed(2); }
+
+async function refresh() {
+  const [botStatus, strats, positions, kraken] = await Promise.all([
+    fetchJSON('/api/trading/bot-status'),
+    fetchJSON('/api/trading/bot-status').then(d => d && d.strategies),
+    fetchJSON('/api/trading/positions'),
+    fetchJSON('/api/trading/bot-status').then(d => null),
+  ]);
+
+  // Summary cards
+  const cards = document.getElementById('summary-cards');
+  const pos = positions || {positions:[], count:0};
+  const totalValue = pos.positions.reduce((s,p) => s + (p.currentValue||0), 0);
+  const totalPnl = pos.positions.reduce((s,p) => s + parseFloat(p.cashPnl||0), 0);
+  cards.innerHTML = `
+    <div class="card">
+      <h2>Portfolio Value</h2>
+      <div class="hero">$${totalValue.toFixed(2)}</div>
+    </div>
+    <div class="card">
+      <h2>Open Positions</h2>
+      <div class="hero">${pos.count}</div>
+    </div>
+    <div class="card">
+      <h2>Cash P/L</h2>
+      <div class="hero ${pnlClass(totalPnl)}">${pnlStr(totalPnl)}</div>
+    </div>
+  `;
+
+  // Strategy manager status (proxy through mission control)
+  const stratCard = document.getElementById('strategies-card');
+  try {
+    const sm = await fetchJSON('/api/trading/bot-status');
+    const stData = sm && sm.strategies;
+    if (stData) {
+      let rows = '<table><tr><th>Strategy</th><th>State</th><th>Bankroll</th><th>Trades</th><th>Win%</th><th>P/L</th></tr>';
+      for (const [name, s] of Object.entries(stData)) {
+        const pnl = s.pnl || {};
+        rows += `<tr>
+          <td>${name}</td>
+          <td><span class="badge ${s.state==='running'?'badge-healthy':'badge-down'}">${s.state||'?'}</span></td>
+          <td>$${(s.bankroll||0).toFixed(0)}</td>
+          <td>${pnl.total_trades||0}</td>
+          <td>${(pnl.win_rate||0).toFixed(0)}%</td>
+          <td class="${pnlClass(pnl.total_pnl||0)}">${pnlStr(pnl.total_pnl||0)}</td>
+        </tr>`;
+      }
+      rows += '</table>';
+      stratCard.innerHTML = rows;
+    } else {
+      stratCard.innerHTML = '<em>Strategy manager not available</em>';
+    }
+  } catch { stratCard.innerHTML = '<em>Could not load strategies</em>'; }
+
+  // Positions table
+  const posCard = document.getElementById('positions-card');
+  if (pos.positions.length > 0) {
+    let rows = '<table><tr><th>Market</th><th>Outcome</th><th>Size</th><th>Value</th><th>Avg Price</th><th>Current</th><th>P/L</th></tr>';
+    for (const p of pos.positions.slice(0, 30)) {
+      const cashPnl = parseFloat(p.cashPnl||0);
+      rows += `<tr>
+        <td title="${p.title}">${(p.title||'').substring(0,50)}</td>
+        <td>${p.outcome||''}</td>
+        <td>${(p.size||0).toFixed(2)}</td>
+        <td>$${(p.currentValue||0).toFixed(2)}</td>
+        <td>${(p.avgPrice||0).toFixed(3)}</td>
+        <td>${p.curPrice||'?'}</td>
+        <td class="${pnlClass(cashPnl)}">${pnlStr(cashPnl)}</td>
+      </tr>`;
+    }
+    rows += '</table>';
+    posCard.innerHTML = rows;
+  } else {
+    posCard.innerHTML = '<em>No open positions</em>';
+  }
+
+  // Kraken
+  const krakenCard = document.getElementById('kraken-card');
+  try {
+    const kr = await fetchJSON('/api/trading/bot-status');
+    const ks = kr && kr.status && kr.status.kraken;
+    if (ks && ks.enabled) {
+      krakenCard.innerHTML = `<table>
+        <tr><td>Pair</td><td>${ks.pair||'XRP/USD'}</td></tr>
+        <tr><td>Running</td><td><span class="badge ${ks.running?'badge-healthy':'badge-down'}">${ks.running?'yes':'no'}</span></td></tr>
+        <tr><td>Ticks</td><td>${ks.tick_count||0}</td></tr>
+        <tr><td>Daily P/L</td><td class="${pnlClass(ks.daily_pnl||0)}">${pnlStr(ks.daily_pnl||0)}</td></tr>
+        <tr><td>Halted</td><td>${ks.daily_pnl_halted?'YES':'no'}</td></tr>
+      </table>`;
+    } else {
+      krakenCard.innerHTML = '<em>Kraken MM not configured (no API key)</em>';
+    }
+  } catch { krakenCard.innerHTML = '<em>Could not load Kraken status</em>'; }
+
+  document.getElementById('status-msg').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+}
+
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>

@@ -24,6 +24,7 @@ via the existing CryptoClient (CCXT).
 from __future__ import annotations
 
 import asyncio
+import os
 import math
 import time
 from collections import deque
@@ -53,6 +54,10 @@ DEFAULT_ORDER_SIZE_USDT = 10.0
 DEFAULT_MAX_TOTAL_EXPOSURE = 50.0
 DEFAULT_TICK_INTERVAL = 15.0
 DEFAULT_FEE_BPS = 16.0  # Kraken maker fee per side
+DEFAULT_MAX_DAILY_LOSS = -50.0
+DEFAULT_SPREAD_FLOOR_BPS = 10.0  # never tighter than 0.1%
+DEFAULT_CONSECUTIVE_FAIL_LIMIT = 3
+DEFAULT_FAIL_PAUSE_SECONDS = 300.0  # 5 minutes
 
 
 class AvellanedaMarketMaker:
@@ -159,6 +164,15 @@ class AvellanedaMarketMaker:
         self._tick_count = 0
         self._started_at = 0.0
 
+        # Safety guards
+        self._max_position_usdt = float(os.environ.get("KRAKEN_MAX_POSITION", "500"))
+        self._max_daily_loss = float(os.environ.get("KRAKEN_MAX_DAILY_LOSS", str(DEFAULT_MAX_DAILY_LOSS)))
+        self._spread_floor_bps = DEFAULT_SPREAD_FLOOR_BPS
+        self._daily_pnl: float = 0.0
+        self._daily_pnl_halted: bool = False
+        self._consecutive_failures: int = 0
+        self._paused_until: float = 0.0
+
     async def start(self) -> None:
         """Start the market making loop."""
         if self._running:
@@ -237,17 +251,50 @@ class AvellanedaMarketMaker:
     async def _run_loop(self) -> None:
         """Main loop — calls _tick() for each pair on each interval."""
         while self._running:
+            # Daily loss circuit breaker
+            if self._daily_pnl <= self._max_daily_loss and not self._daily_pnl_halted:
+                self._daily_pnl_halted = True
+                logger.warning(
+                    "avellaneda_daily_loss_halt",
+                    daily_pnl=round(self._daily_pnl, 2),
+                    limit=self._max_daily_loss,
+                )
+            if self._daily_pnl_halted:
+                await asyncio.sleep(60)
+                continue
+
+            # Consecutive failure pause
+            if time.time() < self._paused_until:
+                await asyncio.sleep(self._tick_interval)
+                continue
+
             try:
+                tick_ok = True
                 for pair in self._pairs:
                     try:
                         await self._tick(pair)
                     except Exception as exc:
+                        tick_ok = False
                         logger.warning(
                             "avellaneda_pair_tick_error",
                             pair=pair,
                             error=str(exc),
                             msg=f"Skipping {pair} this tick",
                         )
+
+                if tick_ok:
+                    self._consecutive_failures = 0
+                else:
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures >= DEFAULT_CONSECUTIVE_FAIL_LIMIT:
+                        self._paused_until = time.time() + DEFAULT_FAIL_PAUSE_SECONDS
+                        logger.warning(
+                            "avellaneda_consecutive_fail_pause",
+                            failures=self._consecutive_failures,
+                            pause_seconds=DEFAULT_FAIL_PAUSE_SECONDS,
+                        )
+                        self._consecutive_failures = 0
+
                 self._tick_count += 1
             except asyncio.CancelledError:
                 break
@@ -479,6 +526,8 @@ class AvellanedaMarketMaker:
         # Apply VPIN spread multiplier (widens spread under toxic flow)
         spread *= vpin_action.spread_multiplier
 
+        # Enforce spread floor (never tighter than 0.1%)
+        spread = max(spread, mid * (self._spread_floor_bps / 10000.0))
         # Cap final spread to 100bps max
         spread = min(spread, mid * 0.01)
 
@@ -698,6 +747,23 @@ class AvellanedaMarketMaker:
 
         except Exception as exc:
             logger.debug("avellaneda_trades_fetch_error", pair=pair, error=str(exc))
+
+    def get_status(self) -> dict[str, Any]:
+        """Return status for /kraken/status API endpoint."""
+        return {
+            "running": self._running,
+            "tick_count": self._tick_count,
+            "uptime_seconds": round(time.time() - self._started_at) if self._started_at else 0,
+            "pairs": self._pairs,
+            "daily_pnl": round(self._daily_pnl, 2),
+            "daily_pnl_halted": self._daily_pnl_halted,
+            "consecutive_failures": self._consecutive_failures,
+            "paused_until": self._paused_until,
+            "max_position_usdt": self._max_position_usdt,
+            "max_daily_loss": self._max_daily_loss,
+            "spread_floor_bps": self._spread_floor_bps,
+            "inventory": self._inventory.status(),
+        }
 
     @property
     def status(self) -> dict[str, Any]:
