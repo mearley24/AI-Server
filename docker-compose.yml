@@ -499,7 +499,7 @@ services:
       - TZ=America/Denver
       - MISSION_CONTROL_TOKEN=${MISSION_CONTROL_TOKEN:-}
     ports:
-      - "0.0.0.0:8098:8098"
+      - "127.0.0.1:8098:8098"
     volumes:
       # Host source so new API routes (e.g. /api/events-log) apply without image rebuild
       - ./mission_control:/app
