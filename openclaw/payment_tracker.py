@@ -113,10 +113,18 @@ def _upsert_projects(projects: list[tuple[str, str, float]], db_path: str = DB_P
 
 
 def _project_match(project_name: str, text: str) -> bool:
+    """Match project name in email text — requires multiple signals to avoid false positives."""
     name = project_name.lower()
     text = text.lower()
     parts = [p for p in name.replace("-", " ").split() if len(p) > 3]
-    return any(p in text for p in parts[:3]) if parts else False
+    if not parts:
+        return False
+    # Require at least 2 parts to match (e.g. "aspen" AND "meadow"),
+    # or the full project name to appear
+    if name in text:
+        return True
+    matched = sum(1 for p in parts if p in text)
+    return matched >= min(2, len(parts))
 
 
 def _scan_email_signals(email_db_path: str, db_path: str = DB_PATH) -> tuple[int, int]:
@@ -132,10 +140,23 @@ def _scan_email_signals(email_db_path: str, db_path: str = DB_PATH) -> tuple[int
     projects = conn.execute("SELECT * FROM project_payments").fetchall()
     signed_updates = 0
     paid_updates = 0
+    # Senders that are NEVER payment sources — skip entirely
+    _IGNORE_SENDERS = {
+        "nordstrom", "amazon", "target", "walmart", "costco", "edmunds",
+        "dropbox", "netflix", "spotify", "apple", "google play", "uber",
+        "doordash", "grubhub", "xtool", "crexi", "replit", "github",
+    }
     for sender, subject, snippet, received_at in rows:
+        sender_lower = (sender or "").lower()
+        if any(s in sender_lower for s in _IGNORE_SENDERS):
+            continue
         txt = f"{subject or ''} {snippet or ''} {sender or ''}".lower()
         is_signed = ("docusign" in txt and ("completed" in txt or "signed" in txt)) or "agreement signed" in txt
-        is_payment = any(k in txt for k in ["payment received", "deposit received", "wire received", "ach credit", "receipt"])
+        is_payment = any(k in txt for k in ["payment received", "deposit received", "wire received", "ach credit", "zelle received"])
+        # "receipt" alone is too broad (matches Amazon receipts, Nordstrom, etc.)
+        # Only count "receipt" if it's paired with financial terms
+        if not is_payment and "receipt" in txt:
+            is_payment = any(k in txt for k in ["deposit", "payment", "wire", "transfer", "invoice"])
         for prj in projects:
             if not _project_match(prj["project_name"], txt):
                 continue

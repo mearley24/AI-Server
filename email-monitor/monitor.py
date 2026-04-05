@@ -307,12 +307,28 @@ def _set_poll_uid_high_water_mark(mail: imaplib.IMAP4_SSL) -> None:
 
 def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple[str, str]:
     """
-    Categorize an email: active clients, routed senders, marketing patterns, then keywords.
+    Categorize an email: self-emails, active clients, routed senders, marketing patterns, then keywords.
 
     Returns:
         (category, priority)
     """
+    # Skip self-sent emails (Cursor prompts, test emails, internal automation)
     email_addr = _sender_email_addr(sender)
+    _own_addresses = {
+        "bob@symphonysh.com",
+        "admin@symphonysh.com",
+        "noreply@symphonysh.com",
+    }
+    _zoho = os.environ.get("ZOHO_EMAIL", "").lower().strip()
+    if _zoho:
+        _own_addresses.add(_zoho)
+    if email_addr and email_addr.lower() in _own_addresses:
+        return "INTERNAL", "none"
+
+    # Skip "Re: Cursor Prompt" by subject
+    if "cursor prompt" in (subject or "").lower():
+        return "INTERNAL", "none"
+
     if email_addr and email_addr in _ACTIVE_CLIENT_EMAILS:
         return "ACTIVE_CLIENT", "high"
 
@@ -337,8 +353,8 @@ def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple
 
 
 def _skip_notification_noise(category: str, priority: str) -> bool:
-    """Skip LLM analysis and Redis publish for marketing / no-priority noise."""
-    if category == "MARKETING":
+    """Skip LLM analysis and Redis publish for marketing, internal, and no-priority noise."""
+    if category in ("MARKETING", "INTERNAL"):
         return True
     if (priority or "").lower() == "none":
         return True

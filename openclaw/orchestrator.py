@@ -39,10 +39,10 @@ SERVICES = {
 }
 
 def _orchestrator_skip_email(em: dict) -> bool:
-    """Skip decision logging / notifications for marketing and low-signal vendor mail."""
+    """Skip decision logging / notifications for marketing, internal, and low-signal vendor mail."""
     cat = (em.get("category") or "GENERAL").upper()
     subj = (em.get("subject") or "").lower()
-    if cat == "MARKETING":
+    if cat in ("MARKETING", "INTERNAL"):
         return True
     if cat == "VENDOR":
         if not any(kw in subj for kw in ("order", "shipping", "tracking", "invoice")):
@@ -445,17 +445,35 @@ class Orchestrator:
                             f"Email ({category})"
                     await self.notify("email", f"{label} from {sender}: {subject}")
 
-            # Send a summary digest of ALL new emails
+            # Send a summary digest — only actionable emails, suppress noise
             actionable = [em for em in new_emails if not _orchestrator_skip_email(em)]
             noise_n = len(new_emails) - len(actionable)
-            summary_lines = [f"You have {len(new_emails)} new email(s)" + (f" ({noise_n} filtered as marketing/vendor noise)" if noise_n else "") + ":"]
-            for em in actionable:
-                sender = em.get("sender_name") or em.get("sender", "unknown")
-                subject = em.get("subject", "(no subject)")
-                category = em.get("category", "GENERAL")
-                summary_lines.append(f"  - [{category}] {sender}: {subject}")
 
-            await self.notify("email", "\n".join(summary_lines))
+            # Split: important categories vs general noise
+            IMPORTANT_CATS = {"BID_INVITE", "CLIENT_INQUIRY", "ACTIVE_CLIENT",
+                              "FOLLOW_UP_NEEDED", "SCHEDULING", "INVOICE"}
+            important = [em for em in actionable if em.get("category", "GENERAL") in IMPORTANT_CATS]
+            general = [em for em in actionable if em.get("category", "GENERAL") not in IMPORTANT_CATS]
+
+            if not important and not general:
+                logger.info("All %d new emails were noise — no digest sent", len(new_emails))
+            else:
+                total_filtered = noise_n + len(general)
+                header = f"You have {len(important)} actionable email(s)"
+                if total_filtered:
+                    header += f" ({total_filtered} filtered)"
+                summary_lines = [header + ":"]
+
+                for em in important:
+                    sender = em.get("sender_name") or em.get("sender", "unknown")
+                    subject = em.get("subject", "(no subject)")
+                    category = em.get("category", "GENERAL")
+                    summary_lines.append(f"  - [{category}] {sender}: {subject}")
+
+                if general:
+                    summary_lines.append(f"  + {len(general)} other non-urgent email(s)")
+
+                await self.notify("email", "\n".join(summary_lines))
 
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)

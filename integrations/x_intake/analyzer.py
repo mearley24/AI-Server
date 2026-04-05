@@ -20,7 +20,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .post_fetcher import PostData
+try:
+    from .post_fetcher import PostData
+except ImportError:
+    from post_fetcher import PostData
 
 logger = logging.getLogger(__name__)
 

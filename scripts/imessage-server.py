@@ -1311,7 +1311,7 @@ class Handler(BaseHTTPRequestHandler):
         title = body.get("title", "")
         phone = body.get("phone", REPLY_TO)
 
-        full_msg = "%s: %s" % (title, message) if title else message
+        full_msg = message  # title already included by notification-hub; do not prepend again
         if full_msg:
             if send_queue:
                 result = send_queue.enqueue(phone, full_msg)

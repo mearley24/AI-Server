@@ -287,8 +287,13 @@ class SignalAggregator:
 
         # Critical signals → immediate iMessage notification channel
         if relevance >= self.critical_threshold:
+            urgency_icon = {"critical": "🚨", "high": "⚠️", "medium": "📊"}.get(urgency, "📌")
+            source_label = signal.get("source", "unknown").replace("polymarket:", "").replace("_", " ").title()
             notification = {
                 "type": "intel_alert",
+                "title": f"{urgency_icon} Intel Alert: {source_label}",
+                "body": summary,
+                "priority": "high" if urgency == "critical" else "normal",
                 "urgency": urgency,
                 "source": signal.get("source", ""),
                 "summary": summary,
