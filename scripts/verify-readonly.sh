@@ -19,6 +19,20 @@ check() {
     fi
 }
 
+# Normalize docker health: missing Health / empty -> no-healthcheck; starting -> OK for verify
+docker_health_pass() {
+    local c="$1" health
+    health=$(docker inspect --format='{{.State.Health.Status}}' "$c" 2>/dev/null || true)
+    health=$(echo -n "$health" | tr -d '\r\n' | xargs)
+    if [[ -z "$health" ]]; then
+        health="no-healthcheck"
+    fi
+    case "$health" in
+        healthy|no-healthcheck|starting) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 echo "========================================="
 echo "AI-Server Read-Only Verification"
 echo "$(date)"
@@ -64,11 +78,12 @@ for c in redis openclaw email-monitor notification-hub mission-control polymarke
          context-preprocessor voice-receptionist openwebui remediator vpn \
          calendar-agent proposals dtools-bridge knowledge-scanner x-intake intel-feeds; do
     if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${c}$"; then
-        health=$(docker inspect --format='{{.State.Health.Status}}' "$c" 2>/dev/null || echo "no-healthcheck")
-        if [[ "$health" == "healthy" || "$health" == "no-healthcheck" ]]; then
+        if docker_health_pass "$c"; then
             check "$c" "PASS"
         else
-            check "$c ($health)" "WARN"
+            health=$(docker inspect --format='{{.State.Health.Status}}' "$c" 2>/dev/null || echo "?")
+            health=$(echo -n "$health" | tr -d '\r\n' | xargs)
+            check "$c (${health:-unknown})" "WARN"
         fi
     else
         check "$c (NOT RUNNING)" "WARN"
@@ -82,7 +97,7 @@ curl -sf http://127.0.0.1:8099/health >/dev/null 2>&1 && check "OpenClaw /health
 curl -sf http://127.0.0.1:8099/api/llm-costs >/dev/null 2>&1 && check "OpenClaw /api/llm-costs" "PASS" || check "OpenClaw /api/llm-costs" "WARN"
 curl -sf http://127.0.0.1:8092/health >/dev/null 2>&1 && check "Email Monitor /health" "PASS" || check "Email Monitor /health" "FAIL"
 curl -sf http://127.0.0.1:8098/health >/dev/null 2>&1 && check "Mission Control /health" "PASS" || check "Mission Control /health" "WARN"
-curl -sf http://127.0.0.1:8028/health >/dev/null 2>&1 && check "Context Preprocessor /health" "PASS" || check "Context Preprocessor /health" "WARN"
+curl -sS -f --max-time 5 http://127.0.0.1:8028/health >/dev/null 2>&1 && check "Context Preprocessor /health" "PASS" || check "Context Preprocessor /health" "WARN"
 curl -sf http://127.0.0.1:8430/health >/dev/null 2>&1 && check "Polymarket Bot /health" "PASS" || check "Polymarket Bot /health" "FAIL"
 
 # ── 5. Strategy Imports ──
@@ -102,9 +117,10 @@ docker exec polymarket-bot python3 -c "from strategies.crypto.avellaneda_market_
 # ── 6. Email Monitor Checks ──
 echo ""
 echo "--- Email Monitor ---"
-docker exec email-monitor grep -q "BODY.PEEK" /app/*.py 2>/dev/null \
+# Glob must run inside the container (host /app/*.py does not exist)
+docker exec email-monitor sh -c 'grep -Rq "BODY.PEEK" /app --include="*.py" 2>/dev/null' \
     && check "BODY.PEEK in monitor" "PASS" || check "BODY.PEEK in monitor" "WARN"
-BARE_BODY=$(docker exec email-monitor grep -c 'BODY\[' /app/*.py 2>/dev/null | grep -v ":0$" | grep -v "PEEK" || true)
+BARE_BODY=$(docker exec email-monitor sh -c 'grep -R "BODY\[" /app --include="*.py" 2>/dev/null' | grep -v "PEEK" || true)
 [[ -z "$BARE_BODY" ]] && check "No bare BODY[] fetch" "PASS" || check "Bare BODY[] found" "WARN"
 
 # ── 7. Ollama LAN ──

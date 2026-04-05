@@ -25,6 +25,22 @@ check() {
     fi
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+docker_health_pass() {
+    local c="$1" health
+    health=$(docker inspect --format='{{.State.Health.Status}}' "$c" 2>/dev/null || true)
+    health=$(echo -n "$health" | tr -d '\r\n' | xargs)
+    if [[ -z "$health" ]]; then
+        health="no-healthcheck"
+    fi
+    case "$health" in
+        healthy|no-healthcheck|starting) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 echo "========================================="
 echo "Full Smoke Test — $(date)"
 echo "========================================="
@@ -35,11 +51,12 @@ EXPECTED_CONTAINERS="redis openclaw email-monitor notification-hub calendar-agen
 RUNNING=$(docker ps --format '{{.Names}}' 2>/dev/null || true)
 for c in $EXPECTED_CONTAINERS; do
     if echo "$RUNNING" | grep -q "^${c}$"; then
-        health=$(docker inspect --format='{{.State.Health.Status}}' "$c" 2>/dev/null || echo "no-healthcheck")
-        if [[ "$health" == "healthy" || "$health" == "no-healthcheck" ]]; then
+        if docker_health_pass "$c"; then
             check "$c" "PASS"
         else
-            check "$c ($health)" "WARN"
+            health=$(docker inspect --format='{{.State.Health.Status}}' "$c" 2>/dev/null || echo "?")
+            health=$(echo -n "$health" | tr -d '\r\n' | xargs)
+            check "$c (${health:-unknown})" "WARN"
         fi
     else
         check "$c (NOT RUNNING)" "FAIL"
@@ -67,7 +84,7 @@ else
     check "Email Monitor /health" "FAIL"
 fi
 
-MC_TOKEN=$(grep MISSION_CONTROL_TOKEN /Users/bob/AI-Server/.env 2>/dev/null | cut -d= -f2- | tr -d '\r')
+MC_TOKEN=$(grep MISSION_CONTROL_TOKEN "${REPO_ROOT}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\r')
 if [[ -n "$MC_TOKEN" ]]; then
     if curl -sf "http://127.0.0.1:8098/health" >/dev/null 2>&1; then
         check "Mission Control /health (no auth)" "PASS"
@@ -101,9 +118,15 @@ else
     check "Intel Feeds /health" "FAIL"
 fi
 
+if curl -sS -f --max-time 5 http://127.0.0.1:8028/health >/dev/null 2>&1; then
+    check "Context Preprocessor /health" "PASS"
+else
+    check "Context Preprocessor /health" "WARN"
+fi
+
 echo ""
 echo "--- Redis Auth ---"
-REDIS_PASS=$(grep "^REDIS_PASSWORD=" /Users/bob/AI-Server/.env 2>/dev/null | cut -d= -f2- | tr -d '\r')
+REDIS_PASS=$(grep "^REDIS_PASSWORD=" "${REPO_ROOT}/.env" 2>/dev/null | cut -d= -f2- | tr -d '\r')
 if docker exec redis redis-cli -a "$REDIS_PASS" ping 2>/dev/null | grep -q PONG; then
     check "Redis auth (PONG)" "PASS"
 else
