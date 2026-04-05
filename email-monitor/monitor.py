@@ -253,6 +253,30 @@ def init_db(db_path: str = DB_PATH) -> None:
         except sqlite3.OperationalError:
             pass  # Column already exists
 
+    # One-time fix: reclassify self-sent emails that were incorrectly categorized
+    try:
+        own_addrs = [
+            "bob@symphonysh.com",
+            "admin@symphonysh.com",
+            "noreply@symphonysh.com",
+        ]
+        zoho = os.environ.get("ZOHO_EMAIL", "").lower().strip()
+        if zoho:
+            own_addrs.append(zoho)
+        placeholders = ",".join("?" for _ in own_addrs)
+        updated = conn.execute(
+            f"UPDATE emails SET category = 'INTERNAL', priority = 'none' "
+            f"WHERE category != 'INTERNAL' AND ("
+            f"  LOWER(sender) IN ({placeholders}) "
+            f"  OR LOWER(subject) LIKE '%cursor prompt%'"
+            f")",
+            own_addrs,
+        ).rowcount
+        if updated:
+            logger.info("Reclassified %d self-sent/Cursor emails as INTERNAL", updated)
+    except Exception as e:
+        logger.debug("Self-email reclassify skip: %s", e)
+
     conn.commit()
     conn.close()
     logger.info("Email database initialized at %s", db_path)

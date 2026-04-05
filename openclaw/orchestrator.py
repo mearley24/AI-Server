@@ -44,6 +44,9 @@ def _orchestrator_skip_email(em: dict) -> bool:
     subj = (em.get("subject") or "").lower()
     if cat in ("MARKETING", "INTERNAL"):
         return True
+    # Belt-and-suspenders: skip Cursor Prompt even if DB category wasn't updated yet
+    if "cursor prompt" in subj:
+        return True
     if cat == "VENDOR":
         if not any(kw in subj for kw in ("order", "shipping", "tracking", "invoice")):
             return True
@@ -421,29 +424,8 @@ class Orchestrator:
                 except Exception as e:
                     logger.debug("email decision log: %s", e)
 
-            # Send individual alerts for high-priority and medium-priority emails
-            high_priority_cats = {"BID_INVITE", "CLIENT_INQUIRY"}
-            medium_priority_cats = {"FOLLOW_UP_NEEDED", "SCHEDULING"}
-
-            for em in new_emails:
-                if _orchestrator_skip_email(em):
-                    continue
-                category = em.get("category", "GENERAL")
-                priority = em.get("priority", "low")
-                sender = em.get("sender_name") or em.get("sender", "unknown")
-                subject = em.get("subject", "(no subject)")
-
-                if category in high_priority_cats or priority == "high":
-                    label = "New bid invite" if category == "BID_INVITE" else \
-                            "Client inquiry" if category == "CLIENT_INQUIRY" else \
-                            f"High-priority email ({category})"
-                    await self.notify("email", f"{label} from {sender}: {subject}")
-
-                elif category in medium_priority_cats or priority == "medium":
-                    label = "Follow-up needed" if category == "FOLLOW_UP_NEEDED" else \
-                            "Scheduling" if category == "SCHEDULING" else \
-                            f"Email ({category})"
-                    await self.notify("email", f"{label} from {sender}: {subject}")
+            # NOTE: Individual per-email alerts removed — the digest below covers
+            # everything in a single message. Duplicate notifications were confusing.
 
             # Send a summary digest — only actionable emails, suppress noise
             actionable = [em for em in new_emails if not _orchestrator_skip_email(em)]
