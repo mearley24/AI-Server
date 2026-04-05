@@ -84,6 +84,30 @@ class SpreadArbScanner:
         self._dry_run = dry_run
         self._paper_mode = paper_mode
         self._client = client
+        self._clob_client = None
+        try:
+            from py_clob_client.client import ClobClient
+            from py_clob_client.clob_types import ApiCreds
+            pk = os.environ.get("POLY_PRIVATE_KEY", "")
+            api_key = os.environ.get("POLY_BUILDER_API_KEY", "")
+            if pk and api_key:
+                if not pk.startswith("0x"):
+                    pk = f"0x{pk}"
+                creds = ApiCreds(
+                    api_key=api_key,
+                    api_secret=os.environ.get("POLY_BUILDER_API_SECRET", ""),
+                    api_passphrase=os.environ.get("POLY_BUILDER_API_PASSPHRASE", ""),
+                )
+                self._clob_client = ClobClient(
+                    os.environ.get("CLOB_API_URL", "https://clob.polymarket.com"),
+                    key=pk,
+                    chain_id=int(os.environ.get("CHAIN_ID", "137")),
+                    creds=creds,
+                    signature_type=0,
+                )
+                logger.info("spread_arb_clob_client_initialized")
+        except Exception as exc:
+            logger.warning("spread_arb_clob_client_init_error", error=str(exc))
         self._opportunities: list[ArbOpportunity] = []
         self._price_history: dict[str, list[PriceSnapshot]] = {}  # condition_id -> snapshots
         self._positions: dict[str, dict] = {}  # active arb positions
@@ -497,43 +521,40 @@ class SpreadArbScanner:
                 skipped += 1
                 continue
 
-            if self._dry_run or not self._client:
+            if self._dry_run or not self._clob_client:
+                if not self._clob_client and not self._dry_run:
+                    logger.info("spread_arb_skip_no_clob_client")
                 self._record_paper_trade(opp)
                 executed += 1
                 total_exposure += opp.cost_usd
                 continue
 
             try:
-                from src.signer import SIDE_BUY
+                from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions, OrderType as ClobOrderType
+
+                loop = asyncio.get_event_loop()
+                options = PartialCreateOrderOptions(tick_size="0.01", neg_risk=opp.neg_risk)
 
                 if opp.opp_type == "complement":
-                    # Complement arb: buy YES (token_ids[0]) + buy NO (token_ids[1])
                     if len(opp.token_ids) < 2:
                         logger.warning("arb_skip_no_token_ids", market=opp.market_title[:60], type=opp.opp_type, ids=len(opp.token_ids))
                         skipped += 1
                         continue
 
-                    results = await asyncio.gather(
-                        self._client.place_order(
-                            token_id=str(opp.token_ids[0]),
-                            price=round(opp.tokens[0]["price"] + SLIPPAGE, 4),
-                            size=round(size / opp.tokens[0]["price"], 2),
-                            side=SIDE_BUY,
-                            order_type="FOK",
-                            neg_risk=opp.neg_risk,
-                        ),
-                        self._client.place_order(
-                            token_id=str(opp.token_ids[1]),
-                            price=round(opp.tokens[1]["price"] + SLIPPAGE, 4),
-                            size=round(size / opp.tokens[1]["price"], 2),
-                            side=SIDE_BUY,
-                            order_type="FOK",
-                            neg_risk=opp.neg_risk,
-                        ),
-                        return_exceptions=True,
-                    )
-                    errors = [r for r in results if isinstance(r, Exception)]
-                    if not errors:
+                    order_results = []
+                    for i in range(2):
+                        tid = str(opp.token_ids[i])
+                        price = round(opp.tokens[i]["price"] + SLIPPAGE, 4)
+                        shares = round(size / opp.tokens[i]["price"], 2)
+                        if shares < 1:
+                            continue
+                        args = OrderArgs(token_id=tid, price=price, size=shares, side="BUY")
+                        resp = await loop.run_in_executor(
+                            None, lambda a=args, o=options: self._clob_client.create_and_post_order(a, o),
+                        )
+                        order_results.append(resp)
+
+                    if order_results:
                         self._positions[opp.condition_id] = {
                             "type": opp.opp_type, "cost": opp.cost_usd,
                             "expected_profit": opp.expected_profit_usd,
@@ -543,19 +564,15 @@ class SpreadArbScanner:
                         self._bankroll -= opp.cost_usd
                         executed += 1
                         total_exposure += opp.cost_usd
-                        logger.info("arb_trade_executed", market=opp.market_title[:60], type="complement", size=round(size, 2), expected_profit_pct=opp.expected_profit_pct, orders=2)
-                    else:
-                        logger.warning("arb_trade_partial_fail", type="complement", errors=[str(e) for e in errors])
-                        skipped += 1
+                        logger.info("arb_trade_executed", market=opp.market_title[:60], type="complement", size=round(size, 2), expected_profit_pct=opp.expected_profit_pct, orders=len(order_results))
 
                 elif opp.opp_type == "negative_risk":
-                    # Negative risk arb: buy NO on every sub-market
                     if not opp.token_ids:
                         logger.warning("arb_skip_no_token_ids", market=opp.market_title[:60], type=opp.opp_type)
                         skipped += 1
                         continue
 
-                    results = []
+                    order_results = []
                     for idx, tok in enumerate(opp.tokens):
                         no_tid = tok.get("no_token_id", "")
                         if not no_tid and idx < len(opp.token_ids):
@@ -568,18 +585,13 @@ class SpreadArbScanner:
                         shares = round(size / no_price, 2)
                         if shares < 1:
                             continue
-                        result = await self._client.place_order(
-                            token_id=str(no_tid),
-                            price=round(no_price + SLIPPAGE, 4),
-                            size=shares,
-                            side=SIDE_BUY,
-                            order_type="FOK",
-                            neg_risk=opp.neg_risk,
+                        args = OrderArgs(token_id=str(no_tid), price=round(no_price + SLIPPAGE, 4), size=shares, side="BUY")
+                        resp = await loop.run_in_executor(
+                            None, lambda a=args, o=options: self._clob_client.create_and_post_order(a, o),
                         )
-                        results.append(result)
+                        order_results.append(resp)
 
-                    errors = [r for r in results if isinstance(r, Exception)]
-                    if not errors and results:
+                    if order_results:
                         self._positions[opp.condition_id] = {
                             "type": opp.opp_type, "cost": opp.cost_usd,
                             "expected_profit": opp.expected_profit_usd,
@@ -589,13 +601,12 @@ class SpreadArbScanner:
                         self._bankroll -= opp.cost_usd
                         executed += 1
                         total_exposure += opp.cost_usd
-                        logger.info("arb_trade_executed", market=opp.market_title[:60], type="negative_risk", size=round(size, 2), expected_profit_pct=opp.expected_profit_pct, orders=len(results))
+                        logger.info("arb_trade_executed", market=opp.market_title[:60], type="negative_risk", size=round(size, 2), expected_profit_pct=opp.expected_profit_pct, orders=len(order_results))
                     else:
-                        logger.warning("arb_trade_partial_fail", type="negative_risk", errors=[str(e) for e in errors])
+                        logger.warning("arb_trade_no_orders", type="negative_risk", market=opp.market_title[:60])
                         skipped += 1
 
                 else:
-                    # Contrarian / consolidation — buy YES (token_ids[0])
                     if not opp.token_ids:
                         logger.warning("arb_skip_no_token_ids", market=opp.market_title[:60], type=opp.opp_type)
                         skipped += 1
@@ -606,13 +617,9 @@ class SpreadArbScanner:
                     if price > 0:
                         shares = round(size / price, 2)
                         if shares >= 1:
-                            result = await self._client.place_order(
-                                token_id=yes_tid,
-                                price=round(price + SLIPPAGE, 4),
-                                size=shares,
-                                side=SIDE_BUY,
-                                order_type="FOK",
-                                neg_risk=opp.neg_risk,
+                            args = OrderArgs(token_id=yes_tid, price=round(price + SLIPPAGE, 4), size=shares, side="BUY")
+                            resp = await loop.run_in_executor(
+                                None, lambda a=args, o=options: self._clob_client.create_and_post_order(a, o),
                             )
                             self._positions[opp.condition_id] = {
                                 "type": opp.opp_type, "cost": round(size, 2),
