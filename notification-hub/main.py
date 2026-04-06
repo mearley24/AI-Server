@@ -238,9 +238,22 @@ async def redis_subscriber():
                         req = NotificationRequest(**data)
                         await execute_hermes(req)
                         continue
-                    title = data.get("title", data.get("type", "Notification"))
-                    body = data.get("body", data.get("message", json.dumps(data)))
-                    priority = data.get("priority", "normal")
+                    msg_type = data.get("type", "")
+                    if msg_type == "intel_alert":
+                        urgency = data.get("urgency", "medium")
+                        icon = {"critical": "🚨", "high": "⚠️", "medium": "📊"}.get(urgency, "📌")
+                        source_label = data.get("source", "unknown").replace("polymarket:", "").replace("_", " ").title()
+                        title = f"{icon} Intel Alert: {source_label}"
+                        body = data.get("summary", "No summary available")
+                        markets = data.get("markets_affected", [])
+                        if markets:
+                            body += f"\nMarkets: {len(markets)} affected"
+                        body += f"\nRelevance: {data.get('relevance_score', 'N/A')}%"
+                        priority = "high" if urgency == "critical" else "normal"
+                    else:
+                        title = data.get("title", data.get("type", "Notification"))
+                        body = data.get("body", data.get("message", json.dumps(data)))
+                        priority = data.get("priority", "normal")
                     await dispatch(title, body, priority, source=channel)
                 except Exception as e:
                     logger.error("Error processing notification: %s", e)

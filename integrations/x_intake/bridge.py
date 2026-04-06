@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from integrations.x_intake.pipeline import (
-    REDIS_CHANNEL_OUT,
-    publish_to_redis,
-    _get_redis,
-)
+try:
+    from integrations.x_intake.pipeline import (
+        REDIS_CHANNEL_OUT,
+        publish_to_redis,
+        _get_redis,
+    )
+except ImportError:
+    from pipeline import (
+        REDIS_CHANNEL_OUT,
+        publish_to_redis,
+        _get_redis,
+    )
 
 get_redis_client = _get_redis
 

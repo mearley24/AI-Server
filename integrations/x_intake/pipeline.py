@@ -53,8 +53,12 @@ for _p in [_ROOT_DIR, _INTEGRATIONS_DIR]:
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from integrations.x_intake.post_fetcher import PostFetcher, find_tweet_urls, FetchError
-from integrations.x_intake.analyzer import PostAnalyzer, AnalysisResult
+try:
+    from integrations.x_intake.post_fetcher import PostFetcher, find_tweet_urls, FetchError
+    from integrations.x_intake.analyzer import PostAnalyzer, AnalysisResult
+except ImportError:
+    from post_fetcher import PostFetcher, find_tweet_urls, FetchError
+    from analyzer import PostAnalyzer, AnalysisResult
 
 # ---------------------------------------------------------------------------
 # Configuration

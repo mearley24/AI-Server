@@ -10,10 +10,19 @@ Components:
     pipeline      - Orchestrates the full flow via Redis pub/sub
 """
 
-from .post_fetcher import PostFetcher, PostData
-from .analyzer import PostAnalyzer, AnalysisResult
-from .bridge import XIntakeBridge
-from .pipeline import XIntakePipeline
+try:
+    from .post_fetcher import PostFetcher, PostData
+    from .analyzer import PostAnalyzer, AnalysisResult
+    from .bridge import XIntakeBridge
+    from .pipeline import XIntakePipeline
+except ImportError:
+    try:
+        from post_fetcher import PostFetcher, PostData
+        from analyzer import PostAnalyzer, AnalysisResult
+        from bridge import XIntakeBridge
+        from pipeline import XIntakePipeline
+    except ImportError:
+        pass  # Some modules may not be needed in all contexts
 
 __all__ = [
     "PostFetcher",
