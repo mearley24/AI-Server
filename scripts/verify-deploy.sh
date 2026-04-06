@@ -57,6 +57,15 @@ else
   echo "(redis not reachable)"
 fi
 echo ""
+echo "=== polymarket-bot redeemer (optional) ==="
+if curl -sfS --connect-timeout 3 "http://127.0.0.1:8430/redeem/status" 2>/dev/null | head -c 400; then
+  echo ""
+  echo "OK /redeem/status reachable"
+else
+  echo "WARN polymarket-bot /redeem/status not reachable (bot/vpn down or warming up)"
+fi
+
+echo ""
 echo "=== SQLite DBs ==="
 for db in "data/openclaw/jobs.db" "data/email-monitor/emails.db"; do
   if [ -f "$db" ]; then echo "OK exists $db"; else echo "WARN missing $db"; fi

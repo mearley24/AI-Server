@@ -18,7 +18,9 @@ Works with EOA wallets (signature_type=0).
 from __future__ import annotations
 
 import asyncio
+import json
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -146,12 +148,17 @@ class PolymarketRedeemer:
         private_key: str,
         check_interval: float = 300.0,  # 5 minutes
         rpc_url: str = "",
+        data_dir: str = "/data",
     ) -> None:
         self._private_key = private_key if private_key.startswith("0x") else f"0x{private_key}"
         self._check_interval = check_interval
         self._http: Optional[httpx.AsyncClient] = None
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._data_dir = Path(data_dir)
+        self._redeemed_path = self._data_dir / "redeemed_conditions.json"
+        self._last_cycle_at: float = 0.0
+        self._last_cycle_summary: dict[str, Any] = {}
 
         # Initialize web3 with RPC fallback
         self._w3 = self._connect_rpc(rpc_url)
@@ -170,8 +177,8 @@ class PolymarketRedeemer:
             abi=ERC20_BALANCE_ABI,
         )
 
-        # Track already-redeemed condition IDs to avoid redundant txns
-        self._redeemed_conditions: set[str] = set()
+        # Track already-redeemed condition IDs (persisted — survives restarts)
+        self._redeemed_conditions: set[str] = self._load_redeemed()
 
         # Nonce tracker — avoids race conditions when sending multiple txns
         self._next_nonce: Optional[int] = None
@@ -181,6 +188,33 @@ class PolymarketRedeemer:
             address=Web3.to_checksum_address(NEG_RISK_ADAPTER_ADDRESS),
             abi=NEG_RISK_ADAPTER_ABI,
         )
+
+    def _load_redeemed(self) -> set[str]:
+        try:
+            if self._redeemed_path.is_file():
+                raw = json.loads(self._redeemed_path.read_text(encoding="utf-8"))
+                ids = raw.get("condition_ids")
+                if isinstance(ids, list):
+                    n = len(ids)
+                    logger.info("redeemer_loaded_redeemed", count=n)
+                    return set(str(x) for x in ids if x)
+        except Exception as exc:
+            logger.warning("redeemer_load_redeemed_failed", error=str(exc)[:120])
+        return set()
+
+    def _save_redeemed(self) -> None:
+        try:
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            ids = sorted(self._redeemed_conditions)
+            if len(ids) > 50_000:
+                ids = ids[-50_000:]
+                self._redeemed_conditions = set(ids)
+            self._redeemed_path.write_text(
+                json.dumps({"condition_ids": ids, "updated_at": time.time()}, separators=(",", ":")),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("redeemer_save_redeemed_failed", error=str(exc)[:120])
 
     @staticmethod
     def _connect_rpc(preferred_url: str = "") -> Web3:
@@ -237,6 +271,8 @@ class PolymarketRedeemer:
             except Exception as exc:
                 logger.error("redeemer_loop_error", error=str(exc))
 
+            logger.debug("redeemer_heartbeat", ts=time.time(), interval=self._check_interval)
+
             try:
                 await asyncio.sleep(self._check_interval)
             except asyncio.CancelledError:
@@ -290,12 +326,14 @@ class PolymarketRedeemer:
         # Reset nonce tracker at start of each cycle
         self._next_nonce = None
 
-        # 1. Check gas price
+        # 1. Check gas price (head-of-cycle; each tx also refreshes inside _redeem_single)
         gas_price = self._w3.eth.gas_price
         gas_gwei = float(self._w3.from_wei(gas_price, "gwei"))
 
         if gas_gwei > MAX_GAS_PRICE_GWEI:
             logger.info("redeemer_gas_too_high", gas_gwei=round(gas_gwei, 1))
+            self._last_cycle_at = time.time()
+            self._last_cycle_summary = {"status": "gas_too_high", "gas_gwei": round(gas_gwei, 1)}
             return {"status": "gas_too_high", "gas_gwei": round(gas_gwei, 1)}
 
         # 2. Get current USDC.e balance before
@@ -311,6 +349,8 @@ class PolymarketRedeemer:
             positions = resp.json()
         except Exception as exc:
             logger.error("redeemer_fetch_positions_error", error=str(exc))
+            self._last_cycle_at = time.time()
+            self._last_cycle_summary = {"error": str(exc)[:200]}
             return {"error": str(exc)}
 
         logger.info("redeemer_fetched_positions", count=len(positions))
@@ -382,7 +422,10 @@ class PolymarketRedeemer:
                 pending=pending_count,
                 losers=loser_count,
             )
-            return {"redeemed": 0, "total_value": 0, "pending": pending_count, "losers": loser_count}
+            out = {"redeemed": 0, "total_value": 0, "pending": pending_count, "losers": loser_count}
+            self._last_cycle_at = time.time()
+            self._last_cycle_summary = {**out, "status": "idle"}
+            return out
 
         # Deduplicate by condition_id
         seen_cids: set[str] = set()
@@ -414,13 +457,14 @@ class PolymarketRedeemer:
                 outcome_index = pos.get("outcomeIndex", 0)
                 token_balance_raw = int(pos.get("_token_balance", 0) * 1e6)
                 tx_hash = await self._redeem_single(
-                    condition_id, gas_price,
+                    condition_id,
                     neg_risk=is_neg_risk,
                     outcome_index=outcome_index,
                     token_balance=token_balance_raw,
                 )
                 if tx_hash:
                     self._redeemed_conditions.add(condition_id)
+                    self._save_redeemed()
                     redeemed_count += 1
                     logger.info(
                         "redeemer_redeemed",
@@ -428,6 +472,7 @@ class PolymarketRedeemer:
                         value=round(value, 2),
                         tx_hash=tx_hash,
                     )
+                    await asyncio.sleep(2.0)
             except Exception as exc:
                 err_msg = str(exc)
                 self._next_nonce = None  # Reset nonce on error to re-fetch
@@ -452,7 +497,7 @@ class PolymarketRedeemer:
             recovered=round(recovered, 2),
         )
 
-        return {
+        result = {
             "status": "redeemed",
             "redeemed": redeemed_count,
             "total": len(unique),
@@ -461,10 +506,16 @@ class PolymarketRedeemer:
             "usdc_after": round(usdc_after, 2),
             "recovered": round(recovered, 2),
         }
+        self._last_cycle_at = time.time()
+        self._last_cycle_summary = result
+        return result
 
     async def _redeem_single(
-        self, condition_id: str, gas_price: int,
-        neg_risk: bool = False, outcome_index: int = 0, token_balance: int = 0,
+        self,
+        condition_id: str,
+        neg_risk: bool = False,
+        outcome_index: int = 0,
+        token_balance: int = 0,
     ) -> Optional[str]:
         """Call redeemPositions — routes through NegRiskAdapter for neg risk markets.
 
@@ -473,6 +524,11 @@ class PolymarketRedeemer:
         loop = asyncio.get_event_loop()
 
         def _do_redeem() -> str:
+            gas_price = self._w3.eth.gas_price
+            gas_gwei = float(self._w3.from_wei(gas_price, "gwei"))
+            if gas_gwei > MAX_GAS_PRICE_GWEI:
+                raise RuntimeError(f"gas_too_high:{gas_gwei:.1f}gwei")
+
             cid_bytes = bytes.fromhex(condition_id[2:]) if condition_id.startswith("0x") else bytes.fromhex(condition_id)
             # Use tracked nonce to avoid race conditions between rapid txns
             if self._next_nonce is not None:
@@ -566,5 +622,8 @@ class PolymarketRedeemer:
             "usdc_balance": round(self._get_usdc_balance(), 2),
             "gas_price_gwei": round(gas_gwei, 1),
             "redeemed_conditions": len(self._redeemed_conditions),
+            "redeemed_conditions_persisted": self._redeemed_path.is_file(),
             "check_interval": self._check_interval,
+            "last_cycle_at": self._last_cycle_at,
+            "last_cycle_summary": self._last_cycle_summary,
         }

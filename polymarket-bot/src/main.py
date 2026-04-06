@@ -397,9 +397,11 @@ async def lifespan(app: FastAPI):
     if settings.poly_private_key:
         try:
             from src.redeemer import PolymarketRedeemer
+            _redeem_iv = float(os.environ.get("REDEEMER_CHECK_INTERVAL_SEC", "180"))
             redeemer = PolymarketRedeemer(
                 private_key=settings.poly_private_key,
-                check_interval=300.0,  # every 5 minutes
+                check_interval=max(60.0, _redeem_iv),
+                data_dir=settings.data_dir,
             )
             platform_strategies.append(("redeemer", redeemer))
             log.info("redeemer_enabled", msg="Will auto-redeem resolved winning positions")

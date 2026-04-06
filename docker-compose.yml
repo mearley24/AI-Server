@@ -146,6 +146,8 @@ services:
       # Notification pipeline — must be "imessage" to send via iMessage
       - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
       - NOTIFICATION_HUB_URL=${NOTIFICATION_HUB_URL:-http://notification-hub:8095}
+      # Redeem resolved positions to USDC.e — interval sec (min 60 in app)
+      - REDEEMER_CHECK_INTERVAL_SEC=${REDEEMER_CHECK_INTERVAL_SEC:-180}
       # Debate / tuner — large local models need more than default 10s
       - DEBATE_MAX_DEBATE_TIME_SECONDS=${DEBATE_MAX_DEBATE_TIME_SECONDS:-240}
       - PARAMETER_TUNER_MIN_RESOLVED=${PARAMETER_TUNER_MIN_RESOLVED:-3}
