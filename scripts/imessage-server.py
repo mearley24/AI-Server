@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/Users/bob/AI-Server/.venv/bin/python3
 """
 Bob iMessage Bridge — two-way communication (v2)
 Runs natively on macOS (not Docker).
@@ -31,6 +31,7 @@ from collections import deque
 from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+from typing import Optional
 from urllib.request import Request, urlopen
 from urllib.parse import quote
 
@@ -74,6 +75,27 @@ def _load_repo_env():
 
 
 _load_repo_env()
+
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+
+
+def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:
+    """Local LLM completion via Ollama (/api/chat)."""
+    try:
+        url = "%s/api/chat" % OLLAMA_HOST.rstrip("/")
+        data = json.dumps({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "options": {"temperature": 0.5, "num_predict": 400},
+        }).encode()
+        req = Request(url, data=data, headers={"Content-Type": "application/json"})
+        with urlopen(req, timeout=60) as resp:
+            payload = json.loads(resp.read())
+        return payload.get("message", {}).get("content", "") or None
+    except Exception as e:
+        log.info("[ollama] Failed: %s", str(e)[:100])
+        return None
 
 # Redis publish for downstream consumers (e.g. Docker x-intake on events:imessage)
 _REDIS_URL = os.environ.get(
@@ -443,12 +465,6 @@ def research_link(url: str, context: str = "") -> str:
             except Exception:
                 text = "(Could not fetch content from %s)" % url
 
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            if text:
-                return "Link: %s\n\n%s" % (url, text[:500])
-            return "Link: %s\nCan't analyze — no OpenAI API key." % url
-
         context_line = "\nAdditional context from sender: %s" % context if context else ""
         prompt = """You are Bob, an AI assistant for a smart home business owner who also runs automated trading bots.
 
@@ -465,6 +481,17 @@ Be direct and conversational. 3-5 sentences max. No bullet points or numbered li
 Content from %s:
 %s""" % (context_line, url, text[:3000])
 
+        result = _ollama_completion(prompt)
+        if result:
+            return result
+
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            if text:
+                return "Link: %s\n\n%s" % (url, text[:500])
+            return "Link: %s\nCan't analyze — Ollama is down and no OpenAI API key." % url
+
+        log.warning("[research] Ollama unavailable — falling back to OpenAI")
         data = json.dumps({
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],

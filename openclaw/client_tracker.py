@@ -12,6 +12,8 @@ import logging
 import os
 import sqlite3
 import threading
+import urllib.error
+import urllib.request
 from datetime import datetime
 from typing import Optional
 
@@ -21,7 +23,37 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("openclaw.client_tracker")
 
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+
 router = APIRouter(prefix="/clients", tags=["clients"])
+
+def _ollama_chat_preference_extract(prompt: str) -> Optional[str]:
+    """POST to Ollama /api/chat; return assistant text or None."""
+    if not OLLAMA_HOST.strip():
+        return None
+    try:
+        url = f"{OLLAMA_HOST.rstrip('/')}/api/chat"
+        body = json.dumps(
+            {
+                "model": os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b"),
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.2, "num_predict": 200},
+            }
+        ).encode()
+        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+        text = (data.get("message") or {}).get("content") or ""
+        if text.strip():
+            logger.debug("ollama_preference_extraction_success")
+        return text.strip() or None
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
+        logger.debug("Ollama preference extract failed: %s", e)
+        return None
+
+
 
 
 class ClientInfo(BaseModel):
@@ -218,10 +250,6 @@ class ClientTracker:
 
         Returns list of {type, content} dicts. Stores them in the DB.
         """
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            return []
-
         prompt = (
             f"Extract any client preferences, concerns, requirements, or communication style "
             f"from this email. The client is {client_name}.\n\n"
@@ -236,16 +264,23 @@ class ClientTracker:
         )
 
         try:
-            from openai import OpenAI
-            client = OpenAI(api_key=api_key)
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=100,
-                temperature=0.2,
-            )
-
-            content = response.choices[0].message.content.strip()
+            content = _ollama_chat_preference_extract(prompt)
+            if content is None:
+                api_key = os.getenv("OPENAI_API_KEY", "")
+                if not api_key:
+                    return []
+                logger.warning("using_openai_for_client_preferences — Ollama unavailable")
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key)
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=100,
+                    temperature=0.2,
+                )
+                content = response.choices[0].message.content.strip()
+            else:
+                content = content.strip()
             # Strip markdown fences
             if content.startswith("```"):
                 content = content.split("\n", 1)[1] if "\n" in content else content[3:]

@@ -2,8 +2,8 @@
 
 Pipeline:
 1. Download video from X post using yt-dlp
-2. Transcribe audio using OpenAI Whisper API
-3. Analyze transcript with GPT-4o-mini for flags and summary
+2. Transcribe audio (local Whisper first; OpenAI API last resort)
+3. Analyze transcript with Ollama first, then GPT-4o-mini for flags and summary
 4. Save flagged transcript to /data/transcripts/
 5. Return summary with flags for iMessage delivery
 
@@ -33,6 +33,211 @@ TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", os.path.expanduser("~/AI-
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 DOWNLOAD_TIMEOUT_SECONDS = 600
 MIN_VALID_AUDIO_BYTES = 10 * 1024
+
+
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_ANALYSIS_MODEL = os.environ.get("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
+
+
+def _parse_json_maybe(raw: str) -> Optional[dict]:
+    """Parse Ollama/OpenAI JSON; tolerate markdown fences."""
+    s = (raw or "").strip()
+    if not s:
+        return None
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", s)
+    if m:
+        try:
+            return json.loads(m.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    return None
+
+
+def _transcribe_whisper_cli(audio_path: str) -> Optional[str]:
+    """Use whisper.cpp CLI if available (Metal on Apple Silicon)."""
+    import shutil
+
+    whisper_bin = shutil.which("whisper-cpp") or shutil.which("whisper")
+    if not whisper_bin:
+        hp = os.path.expanduser("~/whisper.cpp/main")
+        if os.path.isfile(hp) and os.access(hp, os.X_OK):
+            whisper_bin = hp
+    if not whisper_bin:
+        logger.info("whisper_cli_not_found — skipping")
+        return None
+
+    model_path = (os.environ.get("WHISPER_CPP_MODEL") or "").strip()
+    if not model_path:
+        for base in (
+            os.path.expanduser("~/whisper.cpp/models"),
+            "/opt/homebrew/share/whisper.cpp",
+            "/usr/local/share/whisper.cpp",
+        ):
+            cand = os.path.join(base, f"ggml-{WHISPER_MODEL}.bin")
+            if os.path.isfile(cand):
+                model_path = cand
+                break
+    if not model_path:
+        logger.info("whisper_cpp_model_not_found — skipping")
+        return None
+
+    work_audio = audio_path
+    tmp_wav = None
+    if not audio_path.lower().endswith((".wav",)):
+        try:
+            fd, tmp_wav = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            rc, _ = _run_command_with_progress(
+                ["ffmpeg", "-y", "-i", audio_path, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", tmp_wav],
+                timeout=120,
+                stage="whisper_prep_wav",
+            )
+            if rc == 0 and os.path.getsize(tmp_wav) > 0:
+                work_audio = tmp_wav
+        except Exception as e:
+            logger.info("whisper_cli_wav_convert_failed: %s", str(e)[:80])
+
+    try:
+        out_base = audio_path + ".whisper"
+        cmd = [whisper_bin, "-m", model_path, "-f", work_audio, "-otxt", "-of", out_base]
+        rc, _ = _run_command_with_progress(cmd, timeout=300, stage="whisper_cli")
+        candidates = [out_base + ".txt", work_audio + ".txt", os.path.splitext(work_audio)[0] + ".txt"]
+        for p in candidates:
+            if os.path.isfile(p):
+                with open(p, encoding="utf-8", errors="replace") as f:
+                    transcript = f.read().strip()
+                if transcript:
+                    logger.info("whisper_cli_success: %d chars", len(transcript))
+                    return transcript
+    except Exception as e:
+        logger.info("whisper_cli_error: %s", str(e)[:100])
+    finally:
+        if tmp_wav and os.path.exists(tmp_wav):
+            try:
+                os.remove(tmp_wav)
+            except OSError:
+                pass
+    return None
+
+
+def _transcribe_mlx_whisper(audio_path: str) -> Optional[str]:
+    """Use mlx-whisper (Apple Silicon) if available."""
+    try:
+        import mlx_whisper
+        repo = f"mlx-community/whisper-{WHISPER_MODEL}-mlx"
+        result = mlx_whisper.transcribe(audio_path, path_or_hf_repo=repo)
+        transcript = (result.get("text") or "").strip()
+        if transcript:
+            logger.info("mlx_whisper_success: %d chars", len(transcript))
+            return transcript
+    except ImportError:
+        logger.info("mlx_whisper_not_installed — skipping")
+    except Exception as e:
+        logger.info("mlx_whisper_error: %s", str(e)[:100])
+    return None
+
+
+def _transcribe_local_whisper(audio_path: str) -> Optional[str]:
+    """Use the Python openai-whisper package (local model, no API)."""
+    try:
+        import whisper as openai_whisper_pkg
+        model = openai_whisper_pkg.load_model(WHISPER_MODEL)
+        result = model.transcribe(audio_path)
+        transcript = (result.get("text") or "").strip()
+        if transcript:
+            logger.info("local_whisper_success: %d chars", len(transcript))
+            return transcript
+    except ImportError:
+        logger.info("openai_whisper_not_installed — skipping")
+    except Exception as e:
+        logger.info("local_whisper_error: %s", str(e)[:100])
+    return None
+
+
+def _transcribe_openai_api(audio_path: str, openai_api_key: str = "") -> Optional[str]:
+    """Last resort: OpenAI Whisper API."""
+    api_key = openai_api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        logger.error("no_transcription_available — no local whisper and no OPENAI_API_KEY")
+        return None
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        logger.warning("using_openai_whisper_api — install local whisper to avoid cloud costs")
+        with open(audio_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1", file=audio_file, response_format="text",
+            )
+        logger.info("openai_whisper_success: %d chars", len(transcript))
+        return transcript
+    except Exception as e:
+        logger.error("openai_whisper_error: %s", str(e)[:200])
+        return None
+
+
+def _ollama_chat(prompt: str, model=None) -> Optional[str]:
+    """Call Ollama /api/chat. Returns assistant text or None."""
+    m = model or OLLAMA_ANALYSIS_MODEL
+    try:
+        url = f"{OLLAMA_HOST.rstrip('/')}/api/chat"
+        payload = json.dumps({
+            "model": m,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.3},
+        }).encode()
+        req = Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())
+        content = data.get("message", {}).get("content", "")
+        if content:
+            logger.info("ollama_chat_success: model=%s chars=%d", m, len(content))
+        return content or None
+    except Exception as e:
+        logger.info("ollama_chat_failed: %s", str(e)[:100])
+        return None
+
+
+def _build_analysis_prompt(transcript: str, author: str, post_text: str) -> str:
+    """Shared analysis prompt for Ollama and OpenAI."""
+    return f"""Analyze this video transcript from @{author} about trading/prediction markets.
+
+Post text: {post_text[:500]}
+
+Transcript:
+{transcript[:15000]}
+
+Respond in this exact JSON format:
+{{
+    "summary": "2-3 sentence overview of the key message",
+    "flags": [
+        {{"type": "🔨", "text": "specific actionable item"}},
+        {{"type": "💡", "text": "trading edge or alpha insight"}},
+        {{"type": "📊", "text": "specific number, threshold, or backtested result"}},
+        {{"type": "🔧", "text": "tool, library, or resource mentioned"}},
+        {{"type": "⚠️", "text": "warning or pitfall to avoid"}}
+    ],
+    "strategies": [
+        {{
+            "name": "strategy name",
+            "description": "how it works",
+            "parameters": "key thresholds or settings",
+            "backtested_return": "if mentioned",
+            "implementable": true,
+            "priority": "high"
+        }}
+    ],
+    "key_quotes": ["most important direct quotes from the transcript"]
+}}
+
+Only include flags genuinely present in the transcript. Include actual numbers and parameters. Focus on what can be implemented in a Polymarket trading bot."""
+
 
 
 def _extract_x_status_id(post_url: str) -> str:
@@ -307,95 +512,58 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
 
 
 def transcribe_audio(audio_path: str, openai_api_key: str = "") -> Optional[str]:
-    """Transcribe audio using OpenAI Whisper API.
-    
-    Cost: ~$0.006/minute. A 10-minute video costs ~$0.06.
-    """
-    api_key = openai_api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        logger.error("OPENAI_API_KEY not set")
-        return None
+    """Transcribe audio locally first; OpenAI Whisper API only as last resort."""
+    logger.info("transcription_started: %s", audio_path)
 
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-
-        logger.info("transcription_started: %s", audio_path)
-
-        with open(audio_path, "rb") as audio_file:
-            transcript = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text",
-            )
-
-        logger.info("transcription_complete: %d chars", len(transcript))
+    transcript = _transcribe_whisper_cli(audio_path)
+    if transcript:
         return transcript
-    except Exception as e:
-        logger.error("transcription_error: %s", str(e)[:200])
-        return None
+
+    transcript = _transcribe_mlx_whisper(audio_path)
+    if transcript:
+        return transcript
+
+    transcript = _transcribe_local_whisper(audio_path)
+    if transcript:
+        return transcript
+
+    logger.warning("all_local_whisper_failed — falling back to OpenAI API")
+    return _transcribe_openai_api(audio_path, openai_api_key)
 
 
 def analyze_transcript(transcript: str, author: str = "", post_text: str = "", openai_api_key: str = "") -> dict:
-    """Analyze transcript with GPT-4o-mini for flags and summary.
-    
-    Returns dict with:
-        - summary: brief overview
-        - flags: list of {type, text} flagged items
-        - strategies: extracted actionable strategies
-        - full_flagged: complete transcript with inline flags
-    """
+    """Analyze transcript with local Ollama first; GPT-4o-mini fallback."""
+    logger.info("analysis_started: transcript_chars=%d", len(transcript))
+    prompt = _build_analysis_prompt(transcript, author, post_text)
+
+    response = _ollama_chat(prompt)
+    if response:
+        parsed = _parse_json_maybe(response)
+        if parsed:
+            logger.info(
+                "analysis_complete: %d flags, %d strategies",
+                len(parsed.get("flags", [])),
+                len(parsed.get("strategies", [])),
+            )
+            return parsed
+        logger.warning("ollama_json_parse_failed — trying cloud fallback")
+
     api_key = openai_api_key or OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
-        return {"error": "OPENAI_API_KEY not set"}
+        return {"error": "Analysis unavailable — Ollama down and no OPENAI_API_KEY"}
 
+    logger.warning("using_openai_for_analysis — Ollama was unavailable or returned invalid JSON")
     try:
         from openai import OpenAI
+
         client = OpenAI(api_key=api_key)
-        logger.info("analysis_started: transcript_chars=%d", len(transcript))
-
-        prompt = f"""Analyze this video transcript from @{author} about trading/prediction markets.
-
-Post text: {post_text[:500]}
-
-Transcript:
-{transcript[:15000]}
-
-Respond in this exact JSON format:
-{{
-    "summary": "2-3 sentence overview of the key message",
-    "flags": [
-        {{"type": "🔨", "text": "specific actionable item"}},
-        {{"type": "💡", "text": "trading edge or alpha insight"}},
-        {{"type": "📊", "text": "specific number, threshold, or backtested result"}},
-        {{"type": "🔧", "text": "tool, library, or resource mentioned"}},
-        {{"type": "⚠️", "text": "warning or pitfall to avoid"}}
-    ],
-    "strategies": [
-        {{
-            "name": "strategy name",
-            "description": "how it works",
-            "parameters": "key thresholds or settings",
-            "backtested_return": "if mentioned",
-            "implementable": true/false,
-            "priority": "high/medium/low"
-        }}
-    ],
-    "key_quotes": ["most important direct quotes from the transcript"]
-}}
-
-Only include flags that are genuinely present in the transcript. Be specific — include actual numbers, thresholds, and parameters mentioned. Focus on what can be implemented in a Polymarket trading bot."""
-
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
             temperature=0.3,
         )
-
-        analysis = json.loads(response.choices[0].message.content)
-        logger.info("analysis_complete: %d flags, %d strategies", len(analysis.get("flags", [])), len(analysis.get("strategies", [])))
-        return analysis
+        return json.loads(response.choices[0].message.content)
     except Exception as e:
         logger.error("analysis_error: %s", str(e)[:200])
         return {"error": str(e)}
@@ -412,6 +580,7 @@ def analyze_images(image_urls: list[str], author: str = "", post_text: str = "",
     try:
         from openai import OpenAI
 
+        logger.warning("using_openai_vision — no local alternative available for image analysis")
         client = OpenAI(api_key=api_key)
         logger.info("analysis_started: image_count=%d", len(image_urls))
 

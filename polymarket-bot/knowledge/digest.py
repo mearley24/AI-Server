@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import httpx
 
+from knowledge.ollama_local import ollama_chat
 from knowledge.query import KnowledgeQuery
+
+logger = logging.getLogger(__name__)
 
 
 async def generate_daily_digest(anthropic_key: str = None) -> str:
-    """Generate a summary of today's learning via Claude.
+    """Generate a summary of today's learning — Ollama first, Claude Sonnet fallback.
 
     Args:
         anthropic_key: Anthropic API key. Falls back to ANTHROPIC_API_KEY env var.
@@ -36,6 +40,15 @@ Format as a brief daily briefing with sections:
 - Strategy Updates
 - Risk Alerts (if any)
 - Action Items"""
+
+    local = await ollama_chat(prompt, timeout=90.0)
+    if local:
+        return local
+
+    if not api_key:
+        return "Daily digest unavailable — Ollama unreachable and ANTHROPIC_API_KEY not set."
+
+    logger.warning("using_anthropic_for_daily_digest — Ollama unavailable")
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(

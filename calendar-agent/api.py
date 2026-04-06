@@ -2,6 +2,7 @@
 
 import os
 import logging
+import httpx
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +11,38 @@ from calendar_client import ZohoCalendarClient
 from scheduler import find_free_slots
 
 logger = logging.getLogger(__name__)
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+
+
+async def _ollama_meeting_prep(prompt: str) -> str | None:
+    """Try Ollama /api/chat for meeting prep; return text or None."""
+    if not OLLAMA_HOST.strip():
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.post(
+                f"{OLLAMA_HOST.rstrip('/')}/api/chat",
+                json={
+                    "model": os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b"),
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "options": {"temperature": 0.3},
+                },
+            )
+        if r.status_code != 200:
+            logger.warning("ollama_meeting_prep_http_%s", r.status_code)
+            return None
+        data = r.json()
+        text = (data.get("message") or {}).get("content") or ""
+        if text.strip():
+            logger.info("meeting_prep_ollama_success")
+        return text.strip() or None
+    except Exception as e:
+        logger.warning("ollama_meeting_prep_failed: %s", str(e)[:120])
+        return None
+
+
+
 router = APIRouter(prefix="/calendar")
 
 
@@ -114,11 +147,7 @@ async def upcoming(hours: int = Query(4, ge=1, le=24)):
 
 @router.post("/meeting-prep/{event_id}")
 async def meeting_prep(event_id: str):
-    """Generate AI meeting prep notes using OpenAI."""
-    openai_key = os.getenv("OPENAI_API_KEY", "")
-    if not openai_key:
-        raise HTTPException(status_code=503, detail="OpenAI API key not configured")
-
+    """Generate AI meeting prep notes — Ollama first, OpenAI fallback."""
     client = get_client()
     _require_configured(client)
 
@@ -132,9 +161,6 @@ async def meeting_prep(event_id: str):
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    from openai import AsyncOpenAI
-    ai = AsyncOpenAI(api_key=openai_key)
-
     title = event.get("title", "Meeting")
     attendees = event.get("attendees", [])
     description = event.get("description", "")
@@ -144,6 +170,20 @@ Attendees: {attendees}
 Description: {description}
 Include: key talking points, questions to ask, and any prep needed."""
 
+    prep = await _ollama_meeting_prep(prompt)
+    if prep:
+        return {"event_id": event_id, "title": title, "prep_notes": prep, "source": "ollama"}
+
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    if not openai_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Ollama unavailable and OPENAI_API_KEY not configured",
+        )
+    logger.warning("using_openai_for_meeting_prep — Ollama unavailable")
+
+    from openai import AsyncOpenAI
+    ai = AsyncOpenAI(api_key=openai_key)
     resp = await ai.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
@@ -154,4 +194,5 @@ Include: key talking points, questions to ask, and any prep needed."""
         "event_id": event_id,
         "title": title,
         "prep_notes": resp.choices[0].message.content,
+        "source": "openai",
     }

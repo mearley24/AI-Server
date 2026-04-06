@@ -5,7 +5,9 @@ wallet is making the trade, detects known losing anti-patterns, and queries
 gpt-4o-mini to assess expected value and generate a thesis.
 
 Configurable via LLM_VALIDATION_ENABLED env var (default: false).
-8-second timeout ensures trading is never delayed significantly.
+Uses strategies.llm_completion (Ollama-first, optional OpenAI fallback); OPENAI_API_KEY
+is not required when LLM_ROUTER_MODE is local_first or local_only.
+Timeout: LLM_VALIDATION_TIMEOUT or LLM_VALIDATOR_TIMEOUT (seconds), default 8.
 """
 
 from __future__ import annotations
@@ -14,23 +16,28 @@ import asyncio
 import json
 import os
 import re
-import sys
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Optional
 
 import structlog
 
-logger = structlog.get_logger(__name__)
+from strategies.llm_completion import completion
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-from openclaw.llm_router import completion
+logger = structlog.get_logger(__name__)
 
 # Known esports keywords for detection
 ESPORTS_KEYWORDS = ["counter-strike", "cs2", "cs:go", "valorant", "dota", "lol ", "league of legends"]
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
 
 
 @dataclass
@@ -132,7 +139,7 @@ class LLMValidator:
         enabled: bool | None = None,
         api_key: str = "",
         model: str = "gpt-4o-mini",
-        timeout_seconds: float = 8.0,
+        timeout_seconds: float | None = None,
         min_ev_threshold: float = 0.0,
     ) -> None:
         if enabled is None:
@@ -141,12 +148,29 @@ class LLMValidator:
         self._enabled = enabled
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self._model = model
-        self._timeout = timeout_seconds
+        if timeout_seconds is None:
+            self._timeout = _env_float(
+                "LLM_VALIDATION_TIMEOUT",
+                _env_float("LLM_VALIDATOR_TIMEOUT", 8.0),
+            )
+        else:
+            self._timeout = timeout_seconds
         self._min_ev = min_ev_threshold
 
-        if self._enabled and not self._api_key:
-            logger.warning("llm_validator_no_api_key", msg="LLM validation enabled but OPENAI_API_KEY not set")
-            self._enabled = False
+        router_mode = os.environ.get("LLM_ROUTER_MODE", "local_first").strip().lower()
+        if self._enabled and not self._api_key.strip():
+            if router_mode == "cloud_only":
+                logger.warning(
+                    "llm_validator_cloud_only_no_openai_key",
+                    msg="LLM_ROUTER_MODE=cloud_only requires OPENAI_API_KEY",
+                )
+                self._enabled = False
+            else:
+                logger.info(
+                    "llm_validator_ollama_first",
+                    msg="OPENAI_API_KEY unset; Ollama-first via llm_completion",
+                    router_mode=router_mode,
+                )
 
         if self._enabled:
             logger.info("llm_validator_initialized", model=self._model, timeout=self._timeout)

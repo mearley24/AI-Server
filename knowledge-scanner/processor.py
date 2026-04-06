@@ -14,7 +14,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
 
 # Max insights per scan cycle
 MAX_INSIGHTS_PER_CYCLE = 20
@@ -87,6 +87,7 @@ async def _process_with_ollama(combined: str) -> list[dict] | None:
 
 async def _process_with_haiku(combined: str, api_key: str) -> list[dict]:
     """Fallback to Claude Haiku (paid)."""
+    logger.warning("using_anthropic_haiku_fallback", reason="ollama_unavailable_or_failed")
     async with httpx.AsyncClient(timeout=60) as http:
         resp = await http.post(
             ANTHROPIC_API_URL,

@@ -19,6 +19,30 @@ from strategies.base import BaseStrategy
 
 logger = logging.getLogger(__name__)
 
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434").strip()
+OLLAMA_VALIDATE_MODEL = os.getenv("OLLAMA_VALIDATE_MODEL", os.getenv("OLLAMA_KNOWLEDGE_MODEL", "qwen3:8b"))
+
+
+def _parse_approve_from_llm_text(text: str) -> bool:
+    """Return True if model approves entry (cheap side OK). Default permissive."""
+    s = (text or "").strip()
+    if not s:
+        return True
+    try:
+        obj = json.loads(s)
+        if isinstance(obj, dict) and "approve" in obj:
+            return bool(obj.get("approve"))
+    except json.JSONDecodeError:
+        pass
+    sl = s.lower()
+    if '"approve": true' in sl or "'approve': true" in sl:
+        return True
+    if '"approve": false' in sl or "'approve': false" in sl:
+        return False
+    return "true" in sl
+
+
+
 MAX_ENTRY_PRICE = float(os.environ.get("PS_MAX_ENTRY", "0.08"))
 MIN_AVAILABLE_SHARES = float(os.environ.get("PS_MIN_SHARES", "100"))
 POSITION_SIZE_USD = float(os.environ.get("PS_POSITION_USD", "3.0"))
@@ -201,18 +225,41 @@ class PresolutionScalpStrategy(BaseStrategy):
         cid = str(market.get("conditionId") or "")
         if cid in self._llm_cache:
             return self._llm_cache[cid]
-        key = os.environ.get("OPENAI_API_KEY", "")
-        if not key:
-            self._llm_cache[cid] = True
-            return True
         q = market.get("question") or ""
         prompt = (
             f"Market: {q}\nCheap side {cheap_side} at {price:.3f}. "
             "Is the opposite outcome virtually certain (>90%)? "
-            "Reply JSON {{\"approve\": true|false}}."
+            'Reply JSON {{"approve": true}} or {{"approve": false}} only.'
         )
+        if OLLAMA_HOST:
+            try:
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    r = await client.post(
+                        f"{OLLAMA_HOST.rstrip('/')}/api/chat",
+                        headers={"Content-Type": "application/json"},
+                        json={
+                            "model": OLLAMA_VALIDATE_MODEL,
+                            "messages": [{"role": "user", "content": prompt}],
+                            "stream": False,
+                            "format": "json",
+                            "options": {"temperature": 0, "num_predict": 128},
+                        },
+                    )
+                if r.status_code == 200:
+                    txt = (r.json().get("message") or {}).get("content") or ""
+                    approve = _parse_approve_from_llm_text(txt)
+                    self._llm_cache[cid] = approve
+                    return approve
+            except Exception as exc:
+                logger.info("presolution_scalp.ollama_validate_skip: %s", str(exc)[:100])
+
+        key = os.environ.get("OPENAI_API_KEY", "")
+        if not key:
+            self._llm_cache[cid] = True
+            return True
+        logger.warning("using_openai_for_presolution_scalp_validation — Ollama unavailable")
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=8.0) as client:
                 r = await client.post(
                     "https://api.openai.com/v1/chat/completions",
                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
@@ -223,8 +270,8 @@ class PresolutionScalpStrategy(BaseStrategy):
                     },
                 )
                 data = r.json()
-                text = data["choices"][0]["message"]["content"]
-                approve = "true" in text.lower()
+                txt = data["choices"][0]["message"]["content"]
+                approve = _parse_approve_from_llm_text(txt)
         except Exception:
             approve = True
         self._llm_cache[cid] = approve

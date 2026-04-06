@@ -138,6 +138,9 @@ services:
       - POLY_SAFE_ADDRESS=${POLY_SAFE_ADDRESS:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_KNOWLEDGE_MODEL=${OLLAMA_KNOWLEDGE_MODEL:-qwen3:8b}
+      - OLLAMA_VALIDATE_MODEL=${OLLAMA_VALIDATE_MODEL:-qwen3:8b}
       - FINANCIAL_DATASETS_API_KEY=${FINANCIAL_DATASETS_API_KEY:-}
       # Notification pipeline — must be "imessage" to send via iMessage
       - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
@@ -292,6 +295,8 @@ services:
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
       - ZOHO_CALENDAR_UID=${ZOHO_CALENDAR_UID}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - TZ=America/Denver
     ports:
@@ -416,7 +421,8 @@ services:
       - LOG_LEVEL=info
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
@@ -465,7 +471,8 @@ services:
     environment:
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - TZ=America/Denver
       - SCAN_INTERVAL_HOURS=6
@@ -582,6 +589,9 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379}
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
     depends_on:
       redis:
         condition: service_healthy

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import date, datetime
@@ -10,6 +11,10 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
+
+from knowledge.ollama_local import ollama_chat, parse_json_loose
+
+logger = logging.getLogger(__name__)
 
 KNOWLEDGE_DIR = Path(__file__).parent
 SOURCES_DIR = KNOWLEDGE_DIR / "sources"
@@ -74,7 +79,7 @@ class KnowledgeIngester:
         return await self.ingest_text(text, source_type="trade_result")
 
     async def _extract_knowledge(self, text: str, source_url: str = None) -> dict:
-        """Use Claude to extract structured knowledge from raw text."""
+        """Extract structured knowledge — Ollama first, Claude Sonnet fallback."""
         prompt = f"""Analyze this trading/market intelligence and extract structured knowledge.
 
 Source URL: {source_url or 'N/A'}
@@ -97,6 +102,24 @@ Return a JSON object with:
 
 Focus on actionable trading intelligence. Ignore fluff."""
 
+        content = await ollama_chat(prompt, format_json=True, timeout=90.0)
+        if content:
+            parsed = parse_json_loose(content)
+            if parsed:
+                return parsed
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    pass
+            return {"title": "Unknown", "type": "research", "summary": content[:200]}
+
+        if not self.api_key:
+            return {"title": "Unknown", "type": "research", "summary": "Extraction skipped — no Ollama and no ANTHROPIC_API_KEY"}
+
+        logger.warning("using_anthropic_for_knowledge_extract — Ollama unavailable")
+
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -114,7 +137,6 @@ Focus on actionable trading intelligence. Ignore fluff."""
             )
             data = resp.json()
             content = data["content"][0]["text"]
-            # Extract JSON from response (may be wrapped in markdown code block)
             json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if json_match:
                 return json.loads(json_match.group())
