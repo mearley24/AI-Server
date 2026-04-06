@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/Users/bob/AI-Server/scripts/imessage-server.py", line 37, in <module>
+    import redis as _redis_lib
+ModuleNotFoundError: No module named 'redis'
+Traceback (most recent call last):
+  File "/Users/bob/AI-Server/scripts/imessage-server.py", line 38, in <module>
+    import redis as _redis_lib
+ModuleNotFoundError: No module named 'redis'
+Traceback (most recent call last):
+  File "/Users/bob/AI-Server/scripts/imessage-server.py", line 38, in <module>
+    import redis as _redis_lib
+ModuleNotFoundError: No module named 'redis'

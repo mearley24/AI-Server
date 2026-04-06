@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     debate_model: str = Field(default="claude-3-5-sonnet-20241022", description="Claude model for debates")
     debate_min_position_for_debate: float = Field(default=25.0, description="Only debate trades >= this size")
     debate_confidence_threshold: float = Field(default=0.65, description="Min confidence to proceed")
-    debate_max_debate_time_seconds: float = Field(default=10.0, description="Max debate duration")
+    debate_max_debate_time_seconds: float = Field(default=240.0, description="Max debate duration (local LLMs often need 60s+)")
 
     # --- Redis ---
     redis_url: str = Field(default="redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379", description="Redis connection URL")

@@ -82,9 +82,8 @@ class HealthChecker:
         """Check notification-hub connectivity."""
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                # notification-hub is accessible via host.docker.internal:8095 from polymarket-bot
-                # or via redis:6379 from services on the normal Docker network
-                hub_url = os.environ.get("NOTIFICATION_HUB_URL", "http://host.docker.internal:8095")
+                # Default: Docker service name (same compose network as vpn when using network_mode: service:vpn)
+                hub_url = os.environ.get("NOTIFICATION_HUB_URL", "http://notification-hub:8095")
                 resp = await client.get(f"{hub_url}/health")
                 if resp.status_code == 200:
                     data = resp.json()
