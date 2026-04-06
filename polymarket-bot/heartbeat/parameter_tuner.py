@@ -1,4 +1,4 @@
-"""Analyze strategy performance and propose parameter adjustments via Claude."""
+"""Analyze strategy performance and propose parameter adjustments (Ollama first, Claude fallback)."""
 
 from __future__ import annotations
 
@@ -12,34 +12,23 @@ logger = structlog.get_logger(__name__)
 
 
 class ParameterTuner:
-    """Uses Claude to analyze strategy performance data and propose specific
+    """Uses Ollama (local) or Claude to analyze strategy performance data and propose specific
     parameter adjustments for underperforming or strong strategies."""
 
     async def analyze(self, strategy_reviews: list[dict]) -> list[dict]:
-        """Send performance data to Claude and return parameter adjustment proposals.
-
-        Returns a list of proposal dicts with: strategy, proposal, expected_impact,
-        parameter, current_value, proposed_value.
-
-        Falls back gracefully to an empty list if ANTHROPIC_API_KEY is not set.
-        """
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.info("parameter_tuner_skipped", reason="no ANTHROPIC_API_KEY")
-            return []
-
-        # Only analyze strategies that have resolved trades (not just open positions)
+        """Send performance data to Ollama first, then Claude. Returns parameter adjustment proposals."""
         active = [s for s in strategy_reviews if s.get("trades", 0) > 0 or s.get("open_positions", 0) > 0]
         if not active:
             return []
 
-        # Check if there's enough resolved data to make proposals
         total_resolved = sum(s.get("won_count", 0) + s.get("lost_count", 0) for s in active)
-        if total_resolved < 3:
+        min_resolved = int(os.environ.get("PARAMETER_TUNER_MIN_RESOLVED", "3"))
+        if total_resolved < min_resolved:
             logger.info(
                 "parameter_tuner_skipped",
                 reason="insufficient_resolved_data",
                 resolved=total_resolved,
+                min_resolved=min_resolved,
                 open_positions=sum(s.get("open_positions", 0) for s in active),
             )
             return []
@@ -85,6 +74,77 @@ Return a JSON array of proposals:
 
 Only propose changes backed by resolved data. If too few trades have resolved, return an empty array []."""
 
+        proposals = await self._analyze_ollama(prompt)
+        if proposals is not None:
+            return proposals
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            logger.info("parameter_tuner_skipped", reason="no Ollama result and no ANTHROPIC_API_KEY")
+            return []
+
+        logger.warning("parameter_tuner_using_claude — Ollama was unavailable")
+        return await self._analyze_claude(prompt, api_key)
+
+    async def _analyze_ollama(self, prompt: str) -> list[dict] | None:
+        """Try parameter analysis via Ollama. Returns None on failure; [] is valid success."""
+        ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
+        if not ollama_host:
+            return None
+        try:
+            import httpx
+        except ImportError:
+            return None
+        model = os.environ.get("OLLAMA_DEBATE_MODEL", "qwen3:32b")
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as http:
+                resp = await http.post(
+                    f"{ollama_host.rstrip('/')}/api/chat",
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                        "format": "json",
+                        "options": {"temperature": 0.3, "num_predict": 1000},
+                    },
+                )
+            if resp.status_code != 200:
+                return None
+            content = resp.json().get("message", {}).get("content", "")
+            if not content.strip():
+                return None
+            proposals = self._parse_proposals_json(content)
+            logger.info("parameter_tuner_ollama_success", suggestions=len(proposals))
+            return proposals
+        except Exception as e:
+            logger.info("parameter_tuner_ollama_failed", error=str(e)[:100])
+            return None
+
+    def _parse_proposals_json(self, content: str) -> list[dict]:
+        """Parse JSON array from model output; handle markdown fences."""
+        text = content.strip()
+        if text.startswith("```"):
+            lines = text.split("\n")
+            lines = [l for l in lines if not l.startswith("```")]
+            text = "\n".join(lines).strip()
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return data.get("suggestions", []) if "suggestions" in data else []
+        except (json.JSONDecodeError, TypeError):
+            pass
+        match = re.search(r"\[.*\]", content, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                return []
+        return []
+
+    async def _analyze_claude(self, prompt: str, api_key: str) -> list[dict]:
+        """Fallback: parameter analysis via Claude (paid)."""
         try:
             import httpx
         except ImportError:

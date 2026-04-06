@@ -1,7 +1,7 @@
 """Multi-agent bull/bear debate engine for trade validation.
 
 Before executing trades above a configurable threshold, runs a structured
-debate between Bull, Bear, and Judge agents using the Claude API. The judge
+debate between Bull, Bear, and Judge agents (Ollama first, Claude fallback). The judge
 evaluates both arguments and returns a confidence score and recommendation.
 """
 
@@ -70,7 +70,7 @@ class DebateResult:
 
 
 class DebateEngine:
-    """Runs bull/bear/judge debates on trade proposals via Claude API."""
+    """Runs bull/bear/judge debates on trade proposals (Ollama first, Claude fallback)."""
 
     def __init__(self, settings: Settings) -> None:
         self._enabled = settings.debate_enabled
@@ -90,7 +90,8 @@ class DebateEngine:
 
     @property
     def enabled(self) -> bool:
-        return self._enabled and bool(self._api_key)
+        ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
+        return self._enabled and (bool(self._api_key) or bool(ollama_host))
 
     @property
     def confidence_threshold(self) -> float:
@@ -153,15 +154,15 @@ class DebateEngine:
             trade_context = f"{market_block}\n\n{trade_context}"
 
         try:
-            # Run bull and bear in parallel
+            # Run bull and bear in parallel (Ollama first, Claude fallback per call)
             bull_task = asyncio.create_task(
-                self._call_claude(BULL_SYSTEM_PROMPT, trade_context)
+                self._llm_turn(BULL_SYSTEM_PROMPT, trade_context)
             )
             bear_task = asyncio.create_task(
-                self._call_claude(BEAR_SYSTEM_PROMPT, trade_context)
+                self._llm_turn(BEAR_SYSTEM_PROMPT, trade_context)
             )
 
-            bull_arg, bear_arg = await asyncio.wait_for(
+            (bull_arg, src_bull), (bear_arg, src_bear) = await asyncio.wait_for(
                 asyncio.gather(bull_task, bear_task),
                 timeout=self._max_time * 0.6,
             )
@@ -173,10 +174,19 @@ class DebateEngine:
                 f"BEAR CASE:\n{bear_arg}"
             )
 
-            judge_response = await asyncio.wait_for(
-                self._call_claude(JUDGE_SYSTEM_PROMPT, judge_input),
+            judge_response, src_judge = await asyncio.wait_for(
+                self._llm_turn(JUDGE_SYSTEM_PROMPT, judge_input),
                 timeout=self._max_time * 0.4,
             )
+
+            sources = (src_bull, src_bear, src_judge)
+            ollama_model = os.environ.get("OLLAMA_DEBATE_MODEL", "qwen3:32b")
+            if all(s == "ollama" for s in sources):
+                model_used = f"ollama:{ollama_model}"
+            elif any(s == "claude" for s in sources):
+                model_used = self._model
+            else:
+                model_used = "none"
 
             # Parse judge response
             result = self._parse_judge_response(judge_response)
@@ -189,7 +199,7 @@ class DebateEngine:
                 bull_argument=bull_arg,
                 bear_argument=bear_arg,
                 debate_time_seconds=round(debate_time, 2),
-                model_used=self._model,
+                model_used=model_used,
             )
 
             logger.info(
@@ -230,8 +240,56 @@ class DebateEngine:
                 model_used=self._model,
             )
 
-    async def _call_claude(self, system_prompt: str, user_message: str) -> str:
-        """Make a single Claude API call."""
+    async def _call_ollama(self, system_prompt: str, user_message: str) -> str | None:
+        """Try Ollama /api/chat (local). Returns None on failure."""
+        ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
+        if not ollama_host:
+            return None
+        model = os.environ.get("OLLAMA_DEBATE_MODEL", "qwen3:32b")
+        try:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "stream": False,
+                "options": {"temperature": 0.7, "num_predict": 400},
+            }
+            resp = await self._http.post(
+                f"{ollama_host.rstrip('/')}/api/chat",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=120.0,
+            )
+            if resp.status_code != 200:
+                logger.info("debate_ollama_error", status=resp.status_code)
+                return None
+            content = resp.json().get("message", {}).get("content", "")
+            if content and content.strip():
+                logger.info("debate_ollama_success", model=model, chars=len(content))
+                return content.strip()
+        except Exception as e:
+            logger.info("debate_ollama_failed", error=str(e)[:100])
+        return None
+
+    async def _llm_turn(self, system_prompt: str, user_message: str) -> tuple[str, str]:
+        """One debate turn: Ollama first, then Claude. Returns (text, 'ollama'|'claude'|'none')."""
+        ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
+        if ollama_host:
+            o = await self._call_ollama(system_prompt, user_message)
+            if o:
+                return o, "ollama"
+        if not self._api_key:
+            logger.warning("debate_no_llm_available — Ollama down and no ANTHROPIC_API_KEY")
+            return "", "none"
+        if ollama_host:
+            logger.warning("debate_using_claude — Ollama was unavailable")
+        text = await self._call_claude_direct(system_prompt, user_message)
+        return text, "claude"
+
+    async def _call_claude_direct(self, system_prompt: str, user_message: str) -> str:
+        """Direct Claude API call (paid fallback)."""
         headers = {
             "x-api-key": self._api_key,
             "anthropic-version": "2023-06-01",

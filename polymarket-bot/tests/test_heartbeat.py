@@ -559,14 +559,20 @@ async def test_parameter_tuner_with_mocked_claude():
             "name": "mean_reversion",
             "platform": "crypto",
             "trades": 5,
+            "won_count": 2,
+            "lost_count": 2,
+            "open_positions": 0,
             "win_rate": "20%",
             "pnl": -100.0,
             "status": "underperforming",
         }
     ]
 
-    with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-         patch("httpx.AsyncClient", return_value=mock_client):
+    # Skip Ollama so the mocked httpx client only serves the Claude fallback path.
+    with patch.dict(
+        os.environ,
+        {"ANTHROPIC_API_KEY": "test-key", "OLLAMA_HOST": ""},
+    ), patch("httpx.AsyncClient", return_value=mock_client):
         result = await tuner.analyze(strategies)
 
     assert len(result) == 1

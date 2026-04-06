@@ -123,7 +123,7 @@ services:
     restart: unless-stopped
     network_mode: "service:vpn"
     # ports via vpn service (network_mode shares vpn's network stack)
-    # redis via host.docker.internal since Docker DNS unavailable in vpn network
+    # Redis + notification-hub use Docker DNS (redis:6379, notification-hub:8095)
     environment:
       - TZ=America/Denver
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
@@ -141,10 +141,14 @@ services:
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
       - OLLAMA_KNOWLEDGE_MODEL=${OLLAMA_KNOWLEDGE_MODEL:-qwen3:8b}
       - OLLAMA_VALIDATE_MODEL=${OLLAMA_VALIDATE_MODEL:-qwen3:8b}
+      - OLLAMA_DEBATE_MODEL=${OLLAMA_DEBATE_MODEL:-qwen3:32b}
       - FINANCIAL_DATASETS_API_KEY=${FINANCIAL_DATASETS_API_KEY:-}
       # Notification pipeline — must be "imessage" to send via iMessage
       - NOTIFICATION_CHANNEL=${NOTIFICATION_CHANNEL:-imessage}
-      - NOTIFICATION_HUB_URL=http://host.docker.internal:8095
+      - NOTIFICATION_HUB_URL=${NOTIFICATION_HUB_URL:-http://notification-hub:8095}
+      # Debate / tuner — large local models need more than default 10s
+      - DEBATE_MAX_DEBATE_TIME_SECONDS=${DEBATE_MAX_DEBATE_TIME_SECONDS:-240}
+      - PARAMETER_TUNER_MIN_RESOLVED=${PARAMETER_TUNER_MIN_RESOLVED:-3}
       # Phase 1: Kelly Criterion position sizing
       - KELLY_SIZING_ENABLED=${KELLY_SIZING_ENABLED:-true}
       - KELLY_FRACTION=${KELLY_FRACTION:-0.25}
@@ -177,6 +181,8 @@ services:
       vpn:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      notification-hub:
         condition: service_healthy
     mem_limit: 2g
     mem_reservation: 512m
@@ -586,7 +592,7 @@ services:
     ports:
       - "127.0.0.1:8101:8101"
     environment:
-      - REDIS_URL=${REDIS_URL:-redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}

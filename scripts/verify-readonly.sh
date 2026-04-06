@@ -155,7 +155,9 @@ REDIS_LEAKED=$(grep -rn 'requirepass' --include="*.py" --include="*.yml" \
 echo ""
 echo "--- Host Daemons ---"
 # Optional LaunchAgent — repo ships scripts/com.symphony.bob-watchdog.plist; absence is not a failure
-if launchctl list 2>/dev/null | grep -q "com.symphony.bob-watchdog"; then
+if launchctl list 2>/dev/null | grep -q "com.symphony.bob-watchdog" \
+    || launchctl print system/com.symphony.bob-watchdog >/dev/null 2>&1 \
+    || launchctl print "gui/$(id -u)/com.symphony.bob-watchdog" >/dev/null 2>&1; then
     check "Watchdog daemon" "PASS"
 else
     check "Watchdog daemon (optional, not installed)" "PASS"
