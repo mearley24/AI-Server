@@ -1,9 +1,9 @@
 """Smart Exit Engine — Price-based exits with take-profit, stop-loss, and trailing stops.
 
 Monitors copied positions and triggers exits based on:
-- Trailing stop activation at 30% gain (trail at 15% below peak, let winners ride)
-- Stop-loss (50% drop → sell all)
-- Time-based exit (48h with <5% move → sell)
+- Trailing stop activation at higher gain (let cheap brackets run)
+- Category-tuned stop-loss and time exits
+- Near-resolution take-profit for locked-in gains
 """
 
 from __future__ import annotations
@@ -18,12 +18,14 @@ logger = structlog.get_logger(__name__)
 
 
 CATEGORY_EXIT_PARAMS: dict[str, dict[str, float]] = {
-    "crypto_updown": {"sl": 0.35, "time_hours": 12, "trailing": 0.10},
-    "sports": {"sl": 0.40, "time_hours": 24, "trailing": 0.12},
-    "weather": {"sl": 0.50, "time_hours": 72, "trailing": 0.15},
-    "politics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
-    "geopolitics": {"sl": 0.50, "time_hours": 96, "trailing": 0.20},
-    "other": {"sl": 0.50, "time_hours": 72, "trailing": 0.18},
+    "crypto_updown": {"sl": 0.40, "time_hours": 6, "trailing": 0.08},
+    "sports": {"sl": 0.35, "time_hours": 12, "trailing": 0.10},
+    "weather": {"sl": 0.60, "time_hours": 48, "trailing": 0.12},
+    "politics": {"sl": 0.40, "time_hours": 48, "trailing": 0.15},
+    "geopolitics": {"sl": 0.40, "time_hours": 48, "trailing": 0.15},
+    "other": {"sl": 0.45, "time_hours": 36, "trailing": 0.12},
+    "esports": {"sl": 0.35, "time_hours": 12, "trailing": 0.10},
+    "economics": {"sl": 0.45, "time_hours": 48, "trailing": 0.15},
 }
 
 
@@ -69,11 +71,11 @@ class ExitEngine:
 
     def __init__(
         self,
-        take_profit_1_pct: float = 0.30,
+        take_profit_1_pct: float = 0.50,
         take_profit_2_pct: float = 9.99,
-        stop_loss_pct: float = 0.50,
-        trailing_stop_pct: float = 0.15,
-        time_exit_hours: float = 48.0,
+        stop_loss_pct: float = 0.45,
+        trailing_stop_pct: float = 0.12,
+        time_exit_hours: float = 36.0,
         time_exit_min_move_pct: float = 0.05,
     ) -> None:
         self._tp1 = take_profit_1_pct  # trailing stop activation threshold
@@ -139,8 +141,12 @@ class ExitEngine:
         effective_sl = tracker._sl_override if tracker._sl_override > 0 else self._sl
         effective_time_hours = tracker._time_hours_override if tracker._time_hours_override > 0 else self._time_hours
 
+        # 0. HOLD RULE: cheap entries (< 35¢) — defer stop-loss first 6h unless down 80%+
+        cheap_entry = entry < 0.35
+        skip_early_stop = cheap_entry and hold_hours < 6.0 and pnl_pct > -0.80
+
         # 1. Stop-loss: category-specific drop from entry → sell all
-        if pnl_pct <= -effective_sl:
+        if not skip_early_stop and pnl_pct <= -effective_sl:
             return ExitSignal(
                 position_id=position_id,
                 reason="stop_loss",
@@ -165,7 +171,7 @@ class ExitEngine:
                 peak_price=tracker.peak_price,
             )
 
-        # 3. Activate trailing stop at 30% gain (don't sell — let winners ride)
+        # 3. Activate trailing stop at gain threshold (don't sell — let winners ride)
         if pnl_pct >= self._tp1 and not tracker.trailing_stop_active:
             tracker.trailing_stop_active = True
             tracker.trailing_stop_price = tracker.peak_price * (1 - self._trailing_pct)
@@ -179,8 +185,8 @@ class ExitEngine:
             return None  # Don't sell — just activate trailing
 
         # 3b. Near-resolution take profit: lock gains near $1 outcomes
-        near_resolution_price = 0.92
-        if current_price >= near_resolution_price and entry < 0.80:
+        near_resolution_price = 0.85
+        if current_price >= near_resolution_price and entry < 0.50:
             return ExitSignal(
                 position_id=position_id,
                 reason="near_resolution_takeprofit",
