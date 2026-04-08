@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-dropbox-organizer.py — Watches Dropbox root for new project files and routes them.
+dropbox-organizer.py — Watches Dropbox root + iCloud Symphony SH for new project files.
 
-Rules:
-  1. Detect project name from filename by matching against existing project folders.
-  2. Move PDF to [Project]/Client/ with standardized name.
-  3. Archive any existing file at that destination with a datestamp suffix.
-  4. Clean up known junk/duplicate files in root.
+Full autonomous workflow when a new PROPOSAL lands:
+  1. Detect project name from filename.
+  2. Archive existing proposal in [Project]/Client/.
+  3. Move new proposal to [Project]/Client/ with canonical name.
+  4. Extract financials from PDF (pdfplumber).
+  5. Regenerate branded deliverables + agreement PDFs via doc-generator.py.
+  6. Move generated docs to [Project]/Client/, archive old ones.
+  7. Create Zoho draft email via notification-hub hermes.
+  8. Send iMessage to owner: "Draft ready for [client] — review in Zoho."
 
 Run via launchd — see com.symphonysh.dropbox-organizer.plist
 """
@@ -166,13 +170,19 @@ def route_file(src: Path, project_folders: list[str]) -> bool:
     shutil.move(str(src), str(dest))
     log.info("Routed: %s → %s/Client/%s", filename, project, canonical_name)
 
-    # Notify Bob via Redis so he can auto-draft the client email
+    # Notify Bob via Redis
     notify_redis("file_routed", {
         "project": project,
         "doc_type": doc_type,
         "filename": canonical_name,
         "path": str(dest),
     })
+
+    # Proposals trigger full autonomous workflow:
+    # regenerate deliverables + agreement, create email draft, notify owner
+    if doc_type == "proposal":
+        run_doc_generator(project, dest, client_dir)
+
     return True
 
 
@@ -264,7 +274,7 @@ def cleanup_root() -> None:
 
 
 def notify_redis(event: str, payload: dict) -> None:
-    """Publish a Redis event so Bob can react (e.g. auto-draft client email)."""
+    """Publish a Redis event so Bob can react."""
     try:
         import json
         import redis
@@ -275,6 +285,54 @@ def notify_redis(event: str, payload: dict) -> None:
         r.publish("events:dropbox", json.dumps({"event": event, **payload}))
     except Exception as exc:
         log.debug("Redis notify skipped: %s", exc)
+
+
+def extract_proposal_financials(pdf_path: Path) -> dict:
+    """Extract total, client email, and client name from last page of a D-Tools proposal PDF."""
+    result = {"total": None, "client_email": None, "client_name": None}
+    try:
+        import pdfplumber
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            # Client info on page 1
+            p1 = pdf.pages[0].extract_text() or ""
+            for line in p1.splitlines():
+                if "@" in line and ".com" in line:
+                    result["client_email"] = line.strip()
+                if "Presented to" in line or "Client:" in line:
+                    result["client_name"] = line.split(":", 1)[-1].strip()
+            # Financials on last page
+            last = pdf.pages[-1].extract_text() or ""
+            import re
+            totals = re.findall(r"\$([\d,]+\.\d{2})", last)
+            if totals:
+                result["total"] = max(totals, key=lambda x: float(x.replace(",", "")))
+    except Exception as e:
+        log.warning("Could not extract financials from %s: %s", pdf_path.name, e)
+    return result
+
+
+def run_doc_generator(project: str, proposal_path: Path, client_folder: Path) -> None:
+    """Trigger branded document regeneration and email draft for a new proposal."""
+    import subprocess, json
+    doc_gen = Path(__file__).parent / "doc-generator.py"
+    if not doc_gen.exists():
+        log.warning("doc-generator.py not found — skipping auto-doc generation")
+        return
+    financials = extract_proposal_financials(proposal_path)
+    payload = {
+        "project": project,
+        "proposal_path": str(proposal_path),
+        "client_folder": str(client_folder),
+        "financials": financials,
+    }
+    payload_file = Path("/tmp/dropbox-doc-job.json")
+    payload_file.write_text(json.dumps(payload))
+    log.info("Triggering doc generator for %s (total=%s)", project, financials.get("total"))
+    subprocess.Popen(
+        ["python3", str(doc_gen), str(payload_file)],
+        stdout=open("/tmp/doc-generator.log", "a"),
+        stderr=subprocess.STDOUT,
+    )
 
 
 if __name__ == "__main__":
