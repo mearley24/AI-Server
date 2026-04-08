@@ -238,6 +238,12 @@ async def redis_subscriber():
                         req = NotificationRequest(**data)
                         await execute_hermes(req)
                         continue
+                    # ── Channel filter ────────────────────────────────────
+                    # Block ALL polymarket trading notifications — logged only
+                    if ch_name in ("notifications:trading",):
+                        logger.debug("notification_suppressed channel=%s", ch_name)
+                        continue
+
                     msg_type = data.get("type", "")
                     if msg_type == "intel_alert":
                         urgency = data.get("urgency", "medium")
@@ -254,6 +260,13 @@ async def redis_subscriber():
                         title = data.get("title", data.get("type", "Notification"))
                         body = data.get("body", data.get("message", json.dumps(data)))
                         priority = data.get("priority", "normal")
+
+                    # ── Email: only iMessage on high priority (active clients) ──
+                    if ch_name == "notifications:email" and priority != "high":
+                        logger.debug("email_notification_suppressed priority=%s subject=%s", priority, title)
+                        store_notification(ch_name, title, body, priority, source=channel, dispatched_via="suppressed")
+                        continue
+
                     await dispatch(title, body, priority, source=channel)
                 except Exception as e:
                     logger.error("Error processing notification: %s", e)
