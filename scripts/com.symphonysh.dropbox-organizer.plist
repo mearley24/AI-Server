@@ -26,7 +26,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>DROPBOX_ROOT</key>
-        <string>/Users/bob/Library/CloudStorage/Dropbox-Personal</string>
+        <string>/Users/bob/Dropbox</string>
     </dict>
 </dict>
 </plist>
