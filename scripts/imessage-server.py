@@ -890,7 +890,7 @@ def ask_openclaw(message: str) -> str:
             return handle_schedule_walkthrough(message)
 
         if any(w in lower for w in ["help", "commands", "what can you do"]):
-            return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 jobs \u2014 active job list\n\u2022 new job [name] \u2014 create a job\n\u2022 advance [name] \u2014 advance job phase\n\u2022 [name] status \u2014 specific job details\n\u2022 proposals \u2014 list proposals\n\u2022 manuals \u2014 list manuals\n\u2022 client [name] \u2014 client profile\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
+            return "I respond to:\n\u2022 trades \u2014 live P&L + positions\n\u2022 status \u2014 all services health\n\u2022 restart [service] \u2014 git-reset + rebuild a service\n\u2022 restart all \u2014 rebuild everything\n\u2022 email \u2014 inbox summary\n\u2022 calendar \u2014 today's schedule\n\u2022 weather \u2014 NOAA edges\n\u2022 jobs \u2014 active job list\n\u2022 new job [name] \u2014 create a job\n\u2022 advance [name] \u2014 advance job phase\n\u2022 [name] status \u2014 specific job details\n\u2022 proposals \u2014 list proposals\n\u2022 manuals \u2014 list manuals\n\u2022 client [name] \u2014 client profile\n\u2022 help \u2014 this message\n\nAnything else, I'll think about it and respond."
 
         if any(w in lower for w in ["trade", "trading", "p&l", "pnl", "profit", "balance", "portfolio"]):
             return get_trading_status()
@@ -932,6 +932,10 @@ def ask_openclaw(message: str) -> str:
         if any(w in lower for w in ["weather", "edge", "noaa"]):
             return get_weather_status()
 
+        reset_resp = handle_reset_command(message)
+        if reset_resp is not None:
+            return reset_resp
+
         if any(w in lower for w in ["status", "health", "services"]):
             return get_system_status()
 
@@ -949,6 +953,82 @@ def ask_openclaw(message: str) -> str:
         return result["choices"][0]["message"]["content"]
     except Exception as e:
         return "Error processing request: %s" % e
+
+
+
+# ── Service reset (iMessage: "restart email-monitor", "fix all") ──────────────
+
+_SERVICE_MAP = {
+    "email":         "email-monitor",
+    "email-monitor": "email-monitor",
+    "trading":       "polymarket-bot",
+    "polymarket":    "polymarket-bot",
+    "polymarket-bot":"polymarket-bot",
+    "notifications": "notification-hub",
+    "notification-hub": "notification-hub",
+    "openclaw":      "openclaw",
+    "calendar":      "calendar-agent",
+    "voice":         "voice-receptionist",
+    "knowledge":     "knowledge-base",
+    "clawwork":      "clawwork",
+    "mission":       "mission-control",
+    "mission-control":"mission-control",
+}
+
+def handle_reset_command(message: str) -> Optional[str]:
+    """Handle restart/fix/reset commands. Returns response or None if not a reset command."""
+    import subprocess as _sp
+    lower = message.lower().strip()
+
+    # Detect "restart X", "fix X", "reset X", "rebuild X"
+    m = _re.match(r"(?:restart|fix|reset|rebuild)\s+(.+)", lower)
+    if not m:
+        return None
+
+    target = m.group(1).strip()
+    root = _os.path.expanduser("~/AI-Server")
+
+    if target in ("all", "everything", "services", "all services"):
+        services = list(set(_SERVICE_MAP.values()))
+        results = []
+        for svc in services:
+            out = _restart_service(svc, root)
+            results.append(out)
+        return "Reset all services:\n" + "\n".join(results)
+
+    svc = _SERVICE_MAP.get(target)
+    if not svc:
+        return "Unknown service '%s'. Try: %s" % (target, ", ".join(sorted(set(_SERVICE_MAP.keys()))))
+
+    return _restart_service(svc, root)
+
+
+def _restart_service(svc: str, root: str) -> str:
+    import subprocess as _sp
+    try:
+        # 1. Git reset the service source to clean state
+        _sp.run(
+            ["git", "fetch", "origin"],
+            cwd=root, capture_output=True, timeout=30
+        )
+        svc_dir = _os.path.join(root, svc)
+        if _os.path.isdir(svc_dir):
+            _sp.run(
+                ["git", "checkout", "origin/main", "--", svc],
+                cwd=root, capture_output=True, timeout=30
+            )
+
+        # 2. Rebuild and restart
+        result = _sp.run(
+            ["/usr/local/bin/docker", "compose", "up", "-d", "--build", svc],
+            cwd=root, capture_output=True, text=True, timeout=300
+        )
+        if result.returncode == 0:
+            return "%s: restarted OK" % svc
+        else:
+            return "%s: rebuild failed — %s" % (svc, (result.stderr or result.stdout)[:120])
+    except Exception as e:
+        return "%s: error — %s" % (svc, str(e)[:100])
 
 
 def get_trading_status() -> str:
