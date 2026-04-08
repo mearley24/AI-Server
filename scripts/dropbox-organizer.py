@@ -37,6 +37,14 @@ DROPBOX_ROOT = Path(
 if not DROPBOX_ROOT.exists():
     DROPBOX_ROOT = Path(os.path.expanduser("~/Dropbox"))
 
+# iCloud SymphonySH shared folder — secondary intake source
+ICLOUD_ROOT = Path(
+    os.environ.get(
+        "ICLOUD_ROOT",
+        os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH"),
+    )
+)
+
 POLL_INTERVAL = 15  # seconds
 
 # Files to silently delete from root (duplicates, temp exports)
@@ -170,38 +178,62 @@ def route_file(src: Path, project_folders: list[str]) -> bool:
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
+def _force_icloud_download(path: Path) -> None:
+    """Trigger iCloud download for stub files."""
+    try:
+        import subprocess
+        stubs = list(path.glob("**/.*.icloud")) + list(path.glob("*.icloud"))
+        for stub in stubs:
+            subprocess.run(["brctl", "download", str(stub)], capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
+def scan_directory(watch_dir: Path, seen: set[str], project_folders: list[str]) -> set[str]:
+    """Scan a directory for new files and route them. Returns updated seen set."""
+    if not watch_dir.exists():
+        return seen
+
+    _force_icloud_download(watch_dir)
+
+    current = {f.name for f in watch_dir.iterdir() if f.is_file() and not f.name.startswith(".")}
+    new_files = current - seen
+
+    for filename in new_files:
+        src = watch_dir / filename
+        if not src.exists():
+            continue
+        time.sleep(2)
+        routed = route_file(src, project_folders)
+        if routed:
+            seen.discard(filename)
+        else:
+            seen.add(filename)
+
+    return {f.name for f in watch_dir.iterdir() if f.is_file() and not f.name.startswith(".")}
+
+
 def watch_root() -> None:
-    log.info("Watching Dropbox root: %s (poll every %ds)", DROPBOX_ROOT, POLL_INTERVAL)
+    log.info("Watching Dropbox: %s", DROPBOX_ROOT)
+    if ICLOUD_ROOT.exists():
+        log.info("Watching iCloud: %s", ICLOUD_ROOT)
+    else:
+        log.warning("iCloud path not found: %s", ICLOUD_ROOT)
 
-    # Track files we've already seen to avoid re-processing
-    seen: set[str] = set()
+    seen_dropbox: set[str] = set()
+    seen_icloud: set[str] = set()
 
-    # Seed seen with files already in root on startup (don't route pre-existing)
-    for f in DROPBOX_ROOT.iterdir():
-        if f.is_file():
-            seen.add(f.name)
+    # Seed seen sets on startup
+    if DROPBOX_ROOT.exists():
+        seen_dropbox = {f.name for f in DROPBOX_ROOT.iterdir() if f.is_file()}
+    if ICLOUD_ROOT.exists():
+        seen_icloud = {f.name for f in ICLOUD_ROOT.iterdir() if f.is_file() and not f.name.startswith(".")}
 
     while True:
         try:
             project_folders = get_project_folders()
-            current = {f.name for f in DROPBOX_ROOT.iterdir() if f.is_file()}
-            new_files = current - seen
-
-            for filename in new_files:
-                src = DROPBOX_ROOT / filename
-                if not src.exists():
-                    continue
-                # Small delay — let Dropbox finish writing the file
-                time.sleep(2)
-                routed = route_file(src, project_folders)
-                if routed:
-                    seen.discard(filename)
-                else:
-                    seen.add(filename)
-
-            # Refresh seen with whatever remains
-            seen = {f.name for f in DROPBOX_ROOT.iterdir() if f.is_file()}
-
+            seen_dropbox = scan_directory(DROPBOX_ROOT, seen_dropbox, project_folders)
+            seen_icloud = scan_directory(ICLOUD_ROOT, seen_icloud, project_folders)
         except Exception as exc:
             log.error("Watcher error: %s", exc)
 
