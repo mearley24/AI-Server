@@ -302,11 +302,15 @@ async def health():
 
 @app.post("/notify")
 async def notify(body: dict):
-    title = body.get("title", "")
-    message = body.get("body", "")
+    title    = body.get("title", "")
+    message  = body.get("body", "")
     priority = body.get("priority", "normal")
     if not message and not title:
         raise HTTPException(status_code=400, detail="title or body required")
+    # Only iMessage on high priority — everything else logged only
+    if priority != "high":
+        store_notification("api", title, message[:200], priority, "api", "suppressed")
+        return {"status": "suppressed", "reason": "priority not high"}
     via = await dispatch(title, message, priority, source="api")
     return {"status": "sent", "via": via}
 

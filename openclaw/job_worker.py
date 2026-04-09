@@ -48,12 +48,39 @@ def _load_routing_cfg() -> dict:
     return _ROUTING_CFG_CACHE
 
 
+# Sender prefixes / domains that are never leads
+_SKIP_SENDER_PREFIXES = (
+    "no-reply", "noreply", "no_reply", "do-not-reply", "donotreply",
+    "notifications@", "notification@", "updates@", "news@",
+    "newsletter@", "marketing@", "info@symphonysh", "bob@symphonysh",
+    "mailer@", "bounce@", "postmaster@", "support@", "hello@",
+    "billing@", "invoices@", "receipts@", "orders@",
+)
+_SKIP_SENDER_DOMAINS = (
+    "thefuturist.co", "vyde.io", "dtools.com", "d-tools.com",
+    "snapone.com", "control4.com", "lutron.com",
+    "paypal.com", "stripe.com", "square.com",
+    "quickbooks.com", "intuit.com",
+    "mailchimp.com", "constantcontact.com", "hubspot.com",
+    "linkedin.com", "facebook.com", "twitter.com",
+    "amazon.com", "fedex.com", "ups.com", "usps.com",
+)
+
+
 def _lead_scan_skip_sender(sender_addr: str) -> bool:
-    """Skip lead noise from known vendor/marketing domains already in routing_config."""
+    """Return True if sender should never be treated as a potential lead."""
     if not (sender_addr or "").strip():
-        return False
-    em = sender_addr.strip().lower()
+        return True  # blank sender = skip
+    em  = sender_addr.strip().lower()
     dom = em.split("@", 1)[-1] if "@" in em else em
+
+    # Built-in skip lists
+    if any(em.startswith(p) for p in _SKIP_SENDER_PREFIXES):
+        return True
+    if dom in _SKIP_SENDER_DOMAINS:
+        return True
+
+    # Routing config skip (vendor/marketing already categorised)
     cfg = _load_routing_cfg()
     cat = cfg.get("category_routes") or {}
     if any(k.lower() == em for k in cat):
@@ -61,6 +88,7 @@ def _lead_scan_skip_sender(sender_addr: str) -> bool:
     dr = cfg.get("domain_routes") or {}
     if em in dr or dom in dr:
         return True
+
     return False
 
 

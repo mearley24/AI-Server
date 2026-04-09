@@ -455,7 +455,9 @@ class Orchestrator:
                 if general:
                     summary_lines.append(f"  + {len(general)} other non-urgent email(s)")
 
-                await self.notify("email", "\n".join(summary_lines))
+                # Only iMessage if at least one active-client email is present
+                email_priority = "high" if important else "normal"
+                await self.notify("email", "\n".join(summary_lines), priority=email_priority)
 
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)
@@ -1191,7 +1193,7 @@ class Orchestrator:
     # ------------------------------------------------------------------
     # Notification helper
     # ------------------------------------------------------------------
-    async def notify(self, channel: str, message: str) -> dict:
+    async def notify(self, channel: str, message: str, priority: str = "normal") -> dict:
         """Publish notification via notification-hub. Returns delivery result dict."""
         ok, err = await self._validate_dropbox_in_message(message)
         if not ok:
@@ -1209,7 +1211,7 @@ class Orchestrator:
         try:
             resp = await self.http.post(
                 f"{SERVICES['notifications']}/notify",
-                json={"title": "", "body": message, "priority": "normal"},
+                json={"title": "", "body": message, "priority": priority},
             )
             return {"ok": resp.status_code == 200, "status_code": resp.status_code, "channel": "notification-hub"}
         except Exception as e:
