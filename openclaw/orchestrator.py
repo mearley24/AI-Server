@@ -298,6 +298,8 @@ class Orchestrator:
         await self.check_silent_services()
         await self._maybe_run_weekly_patterns()
         await self.consolidate_memories()
+        await self._run_follow_up_engine()
+        await self._run_dtools_watcher()
         await self._maybe_weekly_deep_learning()
         await self.maybe_send_briefing()
 
@@ -918,6 +920,40 @@ class Orchestrator:
     # ------------------------------------------------------------------
     # Memory consolidation (NEW) — runs once per hour
     # ------------------------------------------------------------------
+    async def _run_follow_up_engine(self) -> None:
+        """Run proposal follow-up engine — sends day 3/7/14 emails autonomously."""
+        try:
+            from follow_up_engine import FollowUpEngine
+            if not hasattr(self, "_follow_up_engine"):
+                self._follow_up_engine = FollowUpEngine(
+                    jobs_db=str(self._data_dir / "jobs.db"),
+                    emails_db=os.environ.get("EMAIL_DB_PATH", "/data/emails.db"),
+                    http=self.http,
+                    linear_sync=self._linear_sync,
+                )
+            sent = await self._follow_up_engine.tick()
+            if sent:
+                logger.info("follow_up_engine sent %d follow-up(s)", sent)
+        except Exception as e:
+            logger.debug("follow_up_engine error: %s", e)
+
+    async def _run_dtools_watcher(self) -> None:
+        """Detect new D-Tools proposal versions and trigger doc regeneration."""
+        try:
+            from dtools_change_watcher import DToolsChangeWatcher
+            if not hasattr(self, "_dtools_watcher"):
+                redis_client = await self._get_redis()
+                self._dtools_watcher = DToolsChangeWatcher(
+                    proposals_dir=os.environ.get("DTOOLS_PROPOSALS_DIR", "/data/proposals"),
+                    redis_client=redis_client,
+                    jobs_db=str(self._data_dir / "jobs.db"),
+                )
+            changes = await self._dtools_watcher.tick()
+            if changes:
+                logger.info("dtools_watcher found %d change(s)", changes)
+        except Exception as e:
+            logger.debug("dtools_watcher error: %s", e)
+
     async def consolidate_memories(self):
         """Export recent trading insights to AGENT_LEARNINGS_LIVE.md.
 
