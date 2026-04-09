@@ -279,14 +279,14 @@ class Orchestrator:
             await asyncio.sleep(300)  # 5 minutes
 
     async def _redis_event_listener(self) -> None:
-        """Subscribe to Redis events: DocuSign, Stripe, Dropbox, D-Tools."""
+        """Subscribe to Redis events: e-signature, Stripe, Dropbox, D-Tools."""
         import json
         while True:
             try:
                 r = await self._get_redis()
                 pubsub = r.pubsub()
                 await pubsub.subscribe(
-                    "events:docusign",
+                    "events:agreement_signed",   # native e-signature (client portal)
                     "events:stripe_payment",
                     "events:dtools_change",
                     "events:dropbox",
@@ -298,8 +298,8 @@ class Orchestrator:
                     try:
                         channel = msg["channel"]
                         data    = json.loads(msg["data"])
-                        if channel == "events:docusign":
-                            await self.handle_docusign_event(data)
+                        if channel == "events:agreement_signed":
+                            await self.handle_agreement_signed(data)
                         elif channel == "events:stripe_payment":
                             await self.handle_stripe_payment(data)
                     except Exception as e:
@@ -1006,29 +1006,54 @@ class Orchestrator:
         except Exception as e:
             logger.debug("price_monitor error: %s", e)
 
-    async def handle_docusign_event(self, event: dict) -> None:
-        """Called when DocuSign webhook fires (envelope completed/declined)."""
-        status   = event.get("status", "")
-        env_id   = event.get("envelope_id", "")
-        client   = event.get("client_name", "")
-        if status != "completed":
-            return
-        logger.info("docusign_signed envelope=%s client=%s", env_id, client)
-        # 1. Advance Linear issue to Done
-        if self._linear_email_sync if hasattr(self, "_linear_email_sync") else None:
-            await self._linear_email_sync.sync_email({
-                "sender": client,
-                "sender_name": client,
-                "subject": "Agreement Signed",
-                "category": "ACTIVE_CLIENT",
-                "summary": f"DocuSign agreement signed by {client}. Envelope: {env_id}.",
-                "action_items": "Send deposit invoice, begin procurement",
-                "snippet": "signed",
-                "message_id": f"docusign_{env_id}",
-            })
-        # 2. Generate and send deposit invoice
-        await self._send_deposit_invoice(client, env_id)
-        await self.notify("billing", f"🎉 {client} signed the agreement. Deposit invoice sent.", priority="high")
+    async def handle_agreement_signed(self, event: dict) -> None:
+        """Called when client signs via the native client portal e-signature."""
+        client        = event.get("client_name", "")
+        signer        = event.get("signer_name", client)
+        signed_at     = event.get("signed_at", "")
+        token         = event.get("token", "")
+        signer_ip     = event.get("signer_ip", "")
+        signed_pdf    = event.get("signed_pdf_path", "")
+        job_id        = event.get("job_id", "")
+        logger.info(
+            "agreement_signed client=%s signer=%s token=%s job_id=%s ip=%s pdf=%s",
+            client, signer, token, job_id, signer_ip, signed_pdf,
+        )
+
+        # 1. Advance Linear issue to Done + add comment
+        try:
+            if hasattr(self, "_linear_email_sync"):
+                await self._linear_email_sync.sync_email({
+                    "sender": client,
+                    "sender_name": client,
+                    "subject": "Agreement Signed",
+                    "category": "ACTIVE_CLIENT",
+                    "summary": (
+                        f"Agreement signed by {signer} on {signed_at[:10]}. "
+                        f"Signed via Symphony client portal. IP: {signer_ip}. "
+                        f"Signed PDF: {signed_pdf}"
+                    ),
+                    "action_items": "Send deposit invoice, begin procurement",
+                    "snippet": "signed",
+                    "message_id": f"signed_{token}",
+                })
+        except Exception as e:
+            logger.debug("linear sync on sign: %s", e)
+
+        # 2. Log to decision journal
+        try:
+            self._journal().log(
+                decision=f"Client agreement signed by {signer}",
+                rationale=f"Native e-signature via client portal. Token={token}, IP={signer_ip}, job_id={job_id}",
+                outcome="pending",
+                tags=["agreement", "e-signature", "client-portal"],
+            )
+        except Exception as e:
+            logger.debug("journal log on sign: %s", e)
+
+        # 3. Generate and send deposit invoice
+        await self._send_deposit_invoice(client, token)
+        await self.notify("billing", f"🎉 {signer} signed the agreement. Deposit invoice sent.", priority="high")
 
     async def _send_deposit_invoice(self, client_name: str, envelope_id: str) -> None:
         """Generate invoice PDF + Stripe payment link and email to client."""
