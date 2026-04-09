@@ -268,12 +268,45 @@ class Orchestrator:
         # One-time: scan ALL existing emails for client preferences
         await self._backfill_client_preferences()
 
+        # Start Redis event listener in background
+        asyncio.create_task(self._redis_event_listener())
+
         while True:
             try:
                 await self.tick()
             except Exception as e:
                 logger.error("Orchestrator tick failed: %s", e)
             await asyncio.sleep(300)  # 5 minutes
+
+    async def _redis_event_listener(self) -> None:
+        """Subscribe to Redis events: DocuSign, Stripe, Dropbox, D-Tools."""
+        import json
+        while True:
+            try:
+                r = await self._get_redis()
+                pubsub = r.pubsub()
+                await pubsub.subscribe(
+                    "events:docusign",
+                    "events:stripe_payment",
+                    "events:dtools_change",
+                    "events:dropbox",
+                )
+                logger.info("Redis event listener subscribed")
+                async for msg in pubsub.listen():
+                    if msg["type"] != "message":
+                        continue
+                    try:
+                        channel = msg["channel"]
+                        data    = json.loads(msg["data"])
+                        if channel == "events:docusign":
+                            await self.handle_docusign_event(data)
+                        elif channel == "events:stripe_payment":
+                            await self.handle_stripe_payment(data)
+                    except Exception as e:
+                        logger.debug("redis_event_listener error on %s: %s", channel, e)
+            except Exception as e:
+                logger.warning("redis_event_listener disconnected: %s — retrying in 10s", e)
+                await asyncio.sleep(10)
 
     async def tick(self):
         """Single orchestration cycle."""
@@ -300,6 +333,8 @@ class Orchestrator:
         await self.consolidate_memories()
         await self._run_follow_up_engine()
         await self._run_dtools_watcher()
+        await self._run_self_healer()
+        await self._run_price_monitor()
         await self._maybe_weekly_deep_learning()
         await self.maybe_send_briefing()
 
@@ -936,6 +971,146 @@ class Orchestrator:
                 logger.info("follow_up_engine sent %d follow-up(s)", sent)
         except Exception as e:
             logger.debug("follow_up_engine error: %s", e)
+
+    async def _run_self_healer(self) -> None:
+        """Scan logs for new errors, generate fixes, create Linear issues."""
+        try:
+            from self_healer import SelfHealer
+            if not hasattr(self, "_self_healer"):
+                self._self_healer = SelfHealer(
+                    log_paths=["/tmp/bob-healthcheck.log", "/tmp/dropbox-organizer.log"],
+                    openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+                    linear_sync=self._linear_sync,
+                    notify_fn=lambda msg: asyncio.create_task(self.notify("health", msg, priority="high")),
+                )
+            fixed = await self._self_healer.tick()
+            if fixed:
+                logger.info("self_healer processed %d new error(s)", fixed)
+        except Exception as e:
+            logger.debug("self_healer error: %s", e)
+
+    async def _run_price_monitor(self) -> None:
+        """Daily Snap One price check — flags quote impacts."""
+        try:
+            from price_monitor import PriceMonitor
+            if not hasattr(self, "_price_monitor"):
+                self._price_monitor = PriceMonitor(
+                    db_path=str(self._data_dir / "price_monitor.db"),
+                    http=self.http,
+                    notify_fn=lambda msg: asyncio.create_task(self.notify("pricing", msg, priority="high")),
+                    linear_sync=self._linear_sync,
+                )
+            changes = await self._price_monitor.daily_tick()
+            if changes:
+                logger.info("price_monitor found %d price change(s)", changes)
+        except Exception as e:
+            logger.debug("price_monitor error: %s", e)
+
+    async def handle_docusign_event(self, event: dict) -> None:
+        """Called when DocuSign webhook fires (envelope completed/declined)."""
+        status   = event.get("status", "")
+        env_id   = event.get("envelope_id", "")
+        client   = event.get("client_name", "")
+        if status != "completed":
+            return
+        logger.info("docusign_signed envelope=%s client=%s", env_id, client)
+        # 1. Advance Linear issue to Done
+        if self._linear_email_sync if hasattr(self, "_linear_email_sync") else None:
+            await self._linear_email_sync.sync_email({
+                "sender": client,
+                "sender_name": client,
+                "subject": "Agreement Signed",
+                "category": "ACTIVE_CLIENT",
+                "summary": f"DocuSign agreement signed by {client}. Envelope: {env_id}.",
+                "action_items": "Send deposit invoice, begin procurement",
+                "snippet": "signed",
+                "message_id": f"docusign_{env_id}",
+            })
+        # 2. Generate and send deposit invoice
+        await self._send_deposit_invoice(client, env_id)
+        await self.notify("billing", f"🎉 {client} signed the agreement. Deposit invoice sent.", priority="high")
+
+    async def _send_deposit_invoice(self, client_name: str, envelope_id: str) -> None:
+        """Generate invoice PDF + Stripe payment link and email to client."""
+        try:
+            from stripe_billing import StripeBilling
+            from invoice_generator import generate_milestone_invoice
+            import tempfile
+
+            # Find job
+            job = _match_job_to_sender_sync(client_name, "", str(self._data_dir / "jobs.db"))
+            if not job:
+                logger.warning("deposit_invoice: no job found for %s", client_name)
+                return
+
+            meta = job.get("metadata") or {}
+            if isinstance(meta, str):
+                import json
+                meta = json.loads(meta)
+
+            amount_cents = int(float(meta.get("deposit_amount", 0)) * 100)
+            client_email = meta.get("client_email", "")
+            project_name = job.get("project_name", "Project")
+            quote_ref    = meta.get("quote_ref", "")
+
+            if not amount_cents or not client_email:
+                logger.warning("deposit_invoice: missing amount or email for %s", client_name)
+                return
+
+            # Create Stripe payment link
+            billing = StripeBilling()
+            link_data = await billing.create_payment_link(
+                amount_cents=amount_cents,
+                description=f"{project_name} — Deposit (60%)",
+                client_name=client_name,
+                client_email=client_email,
+                metadata={"job_id": str(job["job_id"]), "phase": "deposit", "envelope_id": envelope_id},
+                payment_methods=["us_bank_account", "card"],
+            )
+            payment_url = link_data.get("payment_link_url", "")
+
+            # Generate PDF invoice
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                invoice_path = f.name
+
+            from datetime import date, timedelta
+            generate_milestone_invoice(
+                output_path=invoice_path,
+                client_name=client_name,
+                client_email=client_email,
+                project_name=project_name,
+                quote_ref=quote_ref,
+                milestone_name="Deposit (60%)",
+                milestone_amount=amount_cents / 100,
+                payment_link=payment_url,
+            )
+
+            # Send via Zoho
+            resp = await self.http.post(
+                f"{SERVICES['notifications']}/api/send",
+                json={
+                    "message": f"Hi {client_name}, please find your deposit invoice attached. Total due: ${amount_cents/100:,.2f}. Pay online: {payment_url}",
+                    "channel": "email",
+                    "to": client_email,
+                    "subject": f"Deposit Invoice — {project_name}",
+                    "priority": "high",
+                },
+            )
+            logger.info("deposit_invoice sent to %s via %s", client_email, resp.status_code)
+        except Exception as e:
+            logger.error("_send_deposit_invoice failed: %s", e)
+
+    async def handle_stripe_payment(self, event: dict) -> None:
+        """Called when Stripe webhook fires (payment succeeded)."""
+        if event.get("event") != "payment_succeeded":
+            return
+        meta  = event.get("metadata", {})
+        phase = meta.get("phase", "")
+        job_id = meta.get("job_id", "")
+        amount = event.get("amount", 0) / 100
+        logger.info("stripe_payment received phase=%s job=%s amount=$%.2f", phase, job_id, amount)
+        # Advance Linear + notify
+        await self.notify("billing", f"💰 Payment received: ${amount:,.2f} ({phase}). Advancing project.", priority="high")
 
     async def _run_dtools_watcher(self) -> None:
         """Detect new D-Tools proposal versions and trigger doc regeneration."""
