@@ -462,6 +462,20 @@ class Orchestrator:
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)
 
+            # ── Autonomous email → Linear sync ──────────────────────────
+            if important:
+                try:
+                    from linear_sync import LinearEmailSync
+                    if not hasattr(self, "_linear_email_sync"):
+                        self._linear_email_sync = LinearEmailSync(
+                            self._linear_sync,
+                            str(self._data_dir / "jobs.db"),
+                        )
+                    for em in important:
+                        await self._linear_email_sync.sync_email(em)
+                except Exception as e:
+                    logger.debug("linear_email_sync error: %s", e)
+
             try:
                 from scope_tracker import process_new_emails as _scope_scan
                 scope_hits = await _scope_scan(new_emails, self, str(self._data_dir))
