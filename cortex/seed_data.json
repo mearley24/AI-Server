@@ -10,7 +10,12 @@
           "outcome": "success",
           "details": "Created the AI-Server repo foundation. Discussed Mission Control dashboard concept. Identified pending tasks: get Ollama running on Maestro (64GB iMac), wipe/rename iMacs, generate D-Tools Cloud API key, build OpenClaw framework.",
           "problems_downstream": "Many of these initial plans took weeks to materialize. The scope was ambitious from day one.",
-          "tags": ["bob", "ai-server", "vision", "setup"]
+          "tags": [
+            "bob",
+            "ai-server",
+            "vision",
+            "setup"
+          ]
         }
       ]
     },
@@ -24,7 +29,12 @@
           "outcome": "success",
           "details": "Service requires DTOOLS_EMAIL and DTOOLS_PASSWORD env vars. Bob delegates tasks via @browser command. This replaced the Stagehand/HARPA approach entirely.",
           "problems_downstream": "D-Tools integration remained limited since there's no free API — browser automation is fragile and dependent on UI changes.",
-          "tags": ["browser-agent", "d-tools", "playwright", "docker"]
+          "tags": [
+            "browser-agent",
+            "d-tools",
+            "playwright",
+            "docker"
+          ]
         }
       ]
     },
@@ -38,7 +48,11 @@
           "outcome": "partial",
           "details": "Bob's full stack now comprised 16 services. The orchestration loop was running but many downstream services weren't returning useful data yet.",
           "problems_downstream": "The orchestration loop ran but most modules returned empty data. Jobs DB was never populated, which blocked follow-ups, payments, and proposals.",
-          "tags": ["openclaw", "orchestration", "docker-compose"]
+          "tags": [
+            "openclaw",
+            "orchestration",
+            "docker-compose"
+          ]
         },
         {
           "title": "Tier 1 Services Deployed",
@@ -46,7 +60,12 @@
           "outcome": "partial",
           "details": "Proposals agent wraps existing proposal engine. Email monitor watches Zoho inbox. Voice receptionist scaffolded but never fully activated.",
           "problems_downstream": "Voice receptionist was never fully wired up. Email monitor needed multiple rounds of fixes over the following week.",
-          "tags": ["proposals", "email-monitor", "voice-receptionist", "tier-1"]
+          "tags": [
+            "proposals",
+            "email-monitor",
+            "voice-receptionist",
+            "tier-1"
+          ]
         },
         {
           "title": "IOI Inventory Tracking Project",
@@ -54,7 +73,12 @@
           "outcome": "success",
           "details": "System tracks items through zones using RFID readers. Includes dashboard for real-time visualization. Using tscircuit for custom PCB design.",
           "problems_downstream": "Project paused after initial build — focus shifted to Bob's operational infrastructure.",
-          "tags": ["ioi", "rfid", "hardware", "side-project"]
+          "tags": [
+            "ioi",
+            "rfid",
+            "hardware",
+            "side-project"
+          ]
         },
         {
           "title": "Kraken Crypto Trading Bot",
@@ -62,7 +86,12 @@
           "outcome": "failure",
           "details": "Bot quoted but got no fills initially. Spread adjustments helped but the fundamental approach had problems — stale inventory, losses accumulated.",
           "problems_downstream": "Kraken losses contaminated P/L reporting for days. Had to be fully removed from mission control, iMessage notifications, and all dashboards. Kept sending hourly Kraken updates even after removal attempts.",
-          "tags": ["kraken", "trading", "market-making", "failure"]
+          "tags": [
+            "kraken",
+            "trading",
+            "market-making",
+            "failure"
+          ]
         },
         {
           "title": "Mission Control Dashboard Deployed",
@@ -70,7 +99,11 @@
           "outcome": "partial",
           "details": "Dashboard lived in /dashboard/ of the repo. Later went through multiple redesigns — Kraken removal, Polymarket playbook, Apple-style tiles, responsive sizing fixes.",
           "problems_downstream": "Dashboard needed constant rebuilds. Font sizing issues, Invalid Date bugs, employees showing as idle, cached Docker builds not picking up changes.",
-          "tags": ["mission-control", "dashboard", "ui"]
+          "tags": [
+            "mission-control",
+            "dashboard",
+            "ui"
+          ]
         }
       ]
     },
@@ -84,7 +117,13 @@
           "outcome": "success",
           "details": "Fix: Added extra_hosts mapping to VPN container. But the real fix was using the direct container IP (172.18.0.4:6379) instead of host.docker.internal. This IP must be re-verified after every docker compose restart.",
           "problems_downstream": "This direct IP approach is fragile — breaks on every restart. Created a recurring maintenance burden that persists.",
-          "tags": ["vpn", "redis", "networking", "docker", "debugging"]
+          "tags": [
+            "vpn",
+            "redis",
+            "networking",
+            "docker",
+            "debugging"
+          ]
         },
         {
           "title": "Polymarket Bot Research & Improvements",
@@ -92,7 +131,11 @@
           "outcome": "success",
           "details": "Research saved to polymarket-bot-evolution.pplx.md. Identified that copying market makers was a trap — they buy both sides.",
           "problems_downstream": "Many of these improvements were planned but implementation was incremental and some never fully deployed.",
-          "tags": ["polymarket", "research", "trading-strategy"]
+          "tags": [
+            "polymarket",
+            "research",
+            "trading-strategy"
+          ]
         }
       ]
     },
@@ -106,7 +149,12 @@
           "outcome": "partial",
           "details": "Committed fixes in cf5506c, f73f6f9, d22209d. Category sizing multipliers adjusted. Anti-pattern checks added (both-sides crypto, penny lottery, contradictory positions).",
           "problems_downstream": "Kraken iMessage updates KEPT coming back even after multiple removal attempts. The iMessage server runs natively, not in Docker, so code changes required manual restart.",
-          "tags": ["kraken-removal", "polymarket", "p-and-l", "imessage"]
+          "tags": [
+            "kraken-removal",
+            "polymarket",
+            "p-and-l",
+            "imessage"
+          ]
         },
         {
           "title": "Trading Playbook Built",
@@ -114,7 +162,11 @@
           "outcome": "success",
           "details": "Dashboard replaced with full playbook: category performance, lessons, timeline, trade explorer, open positions. Entry price range narrowed to $0.15-$0.90.",
           "problems_downstream": "The playbook was accurate but the trading strategy still needed refinement. Weather eventually became the profitable niche.",
-          "tags": ["trading-playbook", "lessons-learned", "polymarket"]
+          "tags": [
+            "trading-playbook",
+            "lessons-learned",
+            "polymarket"
+          ]
         },
         {
           "title": "Bot Stopped Trading",
@@ -122,7 +174,11 @@
           "outcome": "failure",
           "details": "Multiple issues: code not deployed on Bob (iMessage server runs natively), overly aggressive filters blocking everything.",
           "problems_downstream": "Pattern of code being pushed to repo but not deployed on Bob became a recurring issue.",
-          "tags": ["bot-stopped", "deployment-gap", "trading"]
+          "tags": [
+            "bot-stopped",
+            "deployment-gap",
+            "trading"
+          ]
         }
       ]
     },
@@ -135,7 +191,12 @@
           "summary": "Closed positions still showing as active. Redeemer was only processing winners — losers (33 positions) were left showing forever with $0 payout.",
           "outcome": "success",
           "details": "Fixed redeemer to also process losing positions. Redemption transactions clear them from the UI.",
-          "tags": ["polymarket", "redeemer", "dead-positions", "bug-fix"]
+          "tags": [
+            "polymarket",
+            "redeemer",
+            "dead-positions",
+            "bug-fix"
+          ]
         },
         {
           "title": "Bob Autostart & iMessage Bridge Fixes",
@@ -143,7 +204,12 @@
           "outcome": "success",
           "details": "Fixed paths to /Users/bob/. iMessage bridge now copies chat.db + WAL + SHM to temp before reads. Multiple Cursor prompts used for targeted fixes. Each fix required separate verification.",
           "problems_downstream": "iMessage bridge remained fragile. Lost entirely during a later refactor.",
-          "tags": ["bob-autostart", "imessage-bridge", "sqlite", "path-fix"]
+          "tags": [
+            "bob-autostart",
+            "imessage-bridge",
+            "sqlite",
+            "path-fix"
+          ]
         }
       ]
     },
@@ -157,7 +223,12 @@
           "outcome": "success",
           "details": "Router created IMAP folders and moved emails in real time. Active client detection for Steve (stopletz1@gmail.com), Austin (austin@shaw), Samantha. Bid triage for BuildingConnected invites.",
           "problems_downstream": "Steve's emails getting routed to project folder meant they disappeared from inbox — kept getting missed. Active client categorization broke multiple times (CLIENT_INQUIRY vs ACTIVE_CLIENT).",
-          "tags": ["email-routing", "zoho", "imap", "automation"]
+          "tags": [
+            "email-routing",
+            "zoho",
+            "imap",
+            "automation"
+          ]
         },
         {
           "title": "Deep Mailbox Cleanup",
@@ -165,7 +236,11 @@
           "outcome": "success",
           "details": "First attempt (cleanup_all_mail.py) only moved 40 emails — too conservative. Second attempt (deep_cleanup.py) did full migration, consolidation, read-marking, and empty folder deletion.",
           "problems_downstream": "None — the cleanup worked well and established a clean baseline.",
-          "tags": ["email-cleanup", "zoho", "mailbox-organization"]
+          "tags": [
+            "email-cleanup",
+            "zoho",
+            "mailbox-organization"
+          ]
         },
         {
           "title": "Dropbox Integration Connected",
@@ -173,7 +248,11 @@
           "outcome": "success",
           "details": "Each document gets its own share link. Client folder shared once, files replaced in place when updated.",
           "problems_downstream": "Bob couldn't autonomously push files to Dropbox in practice — still required manual intervention.",
-          "tags": ["dropbox", "file-management", "client-folders"]
+          "tags": [
+            "dropbox",
+            "file-management",
+            "client-folders"
+          ]
         },
         {
           "title": "Linear Project Templates",
@@ -181,7 +260,11 @@
           "outcome": "success",
           "details": "Template codified in openclaw/project_template.py. Auto-creates when job enters WON phase.",
           "problems_downstream": "Auto-creation never fired because jobs DB remained empty — D-Tools sync logged opportunities but never created jobs.",
-          "tags": ["linear", "project-template", "automation"]
+          "tags": [
+            "linear",
+            "project-template",
+            "automation"
+          ]
         },
         {
           "title": "Topletz Addendum Response Drafted",
@@ -189,7 +272,12 @@
           "outcome": "success",
           "details": "Multiple rounds of refinement: wire labeling standards, temp labels, commissioning approach. Pushed to Zoho drafts via API.",
           "problems_downstream": "The TV options were teased but not fully developed at this point. Became a significant workstream later.",
-          "tags": ["topletz", "client-email", "addendum", "drafting"]
+          "tags": [
+            "topletz",
+            "client-email",
+            "addendum",
+            "drafting"
+          ]
         }
       ]
     },
@@ -203,7 +291,12 @@
           "outcome": "success",
           "details": "7 decisions confirmed. Panel location: garage entry primary, master bed secondary. Qolsys IQ Panel 4 with native C4 driver via DriverCentral.",
           "problems_downstream": "None on the decisions. But processing Steve's emails became a recurring battle with the email monitor.",
-          "tags": ["topletz", "decisions-confirmed", "steve", "scope-locked"]
+          "tags": [
+            "topletz",
+            "decisions-confirmed",
+            "steve",
+            "scope-locked"
+          ]
         },
         {
           "title": "TV Options & Mount Analysis",
@@ -211,7 +304,12 @@
           "outcome": "success",
           "details": "All Samsung TVs with native C4 SDDP. VLT7 mounts. Explored AWALL for 100\" MicroLED locations. Created TV options PDF for Dropbox.",
           "problems_downstream": "Steve hadn't asked for TV recommendations yet — had to hold the PDF as a draft. Mount recommendation workflow needed refinement.",
-          "tags": ["tv-options", "mounts", "samsung", "c4-sddp"]
+          "tags": [
+            "tv-options",
+            "mounts",
+            "samsung",
+            "c4-sddp"
+          ]
         },
         {
           "title": "Daily Briefing Cron Duplicated 4x",
@@ -219,7 +317,12 @@
           "outcome": "failure",
           "details": "Fixed by compacting to a single entry. Also discovered the cron was set to 1 PM UTC (7 AM MDT) when 6 AM was intended.",
           "problems_downstream": "Cron management remained manual and error-prone. No idempotent setup.",
-          "tags": ["cron", "daily-briefing", "duplicate", "bug"]
+          "tags": [
+            "cron",
+            "daily-briefing",
+            "duplicate",
+            "bug"
+          ]
         },
         {
           "title": "SOW Gap Analysis & V4 Created",
@@ -227,7 +330,11 @@
           "outcome": "success",
           "details": "Built V4 SOW with all gaps filled. Added change log table for tracking. Established workflow: confirmed decision → logged with timestamp → SOW updated → cross-checked before sending.",
           "problems_downstream": "SOW versions continued to evolve (V4 → V5 → V6) as scope refined.",
-          "tags": ["sow", "gap-analysis", "scope-management"]
+          "tags": [
+            "sow",
+            "gap-analysis",
+            "scope-management"
+          ]
         },
         {
           "title": "Knowledge Layer, SOW Assembler, Pre-flight Checker Built",
@@ -235,7 +342,12 @@
           "outcome": "success",
           "details": "Topletz established as the benchmark project. All tools standardized for reuse across every Symphony project.",
           "problems_downstream": "These tools existed in the repo but were never fully tested end-to-end with Bob's orchestration loop.",
-          "tags": ["knowledge-layer", "sow-assembler", "preflight", "runbook"]
+          "tags": [
+            "knowledge-layer",
+            "sow-assembler",
+            "preflight",
+            "runbook"
+          ]
         },
         {
           "title": "Steve's Email Missed (Again)",
@@ -243,7 +355,12 @@
           "outcome": "failure",
           "details": "Pattern: code pushed to repo → not pulled on Bob → old code still running → Steve categorized as VENDOR not ACTIVE_CLIENT.",
           "problems_downstream": "This exact pattern repeated multiple times. Became a major source of frustration.",
-          "tags": ["email-missed", "deployment-gap", "steve", "active-client"]
+          "tags": [
+            "email-missed",
+            "deployment-gap",
+            "steve",
+            "active-client"
+          ]
         },
         {
           "title": "Polymarket Bot Down Since 8 AM",
@@ -251,14 +368,22 @@
           "outcome": "partial",
           "details": "Required manual diagnosis via docker logs and docker ps.",
           "problems_downstream": "Bot monitoring was reactive, not proactive. No automatic restart or alerting.",
-          "tags": ["polymarket", "downtime", "monitoring"]
+          "tags": [
+            "polymarket",
+            "downtime",
+            "monitoring"
+          ]
         },
         {
           "title": "Business Pivot: Residential Only",
           "summary": "Decided to pivot Symphony Smart Homes to focus exclusively on residential smart home projects. Abandoned commercial bid work due to low ROI. Polymarket trading as supplementary revenue.",
           "outcome": "success",
           "details": "Strategic decision that simplified focus. All automation efforts now targeted at residential workflow.",
-          "tags": ["business-strategy", "pivot", "residential-focus"]
+          "tags": [
+            "business-strategy",
+            "pivot",
+            "residential-focus"
+          ]
         }
       ]
     },
@@ -272,7 +397,12 @@
           "outcome": "failure",
           "details": "Had to rebuild from scratch at 12:40 AM. Created notifications module, wired into polymarket bot signal handler. But couldn't push to Bob autonomously — needed user to paste commands.",
           "problems_downstream": "iMessage infrastructure remained fragile and dependent on Mac-native osascript.",
-          "tags": ["imessage", "notifications", "lost-code", "late-night"]
+          "tags": [
+            "imessage",
+            "notifications",
+            "lost-code",
+            "late-night"
+          ]
         },
         {
           "title": "Code Not Deployed on Bob (Pattern)",
@@ -280,7 +410,11 @@
           "outcome": "failure",
           "details": "Root cause: no auto-deploy mechanism. Every fix requires manual: git pull → docker compose build → docker compose up. This gap caused Steve's emails to be miscategorized repeatedly.",
           "problems_downstream": "This is the single biggest recurring problem. Code exists but isn't running.",
-          "tags": ["deployment-gap", "git-pull", "recurring-issue"]
+          "tags": [
+            "deployment-gap",
+            "git-pull",
+            "recurring-issue"
+          ]
         },
         {
           "title": "Steve Final Alignment Response",
@@ -288,7 +422,12 @@
           "outcome": "success",
           "details": "Confirmed Symphony supplies TVs and mounts (not owner-supplied). Explored Strong Carbon Series mounts via Snap One dealer network.",
           "problems_downstream": "Agreement terms (90 vs 60 day tuning) needed careful handling.",
-          "tags": ["topletz", "final-alignment", "steve", "agreement"]
+          "tags": [
+            "topletz",
+            "final-alignment",
+            "steve",
+            "agreement"
+          ]
         },
         {
           "title": "Email Monitor Routing Not Firing",
@@ -296,7 +435,11 @@
           "outcome": "failure",
           "details": "Required: git pull → docker compose restart → verify config inside container → rebuild. Multiple cycles of 'try and check logs'.",
           "problems_downstream": "Hours spent debugging the same root cause: code not deployed.",
-          "tags": ["email-routing", "deployment-gap", "debugging-loop"]
+          "tags": [
+            "email-routing",
+            "deployment-gap",
+            "debugging-loop"
+          ]
         },
         {
           "title": "Polymarket Notification Wiring",
@@ -304,7 +447,12 @@
           "outcome": "success",
           "details": "notification-hub on port 8095, iMessage bridge on port 8199. Both healthy with two-way mode.",
           "problems_downstream": "The notification pipeline worked when tested manually but reliability in production was inconsistent.",
-          "tags": ["notifications", "imessage", "redis-pubsub", "polymarket"]
+          "tags": [
+            "notifications",
+            "imessage",
+            "redis-pubsub",
+            "polymarket"
+          ]
         },
         {
           "title": "Redis Static IP Problem",
@@ -312,7 +460,12 @@
           "outcome": "partial",
           "details": "Workaround: verify IP after every restart. Proper fix would be a static Docker network configuration.",
           "problems_downstream": "Every restart required manual IP verification. Not sustainable for autonomous operation.",
-          "tags": ["redis", "static-ip", "vpn", "maintenance-burden"]
+          "tags": [
+            "redis",
+            "static-ip",
+            "vpn",
+            "maintenance-burden"
+          ]
         },
         {
           "title": "Bob's Neural Map Vision",
@@ -320,7 +473,11 @@
           "outcome": "success",
           "details": "Vision: system compatibility intelligence layer that validates components against each other, includes reference checklists and connection maps, eventually powers automated pre-verified 3D layouts.",
           "problems_downstream": "Vision is solid but execution is still in early stages.",
-          "tags": ["neural-map", "vision", "system-intelligence"]
+          "tags": [
+            "neural-map",
+            "vision",
+            "system-intelligence"
+          ]
         }
       ]
     },
@@ -334,7 +491,12 @@
           "outcome": "failure",
           "details": "The import path was wrong across containers. Emails processed during monitor restarts were indexed silently without triggering auto-responder. Steve's emails consistently missed.",
           "problems_downstream": "Major frustration point. Same issue debugged multiple times.",
-          "tags": ["auto-responder", "container-import", "silent-failure", "frustration"]
+          "tags": [
+            "auto-responder",
+            "container-import",
+            "silent-failure",
+            "frustration"
+          ]
         },
         {
           "title": "User Frustration: 'Setting Up Same Shit 7 Times'",
@@ -342,7 +504,12 @@
           "outcome": "failure",
           "details": "Root causes: (1) code pushed to repo but not deployed, (2) import paths broken across Docker containers, (3) silent failures hiding errors, (4) no end-to-end testing before declaring 'done'.",
           "problems_downstream": "Led to demand for proper autonomous operation: 'make Bob fucking do it, fix it now'.",
-          "tags": ["frustration", "recurring-bugs", "deployment-gap", "quality"]
+          "tags": [
+            "frustration",
+            "recurring-bugs",
+            "deployment-gap",
+            "quality"
+          ]
         },
         {
           "title": "Polymarket Over-Trading Crisis",
@@ -350,21 +517,36 @@
           "outcome": "failure",
           "details": "Filters were in the code but not active because container wasn't rebuilt. Bot was buying cheap positions at high prices with no exit strategy. Weather bets ($331 deployed) were the main exposure.",
           "problems_downstream": "Significant capital deployed in positions that needed to be recovered. Exit engine had bugs (stuck retry loops).",
-          "tags": ["polymarket", "over-trading", "filters-not-deployed", "capital-at-risk"]
+          "tags": [
+            "polymarket",
+            "over-trading",
+            "filters-not-deployed",
+            "capital-at-risk"
+          ]
         },
         {
           "title": "Proposal V5 Finalized",
           "summary": "Topletz proposal V5 (Q-196) finalized at $57,683.09 with 60% deposit required. Scope: C4/NoSecurity. RMGC as general contractor.",
           "outcome": "success",
           "details": "Version numbers kept internal — client-facing docs use generic 'updated proposal' language.",
-          "tags": ["topletz", "proposal", "v5", "finalized"]
+          "tags": [
+            "topletz",
+            "proposal",
+            "v5",
+            "finalized"
+          ]
         },
         {
           "title": "Zoho OAuth Token Issues",
           "summary": "Attempted to push Steve's reply via Zoho API. Token from one-liner didn't capture properly. Got INVALID_OAUTHTOKEN errors.",
           "outcome": "partial",
           "details": "Had to use token directly in curl command rather than variable capture. Zoho's OAuth flow requires careful token handling.",
-          "tags": ["zoho", "oauth", "api", "token-issue"]
+          "tags": [
+            "zoho",
+            "oauth",
+            "api",
+            "token-issue"
+          ]
         }
       ]
     },
@@ -378,14 +560,23 @@
           "outcome": "success",
           "details": "Quick fix applied, bot rebuilt. Clean startup with open_positions: 0 (drift problem — loses position memory on restart). LLM validation returning 400 from OpenAI (prompt formatting issue, not urgent).",
           "problems_downstream": "open_positions: 0 on restart means bot doesn't know about existing positions. Auto-21 Cursor prompt planned to fix this.",
-          "tags": ["polymarket", "exit-engine", "retry-loop", "position-drift"]
+          "tags": [
+            "polymarket",
+            "exit-engine",
+            "retry-loop",
+            "position-drift"
+          ]
         },
         {
           "title": "Proposal Checker Logic",
           "summary": "Built proposal checker that distinguishes between D-Tools items (hardware, labor) and email-agreed items (TV installation, mount recommendations, service terms). Email-agreed items excluded from 'missing' flag logic.",
           "outcome": "success",
           "details": "Important nuance: not everything in the proposal comes from D-Tools. Some items are agreed via email and shouldn't trigger missing flags.",
-          "tags": ["proposal-checker", "d-tools", "email-agreed-items"]
+          "tags": [
+            "proposal-checker",
+            "d-tools",
+            "email-agreed-items"
+          ]
         },
         {
           "title": "32 Cursor Prompts Roadmap",
@@ -393,7 +584,12 @@
           "outcome": "success",
           "details": "Covers: API-11 (Bob's Brain — central event bus), Auto-21 (position recovery), strategy improvements, client lifecycle automation, and more.",
           "problems_downstream": "Ambitious roadmap. Execution depends on running Cursor prompts sequentially and deploying each fix.",
-          "tags": ["roadmap", "cursor-prompts", "flywheel", "vision"]
+          "tags": [
+            "roadmap",
+            "cursor-prompts",
+            "flywheel",
+            "vision"
+          ]
         },
         {
           "title": "Git Workflow Conflicts",
@@ -401,14 +597,24 @@
           "outcome": "partial",
           "details": "Workaround: git stash → git pull --rebase → git stash pop. Eventually created scripts/pull.sh to handle this properly.",
           "problems_downstream": "Led to mandate: always use 'bash scripts/pull.sh' instead of bare 'git pull'.",
-          "tags": ["git", "rebase-conflicts", "workflow", "pull-script"]
+          "tags": [
+            "git",
+            "rebase-conflicts",
+            "workflow",
+            "pull-script"
+          ]
         },
         {
           "title": "Proposal V6 Updated",
           "summary": "V6 same total as V5 ($57,683.09) but with more detailed scope language about RMGC coordination, Qolsys SDDP, iPad locations, 60-day tuning period, exclusions.",
           "outcome": "success",
           "details": "Deliverables package needed to match V6. Required: PDF to Dropbox, agreement update, scope summary update, old versions archived.",
-          "tags": ["topletz", "proposal", "v6", "scope-language"]
+          "tags": [
+            "topletz",
+            "proposal",
+            "v6",
+            "scope-language"
+          ]
         }
       ]
     },
@@ -422,14 +628,24 @@
           "outcome": "partial",
           "details": "Kept running into Docker cached builds not picking up changes. Cursor changes to index.html needed force --no-cache rebuild. Data file conflicts on pull.",
           "problems_downstream": "Dashboard still not fully polished. Employees show as idle because services don't emit events to Mission Control /event endpoint.",
-          "tags": ["mission-control", "fonts", "responsive", "docker-cache"]
+          "tags": [
+            "mission-control",
+            "fonts",
+            "responsive",
+            "docker-cache"
+          ]
         },
         {
           "title": "Git Auth & Workflow Fixes",
           "summary": "Git remote had placeholder token (ghp_YOUR_TOKEN). Fixed with gh auth login --web. Established bash scripts/pull.sh as the mandatory workflow.",
           "outcome": "success",
           "details": "gh auth setup-git configured for HTTPS. pull.sh handles stash, rebase conflicts, and data file merges properly.",
-          "tags": ["git-auth", "github-cli", "pull-script", "workflow"]
+          "tags": [
+            "git-auth",
+            "github-cli",
+            "pull-script",
+            "workflow"
+          ]
         },
         {
           "title": "Services Audit: What's Built But Not Active",
@@ -437,35 +653,288 @@
           "outcome": "partial",
           "details": "Root cause for everything: Jobs DB has 0 rows. D-Tools sync logs opportunities but never creates jobs. Follow-ups, payments, proposals all depend on jobs existing. This is THE bottleneck.",
           "problems_downstream": "Nothing downstream works without jobs being populated. Single point of failure for the entire operations pipeline.",
-          "tags": ["services-audit", "jobs-db-empty", "bottleneck", "operations"]
+          "tags": [
+            "services-audit",
+            "jobs-db-empty",
+            "bottleneck",
+            "operations"
+          ]
         },
         {
           "title": "Daily Briefing: Wrong Time, Wrong Paths",
           "summary": "Briefing cron at 1 PM UTC (7 AM MDT) instead of 6 AM MT. Email DB path wrong inside Docker (/data/emails.db vs /app/data/email-monitor/emails.db). Cron runs outside Docker so env vars not available.",
           "outcome": "failure",
           "details": "Briefing ran on 4/3 but failed on D-Tools fetch (returned None). Phone number is set in .env but crontab doesn't source it.",
-          "tags": ["daily-briefing", "cron", "wrong-path", "env-vars"]
+          "tags": [
+            "daily-briefing",
+            "cron",
+            "wrong-path",
+            "env-vars"
+          ]
         },
         {
           "title": "Activate Operations Cursor Prompt Created",
           "summary": "Created .cursor/prompts/activate-operations.md to fix four things: auto-create jobs from D-Tools Won/On Hold opportunities, fix daily briefing paths, wire follow-up/payment trackers, emit events to Mission Control.",
           "outcome": "pending",
           "details": "This is the key unlock. Once jobs exist, the entire downstream pipeline activates. Manual fix still needed: iCloud Watch dead because Mac Mini not signed into iCloud.",
-          "tags": ["activate-operations", "cursor-prompt", "jobs-creation", "unlock"]
+          "tags": [
+            "activate-operations",
+            "cursor-prompt",
+            "jobs-creation",
+            "unlock"
+          ]
         },
         {
           "title": "LaunchD Scripts Pointing to Nonexistent Files",
           "summary": "efficiency_audit.py and daily_market_scan.py referenced in launchd plists but never created by Cursor. Unloaded dead plists.",
           "outcome": "success",
           "details": "Cursor generated the plists but never created the actual Python scripts. Cleaned up to prevent error spam.",
-          "tags": ["launchd", "dead-scripts", "cleanup"]
+          "tags": [
+            "launchd",
+            "dead-scripts",
+            "cleanup"
+          ]
         },
         {
           "title": "Data File Merge Conflicts (Recurring)",
           "summary": "data/network_watch/dropout_watch_status.json keeps conflicting on git pull. Runtime data files shouldn't be tracked in git.",
           "outcome": "partial",
           "details": "Workaround: git checkout --theirs and continue. Should be added to .gitignore.",
-          "tags": ["git", "merge-conflicts", "data-files", "gitignore"]
+          "tags": [
+            "git",
+            "merge-conflicts",
+            "data-files",
+            "gitignore"
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-04",
+      "phase": "Cortex & Memory System",
+      "entries": [
+        {
+          "title": "Cortex Memory System — Cursor Prompt Written",
+          "summary": "Designed and pushed the Cortex service spec to the AI-Server repo (.cursor/prompts/cortex-memory-system.md). Transforms the static ops log into a living 17th Docker service with SQLite memory, Redis event ingestion, neural path formation, and a query API for all agents.",
+          "outcome": "pending",
+          "details": "Architecture: MemoryStore (6 tables: entries, tags, problems, neural_paths, decisions, problem_occurrences), LearningEngine (pattern detection, confidence decay, weekly iMessage summary), QueryEngine (FTS5 search, /api/paths/relevant endpoint), ingestion listener (Redis subscriber auto-creating entries from service events). Seeded with 51 historical entries + 10 critical lessons as high-confidence neural paths (0.85-0.95). Port 8097.",
+          "problems_downstream": "Cortex was never deployed — the prompt exists in the repo but was never run in Cursor. The static ops log remains the only reference.",
+          "tags": [
+            "cortex",
+            "memory-system",
+            "neural-paths",
+            "cursor-prompt",
+            "pending"
+          ]
+        },
+        {
+          "title": "Matt's Digital Signature Added to Repo",
+          "summary": "Matt's signature stored at knowledge/brand/matt_earley_signature.png. Bob and the team must auto-fill this as 'Matthew Earley, Principal' with the current date on all generated agreements, leaving the client signature line blank.",
+          "outcome": "success",
+          "details": "Ensures all generated PDFs look professionally signed on Bob's side without manual intervention.",
+          "problems_downstream": "None — clean workflow established.",
+          "tags": [
+            "documents",
+            "agreements",
+            "signature",
+            "automation"
+          ]
+        },
+        {
+          "title": "Symphony Premium Offerings Expansion",
+          "summary": "Strategic decision to expand Symphony Smart Homes into premium project offerings: motorized/haptic theater seating, starlight fiber optic ceilings, golf and racing simulators, advanced architectural/LED lighting for Control4. CEDIA Expo 2026 in Denver targeted to establish new vendor relationships.",
+          "outcome": "success",
+          "details": "Pivots the business upmarket alongside the existing residential focus. These higher-margin projects complement the standard C4 residential scope.",
+          "problems_downstream": "None yet — these are prospective offerings pending vendor relationships at CEDIA.",
+          "tags": [
+            "business-strategy",
+            "premium",
+            "cedia",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-05",
+      "phase": "Infrastructure Hardening",
+      "entries": [
+        {
+          "title": "Docker Cascade Crash — Tailscale DNS Failure",
+          "summary": "Docker Desktop crashed, taking down Tailscale and consequently all internal DNS resolution. Email-monitor and other services lost connectivity to each other. Revealed hardcoded stale Redis passwords in docker-compose.yml causing 'invalid username-password' errors on restart.",
+          "outcome": "success",
+          "details": "Root causes fixed: (1) Redis authentication enabled — password required, dangerous commands disabled, (2) All ports locked to 127.0.0.1 except Mission Control port 8098 which got an auth token, (3) DNS auto-fallback added. Bob upgraded from 16 to 18 services after this hardening pass.",
+          "problems_downstream": "The Tailscale DNS dependency is a single point of failure. If Docker crashes again it will cascade the same way until Tailscale is decoupled from container DNS.",
+          "tags": [
+            "docker",
+            "tailscale",
+            "dns",
+            "redis",
+            "infrastructure",
+            "crash"
+          ]
+        },
+        {
+          "title": "Watchdog Daemon Built",
+          "summary": "LaunchDaemon installed on Bob running on a 60-second cycle. Auto-recovers in order: Tailscale → DNS → Docker → containers → email monitor. If a service is down it restarts automatically before alerting.",
+          "outcome": "success",
+          "details": "Replaces the manual 'docker compose up -d' restart loop. Healthcheck runs every 5 minutes, git-resets broken containers before rebuilding so bad code can't keep things down. This is the auto-recovery infrastructure that was missing since day one.",
+          "problems_downstream": "Watchdog covers infrastructure crashes but not logic bugs (e.g., silent failures in business logic still require code fixes).",
+          "tags": [
+            "watchdog",
+            "launchdaemon",
+            "auto-recovery",
+            "infrastructure"
+          ]
+        },
+        {
+          "title": "API Key Leaked — Scrubbed & Regenerated",
+          "summary": "An API key was found committed to the repo. Immediate scrub and regeneration of the .env file. All services restarted with fresh credentials.",
+          "outcome": "success",
+          "details": "Key was identified in git history. Rotated across all affected services. Added to .gitignore patterns going forward.",
+          "problems_downstream": "This is a recurring risk since Bob's Mac Mini runs code that Cursor writes directly to the repo. Any .env file accidentally committed exposes credentials.",
+          "tags": [
+            "security",
+            "api-key",
+            "leaked",
+            "credentials"
+          ]
+        },
+        {
+          "title": "X/Twitter Intake Pipeline Fixed",
+          "summary": "iMessage bridge had zero Redis integration for X links — ask_openclaw() intercepted them locally, nothing ever reached the events:imessage Redis channel that x-intake subscribes to. x-intake's reply function also POSTed to /send which didn't exist on the bridge.",
+          "outcome": "success",
+          "details": "Fixes: (1) Bridge now publishes to events:imessage, (2) ask_openclaw skips X links so they route to x-intake instead, (3) x-intake replies to root / with {message: ...}. Three Cursor prompts pushed: fix-x-intake-pipeline.md, fix-kraken-avellaneda-mm.md, fix-email-monitor-duplicates.md.",
+          "problems_downstream": "None — pipeline verified end-to-end.",
+          "tags": [
+            "x-twitter",
+            "imessage",
+            "redis",
+            "pipeline",
+            "fix"
+          ]
+        },
+        {
+          "title": "Kraken Was Never Actually Trading",
+          "summary": "Critical discovery: CryptoClient.init defaults to dry_run=True. The init in main.py never passed dry_run=False, so the exchange object got API keys but never used them. connect() was also never called, so self._exchange stayed None. Every tick hit the empty orderbook check and returned silently. The bot was paper-trading against nothing the entire time.",
+          "outcome": "failure",
+          "details": "This was a completely silent failure — no errors, no logs, the bot appeared healthy. Fixed by passing dry_run=False and adding await self._client.connect() in start(). Avellaneda MM is now actually live.",
+          "problems_downstream": "All Kraken 'performance data' from prior weeks was meaningless — it was paper trading against an empty exchange object. Prior Kraken analysis was worthless.",
+          "tags": [
+            "kraken",
+            "dry-run",
+            "silent-failure",
+            "never-trading",
+            "critical-bug"
+          ]
+        },
+        {
+          "title": "Email Monitor Duplicate Notifications Fixed",
+          "summary": "poll_once() fetched with BODY.PEEK (never marks as read), so every restart re-fetched all unread emails. Emails without a Message-ID header got f'unknown-{time.time()}' — a unique value each restart, defeating the dedup.",
+          "outcome": "success",
+          "details": "Fixes: deterministic hash for missing Message-IDs + IMAP UID-based high-water mark so restarts skip already-processed mail. scan_state table added to SQLite for checkpoint persistence.",
+          "problems_downstream": "None — checkpoint approach is solid. Email monitor now has stable resumability.",
+          "tags": [
+            "email-monitor",
+            "duplicates",
+            "imap",
+            "dedup",
+            "checkpoint"
+          ]
+        },
+        {
+          "title": "Execution Waves System Discovered",
+          "summary": "Found EXECUTION-ORDER.md in .cursor/prompts/ with 10 organized waves of work. Waves 0-2 were substantially shipped, Wave 3 partially loaded, Waves 4-10 completely unbuilt prompts waiting to be run.",
+          "outcome": "partial",
+          "details": "Waves system gives a structured roadmap beyond the 32 Cursor prompts. Preference established from this session: use Shell scripts for targeted code fixes in AI-Server, use Cursor for larger architectural builds.",
+          "problems_downstream": "Waves 4-10 remain unrun. The roadmap exists but execution is still incremental and dependent on Cursor sessions.",
+          "tags": [
+            "execution-waves",
+            "roadmap",
+            "cursor",
+            "workflow-preference"
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-06",
+      "phase": "Polymarket Analysis",
+      "entries": [
+        {
+          "title": "12-Day Polymarket Post-Mortem: -$1,322",
+          "summary": "Full analysis of 2,036 trades over 12 days. Net P/L: -$1,322 (-25.3% ROI). Key finding: April 1-2 alone accounted for 29% of all spending — the over-trading crisis was the primary driver of losses.",
+          "outcome": "failure",
+          "details": "Profitable bucket: 5¢-35¢ entries (+36.8% to +72% ROI). Losing bucket: 65¢+ entries (lose money). By category — weather: -15.7% (closest to breakeven), sports: -37.7%, politics: -77.1%. 68% of all sells executed at a loss. Hard caps set on share sizes, entry price range tightened to 5¢-35¢ bucket.",
+          "problems_downstream": "The bot is still running. The pattern analysis is solid but requires strategy changes to exploit the 5¢-35¢ edge while completely abandoning the 65¢+ range.",
+          "tags": [
+            "polymarket",
+            "post-mortem",
+            "analysis",
+            "losses",
+            "strategy"
+          ]
+        }
+      ]
+    },
+    {
+      "date": "2026-04-08",
+      "phase": "Topletz V3 & Bob Autonomy",
+      "entries": [
+        {
+          "title": "Topletz: Lutron RA3 Added — Proposal Jumps to $64,249",
+          "summary": "Steve changed from Control4 native lighting to Lutron RadioRA 3 integrated with Control4. Proposal revised from Q-196 V6 ($57,683.09) to Q-212 V3 ($64,249.27) — a $6,566 increase. Scope now: C4 + Lutron RA3 + full prewire.",
+          "outcome": "success",
+          "details": "$2,400 extra programming labor noted for RA3 integration. All project deliverables, agreements, and proposals located in Dropbox Topletz/Client/ folder. $250 change order fee applies to any scope changes made after the agreement is signed.",
+          "problems_downstream": "None — scope locked in. Agreement sent, awaiting Steve's signature and 60% deposit.",
+          "tags": [
+            "topletz",
+            "lutron-ra3",
+            "proposal",
+            "v3",
+            "scope-change"
+          ]
+        },
+        {
+          "title": "Bob's Document Autonomy — Full Pipeline Built",
+          "summary": "Built the complete autonomous document pipeline: drop proposal from D-Tools into iCloud Symphony SH/ or Dropbox root → Bob detects it, archives old versions, regenerates branded Symphony deliverables + agreement PDFs, creates Zoho draft with Dropbox share links, texts Matt for approval. Nothing manual.",
+          "outcome": "success",
+          "details": "Components: Dropbox Organizer LaunchAgent (watches both iCloud and Dropbox root), branded PDF generation (Python, Symphony header/logo), auto-versioning and archival (Topletz/Archive/ with date stamp), Zoho draft via notification-hub Hermes, iMessage approval request. Matt's signature auto-filled on agreement, client side left blank.",
+          "problems_downstream": "Initial Dropbox path discovery was messy (~/Library/CloudStorage/Dropbox-Personal/ vs ~/Dropbox). PASTE_ prefix left in .env for APP_SECRET — corrected.",
+          "tags": [
+            "documents",
+            "dropbox",
+            "automation",
+            "bob-autonomy",
+            "pdf-generation"
+          ]
+        },
+        {
+          "title": "Dropbox API Integrated into .env",
+          "summary": "Dropbox app key, secret, and refresh token added to AI-Server .env. Bob can now get access tokens automatically for file operations without manual token generation.",
+          "outcome": "success",
+          "details": "DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN all set. Token refresh pattern: POST to /oauth2/token with refresh_token grant type.",
+          "problems_downstream": "Credentials visible in .env file. Secret had PASTE_ prefix artifact that required correction.",
+          "tags": [
+            "dropbox",
+            "api",
+            "env-vars",
+            "authentication"
+          ]
+        },
+        {
+          "title": "Topletz V3 Sent — Ball in Steve's Court",
+          "summary": "Zoho draft sent with V3 proposal ($64,249.27), Dropbox share link, all 4 branded documents in Topletz/Client/ (proposal, deliverables, agreement, TV mount recommendations). Old V2 versions archived with date stamp. Linear issues SYM-43 through SYM-47 updated.",
+          "outcome": "success",
+          "details": "Linear SYM-43 (build deliverables) Done, SYM-44 (internal review) Done, SYM-45 (send to client) Done, SYM-46 (client review) In Progress, SYM-47 (finalize agreement) Pending. Next step: Steve's signature + 60% deposit ($38,549.56).",
+          "problems_downstream": "Steve has V3. Nothing blocking on our end. Waiting on signature.",
+          "tags": [
+            "topletz",
+            "sent",
+            "linear",
+            "steve",
+            "awaiting-signature"
+          ]
         }
       ]
     }
@@ -475,19 +944,19 @@
       "id": "deployment-gap",
       "title": "Code Pushed But Not Deployed on Bob",
       "description": "The single most recurring problem. Fixes are committed to GitHub but not pulled/rebuilt on Bob. No auto-deploy mechanism exists. Every fix requires manual: git pull → docker compose build → docker compose up.",
-      "occurrences": "2026-03-27, 2026-03-31, 2026-04-01, 2026-04-02, 2026-04-03, 2026-04-04",
+      "occurrences": "2026-03-27, 2026-03-31, 2026-04-01, 2026-04-02, 2026-04-03, 2026-04-04, 2026-04-05",
       "severity": "critical",
-      "status": "unresolved",
-      "fix": "scripts/pull.sh created as workaround. No auto-deploy yet."
+      "status": "partially-fixed",
+      "fix": "scripts/pull.sh + Watchdog daemon (60s auto-recovery) added Apr 5. Still no true auto-deploy for new code pushes — watchdog only handles crashes."
     },
     {
       "id": "email-active-client",
       "title": "Steve's Emails Miscategorized / Missed",
       "description": "Steve's emails repeatedly categorized as CLIENT_INQUIRY or VENDOR instead of ACTIVE_CLIENT. Routed to project folder but missed from inbox. Auto-responder never fires.",
       "occurrences": "2026-03-31, 2026-04-01, 2026-04-02, 2026-04-03",
-      "severity": "critical",
+      "severity": "major",
       "status": "partially-fixed",
-      "fix": "ACTIVE_CLIENT_EMAILS env var set, but auto-responder import path broken across containers."
+      "fix": "ACTIVE_CLIENT_EMAILS env var set. Email monitor duplicate fix (Apr 5) added UID-based checkpoint. Container import path still unresolved — auto-responder uses HTTP API workaround."
     },
     {
       "id": "docker-cache",
@@ -522,17 +991,44 @@
       "description": "D-Tools sync logs 100 opportunities but creates 0 jobs. Follow-ups, payments, proposals, and the entire operations pipeline depend on jobs existing.",
       "occurrences": "2026-04-04",
       "severity": "critical",
-      "status": "cursor-prompt-created",
-      "fix": "activate-operations.md Cursor prompt created to auto-create jobs from Won/On Hold opportunities."
+      "status": "unresolved",
+      "fix": "activate-operations.md Cursor prompt created but not yet run in Cursor. Jobs DB still empty as of Apr 9."
     },
     {
       "id": "silent-failures",
       "title": "Silent Failures Hide Errors",
       "description": "try/except blocks catch errors and log nothing. Auto-responder import fails silently. Services report healthy while core functionality is broken.",
-      "occurrences": "2026-04-01, 2026-04-02",
+      "occurrences": "2026-04-01, 2026-04-02, 2026-04-05",
       "severity": "critical",
-      "status": "unresolved",
-      "fix": "Need proper error reporting and alerting."
+      "status": "partially-fixed",
+      "fix": "Kraken dry_run=False bug caught Apr 5 — bot was paper trading against nothing for weeks with no errors. Watchdog now surfaces crash-level failures. Logic-level silent failures still unaddressed."
+    },
+    {
+      "id": "polymarket-overspend",
+      "title": "Polymarket Over-Trading — 29% Spent in 2 Days",
+      "description": "April 1-2 alone accounted for 29% of all Polymarket spending (242 buys, 17 sells). Filters existed in code but weren't deployed. 68% of all sells executed at a loss. Net -$1,322 over 12 days.",
+      "occurrences": "2026-04-01, 2026-04-02, 2026-04-06 (post-mortem)",
+      "severity": "critical",
+      "status": "partially-fixed",
+      "fix": "Hard caps on share sizes, entry price restricted to 5¢-35¢ bucket, sports/politics blocked. Weather is only near-profitable category."
+    },
+    {
+      "id": "kraken-dry-run",
+      "title": "Kraken Was Paper-Trading Against Nothing for Weeks",
+      "description": "CryptoClient defaulted to dry_run=True and connect() was never called. The bot appeared healthy, produced logs, but never touched a real exchange. All prior Kraken performance data was meaningless.",
+      "occurrences": "2026-03-24 through 2026-04-05",
+      "severity": "critical",
+      "status": "fixed",
+      "fix": "dry_run=False passed in init, connect() called in start(). Kraken Avellaneda MM is now live as of Apr 5."
+    },
+    {
+      "id": "docker-tailscale-cascade",
+      "title": "Docker Crash Cascades to DNS, Takes Down All Services",
+      "description": "When Docker Desktop crashes it takes down Tailscale, which takes down internal DNS, which takes down every container that resolves other containers by name. Single point of failure for the entire stack.",
+      "occurrences": "2026-04-05",
+      "severity": "major",
+      "status": "partially-fixed",
+      "fix": "Watchdog daemon auto-recovers Tailscale → DNS → Docker → containers in 60s cycles. Still need to decouple container DNS from Tailscale for true resilience."
     },
     {
       "id": "kraken-ghost",
@@ -551,11 +1047,11 @@
       "client": "Steve Topletz",
       "gc": "RMGC (Rocky Mountain Construction Group)",
       "gc_contact": "David",
-      "status": "Agreement pending signature",
-      "proposal_total": "$57,683.09",
-      "deposit": "60% ($34,609.85)",
-      "scope": "C4/NoSecurity — Control4 ecosystem, iPads, shade/camera/security prewire, Qolsys integration",
-      "key_decisions": "C4 lighting (not Lutron), iPads (not T5 touchscreens), prewire only for cameras, garage entry for Qolsys panel, 60-day tuning period",
+      "status": "Agreement sent Apr 8 — awaiting Steve's signature + 60% deposit",
+      "proposal_total": "$64,249.27 (Q-212 V3)",
+      "deposit": "60% ($38,549.56)",
+      "scope": "C4 + Lutron RadioRA 3 — full smart home, lighting, shade/camera/security prewire, Qolsys integration, iPads",
+      "key_decisions": "Switched to Lutron RA3 (from C4 native lighting) Apr 8 — +$6,566 to total. $2,400 extra programming labor. $250 change order fee after signing. 60-day tuning.",
       "benchmark": true
     },
     {
@@ -575,8 +1071,35 @@
     }
   ],
   "services": {
-    "running": ["redis", "email-monitor", "openclaw", "polymarket-bot", "vpn", "notification-hub", "uptime-kuma", "open-webui", "remediator", "browser-agent", "mission-control", "telegram-bot", "btc-assistant"],
-    "built_not_active": ["follow_up_tracker", "payment_tracker", "client_tracker", "research_agent", "sow_assembler", "proposal_checker", "knowledge_base", "voice_receptionist"],
-    "total": 16
+    "running": [
+      "redis",
+      "email-monitor",
+      "openclaw",
+      "polymarket-bot",
+      "vpn",
+      "notification-hub",
+      "uptime-kuma",
+      "open-webui",
+      "remediator",
+      "browser-agent",
+      "mission-control",
+      "telegram-bot",
+      "btc-assistant",
+      "kraken-mm",
+      "x-intake",
+      "dropbox-organizer",
+      "watchdog",
+      "cortex (pending)"
+    ],
+    "built_not_active": [
+      "follow_up_tracker",
+      "payment_tracker",
+      "client_tracker",
+      "research_agent",
+      "sow_assembler",
+      "proposal_checker",
+      "knowledge_base"
+    ],
+    "total": 18
   }
 }
