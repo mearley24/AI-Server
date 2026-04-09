@@ -15,7 +15,11 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 import time
+
+# Allow importing monitor helpers without circular import
+sys.path.insert(0, os.path.dirname(__file__))
 
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
@@ -180,6 +184,15 @@ async def run_subscriber() -> None:
 
                     await dispatch(redis_client, notification, priority)
                     _mark_notified(dedup_key)
+
+                    # Mark email as read in the emails table
+                    msg_id = data.get("message_id") or ""
+                    if msg_id:
+                        try:
+                            from monitor import mark_email_read
+                            mark_email_read(msg_id)
+                        except Exception:
+                            pass
 
                     # Prune old records every 50 dispatches
                     prune_counter += 1

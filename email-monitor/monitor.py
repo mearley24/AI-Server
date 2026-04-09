@@ -431,6 +431,41 @@ def store_email(
         conn.close()
 
 
+def mark_email_read(message_id: str, db_path: str = DB_PATH) -> None:
+    """Mark an email as read (notified to owner)."""
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE emails SET read = 1 WHERE message_id = ?", (message_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def mark_email_responded(message_id: str, db_path: str = DB_PATH) -> None:
+    """Mark an email as responded (reply sent from Zoho)."""
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE emails SET responded = 1, read = 1 WHERE message_id = ?", (message_id,))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def get_unresponded_message_ids(db_path: str = DB_PATH) -> set[str]:
+    """Return message_ids of emails that haven't been responded to yet."""
+    try:
+        conn = sqlite3.connect(db_path)
+        rows = conn.execute(
+            "SELECT message_id FROM emails WHERE responded = 0 AND message_id != ''"
+        ).fetchall()
+        conn.close()
+        return {r[0] for r in rows}
+    except Exception:
+        return set()
+
+
 def update_email_analysis(
     message_id: str,
     analysis: dict,
@@ -844,6 +879,9 @@ class EmailMonitor:
 
             mail.logout()
 
+            # Scan Sent folder for replies to emails we're tracking
+            await self._scan_sent_for_replies()
+
         except imaplib.IMAP4.error as e:
             logger.error("IMAP error: %s", e)
         except Exception as e:
@@ -851,7 +889,78 @@ class EmailMonitor:
 
         return new_count
 
-        return new_count
+    async def _scan_sent_for_replies(self) -> None:
+        """Check Zoho Sent folder and mark any tracked emails as responded."""
+        try:
+            unresponded = get_unresponded_message_ids()
+            if not unresponded:
+                return
+
+            mail = await asyncio.to_thread(self._connect_imap)
+            try:
+                # Try common Sent folder names
+                for folder in ("Sent", "Sent Items", "INBOX/Sent", "[Gmail]/Sent Mail"):
+                    typ, _ = mail.select(f'"{folder}"', readonly=True)
+                    if typ == "OK":
+                        break
+                else:
+                    mail.logout()
+                    return
+
+                # Get last 100 sent messages (sufficient for recent replies)
+                last_sent_uid = get_scan_state("last_sent_uid") or "0"
+                typ, data = mail.uid("search", None, f"UID {int(last_sent_uid)+1}:*")
+                if typ != "OK" or not data or not data[0]:
+                    mail.logout()
+                    return
+
+                uids = data[0].split()
+                if not uids:
+                    mail.logout()
+                    return
+
+                max_sent_uid = int(last_sent_uid)
+                replied_count = 0
+
+                for uid_b in uids[-100:]:  # process at most 100 at a time
+                    uid_s = uid_b.decode() if isinstance(uid_b, bytes) else str(uid_b)
+                    try:
+                        uid_int = int(uid_s)
+                        max_sent_uid = max(max_sent_uid, uid_int)
+                    except ValueError:
+                        continue
+
+                    _, msg_data = mail.uid("fetch", uid_s, "(BODY.PEEK[HEADER.FIELDS (IN-REPLY-TO REFERENCES)])")
+                    if not msg_data or not msg_data[0]:
+                        continue
+
+                    raw = msg_data[0][1] if isinstance(msg_data[0], tuple) else b""
+                    import email as _email
+                    msg = _email.message_from_bytes(raw)
+                    for header in ("in-reply-to", "references"):
+                        val = msg.get(header, "")
+                        for mid in val.split():
+                            mid = mid.strip("<> ")
+                            if mid and mid in unresponded:
+                                mark_email_responded(mid)
+                                replied_count += 1
+                                unresponded.discard(mid)
+
+                if max_sent_uid > int(last_sent_uid):
+                    set_scan_state("last_sent_uid", str(max_sent_uid))
+
+                if replied_count:
+                    logger.info("Marked %d email(s) as responded from Sent folder", replied_count)
+
+                mail.logout()
+            except Exception as e:
+                logger.debug("Sent folder scan error: %s", e)
+                try:
+                    mail.logout()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("_scan_sent_for_replies error: %s", e)
 
     async def run(self) -> None:
         """Main monitoring loop."""
