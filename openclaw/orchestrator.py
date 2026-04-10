@@ -493,8 +493,16 @@ class Orchestrator:
                     summary_lines.append(f"  + {len(general)} other non-urgent email(s)")
 
                 # Only iMessage if at least one active-client email is present
-                email_priority = "high" if important else "normal"
-                await self.notify("email", "\n".join(summary_lines), priority=email_priority)
+                # AND the summary is different from the last one we sent (no duplicates)
+                import hashlib
+                summary_text = "\n".join(summary_lines)
+                summary_hash = hashlib.md5(summary_text.encode()).hexdigest()
+                if summary_hash != getattr(self, "_last_email_summary_hash", None):
+                    email_priority = "high" if important else "normal"
+                    await self.notify("email", summary_text, priority=email_priority)
+                    self._last_email_summary_hash = summary_hash
+                else:
+                    logger.debug("email_summary_unchanged — suppressed duplicate notification")
 
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)
