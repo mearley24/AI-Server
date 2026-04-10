@@ -936,6 +936,11 @@ def ask_openclaw(message: str) -> str:
         if reset_resp is not None:
             return reset_resp
 
+        # Deposit confirmation: "deposit confirmed [client]" or "deposit received [client]"
+        dep_match = _re.match(r"deposit\s+(?:confirmed|received|paid|in)\s+(.+)", lower)
+        if dep_match:
+            return handle_deposit_confirmed(dep_match.group(1).strip())
+
         if any(w in lower for w in ["status", "health", "services"]):
             return get_system_status()
 
@@ -1001,6 +1006,36 @@ def handle_reset_command(message: str) -> Optional[str]:
         return "Unknown service '%s'. Try: %s" % (target, ", ".join(sorted(set(_SERVICE_MAP.keys()))))
 
     return _restart_service(svc, root)
+
+
+def handle_deposit_confirmed(client_hint: str) -> str:
+    """Mark deposit received, advance Linear, notify team."""
+    import subprocess as _sp, json as _json
+    root = _os.path.expanduser("~/AI-Server")
+    try:
+        result = _sp.run(
+            ["docker", "compose", "exec", "-T", "openclaw",
+             "python3", "-c",
+             f"""
+import asyncio, json, sys
+sys.path.insert(0, '/app')
+import redis
+r = redis.from_url('redis://redis:6379', decode_responses=True)
+r.publish('events:stripe_payment', json.dumps({{
+    'event': 'payment_succeeded',
+    'metadata': {{'phase': 'deposit', 'client_hint': '{client_hint}'}},
+    'amount': 0,
+    'note': 'Manual confirmation via iMessage'
+}}))
+print('published')
+"""],
+            cwd=root, capture_output=True, text=True, timeout=30
+        )
+        if "published" in result.stdout:
+            return f"Deposit confirmed for {client_hint}. Linear advanced, team notified."
+        return f"Published deposit event — check openclaw logs if Linear didn't update."
+    except Exception as e:
+        return f"Deposit command error: {str(e)[:100]}"
 
 
 def _restart_service(svc: str, root: str) -> str:

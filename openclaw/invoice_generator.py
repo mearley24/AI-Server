@@ -48,8 +48,9 @@ COMPANY_ADDRESS = "45 Aspen Glen Ct, Edwards, CO 81632"
 COMPANY_PHONE = "(970) 519-3013"
 COMPANY_EMAIL = "info@symphonysh.com"
 COMPANY_WEB = "symphonysh.com"
-ACH_ROUTING = "102000076"   # placeholder — user should update
-ACH_ACCOUNT = "XXXXXXXXXX"  # placeholder — user should update
+ACH_ROUTING = os.environ.get("ACH_ROUTING", "107005047")
+ACH_ACCOUNT = os.environ.get("ACH_ACCOUNT", "XXXXXXXXXX")
+ACH_BANK_NAME = os.environ.get("ACH_BANK_NAME", "FirstBank")
 
 
 # ---------------------------------------------------------------------------
@@ -385,11 +386,12 @@ def generate_invoice(
     y -= 14
 
     ach_lines = [
-        f"Bank:             Wells Fargo Bank",
+        f"Bank:             {ACH_BANK_NAME}",
         f"Account Name:     {COMPANY_NAME}",
         f"Routing Number:   {ACH_ROUTING}",
         f"Account Number:   {ACH_ACCOUNT}",
         f"Reference:        {invoice_number}",
+        f"                  (ACH preferred — no fees, typically 1-2 business days)",
     ]
     c.setFont(font_body, 9)
     c.setFillColor(Color(*_NAVY))
