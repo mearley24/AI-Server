@@ -8,6 +8,18 @@ git checkout -- data/network_watch/dropout_watch_status.json 2>/dev/null
 git pull --rebase origin main || (git rebase --abort 2>/dev/null && git pull --no-rebase origin main)
 git stash pop 2>/dev/null
 git checkout -- data/network_watch/dropout_watch_status.json 2>/dev/null
+
+echo "Checking for merge conflict markers..."
+CONFLICT_FILES=$(grep -rl "<<<<<<<\|=======\|>>>>>>>" --include="*.py" --include="*.js" --include="*.yml" --include="*.yaml" . 2>/dev/null | grep -v node_modules | grep -v .git)
+if [ -n "$CONFLICT_FILES" ]; then
+  echo "CONFLICT MARKERS FOUND in:"
+  echo "$CONFLICT_FILES"
+  echo "Auto-fixing by resetting to origin/main..."
+  for f in $CONFLICT_FILES; do
+    git checkout origin/main -- "$f" 2>/dev/null && echo "  Fixed: $f"
+  done
+fi
+
 echo "Done. Ready to build."
 docker compose restart openclaw mission-control 2>/dev/null && echo "Restarted openclaw + mission-control"
 
