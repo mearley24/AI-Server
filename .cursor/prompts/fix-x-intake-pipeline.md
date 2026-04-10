@@ -1,86 +1,77 @@
-# Fix: X/Twitter Intake Pipeline — Bridge → Redis → x-intake → Reply
+-- fix-x-intake-pipeline.md --
+-- Run with Claude Code: cd ~/AI-Server && claude --
+-- Read .clinerules first for full project context --
 
-The X/Twitter intake pipeline is broken end-to-end. When I send X links via iMessage, the bridge processes them locally via `ask_openclaw()` → `research_link()` but NEVER publishes them to Redis for the `x-intake` container. Three bugs to fix:
+GOAL: Fix three bugs in the x-intake video transcription pipeline. All bugs are in integrations/x_intake/
 
-## Bug A: iMessage bridge doesn't publish to Redis (`scripts/imessage-server.py`)
+Read the docker logs for context:
+cd ~/AI-Server && docker compose logs x-intake --tail 150 2>&1 | grep -v "health"
 
-The `monitor_loop()` function (around line 1220) receives messages and sends them straight to `ask_openclaw()`. It never publishes to Redis `events:imessage` — the channel that `x-intake` subscribes to.
 
-**Fix**: Add Redis publishing to `monitor_loop()`. Before calling `ask_openclaw()`, publish every incoming message to Redis:
+BUG 1: CONTAINER RESTARTS MID-TRANSCRIPTION
+---------------------------------------------
+Symptom: The @svpino video (587 seconds, 9.5MB) downloaded and transcribed successfully (7,871 chars via OpenAI Whisper API), then the container restarted before the LLM analysis reply was sent. Same with @juliangoldieseo. The user never gets the result.
 
-1. At the top of the file (after existing imports), add:
-```python
-import redis as _redis_lib
+Likely cause: Docker healthcheck timeout. The healthcheck fires every 30s and if the container is busy transcribing a 10-minute video for 60+ seconds, the health endpoint doesn't respond, Docker marks it unhealthy and restarts.
 
-_REDIS_URL = os.environ.get("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@127.0.0.1:6379")
-_redis_pub = None
+Fix options (implement all):
+1. In docker-compose.yml under x-intake healthcheck: increase timeout to 120s and retries to 5. Long transcriptions can take 2-3 minutes.
+2. In main.py: Run the heavy pipeline (_analyze_url) in a background asyncio task so the main event loop stays responsive to health checks. The Redis listener should spawn the analysis as a task, not await it inline.
+3. In video_transcriber.py: For videos longer than 300 seconds (5 min), chunk the audio into 5-minute segments before sending to Whisper API. This prevents a single 10-minute upload from blocking. Use ffmpeg to split: ffmpeg -i input.m4a -f segment -segment_time 300 -c copy chunk_%03d.m4a
 
-def _get_redis_pub():
-    global _redis_pub
-    if _redis_pub is None:
-        try:
-            _redis_pub = _redis_lib.from_url(_REDIS_URL, decode_responses=True)
-            _redis_pub.ping()
-            log.info("[redis] Connected for publish")
-        except Exception as e:
-            log.warning("[redis] Publish connection failed: %s", e)
-            _redis_pub = None
-    return _redis_pub
-```
 
-2. In `monitor_loop()`, right after `log.info("[monitor] Received: %s", text)` and BEFORE `response = ask_openclaw(text)`, add:
-```python
-# Publish to Redis for x-intake and other downstream consumers
-_rpub = _get_redis_pub()
-if _rpub:
-    try:
-        _rpub.publish("events:imessage", json.dumps({
-            "text": text,
-            "from": msg.get("from", REPLY_TO),
-            "timestamp": time.time(),
-        }))
-    except Exception as _re:
-        log.warning("[redis] Publish failed: %s", _re)
-```
+BUG 2: FFMPEG AUDIO EXTRACTION FAILS ON SOME VIDEOS
+------------------------------------------------------
+Symptom: @0x__tom's video downloaded as MP4 (8.7MB) but ffmpeg errored:
+"Output file does not contain any stream" and "Error opening output file: Invalid argument"
 
-3. In `ask_openclaw()`, make X/Twitter URLs skip local processing so x-intake handles them exclusively. In the URL detection block (around line 795), where it does `if urls:`, change to:
-```python
-if urls:
-    import re as _re
-    x_pattern = _re.compile(r'https?://(?:x\.com|twitter\.com)/.+/status/', _re.I)
-    x_urls = [u for u in urls if x_pattern.search(u)]
-    non_x_urls = [u for u in urls if not x_pattern.search(u)]
-    
-    if x_urls and not non_x_urls:
-        return "Analyzing your X link(s) — detailed analysis incoming shortly via x-intake."
-    
-    if non_x_urls:
-        context = _re.sub(r'https?://[^\s<>"]+', '', message).strip()
-        results = []
-        for url in non_x_urls[:2]:
-            results.append(research_link(url, context))
-        if x_urls:
-            results.append("X links are being analyzed separately — results incoming.")
-        return "\n\n---\n\n".join(results)
-```
+Root cause: The MP4 container has no separate audio track — its a screen recording or the audio is muxed differently. The current ffmpeg command uses -vn (strip video, keep audio) but there is no audio-only stream to keep.
 
-## Bug B: x-intake replies to wrong endpoint (`integrations/x_intake/main.py`)
+Fix in video_transcriber.py:
+1. First try: ffmpeg -y -i input.mp4 -vn -acodec aac output.m4a (current approach)
+2. If that fails, try: ffmpeg -y -i input.mp4 -map 0:a:0 -c:a aac output.m4a (explicit audio stream mapping)
+3. If that also fails (truly no audio), check if the video has ANY audio at all: ffprobe -v quiet -show_streams -select_streams a input.mp4
+4. If ffprobe shows no audio streams, skip transcription and fall through to image/text analysis. Log: "video_has_no_audio_stream — skipping transcription"
+5. Also fix the yt-dlp audio extraction: the first attempt with --extract-audio fails with "unable to obtain file audio codec with ffprobe" because the downloaded file format isn't recognized. After yt-dlp --extract-audio fails, try downloading the full video first then extracting audio with ffmpeg as step 1-4 above.
 
-The `_send_reply()` function posts to `{IMESSAGE_BRIDGE_URL}/send` but the bridge's HTTP handler only serves the root path `/`. Also sends `{"text": text}` but the bridge expects `"message"` key (it accepts "body", "text", or "message" but be explicit).
 
-**Fix**: In `_send_reply()` (around line 78), change:
-```python
-await client.post(f"{IMESSAGE_BRIDGE_URL}/send", json={"text": text})
-```
-to:
-```python
-await client.post(IMESSAGE_BRIDGE_URL, json={"message": text})
-```
+BUG 3: 'str' OBJECT HAS NO ATTRIBUTE 'get' 
+----------------------------------------------
+Symptom: First link (@shedntcare_) had no video, image vision analysis succeeded (3 flags, 3 strategies), then main.py line crashed with: video_transcription_unavailable error="'str' object has no attribute 'get'"
 
-## Bug C: Add `redis` to bridge requirements
+Root cause: In main.py _analyze_url(), the process_x_video function returns different types depending on the path:
+- Video path: returns a dict with "summary", "transcript_length", etc.
+- Image vision path: returns a string (the formatted summary) 
+- Error path: returns a dict with "error" key
 
-The bridge runs natively on macOS (not Docker). Ensure the `redis` Python package is available. On Bob run: `pip3 install redis`
+The code after the call assumes it always gets a dict and calls result.get() — but on the image vision path its a string.
 
-## Files to modify
-- `scripts/imessage-server.py`
-- `integrations/x_intake/main.py`
+Fix in main.py _analyze_url():
+1. After calling process_x_video(), check the return type: if isinstance(result, str), wrap it as {"summary": result, "has_video": False, "has_images": True}
+2. Make sure all code paths through process_x_video return a consistent dict format. Check every return statement in video_transcriber.py process_x_video() and normalize them.
+3. The image analysis is working (it found 3 flags and 3 strategies) — the data is there, its just not making it through to the LLM analysis and iMessage reply because of the type error.
+
+
+ADDITIONAL IMPROVEMENT: GALLERY-DL FALLBACK
+----------------------------------------------
+The logs show: "downloader_not_installed (yt-dlp/gallery-dl/ffmpeg missing)" — gallery-dl is referenced as a fallback but not installed in the container.
+
+Fix: Add gallery-dl to requirements.txt. It handles image galleries and some video downloads that yt-dlp misses.
+Also add it to the Dockerfile: pip install gallery-dl
+
+
+TESTING:
+After all fixes, rebuild and test with all three types of posts:
+1. Video post: docker compose exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 PUBLISH events:imessage '{"text":"https://x.com/svpino/status/2042258928596390359"}'
+2. Image-only post: docker compose exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 PUBLISH events:imessage '{"text":"https://x.com/shedntcare_/status/2042491865216454801"}'
+3. Screen recording (no audio track): docker compose exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 PUBLISH events:imessage '{"text":"https://x.com/0x__tom/status/2042531411517935834"}'
+
+Verify in logs that:
+- Video post: downloads, transcribes, analyzes, sends iMessage reply WITHOUT container restart
+- Image post: skips transcription cleanly, does vision analysis, sends reply
+- Screen recording: handles missing audio gracefully, falls back to text/image analysis
+
+Rebuild: docker compose up -d --build x-intake
+Logs: docker compose logs -f x-intake 2>&1 | grep -v "health"
+
+Commit when all three tests pass.
