@@ -1,0 +1,76 @@
+# Symphony AI Server — Cline Rules
+# Migrated from .cursor/rules/*.mdc
+
+## What This Project Is
+
+AI backend for **Symphony Smart Homes** (Denver, CO residential AV/smart-home). Owner: Matt Earley.
+
+### Repository Contents
+- **OpenClaw** — orchestrator running every 5 min (email analysis, job management, follow-ups, notifications, trading)
+- **Bob the Conductor** — AI voice receptionist (Twilio + OpenAI Realtime API)
+- **Client Portal** — per-client status page with native e-signature (port 8096)
+- **Polymarket Bot** — prediction market trading ($402 portfolio, weather category focus)
+- **Email Monitor** — Zoho IMAP polling, SQLite dedup, read/replied/new tracking
+- **Notification Hub** — iMessage routing, high-priority-only alerts
+- **Mission Control** — single-page deployment dashboard
+- **X-Intake** — Twitter/X link analysis and video transcription pipeline
+
+### Tech Stack
+| Layer | Technology |
+|---|---|
+| Runtime | Docker Compose, 19 containers on Mac Mini M4 ("Bob") |
+| Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
+| AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
+| Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db) |
+| Messaging | Redis (auth required: password d19c9b0faebeee9927555eb8d6b28ec9) |
+| Infrastructure | Docker, Tailscale VPN, Mac Mini M4 |
+| Frontend | Vanilla JS/HTML/CSS (no frameworks) |
+
+### Coding Standards
+- **Python**: PEP 8, type hints where practical, docstrings on public functions
+- **JavaScript**: 'use strict', CommonJS, 2-space indent, single quotes
+- **Shell scripts**: set -euo pipefail, comment every non-obvious step
+- **No TypeScript, no React/Vue** — plain JS only
+- **No interactive editors** — never use vim, nano, or crontab -e. One-liner commands only.
+
+### Git Rules
+- ALWAYS use `bash scripts/pull.sh` instead of bare `git pull`
+- Commit messages: imperative mood, 72 chars max subject
+- Never commit .env files, API keys, or SQLite databases
+- The pull script auto-detects and fixes merge conflict markers
+
+### Docker Patterns
+- OpenClaw code is bind-mounted (./openclaw:/app) — Python-only edits just need `docker restart openclaw`
+- Full rebuilds: `docker compose up -d --build <service>`
+- Ship script: `./scripts/symphony-ship.sh` (build, up, verify)
+- All containers connect to Redis with auth URL: `redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379`
+
+### Key Paths on Bob
+| Path | Contents |
+|---|---|
+| ~/AI-Server/ | This repo |
+| ~/AI-Server/.env | All secrets (OpenAI, Zoho, Kraken, ACH, etc.) |
+| ~/AI-Server/data/openclaw/ | SQLite DBs (jobs.db, decision_journal.db, follow_ups.db) |
+| ~/AI-Server/data/transcripts/ | X video transcripts by author |
+| ~/Dropbox/[Project]/Client/ | Shared client files |
+| ~/Dropbox/[Project]/Internal/ | Internal work (never shared) |
+| ~/Dropbox/[Project]/Archive/ | Old versions |
+| /tmp/imessage-bridge.log | iMessage bridge logs |
+
+### Security Rules
+- All API keys via environment variables — never hardcoded
+- Version numbers are internal only — client-facing docs use "updated proposal"
+- Each client document needs its own separate Dropbox share link
+- ACH details (routing/account) are not sensitive — they appear on every invoice
+
+### Bob's iMessage Commands
+draft to Steve, client topletz, restart [service], status, trades, advance topletz, deposit confirmed topletz
+
+### Active Project: Topletz
+- Q-212 V3, $64,249.27, Lutron RA3 + Control4
+- Awaiting Steve's signature + 60% deposit ($38,549.56)
+- ACH: FirstBank, routing 107005047
+- Linear issues: SYM-43 through SYM-47
+
+### Prompts Directory
+All task prompts are in `.cursor/prompts/` (kept for compatibility). Read them for context on what's been built and what's planned. The DONE/ subfolder contains completed prompts.
