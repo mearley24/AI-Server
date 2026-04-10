@@ -222,10 +222,17 @@ class PriceMonitor:
                 logger.info("Could not determine price for %s (%s)", sku, product_name)
                 continue
 
+            # Sanity check: these are pro AV/automation products, $20 minimum.
+            # Anything below that is a scraping artifact (shipping cost, random number).
+            if current_price < 20.0:
+                logger.info("Price for %s ($%.2f) below $20 floor — ignoring garbage data", sku, current_price)
+                continue
+
             _update_price(self._db_path, sku, job_id, current_price)
 
-            if last_price is None:
-                logger.info("First price recorded for %s: $%.2f", sku, current_price)
+            if last_price is None or last_price < 20.0:
+                # First valid price point — just record as baseline, no alert
+                logger.info("Baseline price recorded for %s: $%.2f", sku, current_price)
                 continue
 
             pct_change = (current_price - last_price) / last_price
