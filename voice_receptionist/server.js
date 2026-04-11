@@ -36,13 +36,14 @@ const clientLookup  = require('./client_lookup');
 const troubleshoot  = require('./troubleshoot');
 const scheduler     = require('./scheduler');
 const callLogger    = require('./call_logger');
+const { getKnowledge } = require('./knowledge_loader');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const PORT       = parseInt(process.env.PORT || '3000', 10);
 const SERVER_URL = process.env.SERVER_URL || `http://localhost:${PORT}`;
 const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
-const SYSTEM_PROMPT = fs.existsSync(path.join(__dirname, 'system_prompt.md'))
+const BASE_PROMPT = fs.existsSync(path.join(__dirname, 'system_prompt.md'))
   ? fs.readFileSync(path.join(__dirname, 'system_prompt.md'), 'utf8')
   : 'You are Bob, the AI voice receptionist for Symphony Smart Homes.';
 
@@ -129,7 +130,7 @@ wss.on('connection', async (twilioWs, req) => {
         input_audio_format:  'g711_ulaw',
         output_audio_format: 'g711_ulaw',
         voice: 'alloy',
-        instructions: SYSTEM_PROMPT,
+        instructions: BASE_PROMPT + getKnowledge(),
         modalities: ['text', 'audio'],
         temperature: 0.7,
       },
@@ -229,6 +230,26 @@ wss.on('connection', async (twilioWs, req) => {
       result = troubleshoot.nextStep(args.tree_id, args.answer);
     } else if (fnName === 'schedule_service_call') {
       result = await scheduler.scheduleServiceCall(args);
+    } else if (fnName === 'log_caller_info') {
+      // Log caller info and publish ops:voice_followup if follow-up needed
+      result = { success: true, logged: true };
+      if (args.needs_followup || args.callback_requested) {
+        try {
+          const redis = require('redis');
+          const redisClient = redis.createClient({ url: process.env.REDIS_URL || 'redis://redis:6379' });
+          await redisClient.connect();
+          await redisClient.publish('ops:voice_followup', JSON.stringify({
+            caller_name: args.name || callerNumber,
+            phone: callerNumber,
+            summary: args.summary || '',
+            notes: args.notes || '',
+            timestamp: new Date().toISOString(),
+          }));
+          await redisClient.disconnect();
+        } catch (e) {
+          console.warn('[ops] Redis publish failed:', e.message);
+        }
+      }
     } else {
       result = { error: `Unknown function: ${fnName}` };
     }

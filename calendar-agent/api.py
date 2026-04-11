@@ -1,10 +1,12 @@
 """FastAPI routes for Calendar Agent."""
 
+import json
 import os
 import logging
 import httpx
 from datetime import datetime, timedelta
 
+import redis as sync_redis
 from fastapi import APIRouter, HTTPException, Query
 
 from calendar_client import ZohoCalendarClient
@@ -41,6 +43,20 @@ async def _ollama_meeting_prep(prompt: str) -> str | None:
         logger.warning("ollama_meeting_prep_failed: %s", str(e)[:120])
         return None
 
+
+
+def _publish_calendar_event(event_type: str, data: dict) -> None:
+    """Publish calendar events to Redis for other services."""
+    try:
+        r = sync_redis.Redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379"))
+        r.publish("notifications:calendar", json.dumps({
+            "type": event_type,
+            **data,
+            "timestamp": datetime.now().isoformat(),
+        }))
+        r.close()
+    except Exception as e:
+        logger.warning("redis_publish_failed: %s", e)
 
 
 router = APIRouter(prefix="/calendar")
@@ -107,6 +123,11 @@ async def create_event(body: dict):
     if "notes" in body:
         event_data["description"] = body["notes"]
     result = await client.create_event(event_data)
+    _publish_calendar_event("event_created", {
+        "title": body.get("title", ""),
+        "start": body.get("start", ""),
+        "end": body.get("end", ""),
+    })
     return result
 
 
@@ -143,6 +164,39 @@ async def upcoming(hours: int = Query(4, ge=1, le=24)):
     end = now + timedelta(hours=hours)
     events = await client.list_events(now.isoformat(), end.isoformat())
     return {"hours": hours, "events": events, "count": len(events)}
+
+
+@router.get("/daily-briefing")
+async def daily_briefing():
+    """Generate today's schedule briefing for the morning digest."""
+    client = get_client()
+    _require_configured(client)
+
+    now = datetime.now()
+    events = await client.list_events(
+        now.strftime("%Y-%m-%dT00:00:00+00:00"),
+        now.strftime("%Y-%m-%dT23:59:59+00:00"),
+    )
+
+    if not events:
+        return {"briefing": "No events scheduled today. Open calendar for the day.", "events": [], "count": 0}
+
+    lines = [f"Today's Schedule — {now.strftime('%A, %B %d')}:", ""]
+    for ev in events:
+        title = ev.get("title", "Untitled")
+        start_raw = ev.get("dateandtime", {}).get("start", "")
+        try:
+            start_dt = datetime.fromisoformat(start_raw)
+            time_str = start_dt.strftime("%I:%M %p")
+        except (ValueError, TypeError):
+            time_str = "TBD"
+        lines.append(f"- {time_str}: {title}")
+
+    return {
+        "briefing": "\n".join(lines),
+        "events": events,
+        "count": len(events),
+    }
 
 
 @router.post("/meeting-prep/{event_id}")

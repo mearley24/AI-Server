@@ -265,6 +265,21 @@ class ImprovementLoop:
                     status="proposed",
                 )
                 queued.append(p)
+                # Publish non-safe proposals to ops channel for Linear issue creation
+                if p.get("risk") in ("moderate", "risky"):
+                    try:
+                        import redis as _redis_sync
+                        _r = _redis_sync.Redis.from_url(REDIS_URL, decode_responses=True)
+                        _r.publish("ops:cortex_proposal", json.dumps({
+                            "title": p.get("title", "")[:80],
+                            "proposal": p.get("what", p.get("proposal", "")),
+                            "impact": p.get("impact", ""),
+                            "risk": p.get("risk", ""),
+                            "priority": 3 if p.get("risk") == "moderate" else 4,
+                        }))
+                        _r.close()
+                    except Exception as _exc:
+                        logger.debug("ops_proposal_publish_error", error=str(_exc))
 
         return {"executed": executed, "queued": queued}
 

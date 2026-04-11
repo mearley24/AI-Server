@@ -864,6 +864,18 @@ class EmailMonitor:
                             if category in HIGH_PRIORITY_CATEGORIES:
                                 await publish_urgent(redis_client, category, sender_name or sender_email, subject)
 
+                                # Publish to ops:email_action for Linear issue creation
+                                try:
+                                    await redis_client.publish("ops:email_action", json.dumps({
+                                        "subject": subject,
+                                        "from": sender_name or sender_email,
+                                        "action": "Review and respond",
+                                        "priority": 2 if category == "ACTIVE_CLIENT" else 3,
+                                        "snippet": snippet[:200],
+                                    }))
+                                except Exception:
+                                    pass
+
                             # Publish actionable new emails to email:new channel
                             await publish_new_email(
                                 redis_client, category, priority,

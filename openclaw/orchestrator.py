@@ -1334,17 +1334,12 @@ class Orchestrator:
             pass
 
         try:
-            resp = await self.http.get(f"{SERVICES['calendar']}/calendar/today")
-            if resp.status_code == 200:
-                cal = resp.json()
-                events = cal if isinstance(cal, list) else cal.get("events", [])
-                briefing_parts.append(f"Calendar: {len(events)} events today")
-                for e in events[:5]:
-                    title = e.get("title", e.get("summary", ""))
-                    start = e.get("start", e.get("start_time", ""))
-                    briefing_parts.append(f"  - {title} at {start}")
-        except Exception:
-            pass
+            cal_resp = await self.http.get(f"{SERVICES['calendar']}/calendar/daily-briefing", timeout=10.0)
+            if cal_resp.status_code == 200:
+                cal_data = cal_resp.json()
+                briefing_parts.append(cal_data.get("briefing", "Calendar unavailable"))
+        except Exception as e:
+            logger.warning("calendar_briefing_fetch_failed: %s", e)
 
         try:
             resp = await self.http.get(f"{SERVICES['dtools']}/pipeline")

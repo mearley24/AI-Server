@@ -1,100 +1,57 @@
 /**
- * scheduler.js — Google Calendar service-call scheduling
- *
- * Exposes a single async function: scheduleServiceCall(details)
- * that creates a Calendar event and returns the event link.
- *
- * Auth: Service-account JSON key (path from GOOGLE_SERVICE_ACCOUNT_KEY env var).
- * The service account must be granted "Make changes to events" on the target calendar.
+ * scheduler.js — Schedule service calls via the calendar-agent API
  */
 
 'use strict';
 
-require('dotenv').config();
-const path = require('path');
+const CALENDAR_AGENT_URL = process.env.CALENDAR_AGENT_URL || 'http://calendar-agent:8094';
 
-const KEY_PATH = process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
-  path.join(__dirname, 'config', 'google-service-account.json');
-const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || 'primary';
-
-// Lazy-load googleapis (112 MB / ~90 MB RSS) — only pull it in on first call
-let _google;
-function getGoogle() {
-  if (!_google) {
-    _google = require('googleapis').google;
-  }
-  return _google;
+async function checkAvailability(dateStr, durationMin = 60) {
+  const resp = await fetch(`${CALENDAR_AGENT_URL}/calendar/free-slots?date=${dateStr}&duration=${durationMin}`);
+  if (!resp.ok) throw new Error(`Calendar agent error: ${resp.status}`);
+  return resp.json();
 }
 
-// Lazy-init auth client
-let authClient;
-async function getAuthClient() {
-  if (!authClient) {
-    const google = getGoogle();
-    const auth = new google.auth.GoogleAuth({
-      keyFile: KEY_PATH,
-      scopes: ['https://www.googleapis.com/auth/calendar'],
-    });
-    authClient = await auth.getClient();
-  }
-  return authClient;
-}
+async function scheduleServiceCall({ clientName, address, issue, dateTimeISO, durationMin = 60 }) {
+  const endTime = new Date(new Date(dateTimeISO).getTime() + durationMin * 60000).toISOString();
 
-/**
- * Schedule a service call on Google Calendar.
- *
- * @param {object} details
- * @param {string}   details.clientName   — e.g. "The Andersons"
- * @param {string}   details.address      — service location
- * @param {string}   details.issue        — brief description
- * @param {string}   details.dateTimeISO  — ISO 8601 start time, e.g. "2025-07-15T09:00:00-06:00"
- * @param {number}   [details.durationMin=120] — event length in minutes
- * @param {string}   [details.techName]   — assigned technician (optional)
- * @returns {Promise<{eventId:string, eventLink:string, startTime:string}>}
- */
-async function scheduleServiceCall(details) {
-  const {
-    clientName,
-    address,
-    issue,
-    dateTimeISO,
-    durationMin = 120,
-    techName,
-  } = details;
-
-  const startDt = new Date(dateTimeISO);
-  const endDt   = new Date(startDt.getTime() + durationMin * 60_000);
-
-  const description = [
-    `Client: ${clientName}`,
-    `Address: ${address}`,
-    `Issue: ${issue}`,
-    techName ? `Technician: ${techName}` : '',
-    '',
-    'Scheduled by Bob the Conductor (AI receptionist)',
-  ].filter(Boolean).join('\n');
-
-  const google = getGoogle();
-  const auth   = await getAuthClient();
-  const cal    = google.calendar({ version: 'v3', auth });
-
-  const event = await cal.events.insert({
-    calendarId: CALENDAR_ID,
-    requestBody: {
-      summary:     `Service Call — ${clientName}`,
-      description,
-      location:    address,
-      start:  { dateTime: startDt.toISOString() },
-      end:    { dateTime: endDt.toISOString() },
-      colorId: '6', // tangerine
-    },
+  const resp = await fetch(`${CALENDAR_AGENT_URL}/calendar/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: `Service Call: ${clientName}`,
+      start: dateTimeISO,
+      end: endTime,
+      notes: `Client: ${clientName}\nAddress: ${address}\nIssue: ${issue}\nScheduled by: Bob (voice receptionist)`,
+    }),
   });
 
+  if (!resp.ok) throw new Error(`Schedule error: ${resp.status}`);
+  const result = await resp.json();
+
+  // Publish to Redis for cortex and notifications
+  try {
+    const redis = require('redis');
+    const client = redis.createClient({ url: process.env.REDIS_URL || 'redis://redis:6379' });
+    await client.connect();
+    await client.publish('notifications:calendar', JSON.stringify({
+      type: 'service_call_scheduled',
+      client: clientName,
+      address,
+      issue,
+      datetime: dateTimeISO,
+      source: 'voice_receptionist',
+    }));
+    await client.disconnect();
+  } catch (e) {
+    console.warn('[scheduler] Redis publish failed:', e.message);
+  }
+
   return {
-    eventId:   event.data.id,
-    eventLink: event.data.htmlLink,
-    startTime: startDt.toLocaleString('en-US', { timeZone: 'America/Denver' }),
+    success: true,
+    message: `Service call scheduled for ${clientName} at ${new Date(dateTimeISO).toLocaleString('en-US', { timeZone: 'America/Denver' })}`,
+    event: result,
   };
 }
 
-module.exports = { scheduleServiceCall };
+module.exports = { checkAvailability, scheduleServiceCall };
