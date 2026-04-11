@@ -49,6 +49,13 @@ class PositionSnapshot:
     total_portfolio_value: float
     unrealized_pnl: float
     raw_count: int = 0
+    # Categorized breakdown — prevents stale/misleading aggregates
+    active_value: float = 0.0       # Only tradeable positions (0.05 < price < 0.95)
+    redeemable_value: float = 0.0   # Resolved wins not yet redeemed (free money)
+    redeemable_count: int = 0
+    lost_cost: float = 0.0          # Sunk cost from resolved losses
+    lost_count: int = 0
+    dust_count: int = 0             # Positions < $0.50 value
 
     def to_api_dict(self) -> dict[str, Any]:
         return {
@@ -59,22 +66,31 @@ class PositionSnapshot:
             "unrealized_pnl": round(self.unrealized_pnl, 2),
             "positions": [asdict(p) for p in self.positions],
             "position_count": len(self.positions),
+            "active_value": round(self.active_value, 2),
+            "redeemable_value": round(self.redeemable_value, 2),
+            "redeemable_count": self.redeemable_count,
+            "lost_cost": round(self.lost_cost, 2),
+            "lost_count": self.lost_count,
+            "dust_count": self.dust_count,
         }
 
 
 def format_portfolio_line(snapshot: PositionSnapshot | None) -> str:
-    """iMessage / briefing one-liner."""
+    """iMessage / briefing one-liner with categorized breakdown."""
     if snapshot is None:
-        return "💰 Portfolio: (sync pending)"
+        return "Portfolio: (sync pending)"
     a = snapshot.usdc_balance
-    p = snapshot.total_position_value
-    t = snapshot.total_portfolio_value
+    active = snapshot.active_value
+    redeem = snapshot.redeemable_value
     u = snapshot.unrealized_pnl
     sign = "+" if u >= 0 else ""
-    return (
-        f"💰 Available: ${a:,.0f} | Positions: ${p:,.2f} | "
-        f"Portfolio: ${t:,.2f} | P/L: {sign}${u:,.2f}"
-    )
+    total_real = a + active + redeem
+    parts = [f"Liquid: ${a:,.0f}", f"Active: ${active:,.0f}"]
+    if redeem > 0:
+        parts.append(f"Redeemable: ${redeem:,.0f} ({snapshot.redeemable_count})")
+    parts.append(f"Total: ${total_real:,.0f}")
+    parts.append(f"P/L: {sign}${u:,.2f}")
+    return " | ".join(parts)
 
 
 def _parse_clob_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -148,6 +164,14 @@ async def sync_positions(client: Any) -> PositionSnapshot:
     total_pv = 0.0
     total_upnl = 0.0
 
+    # Categorized accumulators
+    active_value = 0.0
+    redeemable_value = 0.0
+    redeemable_count = 0
+    lost_cost = 0.0
+    lost_count = 0
+    dust_count = 0
+
     for row in raw_list:
         p = _parse_clob_row(row if isinstance(row, dict) else {})
         if not p:
@@ -160,18 +184,38 @@ async def sync_positions(client: Any) -> PositionSnapshot:
         if upnl == 0 and p["avg"] > 0 and p["shares"] > 0 and cur > 0:
             upnl = (cur - p["avg"]) * p["shares"]
 
+        # Categorize: active vs resolved-win vs resolved-loss vs dust
+        shares = p["shares"]
+        if cv < 0.50:
+            dust_count += 1
+            status_tag = "dust"
+        elif cur >= 0.95:
+            # Resolved win — redeemable for ~$1/share
+            redeemable_value += shares  # payout = shares * $1
+            redeemable_count += 1
+            status_tag = "redeemable"
+        elif cur <= 0.05:
+            # Resolved loss — worth ~$0, track cost for P&L
+            lost_cost += shares * p["avg"]
+            lost_count += 1
+            status_tag = "lost"
+        else:
+            # Active — tradeable position
+            active_value += cv
+            status_tag = "active"
+
         positions.append(
             Position(
                 token_id=p["token_id"],
                 condition_id=p["condition_id"],
                 market_title=p["title"][:500],
                 outcome_side=str(p["outcome"])[:32],
-                shares=round(p["shares"], 6),
+                shares=round(shares, 6),
                 avg_entry_price=round(p["avg"], 6),
                 current_price=round(cur, 6),
                 market_value_usd=round(cv, 4),
                 unrealized_pnl=round(upnl, 4),
-                market_status=p["status"][:64],
+                market_status=status_tag,
             )
         )
         total_pv += cv
@@ -186,6 +230,12 @@ async def sync_positions(client: Any) -> PositionSnapshot:
         total_portfolio_value=round(usdc + total_pv, 2),
         unrealized_pnl=round(total_upnl, 2),
         raw_count=len(raw_list),
+        active_value=round(active_value, 2),
+        redeemable_value=round(redeemable_value, 2),
+        redeemable_count=redeemable_count,
+        lost_cost=round(lost_cost, 2),
+        lost_count=lost_count,
+        dust_count=dust_count,
     )
 
     by_strategy: dict[str, int] = {}

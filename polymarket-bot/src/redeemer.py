@@ -314,6 +314,40 @@ class PolymarketRedeemer:
         except Exception:
             return 0
 
+
+    async def _fetch_all_positions(self) -> list[dict]:
+        """Paginate the Polymarket Data API to get EVERY position.
+
+        The default API response caps at ~100 positions. We have 165+.
+        Uses sizeThreshold=0 to include dust positions (needed for
+        redeeming resolved losers to clear the UI).
+        """
+        assert self._http is not None
+        all_positions: list[dict] = []
+        offset = 0
+        limit = 500
+
+        while True:
+            resp = await self._http.get(
+                "https://data-api.polymarket.com/positions",
+                params={
+                    "user": self._wallet_address.lower(),
+                    "sizeThreshold": "0",
+                    "limit": str(limit),
+                    "offset": str(offset),
+                },
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            all_positions.extend(batch)
+            if len(batch) < limit:
+                break
+            offset += len(batch)
+
+        return all_positions
+
     async def redeem_all_winning(self) -> dict[str, Any]:
         """Find and redeem all resolved winning positions one by one.
 
@@ -347,14 +381,9 @@ class PolymarketRedeemer:
         # 2. Get current USDC.e balance before
         usdc_before = self._get_usdc_balance()
 
-        # 3. Fetch positions from Polymarket Data API
+        # 3. Fetch ALL positions from Polymarket Data API (paginated)
         try:
-            resp = await self._http.get(
-                "https://data-api.polymarket.com/positions",
-                params={"user": self._wallet_address.lower()},
-            )
-            resp.raise_for_status()
-            positions = resp.json()
+            positions = await self._fetch_all_positions()
         except Exception as exc:
             logger.error("redeemer_fetch_positions_error", error=str(exc))
             self._last_cycle_at = time.time()
