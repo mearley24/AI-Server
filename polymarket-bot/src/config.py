@@ -189,13 +189,13 @@ class Settings(BaseSettings):
 
     # --- Polymarket Copy-Trading Strategy ---
     copytrade_enabled: bool = Field(default=True, description="Enable Polymarket copy-trading")
-    copytrade_size_usd: float = Field(default=2.0, description="USD per copied trade — default $2, tiered scaling by wallet quality")
-    copytrade_max_positions: int = Field(default=30, description="Max concurrent copied positions")
+    copytrade_size_usd: float = Field(default=3.0, description="USD per copied trade — tiered by wallet quality and entry price bracket")
+    copytrade_max_positions: int = Field(default=60, description="Max concurrent copied positions")
     copytrade_min_win_rate: float = Field(default=0.60, description="Minimum wallet win rate to copy")
     copytrade_min_trades: int = Field(default=20, description="Minimum resolved trades for wallet to qualify")
     copytrade_scan_interval_hours: float = Field(default=6.0, description="Hours between wallet re-scans")
     copytrade_check_interval: float = Field(default=30.0, description="Seconds between trade checks")
-    copytrade_daily_loss_limit: float = Field(default=15.0, description="Max net daily loss before halting trades")
+    copytrade_daily_loss_limit: float = Field(default=30.0, description="Max net daily loss before halting trades")
 
     # --- Momentum/Mean-Reversion Hybrid Strategy ---
     crypto_momentum_mr_enabled: bool = Field(default=False, description="Enable momentum/mean-reversion strategy")

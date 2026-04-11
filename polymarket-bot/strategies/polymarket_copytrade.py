@@ -281,21 +281,21 @@ class PolymarketCopyTrader:
 
     CATEGORY_TIERS: dict[str, str] = {
         "weather": "whitelist",
-        "crypto": "graylist",
-        "crypto_updown": "graylist",
-        "economics": "graylist",
+        "crypto": "whitelist",
+        "crypto_updown": "whitelist",
+        "economics": "whitelist",
+        "politics": "graylist",       # was blacklist — profitable at cheap entries
+        "geopolitics": "graylist",    # was blacklist — long-dated macro bets work
         "other": "graylist",
         "esports": "graylist",
-        "us_sports": "blacklist",
-        "sports": "blacklist",
-        "tennis": "blacklist",
-        "politics": "blacklist",
-        "geopolitics": "blacklist",
-        "science": "blacklist",
-        "entertainment": "blacklist",
-        "soccer_intl": "blacklist",
-        "f1": "blacklist",
-        "motorsport": "blacklist",
+        "science": "graylist",        # was blacklist
+        "entertainment": "blacklist", # keep blacklisted — pure noise
+        "us_sports": "graylist",      # was blacklist — NBA/NHL have edge at cheap prices
+        "sports": "graylist",         # was blacklist — but only at cheap entries
+        "tennis": "blacklist",        # keep — no edge
+        "soccer_intl": "blacklist",   # keep — no edge
+        "f1": "graylist",             # was blacklist — motorsport has info edge
+        "motorsport": "graylist",     # was blacklist
     }
 
     def __init__(

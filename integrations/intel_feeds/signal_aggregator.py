@@ -289,6 +289,10 @@ class SignalAggregator:
         if relevance >= self.critical_threshold:
             urgency_icon = {"critical": "🚨", "high": "⚠️", "medium": "📊"}.get(urgency, "📌")
             source_label = signal.get("source", "unknown").replace("polymarket:", "").replace("_", " ").title()
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes
             notification = {
                 "type": "intel_alert",
                 "title": f"{urgency_icon} Intel Alert: {source_label}",

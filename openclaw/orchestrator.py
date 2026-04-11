@@ -43,9 +43,12 @@ def _orchestrator_skip_email(em: dict) -> bool:
     cat = (em.get("category") or "GENERAL").upper()
     subj = (em.get("subject") or "").lower()
     if cat in ("MARKETING", "INTERNAL"):
+<<<<<<< Updated upstream
         return True
     # Belt-and-suspenders: skip Cursor Prompt even if DB category wasn't updated yet
     if "cursor prompt" in subj:
+=======
+>>>>>>> Stashed changes
         return True
     if cat == "VENDOR":
         if not any(kw in subj for kw in ("order", "shipping", "tracking", "invoice")):
@@ -464,18 +467,48 @@ class Orchestrator:
             # NOTE: Individual per-email alerts removed — the digest below covers
             # everything in a single message. Duplicate notifications were confusing.
 
+<<<<<<< Updated upstream
+=======
+            for em in new_emails:
+                if _orchestrator_skip_email(em):
+                    continue
+                category = em.get("category", "GENERAL")
+                priority = em.get("priority", "low")
+                sender = em.get("sender_name") or em.get("sender", "unknown")
+                subject = em.get("subject", "(no subject)")
+
+                if category in high_priority_cats or priority == "high":
+                    label = "New bid invite" if category == "BID_INVITE" else \
+                            "Client inquiry" if category == "CLIENT_INQUIRY" else \
+                            f"High-priority email ({category})"
+                    await self.notify("email", f"{label} from {sender}: {subject}")
+
+                elif category in medium_priority_cats or priority == "medium":
+                    label = "Follow-up needed" if category == "FOLLOW_UP_NEEDED" else \
+                            "Scheduling" if category == "SCHEDULING" else \
+                            f"Email ({category})"
+                    await self.notify("email", f"{label} from {sender}: {subject}")
+
+>>>>>>> Stashed changes
             # Send a summary digest — only actionable emails, suppress noise
             actionable = [em for em in new_emails if not _orchestrator_skip_email(em)]
             noise_n = len(new_emails) - len(actionable)
 
+<<<<<<< Updated upstream
             # Split: important categories vs general noise
+=======
+>>>>>>> Stashed changes
             IMPORTANT_CATS = {"BID_INVITE", "CLIENT_INQUIRY", "ACTIVE_CLIENT",
                               "FOLLOW_UP_NEEDED", "SCHEDULING", "INVOICE"}
             important = [em for em in actionable if em.get("category", "GENERAL") in IMPORTANT_CATS]
             general = [em for em in actionable if em.get("category", "GENERAL") not in IMPORTANT_CATS]
 
             if not important and not general:
+<<<<<<< Updated upstream
                 logger.info("All %d new emails were noise — no digest sent", len(new_emails))
+=======
+                logger.info("All %d new emails were noise/marketing — no digest sent", len(new_emails))
+>>>>>>> Stashed changes
             else:
                 total_filtered = noise_n + len(general)
                 header = f"You have {len(important)} actionable email(s)"
@@ -492,11 +525,15 @@ class Orchestrator:
                 if general:
                     summary_lines.append(f"  + {len(general)} other non-urgent email(s)")
 
+<<<<<<< Updated upstream
                 # Email digest is logged only — never sent to iMessage.
                 # Individual important emails are handled by the notifier
                 # with proper SQLite dedup (fires exactly once per email).
                 summary_text = "\n".join(summary_lines)
                 logger.info("email_digest: %s", summary_text.replace('\n', ' | '))
+=======
+                await self.notify("email", "\n".join(summary_lines))
+>>>>>>> Stashed changes
 
             # Extract client preferences from emails matching active jobs
             await self._extract_client_preferences(new_emails)

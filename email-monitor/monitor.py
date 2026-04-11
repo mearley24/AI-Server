@@ -338,11 +338,16 @@ def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple
     """
     # Skip self-sent emails (Cursor prompts, test emails, internal automation)
     email_addr = _sender_email_addr(sender)
+<<<<<<< Updated upstream
     _own_addresses = {
+=======
+    own_addresses = {
+>>>>>>> Stashed changes
         "bob@symphonysh.com",
         "admin@symphonysh.com",
         "noreply@symphonysh.com",
     }
+<<<<<<< Updated upstream
     _zoho = os.environ.get("ZOHO_EMAIL", "").lower().strip()
     if _zoho:
         _own_addresses.add(_zoho)
@@ -351,6 +356,16 @@ def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple
 
     # Skip "Re: Cursor Prompt" by subject
     if "cursor prompt" in (subject or "").lower():
+=======
+    zo = os.environ.get("ZOHO_EMAIL", "").strip().lower()
+    if zo:
+        own_addresses.add(zo)
+    if email_addr and email_addr in own_addresses:
+        return "INTERNAL", "none"
+
+    subject_lower = (subject or "").lower().strip()
+    if "cursor prompt" in subject_lower:
+>>>>>>> Stashed changes
         return "INTERNAL", "none"
 
     if email_addr and email_addr in _ACTIVE_CLIENT_EMAILS:
@@ -377,7 +392,11 @@ def categorize_email(subject: str, sender: str, body_snippet: str = "") -> tuple
 
 
 def _skip_notification_noise(category: str, priority: str) -> bool:
+<<<<<<< Updated upstream
     """Skip LLM analysis and Redis publish for marketing, internal, and no-priority noise."""
+=======
+    """Skip LLM analysis and Redis publish for marketing / no-priority noise."""
+>>>>>>> Stashed changes
     if category in ("MARKETING", "INTERNAL"):
         return True
     if (priority or "").lower() == "none":
