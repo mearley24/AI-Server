@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bob — Symphony AI</title>
+<style>
+  :root {
+    --bg: #000;
+    --surface: #0a0a0a;
+    --surface-2: #141414;
+    --border: #1f1f1f;
+    --text: #f5f5f5;
+    --muted: #8a8a8a;
+    --gold: #ca9f5c;
+    --gold-dim: #8a6a3a;
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --font: 'Inter', system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: clamp(13px, 1vw + 8px, 15px);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--gold); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  h1 { font-size: clamp(15px, 1.1vw + 9px, 18px); color: var(--gold); }
+  h2 {
+    font-size: clamp(11px, 0.5vw + 9px, 13px);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gold);
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 {
+    font-size: clamp(12px, 0.5vw + 9px, 14px);
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .small { font-size: clamp(11px, 0.3vw + 9px, 12px); color: var(--muted); }
+  .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 22px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  header .brand .sub {
+    font-size: clamp(11px, 0.3vw + 9px, 12px);
+    color: var(--muted);
+  }
+  header .meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: clamp(11px, 0.3vw + 9px, 12px);
+    color: var(--muted);
+  }
+  header .badge {
+    padding: 3px 9px;
+    border: 1px solid var(--gold-dim);
+    border-radius: 100px;
+    color: var(--gold);
+    font-size: 11px;
+  }
+  header .clock {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  main.grid {
+    display: grid;
+    gap: 14px;
+    padding: 14px 22px 80px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  @media (max-width: 1040px) {
+    main.grid { grid-template-columns: 1fr; }
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card.alert {
+    border-color: var(--red);
+    background: rgba(248, 113, 113, 0.06);
+  }
+  .card .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    padding: 4px 0;
+  }
+  .card .row + .row { border-top: 1px solid var(--border); }
+  .card ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .card li {
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: clamp(11px, 0.3vw + 9px, 13px);
+  }
+  .card li:last-child { border-bottom: none; }
+
+  .svc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+  }
+  .svc-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: clamp(11px, 0.3vw + 9px, 12px);
+    min-width: 0;
+  }
+  .svc-item .name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    color: var(--text);
+  }
+  .svc-item .port {
+    color: var(--muted);
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 10px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .dot.healthy { background: var(--green); box-shadow: 0 0 6px rgba(74, 222, 128, 0.4); }
+  .dot.degraded { background: var(--yellow); }
+  .dot.down { background: var(--red); }
+
+  .stat-big {
+    font-size: clamp(22px, 2vw + 14px, 32px);
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .stat-label {
+    font-size: clamp(10px, 0.3vw + 8px, 11px);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .stat-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .goal-bar {
+    height: 4px;
+    background: var(--surface-2);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 3px;
+  }
+  .goal-bar > div {
+    height: 100%;
+    background: var(--gold);
+    transition: width 0.4s ease;
+  }
+  .goal-bar.red > div { background: var(--red); }
+  .goal-bar.green > div { background: var(--green); }
+
+  .pnl-positive { color: var(--green); }
+  .pnl-negative { color: var(--red); }
+  .pnl-neutral { color: var(--muted); }
+
+  .unavailable {
+    color: var(--muted);
+    font-style: italic;
+    font-size: clamp(11px, 0.3vw + 9px, 12px);
+    text-align: center;
+    padding: 12px 0;
+  }
+
+  footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 9px 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    font-size: clamp(11px, 0.3vw + 9px, 12px);
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+  footer .stats {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  footer .stats strong {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    margin-right: 3px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>Bob — Symphony AI</h1>
+    <span class="sub">cortex dashboard</span>
+  </div>
+  <div class="meta">
+    <span class="clock mono" id="clock">—</span>
+    <span class="badge" id="uptime">uptime —</span>
+    <span id="refreshed">refreshed —</span>
+  </div>
+</header>
+
+<main class="grid">
+  <!-- ── Column 1: Operations ─────────────────────────────────── -->
+  <section class="column">
+    <div class="card">
+      <h2>Service Health</h2>
+      <div id="services" class="svc-grid">
+        <div class="unavailable">loading…</div>
+      </div>
+      <div class="small" id="services-summary" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Email</h2>
+      <div id="emails"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Calendar</h2>
+      <div id="calendar"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Follow-ups</h2>
+      <div id="followups"><div class="unavailable">loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ── Column 2: Trading ─────────────────────────────────── -->
+  <section class="column">
+    <div class="card">
+      <h2>Wallet</h2>
+      <div id="wallet"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Positions</h2>
+      <div id="positions"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>P&amp;L</h2>
+      <div id="pnl"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent Activity</h2>
+      <div id="activity"><div class="unavailable">loading…</div></div>
+    </div>
+  </section>
+
+  <!-- ── Column 3: Brain ─────────────────────────────────── -->
+  <section class="column">
+    <div class="card">
+      <h2>Memory</h2>
+      <div id="memory"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Goals</h2>
+      <div id="goals"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card" id="decisions-card">
+      <h2>Decisions</h2>
+      <div id="decisions"><div class="unavailable">loading…</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Daily Digest</h2>
+      <div id="digest"><div class="unavailable">loading…</div></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="stats" id="footer-stats"></div>
+  <div>
+    <a href="/digest/today">full digest</a>
+    &nbsp;·&nbsp;
+    <a href="/memories">memories</a>
+    &nbsp;·&nbsp;
+    <a href="/goals">goals</a>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const REFRESH_MS = 60000;
+
+  // ── helpers ────────────────────────────────────────────────
+  const $ = (id) => document.getElementById(id);
+  const fmtNum = (n, d = 2) =>
+    (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const fmtUsd = (n) => (n == null || isNaN(n)) ? '—' : '$' + fmtNum(n, 2);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const unavailable = (msg = 'unavailable') => `<div class="unavailable">${esc(msg)}</div>`;
+  const timeAgo = (iso) => {
+    if (!iso) return '';
+    const t = new Date(iso).getTime();
+    if (isNaN(t)) return '';
+    const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  };
+
+  async function fetchJson(url) {
+    try {
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (!resp.ok) return null;
+      return await resp.json();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ── clock ──────────────────────────────────────────────────
+  function tickClock() {
+    try {
+      const s = new Date().toLocaleString('en-US', {
+        timeZone: 'America/Denver',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+        month: 'short', day: 'numeric',
+      });
+      $('clock').textContent = s + ' MT';
+    } catch (e) {
+      $('clock').textContent = new Date().toLocaleString();
+    }
+  }
+
+  // ── renderers ──────────────────────────────────────────────
+  function renderServices(data) {
+    const host = $('services');
+    const summary = $('services-summary');
+    if (!data || !data.services) { host.innerHTML = unavailable(); return; }
+    const items = data.services.map((s) => {
+      const st = s.status === 'healthy' ? 'healthy' : s.status === 'degraded' ? 'degraded' : 'down';
+      return `
+        <div class="svc-item" title="${esc(s.name)} — ${esc(s.status)}">
+          <span class="dot ${st}"></span>
+          <span class="name">${esc(s.name)}</span>
+          <span class="port">:${esc(s.port)}</span>
+        </div>`;
+    }).join('');
+    host.innerHTML = items;
+    const core = data.healthy_core != null ? `${data.healthy_core}/${data.total_core} core` : '';
+    const opt = data.optional_total ? `${data.optional_healthy}/${data.optional_total} optional` : '';
+    summary.textContent = [core, opt].filter(Boolean).join(' · ');
+  }
+
+  function renderEmails(data) {
+    const host = $('emails');
+    if (!data || data.error || (!data.emails && data.unread_count == null)) {
+      host.innerHTML = unavailable(); return;
+    }
+    const list = (data.emails || []).slice(0, 5);
+    if (!list.length) {
+      host.innerHTML = `
+        <div class="stat-big">${esc(data.unread_count ?? 0)}</div>
+        <div class="stat-label">unread</div>`;
+      return;
+    }
+    host.innerHTML = `
+      <div class="stat-big">${esc(data.unread_count ?? 0)}</div>
+      <div class="stat-label">unread</div>
+      <ul style="margin-top:8px">
+        ${list.map((e) => `<li title="${esc(e.sender || '')}">${esc(e.subject || e.title || '(no subject)').slice(0, 72)}</li>`).join('')}
+      </ul>`;
+  }
+
+  function renderCalendar(data) {
+    const host = $('calendar');
+    if (!data || !data.events) { host.innerHTML = unavailable(); return; }
+    const list = (data.events || []).slice(0, 3);
+    if (!list.length) { host.innerHTML = `<div class="small">no upcoming events</div>`; return; }
+    host.innerHTML = `<ul>${list.map((e) => {
+      const when = e.start || e.time || e.date || '';
+      return `<li><strong>${esc(e.title || e.summary || 'event')}</strong><br><span class="small">${esc(when)}</span></li>`;
+    }).join('')}</ul>`;
+  }
+
+  function renderFollowups(data) {
+    const host = $('followups');
+    if (!data || data.error) { host.innerHTML = unavailable(); return; }
+    const total = data.total ?? 0;
+    const overdue = data.overdue_count ?? 0;
+    const next = (data.followups || [])[0];
+    const nextLabel = next ? `${esc(next.client_name || next.client_email || '—')} — ${esc(next.last_client_subject || '')}` : 'none';
+    host.innerHTML = `
+      <div class="stat-row">
+        <div>
+          <div class="stat-big">${esc(total)}</div>
+          <div class="stat-label">total</div>
+        </div>
+        <div>
+          <div class="stat-big" style="color: ${overdue > 0 ? 'var(--red)' : 'var(--muted)'}">${esc(overdue)}</div>
+          <div class="stat-label">overdue</div>
+        </div>
+      </div>
+      <div class="small" style="margin-top:8px">next: ${nextLabel.slice(0, 80)}</div>`;
+  }
+
+  function renderWallet(data) {
+    const host = $('wallet');
+    if (!data || data.error) { host.innerHTML = unavailable(data?.error || 'unavailable'); return; }
+    const usdc = Number(data.usdc_balance || 0);
+    const active = Number(data.active_value || data.position_value || 0);
+    const total = usdc + active;
+    host.innerHTML = `
+      <div class="stat-big">${fmtUsd(total)}</div>
+      <div class="stat-label">account value</div>
+      <div class="stat-row" style="margin-top:8px">
+        <div>
+          <div class="small">USDC</div>
+          <div class="mono">${fmtUsd(usdc)}</div>
+        </div>
+        <div>
+          <div class="small">Open</div>
+          <div class="mono">${fmtUsd(active)}</div>
+        </div>
+      </div>`;
+  }
+
+  function renderPositions(data) {
+    const host = $('positions');
+    if (!data) { host.innerHTML = unavailable(); return; }
+    const positions = Array.isArray(data) ? data : (data.positions || []);
+    const count = positions.length;
+    const exposure = positions.reduce((s, p) => s + Number(p.currentValue || p.current_value || 0), 0);
+    if (!count) { host.innerHTML = `<div class="small">no open positions</div>`; return; }
+    const top = positions.slice(0, 5);
+    host.innerHTML = `
+      <div class="stat-row">
+        <div>
+          <div class="stat-big">${count}</div>
+          <div class="stat-label">open</div>
+        </div>
+        <div>
+          <div class="stat-big mono">${fmtUsd(exposure)}</div>
+          <div class="stat-label">exposure</div>
+        </div>
+      </div>
+      <ul style="margin-top:8px">
+        ${top.map((p) => `<li>${esc((p.title || p.market || '').slice(0, 60))} <span class="small mono">${fmtUsd(p.currentValue || p.current_value || 0)}</span></li>`).join('')}
+      </ul>`;
+  }
+
+  function renderPnl(wallet, series) {
+    const host = $('pnl');
+    if (!wallet || wallet.error) { host.innerHTML = unavailable(); return; }
+    const daily = Number(wallet.daily_pnl || 0);
+    const weekly = Number(wallet.weekly_pnl || 0);
+    const cls = (n) => n > 0 ? 'pnl-positive' : n < 0 ? 'pnl-negative' : 'pnl-neutral';
+    const sign = (n) => n >= 0 ? '+' : '';
+    let sparkline = '';
+    if (Array.isArray(series) && series.length > 1) {
+      const vals = series.map((p) => Number(p.pnl || p.value || p.total || 0));
+      const min = Math.min(...vals);
+      const max = Math.max(...vals);
+      const span = (max - min) || 1;
+      const w = 160, h = 30;
+      const step = w / (vals.length - 1);
+      const points = vals.map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / span) * h).toFixed(1)}`).join(' ');
+      sparkline = `<svg width="${w}" height="${h}" style="margin-top:8px;opacity:0.9">
+        <polyline fill="none" stroke="var(--gold)" stroke-width="1.5" points="${points}" />
+      </svg>`;
+    }
+    host.innerHTML = `
+      <div class="stat-row">
+        <div>
+          <div class="stat-big ${cls(daily)}">${sign(daily)}${fmtUsd(daily)}</div>
+          <div class="stat-label">today</div>
+        </div>
+        <div>
+          <div class="stat-big ${cls(weekly)}">${sign(weekly)}${fmtUsd(weekly)}</div>
+          <div class="stat-label">7d</div>
+        </div>
+      </div>
+      ${sparkline}`;
+  }
+
+  function renderActivity(data) {
+    const host = $('activity');
+    if (!Array.isArray(data) || !data.length) { host.innerHTML = unavailable('no events'); return; }
+    const items = data.slice(0, 5).map((e) => {
+      const payload = e.payload || e;
+      const t = payload.type || e.channel || 'event';
+      const when = e.ts || e.timestamp || '';
+      return `<li><span class="mono small">${esc(t)}</span> <span class="small">${esc(timeAgo(when))}</span></li>`;
+    });
+    host.innerHTML = `<ul>${items.join('')}</ul>`;
+  }
+
+  function renderMemory(stats, memories) {
+    const host = $('memory');
+    if (!stats) { host.innerHTML = unavailable(); return; }
+    const total = stats.total ?? stats.memories ?? 0;
+    const recent = (memories || []).slice(0, 5);
+    host.innerHTML = `
+      <div class="stat-big">${esc(total)}</div>
+      <div class="stat-label">memories total</div>
+      <ul style="margin-top:8px">
+        ${recent.map((m) => `<li>${esc((m.title || m.content || '').slice(0, 70))}</li>`).join('') || '<li class="small">no recent memories</li>'}
+      </ul>`;
+  }
+
+  function renderGoals(data) {
+    const host = $('goals');
+    if (!Array.isArray(data) || !data.length) { host.innerHTML = unavailable('no active goals'); return; }
+    host.innerHTML = data.slice(0, 4).map((g) => {
+      const progress = Math.max(0, Math.min(100, Number(g.progress_pct ?? g.progress ?? 0)));
+      const status = g.status || 'active';
+      const barClass = status === 'at_risk' ? 'red' : status === 'complete' ? 'green' : '';
+      return `
+        <div style="margin-bottom:10px">
+          <div class="row" style="padding:0">
+            <span>${esc((g.title || g.name || g.id || 'goal').slice(0, 60))}</span>
+            <span class="small mono">${progress.toFixed(0)}%</span>
+          </div>
+          <div class="goal-bar ${barClass}"><div style="width:${progress}%"></div></div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderDecisions(data) {
+    const host = $('decisions');
+    const card = $('decisions-card');
+    if (!data) { host.innerHTML = unavailable(); return; }
+    const cortex = (data.cortex || []).slice(0, 5);
+    const journalCount = (data.journal || []).length;
+    const pending = (data.journal || []).filter((d) => (d.status || '').toLowerCase() === 'pending').length;
+    if (pending > 20) card.classList.add('alert');
+    else card.classList.remove('alert');
+    host.innerHTML = `
+      <div class="stat-row">
+        <div>
+          <div class="stat-big">${esc(journalCount)}</div>
+          <div class="stat-label">recent</div>
+        </div>
+        <div>
+          <div class="stat-big" style="color:${pending > 20 ? 'var(--red)' : 'var(--text)'}">${esc(pending)}</div>
+          <div class="stat-label">pending</div>
+        </div>
+      </div>
+      <ul style="margin-top:8px">
+        ${cortex.map((d) => `<li>${esc((d.title || d.content || '').slice(0, 70))}</li>`).join('') || '<li class="small">no cortex decisions</li>'}
+      </ul>`;
+  }
+
+  function renderDigest(data) {
+    const host = $('digest');
+    if (!data) { host.innerHTML = unavailable(); return; }
+    const summary = data.summary || data.headline || data.digest || '';
+    if (!summary) { host.innerHTML = `<div class="small">no digest yet</div>`; return; }
+    host.innerHTML = `<div class="small" style="white-space:pre-wrap">${esc(String(summary).slice(0, 400))}</div>`;
+  }
+
+  function renderFooter(stats, wallet, emails, system) {
+    const chunks = [];
+    if (stats) chunks.push(`<span><strong>${stats.total ?? 0}</strong>memories</span>`);
+    if (wallet) chunks.push(`<span><strong>${fmtUsd((wallet.usdc_balance || 0) + (wallet.active_value || wallet.position_value || 0))}</strong>AUM</span>`);
+    if (emails) chunks.push(`<span><strong>${emails.unread_count ?? 0}</strong>unread</span>`);
+    if (system) {
+      if (system.containers_total != null)
+        chunks.push(`<span><strong>${system.containers_healthy ?? 0}/${system.containers_total ?? 0}</strong>svcs</span>`);
+      if (system.memory_percent != null)
+        chunks.push(`<span><strong>${system.memory_percent}%</strong>mem</span>`);
+      if (system.disk_percent != null)
+        chunks.push(`<span><strong>${system.disk_percent}%</strong>disk</span>`);
+    }
+    $('footer-stats').innerHTML = chunks.join('');
+    if (system && system.uptime_seconds != null) {
+      const h = Math.floor(system.uptime_seconds / 3600);
+      $('uptime').textContent = `uptime ${h}h`;
+    }
+  }
+
+  // ── orchestrator ───────────────────────────────────────────
+  async function refresh() {
+    tickClock();
+    const [services, wallet, positions, pnlSeries, activity, emails, calendar, followups, goals, health, memories, decisions, digest, system] =
+      await Promise.all([
+        fetchJson('/api/services'),
+        fetchJson('/api/wallet'),
+        fetchJson('/api/positions'),
+        fetchJson('/api/pnl-series'),
+        fetchJson('/api/activity'),
+        fetchJson('/api/emails'),
+        fetchJson('/api/calendar'),
+        fetchJson('/api/followups'),
+        fetchJson('/goals'),
+        fetchJson('/health'),
+        fetchJson('/memories?limit=10'),
+        fetchJson('/api/decisions/recent?limit=20'),
+        fetchJson('/digest/today'),
+        fetchJson('/api/system'),
+      ]);
+
+    renderServices(services);
+    renderEmails(emails);
+    renderCalendar(calendar);
+    renderFollowups(followups);
+    renderWallet(wallet);
+    renderPositions(positions);
+    renderPnl(wallet, pnlSeries);
+    renderActivity(activity);
+    renderMemory(health && health.memories, memories);
+    renderGoals(goals);
+    renderDecisions(decisions);
+    renderDigest(digest);
+    renderFooter(health && health.memories, wallet, emails, system);
+
+    $('refreshed').textContent = 'refreshed ' + new Date().toLocaleTimeString();
+  }
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+  setInterval(tickClock, 1000);
+})();
+</script>
+</body>
+</html>

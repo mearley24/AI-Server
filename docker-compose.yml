@@ -176,6 +176,7 @@ services:
       - KRAKEN_API_KEY=${KRAKEN_API_KEY:-}
       - KRAKEN_SECRET=${KRAKEN_SECRET:-}
       - KRAKEN_TRADING_PAIR=${KRAKEN_TRADING_PAIR:-XRP/USD}
+      - CORTEX_URL=http://cortex:8102
     volumes:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro
@@ -240,6 +241,7 @@ services:
       - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET:-1be316a2f0448b2a62bc9659f5a4e01fc800936810}
       - ZOHO_ACCOUNT_ID=${ZOHO_ACCOUNT_ID:-2928890000000008002}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CORTEX_URL=http://cortex:8102
     ports:
       - "127.0.0.1:8092:8092"
     volumes:
@@ -342,6 +344,7 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID:-}
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - CORTEX_URL=http://cortex:8102
     ports:
       - "127.0.0.1:8095:8095"
     volumes:
@@ -443,6 +446,7 @@ services:
       - EMAIL_MONITOR_DB_PATH=/data/email-monitor/emails.db
       # Polymarket API is on the vpn container (not 127.0.0.1 from inside this container)
       - POLYMARKET_BOT_URL=http://vpn:8430
+      - CORTEX_URL=http://cortex:8102
     ports:
       - "127.0.0.1:8099:3000"
     volumes:
@@ -503,28 +507,33 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  mission-control:
+  cortex:
     build:
-      context: ./mission_control
-    container_name: mission-control
+      context: .
+      dockerfile: cortex/Dockerfile
+    container_name: cortex
     restart: unless-stopped
-    environment:
-      - PORT=8098
-      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
-      - TZ=America/Denver
-      - MISSION_CONTROL_TOKEN=${MISSION_CONTROL_TOKEN:-}
     ports:
-      - "127.0.0.1:8098:8098"
+      - "127.0.0.1:8102:8102"
     volumes:
-      # Host source so new API routes (e.g. /api/events-log) apply without image rebuild
-      - ./mission_control:/app
-      - ./data/mission-control:/data
-      - ./data/polymarket:/trading-data:ro
+      - ./cortex:/app/cortex
+      - ./data/cortex:/data/cortex
+      - ./data/openclaw:/app/data/openclaw:ro
+      - ./polymarket-bot/knowledge:/app/knowledge:ro
+    environment:
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - CORTEX_PORT=8102
+      - TZ=America/Denver
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - POLYMARKET_BOT_URL=http://vpn:8430
+      - EMAIL_MONITOR_URL=http://email-monitor:8092
+      - CALENDAR_AGENT_URL=http://calendar-agent:8094
+      - OPENCLAW_URL=http://openclaw:3000
     depends_on:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8098/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health')"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
 from cortex.config import CORTEX_LOG_LEVEL, CORTEX_PORT, REDIS_URL
+from cortex.dashboard import register_dashboard_routes
 from cortex.digest import DigestBuilder
 from cortex.goals import GoalTracker
 from cortex.improvement import ImprovementLoop
@@ -245,6 +246,10 @@ class CortexEngine:
 
 engine: CortexEngine | None = None
 app = FastAPI(title="Bob's Cortex", version="1.0.0")
+
+# Register dashboard + operational routes (ported from Mission Control).
+# Pass a callable so routes see the live engine after startup.
+register_dashboard_routes(app, lambda: engine)
 
 
 @app.on_event("startup")

@@ -37,6 +37,16 @@ OWNER_PHONE_NUMBER = os.getenv("OWNER_PHONE_NUMBER", "")
 MATT_PHONE_NUMBER = os.getenv("MATT_PHONE_NUMBER", "") or OWNER_PHONE_NUMBER
 REDIS_URL_SYNC = os.getenv("REDIS_URL", "redis://redis:6379")
 DB_PATH = Path(os.getenv("DB_PATH", "/data/notifications.db"))
+CORTEX_URL = os.getenv("CORTEX_URL", "http://cortex:8102")
+
+
+async def _post_to_cortex(payload: dict) -> None:
+    """Fire-and-forget POST to Cortex /remember. Never raises."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(f"{CORTEX_URL}/remember", json=payload)
+    except Exception as exc:
+        logger.debug("cortex_post_failed: %s", exc)
 
 
 # ── Database ──────────────────────────────────────────────────
@@ -213,6 +223,15 @@ async def dispatch(title: str, body: str, priority: str = "normal", source: str 
         await send_console(title, body)
         via = "console"
     store_notification(NOTIFICATION_CHANNEL, title, body, priority, source, via)
+    # Feed Cortex only when the notification actually matters (high priority).
+    if priority in ("high", "urgent"):
+        await _post_to_cortex({
+            "category": "system",
+            "title": f"Notification sent to Matt: {title[:80]}",
+            "content": (body or "")[:300],
+            "importance": 7,
+            "tags": ["notification", priority, source],
+        })
     return via
 
 

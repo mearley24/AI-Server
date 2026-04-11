@@ -106,6 +106,19 @@ class PnLTracker:
             size=trade.size,
             strategy=trade.strategy,
         )
+        # Feed Cortex with every trade (fire-and-forget; Cortex down ≠ crash).
+        try:
+            from src.cortex_client import post_trade_memory
+
+            post_trade_memory(
+                side=trade.side,
+                market=trade.market,
+                strategy=trade.strategy or "unknown",
+                amount=float(trade.price) * float(trade.size),
+                price=float(trade.price),
+            )
+        except Exception as exc:
+            logger.debug("cortex_record_trade_failed error=%s", exc)
 
     def _update_position(self, trade: Trade) -> None:
         """Update open position tracking after a trade."""

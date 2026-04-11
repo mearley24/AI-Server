@@ -31,6 +31,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+CORTEX_URL = os.environ.get("CORTEX_URL", "http://cortex:8102")
+
+
+def _post_to_cortex(payload: dict) -> None:
+    """Fire-and-forget POST to Cortex /remember. Never raises."""
+    try:
+        requests.post(f"{CORTEX_URL}/remember", json=payload, timeout=3)
+    except Exception as exc:
+        logger.debug("cortex_post_failed: %s", exc)
+
 try:
     from dotenv import load_dotenv
 
@@ -325,6 +335,14 @@ def send_briefing() -> dict:
         )
         resp.raise_for_status()
         logger.info("Daily briefing sent to Matthew")
+        # Record the briefing in Cortex memory (fire-and-forget).
+        _post_to_cortex({
+            "category": "system",
+            "title": "Daily briefing sent",
+            "content": briefing_text[:500],
+            "importance": 5,
+            "tags": ["briefing", "daily"],
+        })
         return {"status": "sent", "sections": {
             "emails": len(emails),
             "bids": len(bids),

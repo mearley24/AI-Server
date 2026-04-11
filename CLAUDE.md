@@ -13,26 +13,30 @@ AI-Server/
 ├── openclaw/              # Orchestrator — Python, runs every 5 min
 │   ├── orchestrator.py    # Main tick loop (follow-ups, payments, D-Tools sync, health)
 │   ├── main.py            # FastAPI app, starts outcome listener
-│   ├── daily_briefing.py  # 6 AM iMessage briefing
-│   ├── follow_up_tracker.py
+│   ├── daily_briefing.py  # 6 AM iMessage briefing (POSTs to Cortex on send)
+│   ├── follow_up_tracker.py  # POSTs due follow-ups to Cortex
 │   ├── follow_up_engine.py
 │   ├── dtools_sync.py     # D-Tools Cloud job auto-create
 │   ├── decision_journal.py
 │   ├── continuous_learning.py
 │   └── task_board.py
-├── polymarket-bot/        # Prediction market trading (Node.js)
+├── cortex/                # Bob's brain + unified dashboard (port 8102)
+│   ├── engine.py          # FastAPI app, background loops, /health /query /remember /goals
+│   ├── dashboard.py       # Ports MC /api/* endpoints onto Cortex
+│   ├── memory.py          # SQLite-backed memory store
+│   ├── goals.py / improvement.py / digest.py / opportunity.py
+│   └── static/index.html  # Single-page dashboard (replaces mission-control UI)
+├── polymarket-bot/        # Prediction market trading (Python)
 │   └── src/
+│       ├── pnl_tracker.py  # Every trade → Cortex /remember
+│       └── cortex_client.py  # Fire-and-forget Cortex helper
 ├── email-monitor/         # Zoho IMAP polling (Python)
-│   └── monitor.py
-├── mission_control/       # Dashboard (Python + vanilla JS)
-│   ├── main.py
-│   └── static/index.html
-├── notification-hub/      # iMessage routing (Node.js)
+│   └── monitor.py         # Classified email → Cortex /remember
+├── notification-hub/      # iMessage / Telegram / email dispatcher (Python)
 ├── integrations/
 │   ├── x_intake/          # Twitter/X link analysis
-│   ├── dtools/            # D-Tools Cloud bridge
-│   └── cortex/            # Memory service (port 8102)
-├── client-portal/         # Per-client status + e-signature (port 8096)
+│   └── dtools/            # D-Tools Cloud bridge
+├── client-portal/         # Per-client status + e-signature (internal port 8096)
 ├── scripts/
 │   ├── pull.sh            # THE ONLY WAY TO GIT PULL — never bare git pull
 │   ├── symphony-ship.sh   # Build + deploy + verify
@@ -140,15 +144,23 @@ AI-Server/
 | Service | Port | Language | Notes |
 |---|---|---|---|
 | openclaw | 8099 | Python | Orchestrator, bind-mounted, restart for Python edits |
-| mission-control | 8098 | Python+JS | Dashboard |
-| email-monitor | 8092 | Python | Zoho IMAP, SQLite dedup |
-| notification-hub | 8091 | Node.js | iMessage routing |
-| client-portal | 8096 | Python | E-signature, per-client pages |
-| cortex | 8102 | Python | Memory service, SQLite+FTS5 |
-| dtools-bridge | 8096 | Python | D-Tools Cloud API bridge |
-| browser-agent | 9091 | Python | Playwright-based D-Tools automation |
-| polymarket-bot | 8430 | Node.js | Trading via VPN, weather category focus |
-| redis | 6379 | — | Auth required, static IP |
+| cortex | 8102 | Python | **Brain + dashboard** — memory, goals, digests, improvement loop, and the unified web UI at `/dashboard`. Replaces the old mission-control on 8098. |
+| email-monitor | 8092 | Python | Zoho IMAP, SQLite dedup. POSTs each classified email to Cortex. |
+| notification-hub | 8095 | Python | iMessage / Telegram / email routing. POSTs high-priority sends to Cortex. |
+| proposals | 8091 | Python | Proposal PDF + approval flow |
+| client-portal | 8096 (internal) | Python | E-signature, per-client pages (no published host port). |
+| dtools-bridge | 8096 → 5050 | Python | D-Tools Cloud API bridge (published on 8096). |
+| polymarket-bot | 8430 (via vpn) | Python | Trading via VPN. Records every trade into Cortex. |
+| calendar-agent | 8094 | Python | Zoho calendar sync |
+| voice-receptionist | 8093 → 3000 | Node.js | Twilio voice |
+| clawwork | 8097 | Python | Background workflow runner |
+| knowledge-scanner | 8100 | Python | Symphony knowledge ingest |
+| x-intake | 8101 | Python | X/Twitter link analysis |
+| intel-feeds | 8765 | Python | Intel RSS aggregator |
+| context-preprocessor | 8028 | Python | Pre-filter for agent context |
+| remediator | 8090 | Python | Auto-remediation watchdog |
+| openwebui | 3000 → 8080 | — | Local LLM UI |
+| redis | 6379 | — | Auth required, static IP `172.18.0.100` |
 | vpn | — | — | WireGuard, polymarket-bot routes through this |
 
 ---

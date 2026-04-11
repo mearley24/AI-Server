@@ -1,7 +1,18 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Host: Bob (Mac Mini M4), branch: main, clean working tree.
+Last updated: 2026-04-11 (Prompt S — Mission Control merged into Cortex)
+Host: Bob (Mac Mini M4), branch: main.
+
+> **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
+> (port 8102) is now Bob's single brain + dashboard. The old `mission-control`
+> container (which was in a redis-module crash loop) has been removed from
+> `docker-compose.yml` and replaced by a proper `cortex` service entry. The new
+> dashboard lives at `http://127.0.0.1:8102/dashboard`. Every service (email,
+> daily briefing, follow-up tracker, notification-hub, polymarket-bot) now
+> POSTs to `http://cortex:8102/remember` after significant events — Cortex is
+> no longer starving. P0 items 1 and the mission-control crash-loop, and P1
+> item 4 (cortex orphaned from compose), are resolved.
 
 ---
 

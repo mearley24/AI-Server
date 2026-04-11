@@ -22,12 +22,24 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+CORTEX_URL = os.environ.get("CORTEX_URL", "http://cortex:8102")
+
+
+async def _post_to_cortex(payload: dict) -> None:
+    """Fire-and-forget POST to Cortex /remember. Never raises."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(f"{CORTEX_URL}/remember", json=payload)
+    except Exception as exc:
+        logger.debug("cortex_post_failed: %s", exc)
 
 # ---------------------------------------------------------------------------
 # Category definitions
@@ -506,6 +518,23 @@ async def analyze_and_store(
     )
     await asyncio.to_thread(update_email_analysis, message_id, analysis)
     logger.info("Analysis stored for %s: urgency=%s", subject[:50], analysis.get("urgency"))
+
+    # Feed Cortex with the classified email (fire-and-forget).
+    sender_domain = ""
+    if "@" in sender:
+        sender_domain = sender.split("@", 1)[1].lower()
+    importance = 7 if analysis.get("urgency") in ("urgent", "high") else 4
+    await _post_to_cortex({
+        "category": "email",
+        "title": f"Email from {sender_name or sender}: {subject[:80]}",
+        "content": (
+            f"Classified as {category}. "
+            f"Urgency: {analysis.get('urgency', 'fyi')}. "
+            f"Summary: {analysis.get('summary', '')[:300]}"
+        ),
+        "importance": importance,
+        "tags": ["email", sender_domain, category],
+    })
     return analysis
 
 

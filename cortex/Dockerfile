@@ -5,7 +5,7 @@ WORKDIR /app
 COPY cortex/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy cortex package
+# Copy cortex package (engine, memory, goals, dashboard, static UI, ...)
 COPY cortex/ /app/cortex/
 
 # Copy source files for migration (mounted read-only at runtime, but baked in as fallback)

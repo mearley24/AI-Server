@@ -1,0 +1,515 @@
+"""Cortex dashboard routes — ports Mission Control endpoints into Cortex.
+
+This module adds the operational dashboard API onto the existing Cortex FastAPI
+app so Cortex can serve the single unified dashboard that replaces Mission
+Control. Every proxy is wrapped in try/except with a 5s timeout so a downstream
+failure never crashes Cortex.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import shutil
+import sqlite3
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import httpx
+from fastapi import FastAPI, Query
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
+logger = logging.getLogger(__name__)
+
+# ── Configuration ────────────────────────────────────────────────────────────
+
+TRADING_BOT_URL = os.environ.get("POLYMARKET_BOT_URL", "http://vpn:8430")
+EMAIL_MONITOR_URL = os.environ.get("EMAIL_MONITOR_URL", "http://email-monitor:8092")
+CALENDAR_AGENT_URL = os.environ.get("CALENDAR_AGENT_URL", "http://calendar-agent:8094")
+OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://openclaw:3000")
+
+# Data paths (mounted read-only by docker-compose into /app/data/openclaw)
+FOLLOW_UPS_DB_CANDIDATES = [
+    Path("/app/data/openclaw/follow_ups.db"),
+    Path("/data/openclaw/follow_ups.db"),
+    Path("data/openclaw/follow_ups.db"),
+]
+DECISION_JOURNAL_DB_CANDIDATES = [
+    Path("/app/data/openclaw/decision_journal.db"),
+    Path("/data/openclaw/decision_journal.db"),
+    Path("data/openclaw/decision_journal.db"),
+]
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+# Service map — ports updated for current stack (notification-hub=8095,
+# proposals=8091, no mission-control entry since cortex IS the dashboard)
+SERVICES: list[dict[str, Any]] = [
+    {"name": "OpenClaw", "host": "openclaw", "port": 3000, "ext_port": 8099},
+    {"name": "Email Monitor", "host": "email-monitor", "port": 8092, "ext_port": 8092},
+    {"name": "Notification Hub", "host": "notification-hub", "port": 8095, "ext_port": 8095},
+    {"name": "Proposals", "host": "proposals", "port": 8091, "ext_port": 8091},
+    {"name": "Calendar Agent", "host": "calendar-agent", "port": 8094, "ext_port": 8094},
+    {"name": "Voice Receptionist", "host": "voice-receptionist", "port": 3000, "ext_port": 8093},
+    {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097, "optional": True},
+    {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096},
+    {"name": "Client Portal", "host": "client-portal", "port": 8096, "ext_port": 8096, "optional": True},
+    {"name": "Polymarket Bot", "host": "vpn", "port": 8430, "ext_port": 8430},
+    {"name": "Knowledge Scanner", "host": "knowledge-scanner", "port": 8100, "ext_port": 8100, "optional": True},
+    {"name": "X Intake", "host": "x-intake", "port": 8101, "ext_port": 8101, "optional": True},
+    {"name": "Intel Feeds", "host": "intel-feeds", "port": 8765, "ext_port": 8765, "optional": True},
+    {"name": "Context Preprocessor", "host": "context-preprocessor", "port": 8028, "ext_port": 8028, "optional": True},
+    {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000, "optional": True},
+    {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "optional": True},
+]
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+async def _safe_get(url: str, timeout: float = 5.0) -> Any:
+    """GET url with short timeout; return parsed JSON or None on failure."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                try:
+                    return resp.json()
+                except Exception:
+                    return {"text": resp.text[:500]}
+            return None
+    except Exception as exc:
+        logger.debug("dashboard_proxy_fail url=%s error=%s", url, exc)
+        return None
+
+
+async def _check_service_health(service: dict) -> dict:
+    """Check a single service's /health endpoint; return a status dict."""
+    url = f"http://{service['host']}:{service['port']}/health"
+    name = service["name"]
+    ext_port = service["ext_port"]
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                ct = resp.headers.get("content-type", "")
+                details = resp.json() if "json" in ct else {}
+                return {
+                    "name": name,
+                    "status": "healthy",
+                    "port": ext_port,
+                    "details": details,
+                    "optional": bool(service.get("optional")),
+                }
+            return {
+                "name": name,
+                "status": "degraded",
+                "port": ext_port,
+                "details": {"http_status": resp.status_code},
+                "optional": bool(service.get("optional")),
+            }
+    except Exception:
+        return {
+            "name": name,
+            "status": "down",
+            "port": ext_port,
+            "details": {},
+            "optional": bool(service.get("optional")),
+        }
+
+
+def _find_db(candidates: list[Path]) -> Path | None:
+    """Return the first candidate DB file that exists on disk."""
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def _get_redis_sync():
+    """Return a synchronous Redis client (for simple LRANGE/GET calls)."""
+    try:
+        import redis
+
+        url = os.environ.get(
+            "REDIS_URL",
+            "redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379",
+        )
+        return redis.from_url(url, decode_responses=True, socket_timeout=2)
+    except Exception as exc:
+        logger.debug("redis_connect_fail error=%s", exc)
+        return None
+
+
+# ── Route registration ──────────────────────────────────────────────────────
+
+
+def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
+    """Attach dashboard routes to the Cortex FastAPI app.
+
+    ``engine_ref`` is a zero-arg callable returning the live ``CortexEngine``
+    instance (so routes pick up the engine after startup).
+    """
+
+    # Static files and the dashboard page itself
+    if STATIC_DIR.exists():
+        app.mount(
+            "/static",
+            StaticFiles(directory=str(STATIC_DIR)),
+            name="static",
+        )
+
+    @app.get("/dashboard")
+    async def dashboard_page():
+        html_path = STATIC_DIR / "index.html"
+        if html_path.exists():
+            return FileResponse(str(html_path))
+        return {"error": "dashboard not built"}
+
+    @app.get("/")
+    async def root():
+        return RedirectResponse("/dashboard")
+
+    # ── /api/services ───────────────────────────────────────────────────
+    @app.get("/api/services")
+    async def api_services():
+        results = await asyncio.gather(
+            *[_check_service_health(s) for s in SERVICES]
+        )
+        now = datetime.now().isoformat()
+        for r in results:
+            r["checked_at"] = now
+        core = [r for r in results if not r.get("optional")]
+        optional = [r for r in results if r.get("optional")]
+        healthy = sum(1 for r in results if r["status"] == "healthy")
+        healthy_core = sum(1 for r in core if r["status"] == "healthy")
+        healthy_optional = sum(1 for r in optional if r["status"] == "healthy")
+        return {
+            "services": results,
+            "total": len(results),
+            "healthy": healthy,
+            "total_core": len(core),
+            "healthy_core": healthy_core,
+            "optional_total": len(optional),
+            "optional_healthy": healthy_optional,
+        }
+
+    # ── Polymarket bot proxies ──────────────────────────────────────────
+    @app.get("/api/wallet")
+    async def api_wallet():
+        empty = {
+            "usdc_balance": 0.0,
+            "position_value": 0.0,
+            "active_value": 0.0,
+            "redeemable_value": 0.0,
+            "redeemable_count": 0,
+            "lost_count": 0,
+            "dust_count": 0,
+            "daily_pnl": 0.0,
+            "weekly_pnl": 0.0,
+            "error": "unavailable",
+        }
+        # Prefer Redis snapshot (already computed by the bot)
+        r = _get_redis_sync()
+        if r is not None:
+            try:
+                snap = r.get("portfolio:snapshot")
+                if snap:
+                    data = json.loads(snap)
+                    for key in (
+                        "active_value",
+                        "redeemable_value",
+                        "redeemable_count",
+                        "lost_count",
+                        "dust_count",
+                    ):
+                        data.setdefault(key, 0)
+                    return data
+            except Exception:
+                pass
+        # Fall back to live bot
+        data = await _safe_get(f"{TRADING_BOT_URL}/status", timeout=5.0)
+        if data:
+            try:
+                return {
+                    "usdc_balance": float(data.get("usdc_balance", 0)),
+                    "position_value": float(data.get("position_value", 0)),
+                    "active_value": float(data.get("active_value", 0)),
+                    "redeemable_value": float(data.get("redeemable_value", 0)),
+                    "redeemable_count": int(data.get("redeemable_count", 0)),
+                    "lost_count": int(data.get("lost_count", 0)),
+                    "dust_count": int(data.get("dust_count", 0)),
+                    "daily_pnl": float(data.get("daily_pnl", 0)),
+                    "weekly_pnl": float(data.get("weekly_pnl", 0)),
+                }
+            except (TypeError, ValueError):
+                pass
+        return empty
+
+    @app.get("/api/positions")
+    async def api_positions():
+        r = _get_redis_sync()
+        if r is not None:
+            try:
+                raw = r.get("portfolio:positions")
+                if raw:
+                    return json.loads(raw)
+            except Exception:
+                pass
+        data = await _safe_get(f"{TRADING_BOT_URL}/positions", timeout=5.0)
+        if data is None:
+            return []
+        if isinstance(data, list):
+            return data
+        return data.get("positions", [])
+
+    @app.get("/api/pnl-series")
+    async def api_pnl_series():
+        r = _get_redis_sync()
+        if r is not None:
+            try:
+                raw = r.get("portfolio:pnl_series")
+                if raw:
+                    return json.loads(raw)
+            except Exception:
+                pass
+        return []
+
+    @app.get("/api/activity")
+    async def api_activity():
+        """Last 50 entries from Redis events:log."""
+        r = _get_redis_sync()
+        if r is not None:
+            try:
+                entries = r.lrange("events:log", 0, 49)
+                if entries:
+                    result = []
+                    for entry in entries:
+                        try:
+                            result.append(json.loads(entry))
+                        except Exception:
+                            result.append(
+                                {
+                                    "timestamp": "",
+                                    "type": "info",
+                                    "message": str(entry),
+                                }
+                            )
+                    return result
+            except Exception as exc:
+                logger.debug("activity_redis_fail error=%s", exc)
+        # Fallback: trading events sub-list
+        if r is not None:
+            try:
+                entries = r.lrange("events:trading", 0, 49)
+                if entries:
+                    return [
+                        json.loads(e) if isinstance(e, str) else e
+                        for e in entries
+                    ]
+            except Exception:
+                pass
+        return []
+
+    @app.get("/api/trading")
+    async def api_trading():
+        data = await _safe_get(f"{TRADING_BOT_URL}/status", timeout=5.0)
+        if data is None:
+            return {"error": "service unavailable"}
+        return data
+
+    @app.get("/api/trading/categories")
+    async def api_trading_categories():
+        data = await _safe_get(f"{TRADING_BOT_URL}/categories", timeout=5.0)
+        if data is None:
+            return {"error": "service unavailable", "categories": {}}
+        return data
+
+    @app.get("/api/trading/positions")
+    async def api_trading_positions():
+        data = await _safe_get(f"{TRADING_BOT_URL}/positions", timeout=5.0)
+        if data is None:
+            return {"error": "service unavailable", "positions": []}
+        return data
+
+    # ── Email / calendar / follow-ups ──────────────────────────────────
+    @app.get("/api/emails")
+    async def api_emails():
+        for path in ("/emails/recent", "/api/emails", "/emails"):
+            data = await _safe_get(f"{EMAIL_MONITOR_URL}{path}")
+            if data is None:
+                continue
+            emails = (
+                data
+                if isinstance(data, list)
+                else data.get("emails", data.get("recent", []))
+            )
+            unread = sum(
+                1 for e in emails if not e.get("read") and not e.get("processed")
+            )
+            return {"emails": emails[:20], "unread_count": unread}
+        return {"emails": [], "unread_count": 0, "error": "unavailable"}
+
+    @app.get("/api/calendar")
+    async def api_calendar():
+        for path in ("/calendar/today", "/api/events", "/events", "/calendar"):
+            data = await _safe_get(f"{CALENDAR_AGENT_URL}{path}")
+            if data is None:
+                continue
+            events = (
+                data
+                if isinstance(data, list)
+                else data.get("events", data.get("upcoming", []))
+            )
+            return {"events": events[:10]}
+        return {"events": [], "error": "unavailable"}
+
+    @app.get("/api/followups")
+    async def api_followups():
+        """Read follow_ups.db directly — no dependency on openclaw uptime."""
+        db_path = _find_db(FOLLOW_UPS_DB_CANDIDATES)
+        if db_path is None:
+            return {
+                "followups": [],
+                "total": 0,
+                "overdue_count": 0,
+                "error": "db not found",
+            }
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM follow_ups ORDER BY last_client_ts DESC LIMIT 50"
+            ).fetchall()
+            conn.close()
+            followups = [dict(r) for r in rows]
+            now = datetime.now().astimezone()
+            overdue = 0
+            for f in followups:
+                last_alert = f.get("last_overdue_alert_ts")
+                if last_alert:
+                    overdue += 1
+            return {
+                "followups": followups[:20],
+                "total": len(followups),
+                "overdue_count": overdue,
+                "as_of": now.isoformat(),
+            }
+        except Exception as exc:
+            logger.debug("followups_db_fail error=%s", exc)
+            return {
+                "followups": [],
+                "total": 0,
+                "overdue_count": 0,
+                "error": str(exc),
+            }
+
+    @app.get("/api/decisions/recent")
+    async def api_decisions_recent(
+        hours: int = Query(48, ge=1, le=720),
+        limit: int = Query(20, ge=1, le=100),
+    ):
+        """Read recent decisions from Cortex's own memory + the openclaw
+        decision_journal (read-only). Cortex entries first."""
+        engine = engine_ref()
+        cortex_decisions: list[dict] = []
+        if engine is not None:
+            try:
+                cortex_decisions = engine.memory.recall("", limit=limit)
+            except Exception:
+                cortex_decisions = []
+
+        journal_decisions: list[dict] = []
+        db_path = _find_db(DECISION_JOURNAL_DB_CANDIDATES)
+        if db_path is not None:
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT * FROM decisions ORDER BY rowid DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+                conn.close()
+                journal_decisions = [dict(r) for r in rows]
+            except Exception as exc:
+                logger.debug("decisions_db_fail error=%s", exc)
+
+        return {
+            "cortex": cortex_decisions[:limit],
+            "journal": journal_decisions[:limit],
+            "hours": hours,
+        }
+
+    @app.get("/api/events-log")
+    async def api_events_log(limit: int = 50):
+        r = _get_redis_sync()
+        if r is None:
+            return {"events": [], "count": 0, "error": "redis unavailable"}
+        try:
+            entries = r.lrange("events:log", 0, min(max(limit, 1), 200) - 1)
+            events: list[dict] = []
+            for e in entries:
+                try:
+                    events.append(json.loads(e))
+                except Exception:
+                    events.append({"raw": str(e)})
+            return {"events": events, "count": len(events)}
+        except Exception as exc:
+            return {"events": [], "count": 0, "error": str(exc)}
+
+    @app.get("/api/system")
+    async def api_system():
+        """System info: uptime, disk, memory, container count."""
+        result: dict[str, Any] = {
+            "cpu_percent": None,
+            "memory_percent": None,
+            "disk_percent": None,
+            "uptime_seconds": None,
+            "containers_healthy": None,
+            "containers_total": None,
+        }
+        # Disk
+        try:
+            total, used, _ = shutil.disk_usage("/")
+            result["disk_percent"] = round(used / total * 100, 1)
+            result["disk_used_gb"] = used // (1024 ** 3)
+            result["disk_total_gb"] = total // (1024 ** 3)
+        except Exception:
+            pass
+        # Memory (Linux /proc/meminfo — works in containers)
+        try:
+            with open("/proc/meminfo") as f:
+                meminfo: dict[str, int] = {}
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        meminfo[parts[0].rstrip(":")] = int(parts[1])
+            total_kb = meminfo.get("MemTotal", 0)
+            avail_kb = meminfo.get("MemAvailable", 0)
+            if total_kb > 0:
+                result["memory_percent"] = round(
+                    (total_kb - avail_kb) / total_kb * 100, 1
+                )
+                result["memory_used_mb"] = (total_kb - avail_kb) // 1024
+                result["memory_total_mb"] = total_kb // 1024
+        except Exception:
+            pass
+        # Uptime (own container)
+        try:
+            with open("/proc/uptime") as f:
+                result["uptime_seconds"] = int(float(f.read().split()[0]))
+        except Exception:
+            pass
+        # Container count via /api/services (reuse existing check)
+        try:
+            svc_payload = await api_services()
+            result["containers_total"] = svc_payload.get("total")
+            result["containers_healthy"] = svc_payload.get("healthy")
+        except Exception:
+            pass
+        return result

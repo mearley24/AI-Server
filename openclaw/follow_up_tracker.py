@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+import httpx
 import redis
 
 logger = logging.getLogger("openclaw.follow_up_tracker")
@@ -19,6 +20,16 @@ JOBS_DB_PATH = os.environ.get("JOBS_DB_PATH", "/app/data/jobs.db")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 NOTIFY_CHANNEL = "notifications:email"
 TZ = ZoneInfo("America/Denver")
+CORTEX_URL = os.environ.get("CORTEX_URL", "http://cortex:8102")
+
+
+def _post_to_cortex(payload: dict) -> None:
+    """Fire-and-forget POST to Cortex /remember. Never raises."""
+    try:
+        with httpx.Client(timeout=3.0) as client:
+            client.post(f"{CORTEX_URL}/remember", json=payload)
+    except Exception as exc:
+        logger.debug("cortex_post_failed: %s", exc)
 
 
 def _dt(value: str | None) -> datetime | None:
@@ -350,6 +361,16 @@ def run_cycle(
                     (now.isoformat(), now.isoformat(), client),
                 )
                 overdue_alerts += 1
+                _post_to_cortex({
+                    "category": "follow_up",
+                    "title": f"Follow-up due: {client_name}",
+                    "content": (
+                        f"Inbound email from {client_name} unanswered for "
+                        f">4h during business hours. Subject: {subject[:120]}"
+                    ),
+                    "importance": 7,
+                    "tags": ["follow_up", "overdue", client_name],
+                })
 
         # Rule 2: sent by Matt, no reply in 48h.
         if last_matthew and (last_client is None or last_client < last_matthew):
@@ -367,6 +388,18 @@ def run_cycle(
                         (now.isoformat(), now.isoformat(), client),
                     )
                     followup_alerts += 1
+                    _post_to_cortex({
+                        "category": "follow_up",
+                        "title": f"Follow-up due: {client_name}",
+                        "content": (
+                            f"Sent by Matt on "
+                            f"{last_matthew.astimezone(TZ).strftime('%Y-%m-%d')}, "
+                            f"no reply in 48h. Subject: "
+                            f"{row['last_matthew_subject'] or subject}"
+                        ),
+                        "importance": 6,
+                        "tags": ["follow_up", "no_reply", client_name],
+                    })
 
     conn.commit()
     conn.close()
