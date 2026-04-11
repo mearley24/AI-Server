@@ -525,6 +525,7 @@ class PolymarketCopyTrader:
         self._last_pnl_reconciliation: float = 0.0
         self._pnl_reconciliation_interval: float = 600.0  # 10 minutes
         self._our_wallet = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
+        self._last_cleanup_resolved: float = 0.0
 
         # ── Tick-in-progress guard — prevents bankroll refresh mid-tick ──
         self._tick_in_progress = False
@@ -672,6 +673,11 @@ class PolymarketCopyTrader:
                 # 6. P/L reconciliation against on-chain — every 10 minutes
                 if now - self._last_pnl_reconciliation >= self._pnl_reconciliation_interval:
                     await self._reconcile_pnl()
+
+                # 7. Cleanup resolved positions — free up slots every 10 minutes
+                if now - self._last_cleanup_resolved >= 600.0:
+                    await self._cleanup_resolved_positions()
+                    self._last_cleanup_resolved = now
 
                 tick_count += 1
 
@@ -3515,11 +3521,51 @@ class PolymarketCopyTrader:
                     title=title[:50],
                     condition_id=condition_id[:20] + "...",
                     value=round(value, 2),
-                    action="needs_manual_redemption",
+                    action="delegated_to_redeemer",
                 )
+
+            logger.info(
+                "copytrade_redeemable_summary",
+                redeemable_count=len(redeemable),
+                total_value=round(total_value, 2),
+                note="standalone redeemer handles on-chain redemption",
+            )
 
         except Exception as exc:
             logger.error("copytrade_redemption_check_error", error=str(exc))
+
+    async def _cleanup_resolved_positions(self) -> None:
+        """Remove resolved positions from tracking to free up position slots."""
+        if not self._http or not self._client.wallet_address:
+            return
+        try:
+            resp = await self._http.get(
+                "https://data-api.polymarket.com/positions",
+                params={"user": self._client.wallet_address},
+            )
+            resp.raise_for_status()
+            api_positions = {p.get("conditionId", ""): p for p in resp.json()}
+
+            cleaned = 0
+            for pid, pos in list(self._positions.items()):
+                api_pos = api_positions.get(pos.condition_id)
+                if api_pos:
+                    cur_price = float(api_pos.get("curPrice", 0.5))
+                    if cur_price == 1.0 or cur_price == 0.0:
+                        self._positions.pop(pid, None)
+                        self._exit_engine.unregister_position(pid)
+                        self._active_condition_ids.discard(pos.condition_id)
+                        es = getattr(pos, "event_slug", "")
+                        if es:
+                            self._active_event_slugs.discard(es)
+                        self._correlation_tracker.remove_position(pid)
+                        cleaned += 1
+
+            if cleaned:
+                self._save_positions()
+                logger.info("copytrade_cleanup_resolved", cleaned=cleaned, remaining=len(self._positions))
+        except Exception as exc:
+            logger.error("copytrade_cleanup_error", error=str(exc)[:200])
 
     # ── Status ───────────────────────────────────────────────────────────
 
