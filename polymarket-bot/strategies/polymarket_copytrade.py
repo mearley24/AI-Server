@@ -303,10 +303,12 @@ class PolymarketCopyTrader:
         client: PolymarketClient,
         settings: Settings,
         pnl_tracker: PnLTracker,
+        sandbox=None,
     ) -> None:
         self._client = client
         self._settings = settings
         self._pnl_tracker = pnl_tracker
+        self._sandbox = sandbox
 
         # Config from settings
         self._size_usd: float = getattr(settings, "copytrade_size_usd", 3.0)
@@ -520,6 +522,9 @@ class PolymarketCopyTrader:
         self._pnl_reconciliation_interval: float = 600.0  # 10 minutes
         self._our_wallet = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
 
+        # ── Tick-in-progress guard — prevents bankroll refresh mid-tick ──
+        self._tick_in_progress = False
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -594,40 +599,49 @@ class PolymarketCopyTrader:
 
     # ── Main loop ────────────────────────────────────────────────────────
 
+    async def _maybe_refresh_bankroll(self) -> None:
+        """Log on-chain USDC balance check. Called at the start of each tick only.
+
+        The internal bankroll tracker is the source of truth — it is debited on
+        trade and credited on exit/resolution. The on-chain USDC figure is
+        informational only and must not change during a live tick.
+        """
+        if self._tick_in_progress:
+            return  # Never refresh bankroll mid-tick
+        now = time.time()
+        if now - self._last_bankroll_refresh < self._bankroll_refresh_interval:
+            return
+        try:
+            wallet_addr = self._client.wallet_address
+            if wallet_addr:
+                onchain_usdc = await fetch_onchain_bankroll(wallet_addr)
+                if onchain_usdc > 0:
+                    drift = round(self._bankroll - onchain_usdc, 2)
+                    logger.info(
+                        "bankroll_onchain_check",
+                        internal=round(self._bankroll, 2),
+                        onchain_usdc=round(onchain_usdc, 2),
+                        drift=drift,
+                        note="informational only — internal tracker is source of truth",
+                    )
+            self._last_bankroll_refresh = now
+        except Exception as exc:
+            logger.warning("bankroll_refresh_error", error=str(exc)[:100])
+            self._last_bankroll_refresh = now
+
     async def _run_loop(self) -> None:
         """Main loop: scan wallets, monitor trades, manage positions, redeem."""
         tick_count = 0
 
         while self._running:
             try:
+                # Refresh bankroll FIRST, before any trade decisions
+                await self._maybe_refresh_bankroll()
+                self._tick_in_progress = True
                 now = time.time()
 
                 # 0. Reset daily spend at midnight UTC
                 self._maybe_reset_daily_spend(now)
-
-                # 0b. Log on-chain USDC balance periodically (informational only).
-                # The internal bankroll tracker is the source of truth — it is
-                # debited on trade and credited on exit/resolution. Overwriting
-                # it with the on-chain USDC balance caused oscillation because
-                # USDC cash != total portfolio value.
-                if now - self._last_bankroll_refresh >= self._bankroll_refresh_interval:
-                    try:
-                        wallet_addr = self._client.wallet_address
-                        if wallet_addr:
-                            onchain_usdc = await fetch_onchain_bankroll(wallet_addr)
-                            if onchain_usdc > 0:
-                                drift = round(self._bankroll - onchain_usdc, 2)
-                                logger.info(
-                                    "bankroll_onchain_check",
-                                    internal=round(self._bankroll, 2),
-                                    onchain_usdc=round(onchain_usdc, 2),
-                                    drift=drift,
-                                    note="informational only — internal tracker is source of truth",
-                                )
-                        self._last_bankroll_refresh = now
-                    except Exception as exc:
-                        logger.warning("bankroll_refresh_error", error=str(exc)[:100])
-                        self._last_bankroll_refresh = now
 
                 # 1. Wallet scan every N hours (or on first run)
                 hours_since_scan = (now - self._last_scan_time) / 3600
@@ -661,6 +675,8 @@ class PolymarketCopyTrader:
                 break
             except Exception as exc:
                 logger.error("copytrade_loop_error", error=str(exc))
+            finally:
+                self._tick_in_progress = False
 
             try:
                 await asyncio.sleep(self._check_interval)
@@ -2154,12 +2170,22 @@ class PolymarketCopyTrader:
                     tick_size="0.01",
                     neg_risk=bool(mkt_data.get("neg_risk", mkt_data.get("negativeRisk", False))) if isinstance(mkt_data, dict) else False,
                 )
+                if self._sandbox:
+                    _allowed, _reason = await self._sandbox.check_trade(
+                        size=size_shares,
+                        price=buy_price,
+                    )
+                    if not _allowed:
+                        logger.warning("sandbox_blocked_trade", reason=_reason, market=market_question[:40], size=size_usd)
+                        return False
                 order_resp = await loop.run_in_executor(
                     None,
                     lambda: self._clob_client.create_and_post_order(order_args, options),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
                 status = order_resp.get("status", "") if isinstance(order_resp, dict) else ""
+                if self._sandbox:
+                    self._sandbox.record_trade(size_usd, pnl=0.0)
 
                 logger.info(
                     "copytrade_copy_executed",
@@ -2897,10 +2923,20 @@ class PolymarketCopyTrader:
                         tick_size="0.01",
                         neg_risk=False,  # TODO: wire neg_risk from market data
                     )
+                    if self._sandbox:
+                        _allowed, _reason = await self._sandbox.check_trade(
+                            size=size_shares,
+                            price=buy_price,
+                        )
+                        if not _allowed:
+                            logger.warning("sandbox_blocked_trade", reason=_reason, market=market_question[:40], size=size_usd)
+                            continue
                     order_resp = await loop.run_in_executor(
                         None, lambda: self._clob_client.create_and_post_order(order_args, options),
                     )
                     order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
+                    if self._sandbox:
+                        self._sandbox.record_trade(size_usd, pnl=0.0)
 
                     self._last_trade_time = time.time()
                     self._daily_spend += size_usd
@@ -3085,11 +3121,21 @@ class PolymarketCopyTrader:
                     tick_size="0.01",
                     neg_risk=False,  # TODO: wire neg_risk from market data
                 )
+                if self._sandbox:
+                    _allowed, _reason = await self._sandbox.check_trade(
+                        size=size_shares,
+                        price=buy_price,
+                    )
+                    if not _allowed:
+                        logger.warning("sandbox_blocked_trade", reason=_reason, market=market_question[:40], size=size_usd)
+                        return
                 order_resp = await loop.run_in_executor(
                     None,
                     lambda: self._clob_client.create_and_post_order(order_args, options),
                 )
                 order_id = order_resp.get("orderID", "") if isinstance(order_resp, dict) else str(order_resp)
+                if self._sandbox:
+                    self._sandbox.record_trade(size_usd, pnl=0.0)
             except Exception as exc:
                 logger.error("copytrade_reentry_error", error=str(exc)[:200], market=market_question[:40])
                 return

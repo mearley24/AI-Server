@@ -235,6 +235,7 @@ async def lifespan(app: FastAPI):
             client=client,  # existing Polymarket client
             settings=settings,
             pnl_tracker=pnl_tracker,
+            sandbox=sandbox,
         )
         if whale_scanner:
             copytrade.set_whale_scanner(whale_scanner)
