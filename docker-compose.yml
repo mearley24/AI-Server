@@ -5,6 +5,33 @@
 
 services:
 
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:8080"
+    volumes:
+      - openwebui:/app/backend/data
+      - "./data:/data"
+    environment:
+      - WEBUI_NAME=AI-Server
+      - ENABLE_API_KEYS=True
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   remediator:
     build:
       context: ./remediator
@@ -245,20 +272,13 @@ services:
       - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - SYMPHONY_PHONE=${SYMPHONY_PHONE}
-      - SERVER_URL=${VOICE_SERVER_URL:-http://localhost:8093}
       - DB_PATH=/app/data/bob.db
-      - CALENDAR_AGENT_URL=http://calendar-agent:8094
-      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
-      - OWNER_CELL_NUMBER=${OWNER_CELL_NUMBER:-+19705193013}
     ports:
       - "127.0.0.1:8093:3000"
     volumes:
       - ./data/voice-receptionist:/app/data
-      - "${SYMPHONY_DOCS_PATH:-/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH}:/data/symphony_docs:ro"
     depends_on:
       redis:
-        condition: service_healthy
-      calendar-agent:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
@@ -624,26 +644,6 @@ services:
         max-size: "5m"
         max-file: "3"
 
-  operations:
-    build:
-      context: ./operations
-      dockerfile: Dockerfile
-    container_name: operations
-    restart: unless-stopped
-    environment:
-      - LINEAR_API_KEY=${LINEAR_API_KEY}
-      - LINEAR_TEAM_ID=${LINEAR_TEAM_ID:-b1ba685a-0eff-43fe-bec9-023e3c455672}
-      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
-      - TZ=America/Denver
-    depends_on:
-      redis:
-        condition: service_healthy
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
 networks:
   default:
     ipam:
@@ -651,4 +651,5 @@ networks:
         - subnet: 172.18.0.0/16
 
 volumes:
+  openwebui:
   redis_data:
