@@ -12,6 +12,21 @@ set -a
 source ~/AI-Server/.env 2>/dev/null
 set +a
 
+# Wait for Docker Desktop (up to 120s)
+for i in $(seq 1 24); do
+    docker info >/dev/null 2>&1 && break
+    echo "[start_bob_workspace] Waiting for Docker Desktop... (${i}/24)"
+    sleep 5
+done
+
+# Ensure all containers are running
+if docker info >/dev/null 2>&1; then
+    echo "[start_bob_workspace] Docker ready, ensuring containers are up..."
+    /usr/local/bin/docker compose up -d --no-build 2>/dev/null || true
+else
+    echo "[start_bob_workspace] WARNING: Docker not available after 120s"
+fi
+
 # Clean up stale processes
 tmux kill-session -t bob 2>/dev/null
 pkill -f imessage-server 2>/dev/null

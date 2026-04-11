@@ -131,7 +131,7 @@ POLYGON_RPCS = [
 ]
 
 # Gas settings
-MAX_GAS_PRICE_GWEI = 800  # Polygon can spike; 800 Gwei is still < $0.05 per tx
+MAX_GAS_PRICE_GWEI = 800  # Polygon spikes past 300 normally; 800 still < $0.05/tx  # Don't transact above this
 
 
 class PolymarketRedeemer:
@@ -326,6 +326,14 @@ class PolymarketRedeemer:
         # Reset nonce tracker at start of each cycle
         self._next_nonce = None
 
+        # 0. Check gas token balance
+        matic_balance = self._get_matic_balance()
+        if matic_balance < 0.05:
+            logger.warning("redeemer_low_gas", matic_balance=round(matic_balance, 4))
+            self._last_cycle_at = time.time()
+            self._last_cycle_summary = {"error": "insufficient_gas_token", "matic_balance": round(matic_balance, 4)}
+            return {"error": "insufficient_gas_token", "matic_balance": round(matic_balance, 4)}
+
         # 1. Check gas price (head-of-cycle; each tx also refreshes inside _redeem_single)
         gas_price = self._w3.eth.gas_price
         gas_gwei = float(self._w3.from_wei(gas_price, "gwei"))
@@ -335,12 +343,6 @@ class PolymarketRedeemer:
             self._last_cycle_at = time.time()
             self._last_cycle_summary = {"status": "gas_too_high", "gas_gwei": round(gas_gwei, 1)}
             return {"status": "gas_too_high", "gas_gwei": round(gas_gwei, 1)}
-
-        # Check gas token balance
-        matic_balance = self._get_matic_balance()
-        if matic_balance < 0.05:
-            logger.warning("redeemer_low_gas", matic_balance=round(matic_balance, 4))
-            return {"error": "insufficient_gas_token", "matic_balance": round(matic_balance, 4)}
 
         # 2. Get current USDC.e balance before
         usdc_before = self._get_usdc_balance()
@@ -401,10 +403,7 @@ class PolymarketRedeemer:
             # Check if user holds the winning outcome
             payout_nums = resolution["payout_numerators"]
             payout_denom = resolution["payout_denominator"]
-            if outcome_index < 0 or outcome_index >= len(payout_nums):
-                logger.warning("redeemer_invalid_outcome_index", condition_id=condition_id[:20], outcome_index=outcome_index, payout_count=len(payout_nums))
-                continue
-            user_payout = payout_nums[outcome_index]
+            user_payout = payout_nums[outcome_index] if 0 <= outcome_index < len(payout_nums) else 0
 
             if user_payout == 0:
                 loser_count += 1
@@ -462,41 +461,41 @@ class PolymarketRedeemer:
             title = pos.get("title", "")[:50]
             value = pos.get("_expected_usdc", 0)
 
-            for attempt in range(3):
-                try:
-                    is_neg_risk = pos.get("neg_risk", pos.get("negativeRisk", False))
-                    outcome_index = int(pos.get("outcomeIndex", 0))
-                    token_balance_raw = int(pos.get("_token_balance", 0) * 1e6)
-                    tx_hash = await self._redeem_single(
-                        condition_id,
-                        neg_risk=is_neg_risk,
-                        outcome_index=outcome_index,
-                        token_balance=token_balance_raw,
+            try:
+                is_neg_risk = pos.get("neg_risk", pos.get("negativeRisk", False))
+                outcome_index = int(pos.get("outcomeIndex", 0))
+                token_balance_raw = int(pos.get("_token_balance", 0) * 1e6)
+                tx_hash = await self._redeem_single(
+                    condition_id,
+                    neg_risk=is_neg_risk,
+                    outcome_index=outcome_index,
+                    token_balance=token_balance_raw,
+                )
+                if tx_hash:
+                    self._redeemed_conditions.add(condition_id)
+                    self._save_redeemed()
+                    redeemed_count += 1
+                    logger.info(
+                        "redeemer_redeemed",
+                        title=title,
+                        value=round(value, 2),
+                        tx_hash=tx_hash,
                     )
-                    if tx_hash:
-                        self._redeemed_conditions.add(condition_id)
-                        self._save_redeemed()
-                        redeemed_count += 1
-                        logger.info(
-                            "redeemer_redeemed",
-                            title=title,
-                            value=round(value, 2),
-                            tx_hash=tx_hash,
-                        )
-                    break  # Success, move to next position
-                except Exception as exc:
-                    err_msg = str(exc)
-                    if "nonce" in err_msg.lower() and attempt < 2:
-                        logger.warning("redeemer_nonce_retry", attempt=attempt + 1, error=err_msg[:80])
-                        self._next_nonce = None  # Force nonce refresh
-                        await asyncio.sleep(5)
-                        continue
+                    await asyncio.sleep(4.0)  # 4s for nonce propagation
+            except Exception as exc:
+                err_msg = str(exc)
+                if "nonce" in err_msg.lower():
+                    logger.warning("redeemer_nonce_error", title=title, error=err_msg[:80])
                     self._next_nonce = None
-                    errors.append({"condition_id": condition_id[:20], "error": err_msg[:80]})
-                    logger.error("redeemer_redeem_error", title=title, error=err_msg[:120])
-                    break
-
-            await asyncio.sleep(4)  # 4s between redemptions for nonce propagation
+                    await asyncio.sleep(5)
+                else:
+                    self._next_nonce = None  # Reset nonce on error to re-fetch
+                errors.append({"condition_id": condition_id[:20], "error": err_msg[:80]})
+                logger.error(
+                    "redeemer_redeem_error",
+                    title=title,
+                    error=err_msg[:120],
+                )
 
         # 6. Check balance after
         usdc_after = self._get_usdc_balance()

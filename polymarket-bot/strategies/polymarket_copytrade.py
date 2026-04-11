@@ -1448,16 +1448,8 @@ class PolymarketCopyTrader:
             return False, f"graylist_low_llm_score_{(llm_score or 0.0):.2f}"
 
         if tier == "blacklist":
-            threshold = float(os.environ.get("CATEGORY_BLACKLIST_LLM_THRESHOLD", "0.90"))
-            if llm_score is not None and llm_score >= threshold:
-                logger.info(
-                    "blacklist_category_llm_override",
-                    category=category,
-                    llm_score=llm_score,
-                    market=market_question[:60],
-                )
-                # Blacklist is absolute — LLM cannot override, money at risk
-                logger.info("copytrade_blacklist_llm_override_blocked", category=category, llm_score=llm_score)
+            # If category is blacklisted, NEVER allow — no LLM or wallet override
+            logger.info("copytrade_skip", reason="category_blacklisted", category=category)
             return False, f"blacklist_category_{category}"
 
         return True, ""
@@ -1785,7 +1777,7 @@ class PolymarketCopyTrader:
         # Top traders buy LOW and let winners pay for losers.
         # Buying at 90¢+ risks $9 to make $1 — terrible risk/reward.
         CATEGORY_MAX_ENTRY = {
-            "weather": 0.15,  # was 0.25 — tighter entry, cheap brackets only
+            "weather": 0.15,
             "us_sports": 0.35,
             "sports": 0.35,
             "esports": 0.35,
