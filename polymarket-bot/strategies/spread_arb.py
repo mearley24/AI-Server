@@ -49,7 +49,7 @@ def effective_scan_interval_sec() -> int:
 
 
 # Fee assumptions for profitability calc
-GAS_FEE = 0.05  # per trade
+GAS_FEE = 0.005  # Polygon gas is ~$0.003-0.005 per tx
 WINNER_TAX = 0.02  # 2% on profit
 SLIPPAGE = 0.005  # 0.5%
 
@@ -582,9 +582,9 @@ class SpreadArbScanner:
 
     async def execute_opportunities(self, opps: list[ArbOpportunity]) -> tuple[int, int]:
         """Execute up to 3 top opportunities. Returns (executed, skipped)."""
-        MIN_PROFIT_PCT = 1.0
-        MAX_PER_TICK = 3
-        MAX_PER_SIDE = 10.0
+        MIN_PROFIT_PCT = 0.5   # arb is risk-free, even small edges compound
+        MAX_PER_TICK = 5       # execute up to 5 arbs per scan
+        MAX_PER_SIDE = 15.0    # up to $15 per side
 
         sorted_opps = sorted(opps, key=lambda o: -o.expected_profit_pct)
         executed = 0
@@ -604,6 +604,15 @@ class SpreadArbScanner:
             if wallet:
                 usdc_balance = _usdc.functions.balanceOf(Web3.to_checksum_address(wallet)).call() / 1e6
                 logger.info("arb_wallet_balance", usdc=round(usdc_balance, 2))
+        except Exception:
+            pass
+        try:
+            _usdc_native = _w3.eth.contract(
+                address=Web3.to_checksum_address("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"),
+                abi=[{"constant": True, "inputs": [{"name": "account", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}],
+            )
+            usdc_native = _usdc_native.functions.balanceOf(Web3.to_checksum_address(wallet)).call() / 1e6
+            usdc_balance += usdc_native
         except Exception:
             pass
 
@@ -636,7 +645,7 @@ class SpreadArbScanner:
                 skipped += 1
                 continue
 
-            size = min(MAX_PER_SIDE, opp.cost_usd, (self._bankroll * 0.25 - total_exposure) / 5)
+            size = min(MAX_PER_SIDE, opp.cost_usd / 2.0)
             if size < 1.0:
                 skipped += 1
                 continue
@@ -672,10 +681,19 @@ class SpreadArbScanner:
                         skipped += 1
                         continue
 
+                    total_cost_check = sum(
+                        round(min(0.99, max(0.01, opp.tokens[i]["price"] + 0.005)), 2)
+                        for i in range(2)
+                    )
+                    if total_cost_check >= 1.0:
+                        logger.info("arb_complement_skip_no_edge", market=opp.market_title[:60], total_cost=total_cost_check)
+                        skipped += 1
+                        continue
+
                     order_results = []
                     for i in range(2):
                         tid = str(opp.token_ids[i])
-                        price = min(0.99, min(0.99, max(0.01, round(opp.tokens[i]["price"] + SLIPPAGE, 4))))
+                        price = min(0.99, min(0.99, max(0.01, round(opp.tokens[i]["price"] + 0.005, 4))))
                         shares = min(round(min(size, MAX_PER_SIDE) / max(0.01, opp.tokens[i]["price"]), 2), 500)
                         logger.info(
                             "arb_order_debug",
