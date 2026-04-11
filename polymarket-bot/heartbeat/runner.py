@@ -119,6 +119,23 @@ class HeartbeatRunner:
         # 8. Save full report
         self._save_report(report)
 
+        # 8a. Publish heartbeat results to cortex for learning
+        try:
+            import redis
+            r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://redis:6379"))
+            r.publish("cortex:learn", json.dumps({
+                "category": "strategy_performance",
+                "title": f"Heartbeat review {report['timestamp']}",
+                "content": json.dumps(report, default=str)[:2000],
+                "source": "heartbeat",
+                "confidence": 0.9,
+                "importance": 7,
+                "tags": ["heartbeat", "daily_review"],
+            }))
+            r.close()
+        except Exception as e:
+            logger.error("cortex_publish_error", error=str(e))
+
         logger.info(
             "heartbeat_full_review_complete",
             strategies_reviewed=len(report["strategies"]),

@@ -644,6 +644,44 @@ services:
         max-size: "5m"
         max-file: "3"
 
+  cortex:
+    build:
+      context: .
+      dockerfile: cortex/Dockerfile
+    container_name: cortex
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - TZ=America/Denver
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_MODEL=${OLLAMA_CORTEX_MODEL:-qwen3:8b}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CORTEX_LOG_LEVEL=${CORTEX_LOG_LEVEL:-INFO}
+      - CORTEX_PORT=8102
+    ports:
+      - "127.0.0.1:8102:8102"
+    volumes:
+      - cortex_data:/data/cortex
+      - ./AGENT_LEARNINGS.md:/app/AGENT_LEARNINGS.md:ro
+      - ./polymarket-bot/ideas.txt:/app/ideas.txt:ro
+      - ./polymarket-bot/knowledge:/app/knowledge:ro
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8102/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 networks:
   default:
     ipam:
@@ -653,3 +691,4 @@ networks:
 volumes:
   openwebui:
   redis_data:
+  cortex_data:

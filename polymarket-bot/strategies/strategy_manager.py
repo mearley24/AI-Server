@@ -668,6 +668,39 @@ class StrategyManager:
             reason=reason,
         )
 
+        # 8d. Publish trade outcome to cortex for learning
+        try:
+            import redis as redis_sync
+            redis_url = os.environ.get("REDIS_URL", "")
+            if redis_url:
+                rc = redis_sync.from_url(redis_url, decode_responses=True, socket_timeout=2)
+                won = pnl >= 0
+                category_guess = ""
+                for kw in ("crypto", "weather", "esports", "tennis", "sports", "politics"):
+                    if kw in (market_question or "").lower():
+                        category_guess = kw
+                        break
+                rc.publish("cortex:learn", json.dumps({
+                    "category": "trading_rule",
+                    "title": f"Trade outcome: {(market_question or 'unknown')[:60]}",
+                    "content": (
+                        f"Strategy: {strategy}, "
+                        f"Entry: {registry_entry.entry_price:.3f}, "
+                        f"Exit: {exit_price:.3f}, "
+                        f"Size: ${registry_entry.size:.2f}, "
+                        f"Outcome: {'WIN' if won else 'LOSS'}, "
+                        f"P/L: ${pnl:.2f}, "
+                        f"Reason: {reason}"
+                    ),
+                    "source": "trade_outcome",
+                    "confidence": 1.0,
+                    "importance": 8,
+                    "tags": [strategy, "win" if won else "loss", category_guess],
+                }))
+                rc.close()
+        except Exception as _cortex_exc:
+            logger.debug("cortex_trade_outcome_error", error=str(_cortex_exc))
+
         return trade
 
     def get_strategy_bankroll(self, strategy: str) -> float:
@@ -679,6 +712,53 @@ class StrategyManager:
 
     def _total_pnl(self) -> float:
         return sum(p.total_pnl for p in self._pnl.values())
+
+    # ── Cortex Consultation (8b) ──────────────────────────────────────────────
+
+    async def _consult_cortex(
+        self,
+        market: str,
+        strategy_name: str,
+        entry_price: float,
+        size: float,
+    ) -> None:
+        """Ask the cortex if this trade aligns with learned rules (non-blocking).
+
+        Cortex failures must NEVER block or delay trade execution.
+        Future: make this blocking with a short timeout to act as a pre-trade gate.
+        """
+        try:
+            import uuid
+            redis_url = os.environ.get("REDIS_URL", "")
+            if not redis_url:
+                return
+            import redis as redis_sync
+            request_id = str(uuid.uuid4())[:8]
+            rc = redis_sync.from_url(redis_url, decode_responses=True, socket_timeout=1)
+            rc.publish("cortex:query", json.dumps({
+                "request_id": request_id,
+                "question": (
+                    f"Should I enter '{market}' at {entry_price:.3f} "
+                    f"for ${size:.2f} via {strategy_name}?"
+                ),
+                "context": {
+                    "market": market,
+                    "strategy": strategy_name,
+                    "entry_price": entry_price,
+                    "size": size,
+                },
+            }))
+            rc.close()
+            logger.debug(
+                "cortex_consulted",
+                market=market[:40],
+                strategy=strategy_name,
+                entry_price=entry_price,
+                request_id=request_id,
+            )
+        except Exception as exc:
+            # Cortex down must never block trading
+            logger.debug("cortex_consult_skipped", error=str(exc))
 
     # ── Monitoring Loops ──────────────────────────────────────────────────────
 
