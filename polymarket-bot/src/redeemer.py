@@ -131,7 +131,7 @@ POLYGON_RPCS = [
 ]
 
 # Gas settings
-MAX_GAS_PRICE_GWEI = 300  # Don't transact above this
+MAX_GAS_PRICE_GWEI = 800  # Polygon spikes past 300 normally; 800 still < $0.05/tx  # Don't transact above this
 
 
 class PolymarketRedeemer:
@@ -326,6 +326,14 @@ class PolymarketRedeemer:
         # Reset nonce tracker at start of each cycle
         self._next_nonce = None
 
+        # 0. Check gas token balance
+        matic_balance = self._get_matic_balance()
+        if matic_balance < 0.05:
+            logger.warning("redeemer_low_gas", matic_balance=round(matic_balance, 4))
+            self._last_cycle_at = time.time()
+            self._last_cycle_summary = {"error": "insufficient_gas_token", "matic_balance": round(matic_balance, 4)}
+            return {"error": "insufficient_gas_token", "matic_balance": round(matic_balance, 4)}
+
         # 1. Check gas price (head-of-cycle; each tx also refreshes inside _redeem_single)
         gas_price = self._w3.eth.gas_price
         gas_gwei = float(self._w3.from_wei(gas_price, "gwei"))
@@ -363,9 +371,10 @@ class PolymarketRedeemer:
         for pos in positions:
             condition_id = pos.get("conditionId", "")
             asset = pos.get("asset", "")
-            outcome_index = pos.get("outcomeIndex", -1)
+            outcome_index = int(pos.get("outcomeIndex", 0))
 
             if not condition_id or not asset:
+                logger.debug("redeemer_skip_missing_fields", title=pos.get("title", "?")[:40], has_cid=bool(condition_id), has_asset=bool(asset))
                 continue
             if condition_id in self._redeemed_conditions:
                 continue
@@ -453,8 +462,8 @@ class PolymarketRedeemer:
             value = pos.get("_expected_usdc", 0)
 
             try:
-                is_neg_risk = pos.get("negativeRisk", False)
-                outcome_index = pos.get("outcomeIndex", 0)
+                is_neg_risk = pos.get("neg_risk", pos.get("negativeRisk", False))
+                outcome_index = int(pos.get("outcomeIndex", 0))
                 token_balance_raw = int(pos.get("_token_balance", 0) * 1e6)
                 tx_hash = await self._redeem_single(
                     condition_id,
@@ -472,10 +481,15 @@ class PolymarketRedeemer:
                         value=round(value, 2),
                         tx_hash=tx_hash,
                     )
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(4.0)  # 4s for nonce propagation
             except Exception as exc:
                 err_msg = str(exc)
-                self._next_nonce = None  # Reset nonce on error to re-fetch
+                if "nonce" in err_msg.lower():
+                    logger.warning("redeemer_nonce_error", title=title, error=err_msg[:80])
+                    self._next_nonce = None
+                    await asyncio.sleep(5)
+                else:
+                    self._next_nonce = None  # Reset nonce on error to re-fetch
                 errors.append({"condition_id": condition_id[:20], "error": err_msg[:80]})
                 logger.error(
                     "redeemer_redeem_error",

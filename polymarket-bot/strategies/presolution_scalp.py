@@ -251,12 +251,14 @@ class PresolutionScalpStrategy(BaseStrategy):
                     self._llm_cache[cid] = approve
                     return approve
             except Exception as exc:
-                logger.info("presolution_scalp.ollama_validate_skip: %s", str(exc)[:100])
+                logger.warning("presolution_scalp.ollama_validate_skip: %s", str(exc)[:100])
+                self._llm_cache[cid] = False
+                return False  # REJECT when Ollama is down
 
         key = os.environ.get("OPENAI_API_KEY", "")
         if not key:
-            self._llm_cache[cid] = True
-            return True
+            self._llm_cache[cid] = False
+            return False  # REJECT when no LLM available
         logger.warning("using_openai_for_presolution_scalp_validation — Ollama unavailable")
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
@@ -273,7 +275,7 @@ class PresolutionScalpStrategy(BaseStrategy):
                 txt = data["choices"][0]["message"]["content"]
                 approve = _parse_approve_from_llm_text(txt)
         except Exception:
-            approve = True
+            approve = False  # REJECT when OpenAI fails
         self._llm_cache[cid] = approve
         return approve
 

@@ -791,6 +791,13 @@ class SpreadArbScanner:
 
         while self._running:
             try:
+                # Clean up stale positions (>24h) to prevent exposure leak
+                now_cleanup = time.time()
+                stale_keys = [k for k, v in self._positions.items() if now_cleanup - v.get("entered_at", 0) > 86400]
+                for k in stale_keys:
+                    stale_pos = self._positions.pop(k)
+                    logger.info("spread_arb_cleared_stale", position_id=k[:20], market=stale_pos.get("market", "")[:40], age_hours=round((now_cleanup - stale_pos.get("entered_at", 0)) / 3600, 1))
+
                 opps = await self.scan_once()
                 executed = 0
                 skipped = 0

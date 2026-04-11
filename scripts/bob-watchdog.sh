@@ -146,7 +146,7 @@ check_containers() {
     local running missing=""
     running=$(docker ps --format '{{.Names}}' 2>/dev/null)
 
-    for svc in openclaw email-monitor redis notification-hub calendar-agent proposals dtools-bridge mission-control knowledge-scanner clawwork voice-receptionist openwebui remediator vpn polymarket-bot intel-feeds context-preprocessor; do
+    for svc in openclaw email-monitor redis notification-hub calendar-agent proposals dtools-bridge mission-control knowledge-scanner clawwork voice-receptionist openwebui remediator vpn polymarket-bot intel-feeds context-preprocessor x-intake client-portal; do
         echo "$running" | grep -q "^${svc}$" || missing="$missing $svc"
     done
 

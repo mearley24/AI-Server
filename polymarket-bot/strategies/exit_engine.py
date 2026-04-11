@@ -141,8 +141,8 @@ class ExitEngine:
         effective_sl = tracker._sl_override if tracker._sl_override > 0 else self._sl
         effective_time_hours = tracker._time_hours_override if tracker._time_hours_override > 0 else self._time_hours
 
-        # 0. HOLD RULE: cheap entries (< 35¢) — defer stop-loss first 6h unless down 80%+
-        cheap_entry = entry < 0.35
+        # 0. HOLD RULE: cheap entries (< 25¢) — defer stop-loss first 6h unless down 80%+
+        cheap_entry = entry < 0.25
         skip_early_stop = cheap_entry and hold_hours < 6.0 and pnl_pct > -0.80
 
         # 1. Stop-loss: category-specific drop from entry → sell all
