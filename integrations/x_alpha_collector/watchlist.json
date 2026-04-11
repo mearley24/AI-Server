@@ -1,0 +1,77 @@
+{
+  "description": "Curated X accounts for Polymarket/prediction market alpha",
+  "last_updated": "2026-04-11",
+  "accounts": {
+    "polymarket_whales": {
+      "description": "Top Polymarket traders with >$100k PnL",
+      "handles": [
+        "Domahhhh",
+        "verrissimus",
+        "aenews",
+        "HarveyMackinto2",
+        "debased_PM",
+        "scottonPoly",
+        "r_gopfan",
+        "IvanCryptoSlav",
+        "MrOziPM",
+        "MEPPonPM",
+        "cashyPoly",
+        "denizz_poly",
+        "SemioticRivalry",
+        "tsybka",
+        "tenad0me",
+        "DidiTrading",
+        "KimballDavies",
+        "AnjunPoly",
+        "BrokieTrades"
+      ]
+    },
+    "prediction_market_intel": {
+      "description": "Prediction market analysis and news accounts",
+      "handles": [
+        "PolymarketTrade",
+        "Polymarket",
+        "KalshiXchanges",
+        "ManifoldMarkets",
+        "StarsAndStripes",
+        "NateSilver538",
+        "EuroMcKinney",
+        "PredictHQ"
+      ]
+    },
+    "trading_alpha": {
+      "description": "Trading strategy, on-chain analysis, and alpha accounts",
+      "handles": [
+        "DefiIgnas",
+        "Route2FI",
+        "CryptoCobain",
+        "coaborneogadget",
+        "whale_alert",
+        "WatcherGuru",
+        "lookonchain",
+        "EmberCN"
+      ]
+    },
+    "ai_agents_infra": {
+      "description": "AI agents, MCP, autonomous systems",
+      "handles": [
+        "AnthropicAI",
+        "OpenAI",
+        "kaborneogadget",
+        "cursor_ai",
+        "windaborneog",
+        "replaborneog"
+      ]
+    },
+    "macro_and_weather": {
+      "description": "Fed, macro, weather for weather_trader strategy",
+      "handles": [
+        "NWSStormReports",
+        "NWS",
+        "CMaborneogGroup",
+        "zaborneog",
+        "NickTimaborneog"
+      ]
+    }
+  }
+}
