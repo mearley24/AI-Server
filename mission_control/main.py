@@ -185,15 +185,28 @@ async def ops_page():
 
 @app.get("/api/wallet")
 async def api_wallet():
-    """Portfolio wallet summary — Redis first, polymarket-bot fallback."""
-    empty = {"usdc_balance": 0.0, "position_value": 0.0, "daily_pnl": 0.0, "weekly_pnl": 0.0, "error": "unavailable"}
+    """Portfolio wallet summary with categorized position breakdown.
+
+    Returns liquid USDC, active position value (tradeable only),
+    redeemable wins (free money awaiting redemption), and lost/dust counts.
+    """
+    empty = {
+        "usdc_balance": 0.0, "position_value": 0.0,
+        "active_value": 0.0, "redeemable_value": 0.0, "redeemable_count": 0,
+        "lost_count": 0, "dust_count": 0,
+        "daily_pnl": 0.0, "weekly_pnl": 0.0, "error": "unavailable",
+    }
     try:
         r = _get_redis()
         if r:
             try:
                 snap = r.get("portfolio:snapshot")
                 if snap:
-                    return json.loads(snap)
+                    data = json.loads(snap)
+                    # Ensure categorized fields are present (backwards compat)
+                    for key in ("active_value", "redeemable_value", "redeemable_count", "lost_count", "dust_count"):
+                        data.setdefault(key, 0)
+                    return data
             except Exception:
                 pass
         # Fallback: HTTP to polymarket-bot
@@ -204,6 +217,11 @@ async def api_wallet():
                 return {
                     "usdc_balance": float(data.get("usdc_balance", 0)),
                     "position_value": float(data.get("position_value", 0)),
+                    "active_value": float(data.get("active_value", 0)),
+                    "redeemable_value": float(data.get("redeemable_value", 0)),
+                    "redeemable_count": int(data.get("redeemable_count", 0)),
+                    "lost_count": int(data.get("lost_count", 0)),
+                    "dust_count": int(data.get("dust_count", 0)),
                     "daily_pnl": float(data.get("daily_pnl", 0)),
                     "weekly_pnl": float(data.get("weekly_pnl", 0)),
                 }
