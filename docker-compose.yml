@@ -600,7 +600,6 @@ services:
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
       - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - WHISPER_MODEL=${WHISPER_MODEL:-base}
-      - WATCHED_MARKETS=bitcoin,ethereum,fed,election,ai,trump,recession,interest rate
     depends_on:
       redis:
         condition: service_healthy
