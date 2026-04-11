@@ -301,6 +301,165 @@ def _analyze_url_sync(url: str) -> dict:
         loop.close()
 
 
+def _extract_polymarket_signals(text: str, author: str, transcript: str = "") -> dict:
+    """Extract Polymarket-specific trading signals from analyzed content."""
+    api_key = OPENAI_API_KEY
+    if not api_key:
+        return {"signals": [], "strategies": [], "market_keywords": []}
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+
+        content = f"Post by @{author}:\n{text}"
+        if transcript:
+            content += f"\n\nVideo transcript:\n{transcript[:6000]}"
+
+        prompt = f"""You are a Polymarket trading signal extractor. Analyze this X post for actionable Polymarket trading intelligence.
+
+{content}
+
+Extract in this exact JSON format:
+{{
+    "signals": [
+        {{
+            "market_keyword": "search term to find this market on Polymarket",
+            "direction": "yes|no",
+            "confidence": 0.0-1.0,
+            "reasoning": "why this signal matters",
+            "timeframe": "hours|days|weeks",
+            "source_credibility": "high|medium|low"
+        }}
+    ],
+    "strategies": [
+        {{
+            "name": "strategy name",
+            "description": "what to implement",
+            "parameters": {{}},
+            "applicable_to": ["weather_trader", "copytrade", "spread_arb", "mean_reversion", "presolution_scalp"]
+        }}
+    ],
+    "market_keywords": ["keywords to search Polymarket API for related markets"],
+    "risk_warnings": ["any warnings about current positions or market conditions"],
+    "alpha_insights": ["specific edges or inefficiencies mentioned"]
+}}
+
+Rules:
+- Only include signals with genuine predictive value for Polymarket outcomes
+- market_keyword should match how Polymarket titles their markets (e.g. "Will Bitcoin reach $100k", "Fed rate cut", "Trump win")
+- If the post discusses a strategy that could improve our bot, include it in strategies
+- applicable_to should reference our actual strategy names
+- Be conservative with confidence scores
+- If the post has no Polymarket relevance, return empty arrays"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            max_tokens=800,
+            temperature=0.2,
+        )
+
+        return json.loads(response.choices[0].message.content)
+
+    except Exception as e:
+        logger.warning("polymarket_signal_extraction_failed", error=str(e)[:200])
+        return {"signals": [], "strategies": [], "market_keywords": []}
+
+
+async def _publish_to_bot(url: str, author: str, analysis: dict, poly_signals: dict) -> None:
+    """Publish trading signals to polymarket-bot via Redis."""
+    try:
+        import redis.asyncio as aioredis
+        client = aioredis.from_url(REDIS_URL, decode_responses=True)
+
+        relevance = analysis.get("relevance", 0)
+
+        # Publish to polymarket:intel_signals (bot already listens here)
+        intel_payload = {
+            "source": "x_intake",
+            "author": author,
+            "url": url,
+            "relevance": relevance,
+            "summary": analysis.get("summary", "")[:500],
+            "type": analysis.get("type", "info"),
+            "action": analysis.get("action", "none"),
+            "signals": poly_signals.get("signals", []),
+            "market_keywords": poly_signals.get("market_keywords", []),
+            "risk_warnings": poly_signals.get("risk_warnings", []),
+            "alpha_insights": poly_signals.get("alpha_insights", []),
+            "timestamp": int(__import__("time").time()),
+        }
+
+        # Only publish to bot if relevance >= 40 (avoid noise)
+        if relevance >= 40 or poly_signals.get("signals"):
+            await client.publish("polymarket:intel_signals", json.dumps(intel_payload))
+            logger.info("published_to_bot_intel", author=author, relevance=relevance)
+
+        # Publish strategy suggestions to dedicated channel
+        if poly_signals.get("strategies"):
+            strat_payload = {
+                "source": "x_intake",
+                "author": author,
+                "url": url,
+                "strategies": poly_signals["strategies"],
+                "timestamp": int(__import__("time").time()),
+            }
+            await client.publish("polymarket:x_strategies", json.dumps(strat_payload))
+            logger.info("published_strategy_suggestions", count=len(poly_signals["strategies"]))
+
+        await client.aclose()
+
+    except Exception as exc:
+        logger.warning("redis_publish_to_bot_failed", error=str(exc)[:200])
+
+
+async def _ingest_to_knowledge(url: str, author: str, summary: str, poly_signals: dict) -> None:
+    """Ingest X post analysis into the polymarket-bot knowledge graph via Redis."""
+    try:
+        import redis.asyncio as aioredis
+        client = aioredis.from_url(REDIS_URL, decode_responses=True)
+
+        # Build a structured knowledge payload
+        knowledge_text = f"X Intel from @{author}:\n{summary}\n\n"
+
+        if poly_signals.get("alpha_insights"):
+            knowledge_text += "Alpha Insights:\n"
+            for insight in poly_signals["alpha_insights"]:
+                knowledge_text += f"- {insight}\n"
+
+        if poly_signals.get("strategies"):
+            knowledge_text += "\nStrategy Suggestions:\n"
+            for strat in poly_signals["strategies"]:
+                if isinstance(strat, dict):
+                    knowledge_text += f"- {strat.get('name', '')}: {strat.get('description', '')}\n"
+                    if strat.get("parameters"):
+                        knowledge_text += f"  Parameters: {json.dumps(strat['parameters'])}\n"
+
+        if poly_signals.get("risk_warnings"):
+            knowledge_text += "\nRisk Warnings:\n"
+            for warning in poly_signals["risk_warnings"]:
+                knowledge_text += f"- {warning}\n"
+
+        payload = {
+            "action": "ingest",
+            "source_url": url,
+            "source_type": "x_intake",
+            "author": author,
+            "text": knowledge_text,
+            "signals": poly_signals.get("signals", []),
+            "market_keywords": poly_signals.get("market_keywords", []),
+            "timestamp": int(__import__("time").time()),
+        }
+
+        await client.publish("polymarket:knowledge_ingest", json.dumps(payload))
+        logger.info("knowledge_ingest_published", author=author)
+        await client.aclose()
+
+    except Exception as exc:
+        logger.warning("knowledge_ingest_failed", error=str(exc)[:200])
+
+
 async def _send_reply(text: str) -> None:
     """Send analysis result back via iMessage bridge."""
     try:
@@ -313,19 +472,45 @@ async def _send_reply(text: str) -> None:
 
 
 async def _process_url_and_reply(url: str) -> None:
-    """Analyze a tweet URL and send the result via iMessage.
-
-    Runs as a background asyncio task. The heavy synchronous work (download,
-    transcribe, LLM analyze) is offloaded to a thread pool via asyncio.to_thread
-    so the main event loop stays responsive to health checks.
-    """
+    """Analyze a tweet URL, publish signals to bot, and send result via iMessage."""
     try:
         result = await asyncio.to_thread(_analyze_url_sync, url)
         summary = ""
+        author = ""
+        transcript = ""
+
         if isinstance(result, dict):
             analysis = result.get("analysis", {})
+            author = result.get("author", "")
             if isinstance(analysis, dict):
                 summary = analysis.get("summary", "")
+
+            # NEW: Extract Polymarket-specific signals
+            post_text = summary  # Use the summary as context
+            poly_signals = await asyncio.to_thread(
+                _extract_polymarket_signals, post_text, author, transcript
+            )
+
+            # NEW: Publish to polymarket-bot via Redis
+            relevance = 0
+            if isinstance(analysis, dict):
+                # Parse relevance from summary text
+                import re as _re
+                rel_match = _re.search(r"Relevance:\s*(\d+)%", summary)
+                if rel_match:
+                    relevance = int(rel_match.group(1))
+
+            await _publish_to_bot(url, author, {
+                "summary": summary,
+                "relevance": relevance,
+                "type": "info",
+                "action": "none",
+            }, poly_signals)
+
+            # NEW: Ingest into knowledge graph if high relevance
+            if relevance >= 50 or poly_signals.get("signals"):
+                await _ingest_to_knowledge(url, author, summary, poly_signals)
+
         if summary:
             await _send_reply(f"X Analysis:\n{summary}")
         elif isinstance(result, dict) and result.get("error"):

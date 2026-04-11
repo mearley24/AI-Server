@@ -99,10 +99,12 @@ async def _start_redis_listener(settings, signal_bus, log) -> asyncio.Task | Non
                 "polymarket:ta_signals",
                 "polymarket:intel_signals",
                 "polymarket:volume_alerts",
+                "polymarket:knowledge_ingest",
+                "polymarket:x_strategies",
             )
             log.info(
                 "redis_listener_started",
-                channels=["polymarket:ta_signals", "polymarket:intel_signals", "polymarket:volume_alerts"],
+                channels=["polymarket:ta_signals", "polymarket:intel_signals", "polymarket:volume_alerts", "polymarket:knowledge_ingest", "polymarket:x_strategies"],
             )
 
             async for message in pubsub.listen():
@@ -138,6 +140,46 @@ async def _start_redis_listener(settings, signal_bus, log) -> asyncio.Task | Non
                             "volume_spike_received",
                             market_id=data.get("market_id", ""),
                             summary=str(data.get("summary", ""))[:80],
+                        )
+                    elif channel == "polymarket:knowledge_ingest":
+                        # Ingest X intel into knowledge graph
+                        try:
+                            from knowledge.ingest import KnowledgeIngester
+                            ingester = KnowledgeIngester()
+                            await ingester.ingest_text(
+                                text=data.get("text", ""),
+                                source_url=data.get("source_url"),
+                                source_type="x_intake",
+                            )
+                            log.info(
+                                "x_intel_ingested",
+                                author=data.get("author", ""),
+                                source_url=data.get("source_url", ""),
+                            )
+                        except Exception as ingest_exc:
+                            log.warning("x_intel_ingest_failed", error=str(ingest_exc)[:200])
+
+                    elif channel == "polymarket:x_strategies":
+                        # Log strategy suggestions for heartbeat review
+                        strategies = data.get("strategies", [])
+                        for strat in strategies:
+                            if isinstance(strat, dict):
+                                signal = Signal(
+                                    signal_type=SignalType.MARKET_DATA,
+                                    source="x_strategy_suggestion",
+                                    data={
+                                        "strategy_name": strat.get("name", ""),
+                                        "description": strat.get("description", ""),
+                                        "applicable_to": strat.get("applicable_to", []),
+                                        "parameters": strat.get("parameters", {}),
+                                        "author": data.get("author", ""),
+                                    },
+                                )
+                                await signal_bus.publish(signal)
+                        log.info(
+                            "x_strategy_suggestions_received",
+                            count=len(strategies),
+                            author=data.get("author", ""),
                         )
                     else:
                         signal = Signal(
@@ -444,6 +486,16 @@ async def lifespan(app: FastAPI):
 
     # Start components
     await signal_bus.start()
+
+    # Register X Intel Processor
+    try:
+        from strategies.x_intel_processor import XIntelProcessor
+        x_intel = XIntelProcessor()
+        signal_bus.subscribe(SignalType.MARKET_DATA, x_intel.on_intel_signal)
+        log.info("x_intel_processor_registered")
+    except Exception as exc:
+        log.warning("x_intel_processor_failed", error=str(exc)[:100])
+
     await orderbook.start()
     await latency_detector.start()
     await order_flow.start()
