@@ -9,33 +9,33 @@
   },
   "projects": [
     {
-      "id": "topletz-84-aspen-meadow",
-      "name": "Topletz Residence",
-      "location": "Aspen Meadow, CO",
-      "completion_date": "2026-05",
+      "id": "bachelor-gulch-ski-estate",
+      "name": "Bachelor Gulch Ski Estate",
+      "location": "Bachelor Gulch, CO",
+      "completion_date": "2025-10",
       "categories": ["whole-home", "lighting", "audio", "security"],
       "featured": true,
-      "scope": "Control4 whole-home automation, Lutron RadioRA3 lighting, 12-zone Sonos audio, Luma 4K security, structured wiring throughout.",
-      "description": "A 6,800 sq ft mountain retreat in Aspen Meadow received a ground-up smart-home integration. Every room is unified under Control4 — from morning wake scenes that gradually raise Lutron shades and warm the lighting to theater mode that dims the great room, drops the projection screen, and launches the system in one tap. Twelve Sonos zones distribute music from the ski locker to the master suite. Luma 4K cameras cover every approach, with full remote management via the Control4 app.",
+      "scope": "Control4 whole-home automation, Lutron RadioRA3 lighting, 14-zone Sonos audio, Luma 4K security, structured wiring throughout.",
+      "description": "A 7,200 sq ft ski-in ski-out estate in Bachelor Gulch received a comprehensive smart-home overhaul during a major renovation. Every room is unified under Control4 — from morning wake scenes that gradually raise Lutron shades and warm the lighting to movie night mode that dims the great room, drops the projection screen, and launches the system in one tap. Fourteen Sonos zones push music from the mudroom boot warmers to the rooftop hot tub deck. Luma 4K cameras cover every approach and the ski locker entry, with full remote monitoring via the Control4 app. A dedicated network closet houses Araknis switching with dual-WAN failover — critical when the owners manage their property remotely from Dallas most of the year.",
       "photos": [],
       "featured_photo": null,
       "photo_credits": null,
       "testimonial": {
-        "quote": "Symphony turned a complicated wishlist into a system my whole family actually uses every day. The lighting scenes alone were worth every penny.",
-        "author": "M. Topletz",
-        "title": "Homeowner, Aspen Meadow"
+        "quote": "We manage everything from Texas and it just works. Symphony built a system we can trust from 1,000 miles away.",
+        "author": "J. & K. Warren",
+        "title": "Homeowners, Bachelor Gulch"
       },
       "systems_installed": [
         "Control4 EA-5 Controller",
-        "Control4 T4 Series Touchscreens",
+        "Control4 T4 Series Touchscreens (×6)",
         "Lutron RadioRA3 Whole-Home Dimming",
-        "Lutron Palladiom Shading",
-        "Sonos Era 300 (×4) / Era 100 (×8)",
-        "Luma 4K IP Cameras (×14)",
-        "Araknis AN-810 Wireless"
+        "Lutron Palladiom Shading (×18)",
+        "Sonos Era 300 (×6) / Era 100 (×8)",
+        "Luma 4K IP Cameras (×16)",
+        "Araknis AN-810 Wireless + Dual-WAN Router"
       ],
       "value_range": "premium",
-      "square_footage": 6800
+      "square_footage": 7200
     },
     {
       "id": "vail-creek-manor-theater",
