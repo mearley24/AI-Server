@@ -606,11 +606,63 @@ services:
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health')"]
       interval: 30s
-      timeout: 120s
-      retries: 5
+      timeout: 5s
+      retries: 3
       start_period: 15s
     networks:
       - default
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── File Watcher ─────────────────────────────────────────────────────────────
+  # Watches iCloud SymphonySH/Projects/ for new PDFs and syncs them to Dropbox.
+  # NOTE: LaunchAgent mode (setup/launchd/com.symphony.file-watcher.plist) is
+  # recommended because brctl (iCloud stub download) is macOS-only and does not
+  # work inside Docker. Use Docker only when iCloud files are always fully local.
+  file-watcher:
+    build:
+      context: ./services/file-watcher
+    container_name: file-watcher
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - IS_DOCKER=true
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - NOTIFICATION_HUB_URL=http://notification-hub:8095
+      - OPENCLAW_URL=http://openclaw:3000
+      - CORTEX_URL=http://openclaw:3000
+      - MATT_PHONE_NUMBER=${MATT_PHONE_NUMBER:-}
+      - DROPBOX_APP_KEY=${DROPBOX_APP_KEY:-}
+      - DROPBOX_APP_SECRET=${DROPBOX_APP_SECRET:-}
+      - DROPBOX_REFRESH_TOKEN=${DROPBOX_REFRESH_TOKEN:-}
+      - PORT=8102
+      - TZ=America/Denver
+    ports:
+      - "127.0.0.1:8102:8102"
+    volumes:
+      # iCloud: read-only (we only read from here)
+      - "/Users/bob/Library/Mobile Documents/com~apple~CloudDocs/Symphony SH:/data/icloud:ro"
+      # Dropbox: read-write (we copy files here and move misplaced files)
+      - "/Users/bob/Library/CloudStorage/Dropbox-Personal:/data/dropbox"
+      # Persist idempotency DB
+      - ./data/file-watcher:/tmp
+      # Live project config — no rebuild needed when projects.json changes
+      - ./services/file-watcher/projects.json:/app/projects.json:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      notification-hub:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8102/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:

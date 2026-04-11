@@ -1,0 +1,17 @@
+{
+  "_comment": "Project mapping for the file-watcher service. Add new projects here. Keywords are matched case-insensitively against incoming filenames.",
+  "topletz": {
+    "address": "84 Aspen Meadow",
+    "client": "Steve Topletz",
+    "client_email": "stopletz1@gmail.com",
+    "dropbox_folder": "Topletz",
+    "keywords": ["topletz", "toplets", "aspen meadow", "p-119", "Q-212"]
+  },
+  "timber-ridge": {
+    "address": "Timber Ridge",
+    "client": "Austin Hukill",
+    "client_email": "",
+    "dropbox_folder": "Timber Ridge",
+    "keywords": ["timber", "timber-ridge", "shaw", "hukill"]
+  }
+}

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.symphony.file-watcher.plist
+  ================================
+  Runs the Symphony File Watcher natively on Bob (LaunchAgent).
+  Native mode is recommended over Docker because brctl (iCloud stub
+  force-download) only works on macOS.
+
+  Install:
+    cp ~/AI-Server/setup/launchd/com.symphony.file-watcher.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.symphony.file-watcher.plist
+
+  Check status:
+    launchctl list | grep file-watcher
+    curl http://127.0.0.1:8102/health
+
+  Logs:
+    tail -f /tmp/file-watcher.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.symphony.file-watcher</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bob/AI-Server/services/file-watcher/run.sh</string>
+  </array>
+
+  <!-- Start automatically when Bob logs in -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart on crash -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Stdout/stderr both go to the shared log -->
+  <key>StandardOutPath</key>
+  <string>/tmp/file-watcher.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/file-watcher.log</string>
+
+  <!-- Working directory -->
+  <key>WorkingDirectory</key>
+  <string>/Users/bob/AI-Server/services/file-watcher</string>
+
+  <!-- Throttle restart to avoid rapid crash loops -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+</dict>
+</plist>
