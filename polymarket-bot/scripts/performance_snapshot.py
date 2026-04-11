@@ -116,7 +116,23 @@ def main():
 
     # 7. Recent trades (last 2 hours)
     cutoff = time.time() - 7200
-    recent = [t for t in trades if float(t.get("timestamp", 0) or 0) > cutoff]
+
+    def _ts_to_epoch(ts_val: str) -> float:
+        """Parse epoch float or ISO-8601 string to a unix timestamp."""
+        if not ts_val:
+            return 0.0
+        try:
+            return float(ts_val)
+        except ValueError:
+            pass
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(ts_val.replace("Z", "+00:00"))
+            return dt.replace(tzinfo=dt.tzinfo or timezone.utc).timestamp()
+        except Exception:
+            return 0.0
+
+    recent = [t for t in trades if _ts_to_epoch(t.get("timestamp", "") or "") > cutoff]
     buys = [t for t in recent if t.get("side") == "BUY"]
     sells = [t for t in recent if t.get("side") == "SELL"]
     print(f"LAST 2 HOURS: {len(buys)} buys, {len(sells)} sells")
