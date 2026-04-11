@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Symphony Smart Homes — Portfolio of smart home, theater, lighting, and AV projects across Vail, Beaver Creek, Edwards, Avon, Eagle." />
+  <title>Portfolio — Symphony Smart Homes</title>
+
+  <!-- Fonts: Cabinet Grotesk (display) + Satoshi (body) via Fontshare -->
+  <link
+    href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,600,700,800,900&f[]=satoshi@400,500,700&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="static/style.css" />
+  <link rel="icon" type="image/svg+xml" href="static/favicon.svg" />
+</head>
+<body>
+
+  <!-- ── NAV ─────────────────────────────────────────────────── -->
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="index.html" class="site-logo" aria-label="Symphony Smart Homes — Portfolio Home">
+        <!-- Inline SVG Logo -->
+        <svg class="logo-mark" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="1.5"/>
+          <circle cx="20" cy="20" r="10" stroke="var(--color-gold)" stroke-width="1.5"/>
+          <path d="M13 20 Q16.5 14 20 20 Q23.5 26 27 20" stroke="var(--color-gold)" stroke-width="2" stroke-linecap="round" fill="none"/>
+          <circle cx="20" cy="20" r="2" fill="var(--color-gold)"/>
+          <!-- Wi-Fi arcs -->
+          <path d="M8 20 a12 12 0 0 1 24 0" stroke="currentColor" stroke-width="1" stroke-opacity="0.4" fill="none"/>
+        </svg>
+        <span class="logo-text">
+          <span class="logo-name">Symphony</span>
+          <span class="logo-sub">Smart Homes</span>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="index.html" class="nav-link nav-link--active">Portfolio</a>
+        <a href="https://symphonysh.com" class="nav-link" target="_blank" rel="noopener">About</a>
+        <a href="https://symphonysh.com/contact" class="nav-link nav-link--cta" target="_blank" rel="noopener">Get a Quote</a>
+      </nav>
+
+      <button class="theme-toggle" data-theme-toggle aria-label="Switch to light mode">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── PAGE CONTENT ─────────────────────────────────────────── -->
+  <main id="main-content">
+
+  <!-- ── HERO ─────────────────────────────────────────────────── -->
+  <section class="portfolio-hero">
+    <div class="hero-inner">
+      <p class="hero-eyebrow">
+        <span class="eyebrow-line"></span>
+        Our Work
+        <span class="eyebrow-line"></span>
+      </p>
+      <h1 class="hero-title">Every Room.<br>Every System.<br><em>One Vision.</em></h1>
+      <p class="hero-sub">From Vail's ski-in estates to Eagle County commercial builds — here's what we've built.</p>
+    </div>
+    <div class="hero-scroll-indicator" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    </div>
+  </section>
+
+  <!-- ── FILTERS ───────────────────────────────────────────────── -->
+  <section class="filter-section" aria-label="Filter projects by category">
+    <div class="filter-inner">
+      <div class="filter-bar" role="group" aria-label="Category filters">
+        <button class="filter-btn filter-btn--active" data-filter="all">All Projects</button>
+        <button class="filter-btn" data-filter="whole-home">Whole-Home</button>
+        <button class="filter-btn" data-filter="theater">Home Theater</button>
+        <button class="filter-btn" data-filter="lighting">Lighting</button>
+        <button class="filter-btn" data-filter="audio">Audio</button>
+        <button class="filter-btn" data-filter="networking">Networking</button>
+        <button class="filter-btn" data-filter="outdoor">Outdoor</button>
+        <button class="filter-btn" data-filter="security">Security</button>
+        <button class="filter-btn" data-filter="commercial">Commercial</button>
+      </div>
+      <p class="filter-count" aria-live="polite">
+        <span id="visible-count">5</span> of 5 projects
+      </p>
+    </div>
+  </section>
+
+  <!-- ── PROJECT GRID ──────────────────────────────────────────── -->
+  <section class="portfolio-grid-section">
+    <div class="portfolio-grid">
+
+      <article
+        class="project-card project-card--featured"
+        data-categories="whole-home lighting audio security"
+        aria-label="Topletz Residence"
+      >
+        <!-- Card photo / placeholder -->
+        <a href="topletz-84-aspen-meadow.html" class="card-photo-link" tabindex="-1" aria-hidden="true">
+          <div class="card-photo">
+            <div class="card-photo-placeholder">
+              <!-- Architectural placeholder SVG -->
+              <svg class="placeholder-icon" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="10" y="30" width="60" height="22" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M10 30 L40 10 L70 30" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <rect x="33" y="38" width="14" height="14" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="16" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="54" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <circle cx="60" cy="18" r="4" stroke="var(--color-gold)" stroke-width="1.5" fill="none"/>
+                <path d="M58 18 Q59 16 60 18 Q61 20 62 18" stroke="var(--color-gold)" stroke-width="1" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+
+            <!-- Category badges -->
+            <div class="card-badges">
+              <span class="badge">Whole-Home</span>
+              <span class="badge">Lighting</span>
+              <span class="badge badge--more">+2</span>
+            </div>
+
+            <!-- Value tier indicator -->
+            <span class="card-tier card-tier--premium">Premium</span>
+          </div>
+        </a>
+
+        <!-- Card body -->
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-location">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Aspen Meadow, CO
+            </span>
+            <span class="card-date">May 2026</span>
+          </div>
+
+          <h2 class="card-title">
+            <a href="topletz-84-aspen-meadow.html" class="card-title-link">Topletz Residence</a>
+          </h2>
+
+          <p class="card-scope">Control4 whole-home automation, Lutron RadioRA3 lighting, 12-zone Sonos audio, Luma 4K security, structured wiring throughout.</p>
+
+          <blockquote class="card-testimonial">
+            <p>"Symphony turned a complicated wishlist into a system my whole family actually uses every day. The lighting scenes..."</p>
+            <cite>— M. Topletz</cite>
+          </blockquote>
+
+          <a href="topletz-84-aspen-meadow.html" class="card-cta">
+            View Project
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </article>
+      <article
+        class="project-card"
+        data-categories="networking commercial lighting"
+        aria-label="Riverwalk Tech Hub"
+      >
+        <!-- Card photo / placeholder -->
+        <a href="edwards-tech-hub-commercial.html" class="card-photo-link" tabindex="-1" aria-hidden="true">
+          <div class="card-photo">
+            <div class="card-photo-placeholder">
+              <!-- Architectural placeholder SVG -->
+              <svg class="placeholder-icon" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="10" y="30" width="60" height="22" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M10 30 L40 10 L70 30" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <rect x="33" y="38" width="14" height="14" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="16" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="54" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <circle cx="60" cy="18" r="4" stroke="var(--color-gold)" stroke-width="1.5" fill="none"/>
+                <path d="M58 18 Q59 16 60 18 Q61 20 62 18" stroke="var(--color-gold)" stroke-width="1" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+
+            <!-- Category badges -->
+            <div class="card-badges">
+              <span class="badge">Networking</span>
+              <span class="badge">Commercial</span>
+              <span class="badge badge--more">+1</span>
+            </div>
+
+            <!-- Value tier indicator -->
+            <span class="card-tier card-tier--standard">Standard</span>
+          </div>
+        </a>
+
+        <!-- Card body -->
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-location">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Edwards, CO
+            </span>
+            <span class="card-date">June 2025</span>
+          </div>
+
+          <h2 class="card-title">
+            <a href="edwards-tech-hub-commercial.html" class="card-title-link">Riverwalk Tech Hub</a>
+          </h2>
+
+          <p class="card-scope">High-density Wi-Fi 6E campus network, Cisco Meraki SD-WAN, structured cabling Cat6A and OS2 fiber, Lutron Vive commercial lighting controls across 8,400 sq ft of mixed-use flex space.</p>
+
+          <blockquote class="card-testimonial">
+            <p>"Our network has been rock solid since Symphony handed it over. Zero calls from tenants about Wi-Fi. That&#39;s a first."</p>
+            <cite>— T. Ortega</cite>
+          </blockquote>
+
+          <a href="edwards-tech-hub-commercial.html" class="card-cta">
+            View Project
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </article>
+      <article
+        class="project-card"
+        data-categories="outdoor audio lighting security"
+        aria-label="Arrowhead Village — Outdoor Living"
+      >
+        <!-- Card photo / placeholder -->
+        <a href="arrowhead-outdoor-entertainment.html" class="card-photo-link" tabindex="-1" aria-hidden="true">
+          <div class="card-photo">
+            <div class="card-photo-placeholder">
+              <!-- Architectural placeholder SVG -->
+              <svg class="placeholder-icon" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="10" y="30" width="60" height="22" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M10 30 L40 10 L70 30" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <rect x="33" y="38" width="14" height="14" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="16" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="54" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <circle cx="60" cy="18" r="4" stroke="var(--color-gold)" stroke-width="1.5" fill="none"/>
+                <path d="M58 18 Q59 16 60 18 Q61 20 62 18" stroke="var(--color-gold)" stroke-width="1" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+
+            <!-- Category badges -->
+            <div class="card-badges">
+              <span class="badge">Outdoor</span>
+              <span class="badge">Audio</span>
+              <span class="badge badge--more">+2</span>
+            </div>
+
+            <!-- Value tier indicator -->
+            <span class="card-tier card-tier--premium">Premium</span>
+          </div>
+        </a>
+
+        <!-- Card body -->
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-location">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Arrowhead, CO
+            </span>
+            <span class="card-date">August 2025</span>
+          </div>
+
+          <h2 class="card-title">
+            <a href="arrowhead-outdoor-entertainment.html" class="card-title-link">Arrowhead Village — Outdoor Living</a>
+          </h2>
+
+          <p class="card-scope">Weatherproof landscape audio, pergola cinema with SunBrite display, Ketra landscape lighting, PTZ cameras, outdoor Control4 keypad stations.</p>
+
+
+          <a href="arrowhead-outdoor-entertainment.html" class="card-cta">
+            View Project
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </article>
+      <article
+        class="project-card"
+        data-categories="theater audio"
+        aria-label="Vail Creek Manor — Dedicated Theater"
+      >
+        <!-- Card photo / placeholder -->
+        <a href="vail-creek-manor-theater.html" class="card-photo-link" tabindex="-1" aria-hidden="true">
+          <div class="card-photo">
+            <div class="card-photo-placeholder">
+              <!-- Architectural placeholder SVG -->
+              <svg class="placeholder-icon" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="10" y="30" width="60" height="22" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M10 30 L40 10 L70 30" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <rect x="33" y="38" width="14" height="14" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="16" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="54" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <circle cx="60" cy="18" r="4" stroke="var(--color-gold)" stroke-width="1.5" fill="none"/>
+                <path d="M58 18 Q59 16 60 18 Q61 20 62 18" stroke="var(--color-gold)" stroke-width="1" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+
+            <!-- Category badges -->
+            <div class="card-badges">
+              <span class="badge">Home Theater</span>
+              <span class="badge">Audio</span>
+            </div>
+
+            <!-- Value tier indicator -->
+            <span class="card-tier card-tier--ultra">Ultra</span>
+          </div>
+        </a>
+
+        <!-- Card body -->
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-location">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Vail, CO
+            </span>
+            <span class="card-date">December 2025</span>
+          </div>
+
+          <h2 class="card-title">
+            <a href="vail-creek-manor-theater.html" class="card-title-link">Vail Creek Manor — Dedicated Theater</a>
+          </h2>
+
+          <p class="card-scope">14-seat Dolby Atmos theater with JVC NZ9 laser projector, 140&#34; Stewart Filmscreen, Trinnov Altitude32 processor, Seating by Fortress.</p>
+
+          <blockquote class="card-testimonial">
+            <p>"I&#39;ve seen commercial cinemas with worse picture and sound. Symphony built something genuinely special down here."</p>
+            <cite>— D. Harrington</cite>
+          </blockquote>
+
+          <a href="vail-creek-manor-theater.html" class="card-cta">
+            View Project
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </article>
+      <article
+        class="project-card"
+        data-categories="lighting whole-home"
+        aria-label="Beaver Creek Penthouse — Lighting Renovation"
+      >
+        <!-- Card photo / placeholder -->
+        <a href="beaver-creek-penthouse-lutron.html" class="card-photo-link" tabindex="-1" aria-hidden="true">
+          <div class="card-photo">
+            <div class="card-photo-placeholder">
+              <!-- Architectural placeholder SVG -->
+              <svg class="placeholder-icon" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="10" y="30" width="60" height="22" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M10 30 L40 10 L70 30" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <rect x="33" y="38" width="14" height="14" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="16" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="54" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <circle cx="60" cy="18" r="4" stroke="var(--color-gold)" stroke-width="1.5" fill="none"/>
+                <path d="M58 18 Q59 16 60 18 Q61 20 62 18" stroke="var(--color-gold)" stroke-width="1" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+
+            <!-- Category badges -->
+            <div class="card-badges">
+              <span class="badge">Lighting</span>
+              <span class="badge">Whole-Home</span>
+            </div>
+
+            <!-- Value tier indicator -->
+            <span class="card-tier card-tier--luxury">Luxury</span>
+          </div>
+        </a>
+
+        <!-- Card body -->
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-location">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Beaver Creek, CO
+            </span>
+            <span class="card-date">February 2026</span>
+          </div>
+
+          <h2 class="card-title">
+            <a href="beaver-creek-penthouse-lutron.html" class="card-title-link">Beaver Creek Penthouse — Lighting Renovation</a>
+          </h2>
+
+          <p class="card-scope">Full Lutron Homeworks QSX retrofit across 22 rooms, Ketra A19 color-tunable lamps, programmed circadian lighting scenes, integration with existing Control4 system.</p>
+
+          <blockquote class="card-testimonial">
+            <p>"We&#39;ve had smart lighting before, but nothing like this. The light actually feels alive. Worth every bit of the renovation."</p>
+            <cite>— R. &amp; S. Calloway</cite>
+          </blockquote>
+
+          <a href="beaver-creek-penthouse-lutron.html" class="card-cta">
+            View Project
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </article>
+
+    </div>
+
+    <!-- Empty state (shown via JS when all filtered out) -->
+    <div class="empty-state" id="empty-state" hidden aria-live="polite">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <p>No projects match this filter yet — <a href="https://symphonysh.com/contact" target="_blank" rel="noopener">ask us about your project</a>.</p>
+    </div>
+  </section>
+
+  <!-- ── CTA STRIP ─────────────────────────────────────────────── -->
+  <section class="cta-strip">
+    <div class="cta-strip-inner">
+      <div class="cta-text">
+        <h2 class="cta-title">Ready to build something remarkable?</h2>
+        <p class="cta-body">Schedule a free walkthrough with our team and we'll map out your system from pre-wire to programming.</p>
+      </div>
+      <div class="cta-actions">
+        <a href="https://symphonysh.com/contact" class="btn-primary" target="_blank" rel="noopener">Schedule a Walkthrough</a>
+        <a href="tel:9705193013" class="btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.37a2 2 0 0 1 1.99-2.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6.08 6.08l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          (970) 519-3013
+        </a>
+      </div>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ── FOOTER ───────────────────────────────────────────────── -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="footer-name">Symphony Smart Homes</span>
+        <span class="footer-tagline">Vail Valley Smart Home Integrator</span>
+      </div>
+      <div class="footer-contact">
+        <a href="tel:970-519-3013" class="footer-link">(970) 519-3013</a>
+        <a href="mailto:info@symphonysh.com" class="footer-link">info@symphonysh.com</a>
+        <a href="https://symphonysh.com" class="footer-link" target="_blank" rel="noopener">symphonysh.com</a>
+      </div>
+      <div class="footer-areas">
+        <span class="footer-areas-label">Serving</span>
+        <span class="footer-areas-list">Vail · Beaver Creek · Edwards · Avon · Eagle</span>
+      </div>
+      <p class="footer-copy">&copy; 2026 Symphony Smart Homes. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script>
+    // Theme toggle
+    (function () {
+      const t = document.querySelector('[data-theme-toggle]'),
+        r = document.documentElement;
+      // Default to dark (Symphony brand is dark-first)
+      let d = 'dark';
+      const sys = matchMedia('(prefers-color-scheme: dark)');
+      r.setAttribute('data-theme', d);
+      if (t) {
+        t.innerHTML = d === 'dark'
+          ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+          : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+        t.addEventListener('click', () => {
+          d = d === 'dark' ? 'light' : 'dark';
+          r.setAttribute('data-theme', d);
+          t.setAttribute('aria-label', 'Switch to ' + (d === 'dark' ? 'light' : 'dark') + ' mode');
+          t.innerHTML = d === 'dark'
+            ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+            : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+        });
+      }
+    })();
+  </script>
+
+<script>
+  // ── Category filter logic ──────────────────────────────────────
+  (function () {
+    const btns = document.querySelectorAll('.filter-btn');
+    const cards = document.querySelectorAll('.project-card');
+    const countEl = document.getElementById('visible-count');
+    const emptyEl = document.getElementById('empty-state');
+
+    function updateCount() {
+      const visible = Array.from(cards).filter(c => !c.hidden).length;
+      countEl.textContent = visible;
+      emptyEl.hidden = visible > 0;
+    }
+
+    btns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const filter = btn.dataset.filter;
+
+        // Update active button
+        btns.forEach(b => b.classList.remove('filter-btn--active'));
+        btn.classList.add('filter-btn--active');
+
+        // Show/hide cards
+        cards.forEach(card => {
+          if (filter === 'all') {
+            card.hidden = false;
+          } else {
+            const cats = card.dataset.categories.split(' ');
+            card.hidden = !cats.includes(filter);
+          }
+        });
+
+        updateCount();
+      });
+    });
+  })();
+</script>
+</body>
+</html>

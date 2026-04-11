@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio — Symphony Smart Homes{% endblock %}
+
+{% set active_page = "portfolio" %}
+
+{% block content %}
+
+  <!-- ── HERO ─────────────────────────────────────────────────── -->
+  <section class="portfolio-hero">
+    <div class="hero-inner">
+      <p class="hero-eyebrow">
+        <span class="eyebrow-line"></span>
+        Our Work
+        <span class="eyebrow-line"></span>
+      </p>
+      <h1 class="hero-title">Every Room.<br>Every System.<br><em>One Vision.</em></h1>
+      <p class="hero-sub">From Vail's ski-in estates to Eagle County commercial builds — here's what we've built.</p>
+    </div>
+    <div class="hero-scroll-indicator" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+    </div>
+  </section>
+
+  <!-- ── FILTERS ───────────────────────────────────────────────── -->
+  <section class="filter-section" aria-label="Filter projects by category">
+    <div class="filter-inner">
+      <div class="filter-bar" role="group" aria-label="Category filters">
+        <button class="filter-btn filter-btn--active" data-filter="all">All Projects</button>
+        {% for cat in categories %}
+        <button class="filter-btn" data-filter="{{ cat.id }}">{{ cat.label }}</button>
+        {% endfor %}
+      </div>
+      <p class="filter-count" aria-live="polite">
+        <span id="visible-count">{{ projects | length }}</span> of {{ projects | length }} projects
+      </p>
+    </div>
+  </section>
+
+  <!-- ── PROJECT GRID ──────────────────────────────────────────── -->
+  <section class="portfolio-grid-section">
+    <div class="portfolio-grid">
+
+      {% for project in projects %}
+      <article
+        class="project-card{% if project.featured %} project-card--featured{% endif %}"
+        data-categories="{{ project.categories | join(' ') }}"
+        aria-label="{{ project.name }}"
+      >
+        <!-- Card photo / placeholder -->
+        <a href="{{ project.id }}.html" class="card-photo-link" tabindex="-1" aria-hidden="true">
+          <div class="card-photo">
+            {% if project.featured_photo and project.photos %}
+            <img
+              src="photos/{{ project.id }}/{{ project.featured_photo }}"
+              alt="{{ project.name }} — {{ project.location }}"
+              loading="lazy"
+              onerror="this.parentElement.classList.add('card-photo--placeholder')"
+            />
+            {% else %}
+            <div class="card-photo-placeholder">
+              <!-- Architectural placeholder SVG -->
+              <svg class="placeholder-icon" viewBox="0 0 80 60" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="10" y="30" width="60" height="22" rx="1" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M10 30 L40 10 L70 30" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <rect x="33" y="38" width="14" height="14" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="16" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <rect x="54" y="34" width="10" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                <circle cx="60" cy="18" r="4" stroke="var(--color-gold)" stroke-width="1.5" fill="none"/>
+                <path d="M58 18 Q59 16 60 18 Q61 20 62 18" stroke="var(--color-gold)" stroke-width="1" stroke-linecap="round" fill="none"/>
+              </svg>
+            </div>
+            {% endif %}
+
+            <!-- Category badges -->
+            <div class="card-badges">
+              {% for cat in project.categories[:2] %}
+              <span class="badge">{{ category_labels.get(cat, cat) }}</span>
+              {% endfor %}
+              {% if project.categories | length > 2 %}
+              <span class="badge badge--more">+{{ project.categories | length - 2 }}</span>
+              {% endif %}
+            </div>
+
+            <!-- Value tier indicator -->
+            {% if project.value_range %}
+            <span class="card-tier card-tier--{{ project.value_range }}">{{ project.value_range | title }}</span>
+            {% endif %}
+          </div>
+        </a>
+
+        <!-- Card body -->
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="card-location">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              {{ project.location }}
+            </span>
+            {% if project.completion_date %}
+            <span class="card-date">{{ project.completion_date | format_date }}</span>
+            {% endif %}
+          </div>
+
+          <h2 class="card-title">
+            <a href="{{ project.id }}.html" class="card-title-link">{{ project.name }}</a>
+          </h2>
+
+          <p class="card-scope">{{ project.scope }}</p>
+
+          {% if project.testimonial %}
+          <blockquote class="card-testimonial">
+            <p>"{{ project.testimonial.quote | truncate(120) }}"</p>
+            <cite>— {{ project.testimonial.author }}</cite>
+          </blockquote>
+          {% endif %}
+
+          <a href="{{ project.id }}.html" class="card-cta">
+            View Project
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
+      </article>
+      {% endfor %}
+
+    </div>
+
+    <!-- Empty state (shown via JS when all filtered out) -->
+    <div class="empty-state" id="empty-state" hidden aria-live="polite">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <p>No projects match this filter yet — <a href="https://symphonysh.com/contact" target="_blank" rel="noopener">ask us about your project</a>.</p>
+    </div>
+  </section>
+
+  <!-- ── CTA STRIP ─────────────────────────────────────────────── -->
+  <section class="cta-strip">
+    <div class="cta-strip-inner">
+      <div class="cta-text">
+        <h2 class="cta-title">Ready to build something remarkable?</h2>
+        <p class="cta-body">Schedule a free walkthrough with our team and we'll map out your system from pre-wire to programming.</p>
+      </div>
+      <div class="cta-actions">
+        <a href="https://symphonysh.com/contact" class="btn-primary" target="_blank" rel="noopener">Schedule a Walkthrough</a>
+        <a href="tel:9705193013" class="btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.37a2 2 0 0 1 1.99-2.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6.08 6.08l.91-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          (970) 519-3013
+        </a>
+      </div>
+    </div>
+  </section>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ── Category filter logic ──────────────────────────────────────
+  (function () {
+    const btns = document.querySelectorAll('.filter-btn');
+    const cards = document.querySelectorAll('.project-card');
+    const countEl = document.getElementById('visible-count');
+    const emptyEl = document.getElementById('empty-state');
+
+    function updateCount() {
+      const visible = Array.from(cards).filter(c => !c.hidden).length;
+      countEl.textContent = visible;
+      emptyEl.hidden = visible > 0;
+    }
+
+    btns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const filter = btn.dataset.filter;
+
+        // Update active button
+        btns.forEach(b => b.classList.remove('filter-btn--active'));
+        btn.classList.add('filter-btn--active');
+
+        // Show/hide cards
+        cards.forEach(card => {
+          if (filter === 'all') {
+            card.hidden = false;
+          } else {
+            const cats = card.dataset.categories.split(' ');
+            card.hidden = !cats.includes(filter);
+          }
+        });
+
+        updateCount();
+      });
+    });
+  })();
+</script>
+{% endblock %}

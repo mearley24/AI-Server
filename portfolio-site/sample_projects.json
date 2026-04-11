@@ -1,0 +1,154 @@
+{
+  "site": {
+    "company_name": "Symphony Smart Homes",
+    "tagline": "Vail Valley Smart Home Integrator",
+    "phone": "(970) 519-3013",
+    "email": "info@symphonysh.com",
+    "website": "https://symphonysh.com",
+    "service_areas": ["Vail", "Beaver Creek", "Edwards", "Avon", "Eagle"]
+  },
+  "projects": [
+    {
+      "id": "topletz-84-aspen-meadow",
+      "name": "Topletz Residence",
+      "location": "Aspen Meadow, CO",
+      "completion_date": "2026-05",
+      "categories": ["whole-home", "lighting", "audio", "security"],
+      "featured": true,
+      "scope": "Control4 whole-home automation, Lutron RadioRA3 lighting, 12-zone Sonos audio, Luma 4K security, structured wiring throughout.",
+      "description": "A 6,800 sq ft mountain retreat in Aspen Meadow received a ground-up smart-home integration. Every room is unified under Control4 — from morning wake scenes that gradually raise Lutron shades and warm the lighting to theater mode that dims the great room, drops the projection screen, and launches the system in one tap. Twelve Sonos zones distribute music from the ski locker to the master suite. Luma 4K cameras cover every approach, with full remote management via the Control4 app.",
+      "photos": [],
+      "featured_photo": null,
+      "photo_credits": null,
+      "testimonial": {
+        "quote": "Symphony turned a complicated wishlist into a system my whole family actually uses every day. The lighting scenes alone were worth every penny.",
+        "author": "M. Topletz",
+        "title": "Homeowner, Aspen Meadow"
+      },
+      "systems_installed": [
+        "Control4 EA-5 Controller",
+        "Control4 T4 Series Touchscreens",
+        "Lutron RadioRA3 Whole-Home Dimming",
+        "Lutron Palladiom Shading",
+        "Sonos Era 300 (×4) / Era 100 (×8)",
+        "Luma 4K IP Cameras (×14)",
+        "Araknis AN-810 Wireless"
+      ],
+      "value_range": "premium",
+      "square_footage": 6800
+    },
+    {
+      "id": "vail-creek-manor-theater",
+      "name": "Vail Creek Manor — Dedicated Theater",
+      "location": "Vail, CO",
+      "completion_date": "2025-12",
+      "categories": ["theater", "audio"],
+      "featured": false,
+      "scope": "14-seat Dolby Atmos theater with JVC NZ9 laser projector, 140\" Stewart Filmscreen, Trinnov Altitude32 processor, Seating by Fortress.",
+      "description": "Carved into the lower level of a ski-in ski-out estate, this dedicated theater was designed from the concrete up with acoustics in mind. Bass traps and diffusion panels were installed before framing. A JVC NZ9 8K laser projector throws onto a 140-inch Stewart Filmscreen Phantom HALR for reference-quality HDR. Nineteen drivers — a combination of Focal and Seaton Sound subs — are managed by a Trinnov Altitude32 for Dolby Atmos object-based audio. Control4 integration provides a single-button experience: seats recline, lights fade to amber, and the popcorn maker starts.",
+      "photos": [],
+      "featured_photo": null,
+      "photo_credits": null,
+      "testimonial": {
+        "quote": "I've seen commercial cinemas with worse picture and sound. Symphony built something genuinely special down here.",
+        "author": "D. Harrington",
+        "title": "Homeowner, Vail"
+      },
+      "systems_installed": [
+        "JVC NZ9 8K Laser Projector",
+        "Stewart Filmscreen Phantom HALR 140\"",
+        "Trinnov Altitude32 Processor",
+        "Focal Utopia In-Wall Speakers (×9)",
+        "Focal Sopra Sub (×2)",
+        "Seaton Sound SubM (×2)",
+        "Fortress Opus Seating (×14)",
+        "Control4 CA-10 Controller",
+        "Lutron Vive Theater Dimming"
+      ],
+      "value_range": "ultra",
+      "square_footage": 1100
+    },
+    {
+      "id": "arrowhead-outdoor-entertainment",
+      "name": "Arrowhead Village — Outdoor Living",
+      "location": "Arrowhead, CO",
+      "completion_date": "2025-08",
+      "categories": ["outdoor", "audio", "lighting", "security"],
+      "featured": false,
+      "scope": "Weatherproof landscape audio, pergola cinema with SunBrite display, Ketra landscape lighting, PTZ cameras, outdoor Control4 keypad stations.",
+      "description": "The homeowners wanted their rear yard to live like an extension of the house — complete with music, video, and lighting that matched whatever was happening inside. Weather-rated Sonance landscape speakers were buried throughout the garden and pool deck, blending invisibly into the landscape. A 75-inch SunBrite Veranda 4K display anchors the covered pergola, paired with an Apple TV and a Samsung Frame in the outdoor kitchen. Ketra natural light fixtures illuminate the pathways and dining area with color-accurate light that transitions with the sun. Axis PTZ cameras provide perimeter coverage at the driveway and rear lot line.",
+      "photos": [],
+      "featured_photo": null,
+      "photo_credits": null,
+      "testimonial": null,
+      "systems_installed": [
+        "Sonance Landscape Series Speakers (×12)",
+        "SunBrite Veranda 75\" 4K Display",
+        "Ketra Natural Light Landscape Fixtures",
+        "Axis P5655-E PTZ Cameras (×4)",
+        "Control4 Outdoor Keypad Stations",
+        "Trex Wiring & Junction Boxes"
+      ],
+      "value_range": "premium",
+      "square_footage": 3200
+    },
+    {
+      "id": "edwards-tech-hub-commercial",
+      "name": "Riverwalk Tech Hub",
+      "location": "Edwards, CO",
+      "completion_date": "2025-06",
+      "categories": ["networking", "commercial", "lighting"],
+      "featured": false,
+      "scope": "High-density Wi-Fi 6E campus network, Cisco Meraki SD-WAN, structured cabling Cat6A and OS2 fiber, Lutron Vive commercial lighting controls across 8,400 sq ft of mixed-use flex space.",
+      "description": "A new mixed-use commercial building in Edwards needed network infrastructure to serve both anchoring tech tenants and short-term coworking members — simultaneously. Symphony designed a Cisco Meraki SD-WAN core with dual redundant ISPs and automatic failover under 30 seconds. High-density Meraki MR57 access points cover every corner of the 8,400 sq ft floor plate, segmented with tenant-isolated VLANs. Lutron Vive wireless controls allow each tenant zone to manage its own lighting scene without conduit or line-voltage rewiring. OS2 single-mode fiber ties the server room to each tenant closet for future-proof bandwidth.",
+      "photos": [],
+      "featured_photo": null,
+      "photo_credits": null,
+      "testimonial": {
+        "quote": "Our network has been rock solid since Symphony handed it over. Zero calls from tenants about Wi-Fi. That's a first.",
+        "author": "T. Ortega",
+        "title": "Property Manager, Riverwalk Tech Hub"
+      },
+      "systems_installed": [
+        "Cisco Meraki MX95 Security Appliance",
+        "Cisco Meraki MS250 Switches",
+        "Cisco Meraki MR57 Wi-Fi 6E APs (×18)",
+        "Panduit Cat6A Cabling Plant",
+        "CommScope OS2 Fiber (12-strand)",
+        "Lutron Vive Commercial Controls",
+        "APC InfraStruXure UPS (×2)"
+      ],
+      "value_range": "standard",
+      "square_footage": 8400
+    },
+    {
+      "id": "beaver-creek-penthouse-lutron",
+      "name": "Beaver Creek Penthouse — Lighting Renovation",
+      "location": "Beaver Creek, CO",
+      "completion_date": "2026-02",
+      "categories": ["lighting", "whole-home"],
+      "featured": false,
+      "scope": "Full Lutron Homeworks QSX retrofit across 22 rooms, Ketra A19 color-tunable lamps, programmed circadian lighting scenes, integration with existing Control4 system.",
+      "description": "The owners of this ski-in ski-out penthouse had lived with basic dimmer switches for years. A Lutron Homeworks QSX retrofit replaced every load in the residence — 22 rooms, 94 circuits — without opening a single wall. Ketra A19 and PAR lamps deliver color-tunable white light that shifts from a crisp 5500K wake-up in the morning to a warm 2200K candlelight setting by evening, automated by circadian scheduling. The existing Control4 EA-3 was updated and bridged to Homeworks for single-keypad access to every scene. The before-and-after difference in how the penthouse feels — especially at dusk with alpenglow through floor-to-ceiling glass — is dramatic.",
+      "photos": [],
+      "featured_photo": null,
+      "photo_credits": null,
+      "testimonial": {
+        "quote": "We've had smart lighting before, but nothing like this. The light actually feels alive. Worth every bit of the renovation.",
+        "author": "R. & S. Calloway",
+        "title": "Homeowners, Beaver Creek"
+      },
+      "systems_installed": [
+        "Lutron Homeworks QSX Processor",
+        "Lutron HQR Hybrid Keypads (×22)",
+        "Ketra A19 Tunable White Lamps (×88)",
+        "Ketra PAR30 Accent Lamps (×36)",
+        "Lutron Serena Motorized Shades (×14)",
+        "Control4 EA-3 (updated firmware)",
+        "Lutron-Control4 Driver Integration"
+      ],
+      "value_range": "luxury",
+      "square_footage": 4100
+    }
+  ]
+}

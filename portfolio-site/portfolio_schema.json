@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Symphony Smart Homes Portfolio Schema",
+  "description": "Schema for project data used by generate_portfolio.py",
+  "type": "object",
+  "required": ["projects"],
+  "properties": {
+    "site": {
+      "type": "object",
+      "description": "Global site metadata (optional overrides)",
+      "properties": {
+        "company_name": { "type": "string", "default": "Symphony Smart Homes" },
+        "tagline": { "type": "string", "default": "Vail Valley Smart Home Integrator" },
+        "phone": { "type": "string", "example": "(970) 519-3013" },
+        "email": { "type": "string", "example": "info@symphonysh.com" },
+        "website": { "type": "string", "example": "https://symphonysh.com" },
+        "service_areas": {
+          "type": "array",
+          "items": { "type": "string" },
+          "example": ["Vail", "Beaver Creek", "Edwards", "Avon", "Eagle"]
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "List of portfolio projects",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "location", "categories", "scope"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "URL-safe unique identifier for this project",
+            "pattern": "^[a-z0-9-]+$",
+            "example": "topletz-84-aspen-meadow"
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the project",
+            "example": "Topletz Residence"
+          },
+          "location": {
+            "type": "string",
+            "description": "City/neighborhood and state",
+            "example": "Aspen Meadow, CO"
+          },
+          "completion_date": {
+            "type": "string",
+            "description": "Month and year of project completion in YYYY-MM format",
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "example": "2026-05"
+          },
+          "categories": {
+            "type": "array",
+            "description": "Filter categories. Valid values listed in enum.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "whole-home",
+                "theater",
+                "lighting",
+                "networking",
+                "outdoor",
+                "security",
+                "audio",
+                "commercial"
+              ]
+            },
+            "minItems": 1,
+            "example": ["whole-home", "lighting", "audio"]
+          },
+          "scope": {
+            "type": "string",
+            "description": "Short description of what was installed/integrated",
+            "example": "Control4 whole-home automation, Lutron RadioRA3 lighting, 12-zone Sonos audio, Luma security, structured wiring"
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer narrative description of the project (HTML allowed). Optional.",
+            "example": "<p>A full smart-home integration for a 6,800 sq ft mountain retreat...</p>"
+          },
+          "photos": {
+            "type": "array",
+            "description": "List of photo filenames. Files should be placed in the same directory as projects.json or in a photos/ subfolder.",
+            "items": { "type": "string" },
+            "example": ["living-room.jpg", "theater.jpg", "rack.jpg"]
+          },
+          "featured_photo": {
+            "type": "string",
+            "description": "Filename of the photo to use as the card thumbnail and hero. Must be in the photos array.",
+            "example": "living-room.jpg"
+          },
+          "photo_credits": {
+            "type": "string",
+            "description": "Optional photographer credit line",
+            "example": "Photography by Studio Alpine"
+          },
+          "testimonial": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "required": ["quote", "author"],
+                "properties": {
+                  "quote": { "type": "string" },
+                  "author": { "type": "string" },
+                  "title": { "type": "string" }
+                }
+              }
+            ],
+            "description": "Client testimonial. Set to null if none."
+          },
+          "systems_installed": {
+            "type": "array",
+            "description": "List of specific brands/models installed",
+            "items": { "type": "string" },
+            "example": ["Control4 EA-5", "Lutron RadioRA3", "Sonos Era 300", "Araknis AN-810"]
+          },
+          "value_range": {
+            "type": "string",
+            "description": "Project tier for display (no dollar figures needed)",
+            "enum": ["standard", "premium", "luxury", "ultra"]
+          },
+          "square_footage": {
+            "type": "integer",
+            "description": "Approximate project square footage (optional)",
+            "example": 6800
+          },
+          "featured": {
+            "type": "boolean",
+            "description": "If true, this project is highlighted in a hero/featured position on the index page",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}
