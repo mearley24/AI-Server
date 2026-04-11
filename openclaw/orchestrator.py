@@ -1435,6 +1435,19 @@ class Orchestrator:
                 "events:system",
                 {"type": "briefing.delivered", "data": {"date": today, "length": len(briefing)}},
             )
+            # Run daily approval drain after briefing is confirmed delivered.
+            try:
+                from approval_drain import drain_stale_approvals
+
+                drain_result = await drain_stale_approvals()
+                expired = drain_result.get("expired", 0)
+                remaining = drain_result.get("remaining", 0)
+                if expired > 0:
+                    logger.info(
+                        "approval_drain expired=%d remaining=%d", expired, remaining
+                    )
+            except Exception as exc:
+                logger.debug("approval_drain_error: %s", exc)
         else:
             logger.warning("Briefing delivery failed — will retry next tick")
             await self._redis_publish(
