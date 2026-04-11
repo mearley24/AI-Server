@@ -975,6 +975,7 @@ class WeatherTraderStrategy(BaseStrategy):
     async def _enrich_with_clob_prices(self, markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Fetch live mid-prices from CLOB for each market's YES token."""
         import httpx
+        import json
         now = time.time()
         enriched = 0
         async with httpx.AsyncClient(timeout=10.0) as http:
