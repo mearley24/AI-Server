@@ -728,19 +728,12 @@ class PolymarketCopyTrader:
 
     @staticmethod
     def _is_quiet_hours() -> bool:
-        """Return True if current time is between 18:00 and 05:00 MDT (America/Denver).
+        """Quiet hours DISABLED — trade 24/7, no downtime.
 
-        Blocks the low-liquidity overnight window (18:00 MDT = 00:00 UTC to 05:00 MDT).
-        Data: midnight MDT trading has 29% WR — suppress new BUY entries during quiet hours.
-        Does NOT affect sell orders, redemptions, or exit engine.
+        Previously blocked overnight MDT but we need maximum market coverage.
+        Revenue requires constant participation across all time zones.
         """
-        import datetime
-        try:
-            from zoneinfo import ZoneInfo
-        except ImportError:
-            from backports.zoneinfo import ZoneInfo
-        now_mdt = datetime.datetime.now(ZoneInfo("America/Denver"))
-        return now_mdt.hour >= 18 or now_mdt.hour < 5
+        return False  # 24/7 trading — no quiet hours
 
     def _emit_trade_resolved_event(self, pos: CopiedPosition, pos_id: str, pnl_usd: float) -> None:
         """Notify Redis outcome listener (OpenClaw decision journal scoring)."""
