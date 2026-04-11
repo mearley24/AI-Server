@@ -38,6 +38,10 @@ logger = logging.getLogger("openclaw.follow_up_engine")
 # ── Defaults ──────────────────────────────────────────────────────────────────
 DEFAULT_JOBS_DB = os.environ.get("JOBS_DB_PATH", "/data/jobs.db")
 DEFAULT_EMAILS_DB = os.environ.get("EMAIL_DB_PATH", "/data/emails.db")
+# follow_up_log lives in follow_ups.db (canonical follow-up store), not jobs.db.
+# Derive path from FOLLOW_UPS_DB_PATH env or compute from the jobs_db directory
+# at runtime so it always resolves correctly regardless of container paths.
+DEFAULT_FOLLOW_UPS_DB = os.environ.get("FOLLOW_UPS_DB_PATH", "")
 NOTIFICATION_HUB_URL = os.environ.get(
     "NOTIFICATION_HUB_URL", "http://notification-hub:8095"
 )
@@ -127,20 +131,27 @@ class FollowUpEngine:
         self,
         jobs_db: str = DEFAULT_JOBS_DB,
         emails_db: str = DEFAULT_EMAILS_DB,
+        follow_ups_db: str = DEFAULT_FOLLOW_UPS_DB,
         http: Optional[httpx.AsyncClient] = None,
         linear_sync=None,
     ) -> None:
         self._jobs_db = jobs_db
         self._emails_db = emails_db
+        # follow_up_log lives in follow_ups.db (canonical store).
+        # If follow_ups_db is not specified, derive it from the jobs_db directory.
+        if not follow_ups_db:
+            follow_ups_db = str(Path(jobs_db).parent / "follow_ups.db")
+        self._follow_ups_db = follow_ups_db
         self._http = http or httpx.AsyncClient(timeout=15.0)
         self._linear = linear_sync
 
-        # Initialise the follow_up_log table on first connect
-        with _get_conn(self._jobs_db) as conn:
+        # Initialise the follow_up_log table in follow_ups.db
+        with _get_conn(self._follow_ups_db) as conn:
             _ensure_follow_up_log(conn)
 
         logger.info(
-            "follow_up_engine_init jobs_db=%s emails_db=%s", jobs_db, emails_db
+            "follow_up_engine_init jobs_db=%s emails_db=%s follow_ups_db=%s",
+            jobs_db, emails_db, follow_ups_db,
         )
 
     # ── Public interface ───────────────────────────────────────────────────────
@@ -464,7 +475,7 @@ class FollowUpEngine:
     def _already_sent(self, job_id: int, interval_days: int) -> bool:
         """Return True if this interval was already logged for the job."""
         try:
-            conn = _get_conn(self._jobs_db)
+            conn = _get_conn(self._follow_ups_db)
             _ensure_follow_up_log(conn)
             row = conn.execute(
                 "SELECT id FROM follow_up_log WHERE job_id = ? AND interval_days = ?",
@@ -481,7 +492,7 @@ class FollowUpEngine:
     ) -> None:
         """Insert or replace a row in follow_up_log."""
         try:
-            conn = _get_conn(self._jobs_db)
+            conn = _get_conn(self._follow_ups_db)
             _ensure_follow_up_log(conn)
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(

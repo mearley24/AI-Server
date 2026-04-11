@@ -43,7 +43,7 @@ def _ollama_chat_preference_extract(prompt: str) -> Optional[str]:
             }
         ).encode()
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
         text = (data.get("message") or {}).get("content") or ""
         if text.strip():
@@ -300,9 +300,31 @@ class ClientTracker:
                     self.add_preference(client_name, ptype, pcontent, source=f"email:{subject[:50]}")
                     results.append({"type": ptype, "content": pcontent})
 
+            # Rule-based fallback: always record the contact event so the table
+            # has at least one row per client even when LLM returns nothing.
+            if not results and subject:
+                self.add_preference(
+                    client_name,
+                    "contact",
+                    f"Emailed about: {subject[:100]}",
+                    source=f"email_auto:{subject[:50]}",
+                )
+                results.append({"type": "contact", "content": subject[:100]})
+
             return results
         except Exception as e:
             logger.debug("Client preference extraction failed: %s", e)
+            # Minimal fallback even on full exception.
+            if subject:
+                try:
+                    self.add_preference(
+                        client_name,
+                        "contact",
+                        f"Emailed about: {subject[:100]}",
+                        source="email_fallback",
+                    )
+                except Exception:
+                    pass
             return []
 
     def close(self):

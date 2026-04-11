@@ -630,8 +630,7 @@ services:
     build: ./client-portal
     container_name: client-portal
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8096:8096"
+    # No host port — accessed internally. dtools-bridge uses 8096 on the host.
     volumes:
       - ./data:/data
     environment:

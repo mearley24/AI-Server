@@ -1520,6 +1520,11 @@ app = FastAPI(
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "client-portal"}
+
+
 @app.get("/portal/{token}", response_class=HTMLResponse, include_in_schema=False)
 async def portal_page(token: str) -> HTMLResponse:
     """Client-facing project status page."""
