@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import redis
 import httpx
 import uvicorn
 from fastapi import FastAPI, Query
@@ -22,6 +23,24 @@ STATIC_DIR = Path(__file__).parent / "static"
 TRADING_BOT_URL = "http://vpn:8430"
 COPYTRADE_WALLET_FILE = Path("/trading-data/copytrade_wallets.json")
 WALLET_ADDRESS = "0xa791e3090312981a1e18ed93238e480a03e7c0d2"
+
+# ── Redis helper ──
+_redis = None
+
+
+def _get_redis():
+    global _redis
+    if _redis is None:
+        try:
+            _redis = redis.from_url(
+                os.environ.get("REDIS_URL", "redis://redis:6379"),
+                decode_responses=True,
+                socket_timeout=2,
+            )
+        except Exception:
+            pass
+    return _redis
+
 
 # Service map: name -> (container_hostname, internal_port, external_port)
 # compose = docker compose service name for `docker compose restart <compose>` on the AI-Server host
@@ -148,17 +167,128 @@ async def api_services():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page():
-    """Serve the ops dashboard."""
-    html_path = STATIC_DIR / "index.html"
+    """Serve the ops dashboard (legacy)."""
+    html_path = STATIC_DIR / "ops.html"
     if html_path.exists():
         return FileResponse(html_path)
     return HTMLResponse("<h1>Dashboard not found</h1>")
 
 
+@app.get("/ops", response_class=HTMLResponse)
+async def ops_page():
+    """Serve the legacy ops dashboard."""
+    html_path = STATIC_DIR / "ops.html"
+    if html_path.exists():
+        return FileResponse(html_path)
+    return HTMLResponse("<h1>Ops dashboard not found</h1>")
+
+
+@app.get("/api/wallet")
+async def api_wallet():
+    """Portfolio wallet summary — Redis first, polymarket-bot fallback."""
+    empty = {"usdc_balance": 0.0, "position_value": 0.0, "daily_pnl": 0.0, "weekly_pnl": 0.0, "error": "unavailable"}
+    try:
+        r = _get_redis()
+        if r:
+            try:
+                snap = r.get("portfolio:snapshot")
+                if snap:
+                    return json.loads(snap)
+            except Exception:
+                pass
+        # Fallback: HTTP to polymarket-bot
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://polymarket-bot:8430/status")
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "usdc_balance": float(data.get("usdc_balance", 0)),
+                    "position_value": float(data.get("position_value", 0)),
+                    "daily_pnl": float(data.get("daily_pnl", 0)),
+                    "weekly_pnl": float(data.get("weekly_pnl", 0)),
+                }
+    except Exception:
+        pass
+    return empty
+
+
+@app.get("/api/positions")
+async def api_positions():
+    """Open positions — Redis first, polymarket-bot fallback."""
+    try:
+        r = _get_redis()
+        if r:
+            try:
+                raw = r.get("portfolio:positions")
+                if raw:
+                    return json.loads(raw)
+            except Exception:
+                pass
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get("http://polymarket-bot:8430/positions")
+            if resp.status_code == 200:
+                data = resp.json()
+                return data if isinstance(data, list) else data.get("positions", [])
+    except Exception:
+        pass
+    return []
+
+
+@app.get("/api/pnl-series")
+async def api_pnl_series():
+    """P&L time series — from Redis portfolio:pnl_series."""
+    try:
+        r = _get_redis()
+        if r:
+            try:
+                raw = r.get("portfolio:pnl_series")
+                if raw:
+                    return json.loads(raw)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return []
+
+
+@app.get("/api/activity")
+async def api_activity():
+    """Recent trading activity — from Redis events:trading list."""
+    try:
+        r = _get_redis()
+        if r:
+            try:
+                entries = r.lrange("events:trading", 0, 49)
+                if entries:
+                    result = []
+                    for entry in entries:
+                        try:
+                            result.append(json.loads(entry))
+                        except Exception:
+                            result.append({"timestamp": "", "type": "info", "message": str(entry)})
+                    return result
+            except Exception:
+                pass
+        # Fallback: recent activity via polymarket-bot /status
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get("http://polymarket-bot:8430/status")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    logs = data.get("recent_activity", data.get("logs", []))
+                    if logs:
+                        return logs
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return []
+
+
 @app.get("/trading", response_class=HTMLResponse)
 async def trading_page():
-    """Serve the trading dashboard."""
-    html_path = STATIC_DIR / "trading.html"
+    """Serve the main trading dashboard (index.html)."""
+    html_path = STATIC_DIR / "index.html"
     if html_path.exists():
         return FileResponse(html_path)
     return HTMLResponse("<h1>Trading dashboard not found</h1>")
@@ -268,7 +398,7 @@ def _categorize(title: str) -> str:
 
     if any(k in t for k in [
         "temperature", "weather", "rain", "celsius", "fahrenheit",
-        "°c", "°f", "highest temp",
+        "\u00b0c", "\u00b0f", "highest temp",
     ]):
         return "weather"
 
@@ -489,7 +619,7 @@ async def api_trading_categories(nocache: bool = Query(False, description="Bypas
             open_val = cat_open_value[cat]
             # P/L = (returned + current open value) - total bought
             pnl = round((returned + open_val) - bought, 2)
-            trades = cat_buy_count[cat] + cat_sell_count[cat] + cat_redeem_count[cat]
+            trades = cat_buy_count[cat] + cat_sell_count[cat] + cat_redeem_count[cat]  # noqa: F841
             multiplier = CATEGORY_MULTIPLIERS.get(cat, 1.0)
 
             categories[cat] = {
@@ -667,7 +797,7 @@ LESSONS = [
         "category": "all",
         "description": "$110 in winning positions were stuck because the redeemer was calling CTF.redeemPositions directly. Neg risk markets require NegRiskAdapter.redeemPositions(conditionId, amounts) with [0, balance] for No tokens or [balance, 0] for Yes tokens.",
         "fix": "Redeemer now detects negativeRisk flag from the Data API and routes through NegRiskAdapter automatically. All 11 stuck positions recovered.",
-        "example": "Shanghai 15°C: 15.47 shares sitting unredeemed for 2 days. Standard CTF calls succeeded (status=OK) but returned $0. NegRiskAdapter call recovered $15.47 instantly."
+        "example": "Shanghai 15\u00b0C: 15.47 shares sitting unredeemed for 2 days. Standard CTF calls succeeded (status=OK) but returned $0. NegRiskAdapter call recovered $15.47 instantly."
     }
 ]
 
@@ -894,6 +1024,7 @@ TIMELINE = [
     {"time": "03/29 10:30AM", "event": "$110 Recovered from Neg Risk", "detail": "11 winning positions were stuck — redeemer wasn't using NegRiskAdapter. All recovered. Redeemer permanently fixed.", "type": "good"},
     {"time": "03/29 10:30AM", "event": "Bob Employee Upgrade", "detail": "Hermes Agent, smux workspace, CLAUDE.md, BOB_TRAINING.md, self-improving learnings. Bob is a full 24/7 employee.", "type": "good"},
 ]
+
 
 @app.get("/api/trading/timeline")
 async def api_trading_timeline():
