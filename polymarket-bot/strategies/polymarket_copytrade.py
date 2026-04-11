@@ -530,6 +530,9 @@ class PolymarketCopyTrader:
         # ── Tick-in-progress guard — prevents bankroll refresh mid-tick ──
         self._tick_in_progress = False
 
+        # ── Performance snapshot timer — 30-minute periodic log ──────
+        self._last_perf_log: float = 0.0
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -678,6 +681,26 @@ class PolymarketCopyTrader:
                 if now - self._last_cleanup_resolved >= 600.0:
                     await self._cleanup_resolved_positions()
                     self._last_cleanup_resolved = now
+
+                # Performance snapshot every 30 minutes
+                if time.time() - self._last_perf_log > 1800:
+                    self._last_perf_log = time.time()
+                    try:
+                        active_count = len(self._positions)
+                        total_exposure = sum(p.size_usd for p in self._positions.values())
+                        daily_pnl = self._daily_wins - self._daily_realized_losses
+                        logger.info(
+                            "copytrade_performance_30min",
+                            active_positions=active_count,
+                            total_exposure=round(total_exposure, 2),
+                            daily_pnl=round(daily_pnl, 2),
+                            daily_trades=self._daily_trades,
+                            daily_spend=round(self._daily_spend, 2),
+                            bankroll=round(self._bankroll, 2),
+                            halted_categories=list(self._halted_categories),
+                        )
+                    except Exception:
+                        pass
 
                 tick_count += 1
 

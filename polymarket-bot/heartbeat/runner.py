@@ -90,6 +90,19 @@ class HeartbeatRunner:
         # 5. Generate briefing
         report["briefing"] = await self.briefing_generator.generate(report)
 
+        # 5b. Append performance snapshot to briefing (bracket breakdown + alerts)
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["python", "scripts/performance_snapshot.py"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.stdout:
+                report["briefing"] = (report.get("briefing") or "") + "\n\n" + result.stdout
+                logger.info("heartbeat_perf_snapshot_added", chars=len(result.stdout))
+        except Exception as e:
+            logger.warning("heartbeat_perf_snapshot_error", error=str(e))
+
         # 6. Send notifications
         try:
             from notifications.manager import NotificationManager
