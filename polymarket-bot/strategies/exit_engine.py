@@ -141,12 +141,18 @@ class ExitEngine:
         effective_sl = tracker._sl_override if tracker._sl_override > 0 else self._sl
         effective_time_hours = tracker._time_hours_override if tracker._time_hours_override > 0 else self._time_hours
 
-        # 0. HOLD RULE: cheap entries (< 25¢) — defer stop-loss first 6h unless down 80%+
+        # 0. HOLD RULE: cheap entries are asymmetric binary bets.
+        # They either resolve at $1.00 (4-10x) or $0.00.
+        # Trailing stops and partial TPs destroy the asymmetry.
+        deep_value_entry = entry < 0.30  # 10-25c bracket = 122% ROI
         cheap_entry = entry < 0.25
         skip_early_stop = cheap_entry and hold_hours < 6.0 and pnl_pct > -0.80
 
-        # 1. Stop-loss: category-specific drop from entry → sell all
-        if not skip_early_stop and pnl_pct <= -effective_sl:
+        # 1. Stop-loss: category-specific drop from entry -> sell all
+        #    Deep value entries get wider stop-loss (70% instead of category default)
+        #    because these are high-asymmetry bets -- one win covers many losses
+        effective_sl_used = max(effective_sl, 0.70) if deep_value_entry else effective_sl
+        if not skip_early_stop and pnl_pct <= -effective_sl_used:
             return ExitSignal(
                 position_id=position_id,
                 reason="stop_loss",
@@ -158,8 +164,10 @@ class ExitEngine:
                 peak_price=tracker.peak_price,
             )
 
-        # 2. Trailing stop: if active and price drops below trailing stop level
-        if tracker.trailing_stop_active and current_price <= tracker.trailing_stop_price:
+        # 2. Trailing stop -- SKIP for deep value entries.
+        #    A 15c->25c->21c pullback is noise, not a reason to sell.
+        #    Resolution at $1.00 = +567%. Trailing stop sells at +40%.
+        if not deep_value_entry and tracker.trailing_stop_active and current_price <= tracker.trailing_stop_price:
             return ExitSignal(
                 position_id=position_id,
                 reason="trailing_stop",
@@ -171,8 +179,8 @@ class ExitEngine:
                 peak_price=tracker.peak_price,
             )
 
-        # 3. Activate trailing stop at gain threshold (don't sell — let winners ride)
-        if pnl_pct >= self._tp1 and not tracker.trailing_stop_active:
+        # 3. Activate trailing stop at gain threshold -- only for NON-deep-value entries
+        if not deep_value_entry and pnl_pct >= self._tp1 and not tracker.trailing_stop_active:
             tracker.trailing_stop_active = True
             tracker.trailing_stop_price = tracker.peak_price * (1 - self._trailing_pct)
             logger.info(
@@ -182,26 +190,31 @@ class ExitEngine:
                 peak=tracker.peak_price,
                 trailing_price=round(tracker.trailing_stop_price, 4),
             )
-            return None  # Don't sell — just activate trailing
+            return None  # Don't sell -- just activate trailing
 
-        # 3b. Near-resolution take profit: lock gains near $1 outcomes
-        near_resolution_price = 0.85
-        if current_price >= near_resolution_price and entry < 0.50:
-            return ExitSignal(
-                position_id=position_id,
-                reason="near_resolution_takeprofit",
-                sell_fraction=0.75,
-                current_price=current_price,
-                entry_price=entry,
-                pnl_pct=pnl_pct,
-                hold_time_hours=hold_hours,
-                peak_price=tracker.peak_price,
-            )
+        # 3b. Near-resolution take profit -- ONLY for entries >= 30c.
+        #     For deep value entries (<30c), if price went from 15c to 95c,
+        #     it's almost certainly resolving YES. Hold for full $1.00 payout.
+        #     For entries 30-50c, raise threshold to $0.95 (was $0.85).
+        if not deep_value_entry and entry < 0.50:
+            near_resolution_price = 0.95  # raised from 0.85
+            if current_price >= near_resolution_price:
+                return ExitSignal(
+                    position_id=position_id,
+                    reason="near_resolution_takeprofit",
+                    sell_fraction=0.50,  # reduced from 0.75 -- keep more riding
+                    current_price=current_price,
+                    entry_price=entry,
+                    pnl_pct=pnl_pct,
+                    hold_time_hours=hold_hours,
+                    peak_price=tracker.peak_price,
+                )
 
-        # 4. Time-based exit: stale OR deteriorating trade quality
-        stale = hold_hours >= effective_time_hours and abs(pnl_pct) < self._time_min_move
+        # 4. Time-based exit -- deep value entries get 2x time allowance
+        effective_time = effective_time_hours * 2.0 if deep_value_entry else effective_time_hours
+        stale = hold_hours >= effective_time and abs(pnl_pct) < self._time_min_move
         deteriorating = (
-            hold_hours >= effective_time_hours * 0.5
+            hold_hours >= effective_time * 0.5
             and pnl_pct <= -0.20
             and tracker.peak_price <= entry * 1.05
         )
