@@ -197,6 +197,7 @@ async def _analyze_url(url: str) -> dict:
     has_video = False
     transcript = ""
     media_urls = []
+    result: dict = {}
 
     try:
         from post_fetcher import PostFetcher
@@ -228,8 +229,13 @@ async def _analyze_url(url: str) -> dict:
             post_text=post_text,
             openai_api_key=OPENAI_API_KEY,
         )
+        # Normalize: if somehow a string was returned, wrap it in a dict
+        if isinstance(result, str):
+            result = {"summary": result, "has_video": False, "has_images": True}
         if "error" not in result and result.get("summary"):
-            has_video = True
+            # Only flag has_video for actual video transcriptions (not image-only mode)
+            if result.get("mode") != "image_vision":
+                has_video = True
             transcript = ""
             if result.get("transcript_length", 0) > 0 and result.get("analysis"):
                 analysis = result["analysis"]
@@ -247,6 +253,15 @@ async def _analyze_url(url: str) -> dict:
                 logger.info("video_transcription_skipped", reason=str(error_msg)[:100])
     except Exception as e:
         logger.info("video_transcription_unavailable", error=str(e)[:200])
+
+    # Image-only path: vision analysis already produced a summary; return directly
+    if not has_video and isinstance(result, dict) and result.get("mode") == "image_vision" and result.get("summary"):
+        image_summary = result["summary"]
+        llm = _analyze_with_llm(post_text, author, False, "")
+        if llm.get("action", "none").lower() != "none":
+            image_summary += f"\n\nAction: {llm['action']}"
+        image_summary += f"\nRelevance: {llm.get('relevance', 0)}%"
+        return {"url": url, "author": author, "analysis": {"summary": image_summary}}
 
     if has_video and result.get("summary"):
         analysis = _analyze_with_llm(post_text, author, has_video, transcript)
@@ -297,6 +312,30 @@ async def _send_reply(text: str) -> None:
         logger.warning("imessage_send_failed", error=str(exc)[:200])
 
 
+async def _process_url_and_reply(url: str) -> None:
+    """Analyze a tweet URL and send the result via iMessage.
+
+    Runs as a background asyncio task. The heavy synchronous work (download,
+    transcribe, LLM analyze) is offloaded to a thread pool via asyncio.to_thread
+    so the main event loop stays responsive to health checks.
+    """
+    try:
+        result = await asyncio.to_thread(_analyze_url_sync, url)
+        summary = ""
+        if isinstance(result, dict):
+            analysis = result.get("analysis", {})
+            if isinstance(analysis, dict):
+                summary = analysis.get("summary", "")
+        if summary:
+            await _send_reply(f"X Analysis:\n{summary}")
+        elif isinstance(result, dict) and result.get("error"):
+            logger.warning("analysis_error", url=url, error=result["error"])
+    except Exception as exc:
+        logger.warning("url_analysis_failed", url=url, error=str(exc)[:200])
+        tb = traceback.format_exc()
+        logger.debug("url_analysis_traceback", traceback=tb[:500])
+
+
 async def _redis_listener() -> None:
     """Subscribe to Redis events:imessage for incoming X/Twitter links."""
     try:
@@ -321,21 +360,9 @@ async def _redis_listener() -> None:
                     urls = _TWEET_RE.findall(text)
                     for url in urls:
                         logger.info("tweet_detected_from_redis", url=url)
-                        try:
-                            result = await _analyze_url(url)
-                            summary = ""
-                            if isinstance(result, dict):
-                                analysis = result.get("analysis", {})
-                                if isinstance(analysis, dict):
-                                    summary = analysis.get("summary", "")
-                            if summary:
-                                await _send_reply(f"X Analysis:\n{summary}")
-                            elif isinstance(result, dict) and result.get("error"):
-                                logger.warning("analysis_error", url=url, error=result["error"])
-                        except Exception as exc:
-                            logger.warning("url_analysis_failed", url=url, error=str(exc)[:200])
-                            tb = traceback.format_exc()
-                            logger.debug("url_analysis_traceback", traceback=tb[:500])
+                        # Spawn as background task so the event loop stays responsive
+                        # to health checks during long transcriptions (Bug 1 fix)
+                        asyncio.create_task(_process_url_and_reply(url))
                 except Exception as exc:
                     logger.warning("message_process_error", error=str(exc)[:200])
         except Exception as exc:

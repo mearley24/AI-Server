@@ -319,25 +319,61 @@ def _is_valid_audio_file(audio_path: str) -> bool:
     return size_bytes >= MIN_VALID_AUDIO_BYTES and duration > 0
 
 
+def _video_has_audio_stream(video_path: str) -> bool:
+    """Return True if the video file has at least one audio stream."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_streams", "-select_streams", "a", video_path],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
 def _extract_audio_from_video(video_path: str, audio_path: str) -> bool:
+    """Extract audio from a video file, with multiple ffmpeg fallbacks.
+
+    Strategy:
+    1. -vn -acodec aac  (standard audio strip)
+    2. -map 0:a:0 -c:a aac  (explicit stream mapping for oddly-muxed files)
+    3. If neither works, probe for audio streams; if none, log and return False.
+    """
+    # Attempt 1: standard approach
     rc, output = _run_command_with_progress(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            video_path,
-            "-vn",
-            "-acodec",
-            "aac",
-            audio_path,
-        ],
+        ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "aac", audio_path],
         timeout=180,
         stage="ffmpeg_audio_extract",
     )
-    if rc != 0:
-        logger.error("ffmpeg_audio_extract_failed: %s", output[-300:])
-        return False
-    return _is_valid_audio_file(audio_path)
+    if rc == 0 and _is_valid_audio_file(audio_path):
+        return True
+
+    logger.warning("ffmpeg_audio_extract_attempt1_failed — trying explicit stream mapping: %s", output[-200:])
+
+    # Attempt 2: explicit audio stream mapping
+    if os.path.exists(audio_path):
+        try:
+            os.remove(audio_path)
+        except OSError:
+            pass
+    rc2, output2 = _run_command_with_progress(
+        ["ffmpeg", "-y", "-i", video_path, "-map", "0:a:0", "-c:a", "aac", audio_path],
+        timeout=180,
+        stage="ffmpeg_audio_extract_map",
+    )
+    if rc2 == 0 and _is_valid_audio_file(audio_path):
+        return True
+
+    logger.warning("ffmpeg_audio_extract_attempt2_failed: %s", output2[-200:])
+
+    # Attempt 3: check if the file has any audio at all
+    if not _video_has_audio_stream(video_path):
+        logger.info("video_has_no_audio_stream — skipping transcription")
+    else:
+        logger.error("ffmpeg_audio_extract_all_attempts_failed")
+    return False
 
 
 def _collect_media_urls(node: object, urls: list[str]) -> None:
@@ -511,8 +547,61 @@ def download_video(post_url: str, output_dir: str = None) -> Optional[str]:
         return None
 
 
+def _chunk_and_transcribe_openai(audio_path: str, openai_api_key: str, chunk_seconds: int = 300) -> Optional[str]:
+    """Split audio into chunks and transcribe each via OpenAI Whisper API.
+
+    Used for videos longer than chunk_seconds to prevent a single blocking upload.
+    """
+    duration = _ffprobe_duration_seconds(audio_path)
+    if duration <= chunk_seconds:
+        return _transcribe_openai_api(audio_path, openai_api_key)
+
+    logger.info("chunked_transcription_start: duration=%.1fs chunks=%d", duration, int(duration / chunk_seconds) + 1)
+    tmp_dir = tempfile.mkdtemp(prefix="whisper_chunks_")
+    chunk_pattern = os.path.join(tmp_dir, "chunk_%03d.m4a")
+    try:
+        rc, output = _run_command_with_progress(
+            [
+                "ffmpeg", "-y", "-i", audio_path,
+                "-f", "segment", "-segment_time", str(chunk_seconds),
+                "-c", "copy", chunk_pattern,
+            ],
+            timeout=300,
+            stage="ffmpeg_chunk_split",
+        )
+        if rc != 0:
+            logger.warning("chunk_split_failed — falling back to single upload: %s", output[-200:])
+            return _transcribe_openai_api(audio_path, openai_api_key)
+
+        chunk_files = sorted(
+            p for p in (os.path.join(tmp_dir, f) for f in os.listdir(tmp_dir))
+            if os.path.isfile(p)
+        )
+        if not chunk_files:
+            logger.warning("no_chunks_produced — falling back to single upload")
+            return _transcribe_openai_api(audio_path, openai_api_key)
+
+        parts: list[str] = []
+        for i, chunk in enumerate(chunk_files):
+            logger.info("transcribing_chunk: %d/%d %s", i + 1, len(chunk_files), chunk)
+            text = _transcribe_openai_api(chunk, openai_api_key)
+            if text:
+                parts.append(text)
+        return " ".join(parts) if parts else None
+    finally:
+        import shutil
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 def transcribe_audio(audio_path: str, openai_api_key: str = "") -> Optional[str]:
-    """Transcribe audio locally first; OpenAI Whisper API only as last resort."""
+    """Transcribe audio locally first; OpenAI Whisper API only as last resort.
+
+    For audio longer than 300s (5 min), the OpenAI API path uses chunked upload
+    so the event loop is not blocked by a single long API call.
+    """
     logger.info("transcription_started: %s", audio_path)
 
     transcript = _transcribe_whisper_cli(audio_path)
@@ -528,6 +617,10 @@ def transcribe_audio(audio_path: str, openai_api_key: str = "") -> Optional[str]
         return transcript
 
     logger.warning("all_local_whisper_failed — falling back to OpenAI API")
+    duration = _ffprobe_duration_seconds(audio_path)
+    if duration > 300:
+        logger.info("long_audio_detected: %.1fs — using chunked transcription", duration)
+        return _chunk_and_transcribe_openai(audio_path, openai_api_key)
     return _transcribe_openai_api(audio_path, openai_api_key)
 
 
@@ -672,17 +765,25 @@ def format_imessage_summary(author: str, analysis: dict) -> str:
     lines = [f"[VIDEO SUMMARY] @{author}", ""]
 
     if analysis.get("summary"):
-        lines.append(analysis["summary"])
+        lines.append(str(analysis["summary"]))
         lines.append("")
 
     for flag in analysis.get("flags", []):
-        lines.append(f"{flag['type']} {flag['text']}")
+        # Guard: API sometimes returns strings instead of {"type", "text"} dicts
+        if isinstance(flag, dict):
+            lines.append(f"{flag.get('type', '')} {flag.get('text', '')}")
+        elif isinstance(flag, str):
+            lines.append(flag)
 
     if analysis.get("strategies"):
         lines.append("")
         for strat in analysis["strategies"]:
-            if strat.get("implementable") and strat.get("priority") in ("high", "medium"):
-                lines.append(f"Strategy: {strat.get('name', '')} — {strat.get('description', '')[:80]}")
+            # Guard: API sometimes returns strings instead of strategy dicts
+            if isinstance(strat, dict):
+                if strat.get("implementable") and strat.get("priority") in ("high", "medium"):
+                    lines.append(f"Strategy: {strat.get('name', '')} — {strat.get('description', '')[:80]}")
+            elif isinstance(strat, str):
+                lines.append(f"Strategy: {strat[:80]}")
 
     return "\n".join(lines)
 
