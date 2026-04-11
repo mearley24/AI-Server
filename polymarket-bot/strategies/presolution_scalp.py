@@ -255,8 +255,8 @@ class PresolutionScalpStrategy(BaseStrategy):
 
         key = os.environ.get("OPENAI_API_KEY", "")
         if not key:
-            self._llm_cache[cid] = True
-            return True
+            self._llm_cache[cid] = False  # No LLM available — skip (safe default)
+            return False
         logger.warning("using_openai_for_presolution_scalp_validation — Ollama unavailable")
         try:
             async with httpx.AsyncClient(timeout=8.0) as client:
@@ -273,7 +273,7 @@ class PresolutionScalpStrategy(BaseStrategy):
                 txt = data["choices"][0]["message"]["content"]
                 approve = _parse_approve_from_llm_text(txt)
         except Exception:
-            approve = True
+            approve = False  # LLM error — skip trade (safe default)
         self._llm_cache[cid] = approve
         return approve
 

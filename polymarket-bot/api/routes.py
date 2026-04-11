@@ -628,6 +628,18 @@ async def trigger_redeem() -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Redeem error: {exc}")
 
 
+@router.post("/redeem/force")
+async def force_redeem() -> dict[str, Any]:
+    """Trigger immediate redemption cycle (alias for /redeem)."""
+    if deps.redeemer is None:
+        return {"error": "redeemer not initialized"}
+    try:
+        result = await deps.redeemer.redeem_all_winning()
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Redeem error: {exc}")
+
+
 @router.get("/redeem/status")
 async def redeem_status() -> dict[str, Any]:
     """Get redeemer status including USDC.e balance."""

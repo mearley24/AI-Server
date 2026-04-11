@@ -1456,7 +1456,8 @@ class PolymarketCopyTrader:
                     llm_score=llm_score,
                     market=market_question[:60],
                 )
-                return True, "blacklist_llm_override"
+                # Blacklist is absolute — LLM cannot override, money at risk
+                logger.info("copytrade_blacklist_llm_override_blocked", category=category, llm_score=llm_score)
             return False, f"blacklist_category_{category}"
 
         return True, ""
@@ -1784,7 +1785,7 @@ class PolymarketCopyTrader:
         # Top traders buy LOW and let winners pay for losers.
         # Buying at 90¢+ risks $9 to make $1 — terrible risk/reward.
         CATEGORY_MAX_ENTRY = {
-            "weather": 0.25,
+            "weather": 0.15,  # was 0.25 — tighter entry, cheap brackets only
             "us_sports": 0.35,
             "sports": 0.35,
             "esports": 0.35,
