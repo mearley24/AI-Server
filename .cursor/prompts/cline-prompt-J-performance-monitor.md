@@ -214,14 +214,17 @@ In the loop body:
 
 ## Step 4: Verify and push
 
-```bash
+```zsh
 python3 -m py_compile polymarket-bot/scripts/performance_snapshot.py
 python3 -m py_compile polymarket-bot/strategies/polymarket_copytrade.py
-cd /Users/bob/AI-Server && git add -A && git commit -m "feat: performance monitoring -- snapshot script, 30min perf logs, bracket breakdown" && git push origin main
+cd /Users/bob/AI-Server
+git add -A
+git commit -m 'feat: performance monitoring -- snapshot script, 30min perf logs, bracket breakdown'
+git push origin main
 docker compose up -d --build polymarket-bot
 ```
 
 Test the snapshot:
-```bash
+```zsh
 docker exec polymarket-bot python scripts/performance_snapshot.py
 ```
