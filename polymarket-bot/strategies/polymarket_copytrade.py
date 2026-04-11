@@ -531,21 +531,8 @@ class PolymarketCopyTrader:
         # Load cached wallets if available
         self._load_wallet_cache()
 
-        # Seed category P/L from RESOLVED positions (updated 2026-03-28)
-        # The old seeds were from day 1 with both-sides buying bug.
-        # Actual resolved data shows 17/17 wins, +$139 total.
-        if not self._category_pnl:
-            self._category_pnl = {
-                "crypto": 65.48,          # 8 resolved wins — PROFITABLE after both-sides fix
-                "crypto_updown": 65.48,   # alias — same category
-                "sports": 25.04,          # 3 wins (tennis) + 4 esports wins = all profitable
-                "weather": 11.00,         # 2 resolved wins (Shanghai, Dallas)
-                "politics": 2.85,         # small sample but positive
-                "other": 2.73,            # baseline positive
-                "geopolitics": 0.0,       # no resolved data yet
-                "economics": 0.0,         # no resolved data yet
-            }
-            logger.info("copytrade_category_pnl_seeded", categories=self._category_pnl)
+        # Start from zero — let real data accumulate (old seeds were stale)
+        # P&L will populate from Redis persistence or live trade tracking
 
         # Sync bankroll from on-chain USDC.e balance at startup
         try:
@@ -741,8 +728,9 @@ class PolymarketCopyTrader:
 
     @staticmethod
     def _is_quiet_hours() -> bool:
-        """Return True if current time is between 23:00 and 05:00 MDT (America/Denver).
+        """Return True if current time is between 18:00 and 05:00 MDT (America/Denver).
 
+        Blocks the low-liquidity overnight window (18:00 MDT = 00:00 UTC to 05:00 MDT).
         Data: midnight MDT trading has 29% WR — suppress new BUY entries during quiet hours.
         Does NOT affect sell orders, redemptions, or exit engine.
         """
@@ -752,7 +740,7 @@ class PolymarketCopyTrader:
         except ImportError:
             from backports.zoneinfo import ZoneInfo
         now_mdt = datetime.datetime.now(ZoneInfo("America/Denver"))
-        return now_mdt.hour >= 23 or now_mdt.hour < 5
+        return now_mdt.hour >= 18 or now_mdt.hour < 5
 
     def _emit_trade_resolved_event(self, pos: CopiedPosition, pos_id: str, pnl_usd: float) -> None:
         """Notify Redis outcome listener (OpenClaw decision journal scoring)."""
@@ -1178,19 +1166,6 @@ class PolymarketCopyTrader:
             stats["avg_loss_pnl"] = sum(loss_pnls) / len(loss_pnls) if loss_pnls else 0
 
         # ── Log scan diversity metrics ────────────────────────────────
-        # Inject priority wallets (proven profitable from research)
-        priority_added = 0
-        for pw_addr in self._PRIORITY_WALLETS:
-            pw_lower = pw_addr.lower()
-            if pw_lower not in wallet_stats:
-                wallet_stats[pw_lower] = {
-                    "wins": 50, "losses": 5, "total_volume": 100000,
-                    "avg_win_pnl": 10.0, "avg_loss_pnl": -3.0,
-                }
-                priority_added += 1
-        if priority_added:
-            logger.info("copytrade_priority_wallets_injected", count=priority_added)
-
         logger.info(
             "copytrade_scan_diversity",
             total_wallets=len(wallet_stats),
@@ -2184,7 +2159,7 @@ class PolymarketCopyTrader:
                 )
                 options = PartialCreateOrderOptions(
                     tick_size="0.01",
-                    neg_risk=False,
+                    neg_risk=bool(mkt_data.get("neg_risk", mkt_data.get("negativeRisk", False))) if isinstance(mkt_data, dict) else False,
                 )
                 order_resp = await loop.run_in_executor(
                     None,
@@ -2925,7 +2900,10 @@ class PolymarketCopyTrader:
                     from py_clob_client.clob_types import OrderArgs, PartialCreateOrderOptions
                     loop = asyncio.get_event_loop()
                     order_args = OrderArgs(token_id=token_id, price=buy_price, size=size_shares, side="BUY")
-                    options = PartialCreateOrderOptions(tick_size="0.01", neg_risk=False)
+                    options = PartialCreateOrderOptions(
+                        tick_size="0.01",
+                        neg_risk=False,  # TODO: wire neg_risk from market data
+                    )
                     order_resp = await loop.run_in_executor(
                         None, lambda: self._clob_client.create_and_post_order(order_args, options),
                     )
@@ -3112,7 +3090,7 @@ class PolymarketCopyTrader:
                 )
                 options = PartialCreateOrderOptions(
                     tick_size="0.01",
-                    neg_risk=False,
+                    neg_risk=False,  # TODO: wire neg_risk from market data
                 )
                 order_resp = await loop.run_in_executor(
                     None,
@@ -3248,7 +3226,7 @@ class PolymarketCopyTrader:
                 )
                 sell_options = PartialCreateOrderOptions(
                     tick_size="0.01",
-                    neg_risk=False,
+                    neg_risk=False,  # TODO: wire neg_risk from market data
                 )
                 result = await loop.run_in_executor(
                     None,
