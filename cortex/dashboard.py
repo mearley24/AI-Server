@@ -347,6 +347,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
     # ── Email / calendar / follow-ups ──────────────────────────────────
     @app.get("/api/emails")
     async def api_emails():
+        from datetime import timedelta
         for path in ("/emails", "/emails/recent", "/api/emails"):
             data = await _safe_get(f"{EMAIL_MONITOR_URL}{path}")
             if data is None:
@@ -356,10 +357,25 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                 if isinstance(data, list)
                 else data.get("emails", data.get("recent", []))
             )
+            # Only surface emails from the last 7 days — dashboard shows
+            # what needs attention now, not historical inbox state.
+            seven_days_ago = (
+                datetime.now(timezone.utc) - timedelta(days=7)
+            ).isoformat()
+            recent_emails = [
+                e for e in emails
+                if (e.get("received_at") or e.get("date") or "") >= seven_days_ago
+            ]
             unread = sum(
-                1 for e in emails if not e.get("read") and not e.get("processed")
+                1 for e in recent_emails
+                if not e.get("read") and not e.get("processed")
             )
-            return {"emails": emails[:20], "unread_count": unread}
+            as_of = datetime.now(timezone.utc).isoformat()
+            return {
+                "emails": recent_emails[:20],
+                "unread_count": unread,
+                "as_of": as_of,
+            }
         return {"emails": [], "unread_count": 0, "error": "unavailable"}
 
     @app.get("/api/calendar")
@@ -396,8 +412,15 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             conn.close()
             followups = [dict(r) for r in rows]
             now_utc = datetime.now(timezone.utc)
+            from datetime import timedelta
+            thirty_days_ago = (now_utc - timedelta(days=30)).isoformat()
+            # Only surface follow-ups with client activity in the last 30 days
+            recent_followups = [
+                f for f in followups
+                if (f.get("last_client_ts") or "") >= thirty_days_ago
+            ]
             overdue = 0
-            for f in followups:
+            for f in recent_followups:
                 last_client = f.get("last_client_ts")
                 last_matthew = f.get("last_matthew_ts")
                 if not last_client:
@@ -412,8 +435,8 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                 if waiting_on_matt and (now_utc - client_dt).total_seconds() >= 4 * 3600:
                     overdue += 1
             return {
-                "followups": followups[:20],
-                "total": len(followups),
+                "followups": recent_followups[:20],
+                "total": len(recent_followups),
                 "overdue_count": overdue,
                 "as_of": now_utc.isoformat(),
             }

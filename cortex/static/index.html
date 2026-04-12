@@ -419,18 +419,21 @@
       host.innerHTML = unavailable(); return;
     }
     const list = (data.emails || []).slice(0, 5);
+    const emailAge = data.as_of ? 'updated ' + timeAgo(data.as_of) : '';
     if (!list.length) {
       host.innerHTML = `
         <div class="stat-big">${esc(data.unread_count ?? 0)}</div>
-        <div class="stat-label">unread</div>`;
+        <div class="stat-label">unread (7d)</div>
+        ${emailAge ? `<div class="small" style="margin-top:4px">${esc(emailAge)}</div>` : ''}`;
       return;
     }
     host.innerHTML = `
       <div class="stat-big">${esc(data.unread_count ?? 0)}</div>
-      <div class="stat-label">unread</div>
+      <div class="stat-label">unread (7d)</div>
       <ul style="margin-top:8px">
         ${list.map((e) => `<li title="${esc(e.sender || '')}">${esc(e.subject || e.title || '(no subject)').slice(0, 72)}</li>`).join('')}
-      </ul>`;
+      </ul>
+      ${emailAge ? `<div class="small" style="margin-top:4px">${esc(emailAge)}</div>` : ''}`;
   }
 
   function renderCalendar(data) {
@@ -451,18 +454,20 @@
     const overdue = data.overdue_count ?? 0;
     const next = (data.followups || [])[0];
     const nextLabel = next ? `${esc(next.client_name || next.client_email || '—')} — ${esc(next.last_client_subject || '')}` : 'none';
+    const fuAge = data.as_of ? 'updated ' + timeAgo(data.as_of) : '';
     host.innerHTML = `
       <div class="stat-row">
         <div>
           <div class="stat-big">${esc(total)}</div>
-          <div class="stat-label">total</div>
+          <div class="stat-label">active (30d)</div>
         </div>
         <div>
           <div class="stat-big" style="color: ${overdue > 0 ? 'var(--red)' : 'var(--muted)'}">${esc(overdue)}</div>
           <div class="stat-label">overdue</div>
         </div>
       </div>
-      <div class="small" style="margin-top:8px">next: ${nextLabel.slice(0, 80)}</div>`;
+      <div class="small" style="margin-top:8px">next: ${nextLabel.slice(0, 80)}</div>
+      ${fuAge ? `<div class="small" style="margin-top:4px">${esc(fuAge)}</div>` : ''}`;
   }
 
   function renderWallet(data) {
