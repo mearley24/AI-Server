@@ -95,6 +95,12 @@ _MONTH_TO_INT = {
     "december": 12,
 }
 
+# ── Dust sweeper constants ────────────────────────────────────────────────────
+# Positions with estimated value below DUST_VALUE_THRESHOLD are swept immediately.
+# Positions under $2 held longer than STALE_DUST_HOURS are swept as stale dust.
+DUST_VALUE_THRESHOLD: float = 0.50   # $0.50 — matches min trade size
+STALE_DUST_HOURS: float = 24.0       # 24 h hold + < $2 value triggers stale dust sweep
+
 
 def _extract_temp_cluster_key(market_question: str) -> tuple[str, str, int] | None:
     """Extract (city_normalized, date_str, temp_celsius) from a temperature market title.
