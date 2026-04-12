@@ -1156,3 +1156,171 @@ and pushed to `origin/main`. Cloudflare Pages deployment was triggered automatic
 ### symphonysh SITE_STATUS.md
 
 Full CVE detail, advisory links, fix rationale, and residual risk explanation are documented in `symphonysh/SITE_STATUS.md` under the "lodash / CVE-2026-4800" entry (§ Known — Low Priority).
+
+---
+
+## Z14 — X-intake → iMessage Reply Flow Audit (2026-04-12)
+
+### Summary
+
+Audited the full X-intake → iMessage reply pipeline. The bridge correctly receives X
+links from iMessage, the analysis pipeline works end-to-end, and the iMessage bridge
+(port 8199) is healthy — but **the Redis listener Task in x-intake silently died at
+14:46:32 on 2026-04-11 and has never recovered**. Every X link sent since then has
+been silently dropped with no reply.
+
+---
+
+### Inbound path (iMessage → x-intake)
+
+| Step | Component | Status |
+|---|---|---|
+| Matt sends X link via iMessage | `scripts/imessage-server.py` (port 8199, native macOS) | ✅ Working |
+| Bridge reads Messages.db, detects X URL | `MessageMonitor.check_new_messages()` every 3 s | ✅ Working |
+| Bridge sends "Analyzing…" ACK to Matt | `send_queue.enqueue(REPLY_TO, response)` | ✅ Working |
+| Bridge publishes `{"text": url, "from": "+19705193013"}` to Redis `events:imessage` | `_get_redis_pub().publish("events:imessage", ...)` | ✅ Published |
+| x-intake `_redis_listener` receives message | `aioredis pubsub.subscribe("events:imessage")` | ❌ **0 subscribers — listener is dead** |
+
+Redis confirmed: `PUBSUB NUMSUB events:imessage` → **0**.
+
+---
+
+### What x-intake does when the listener is alive
+
+1. Parses the text for tweet URLs via `_TWEET_RE`
+2. Calls `asyncio.create_task(_process_url_and_reply(url))` (background task per URL)
+3. Fetches post text via fxtwitter/vxtwitter/nitter fallback chain
+4. Optionally downloads audio and transcribes via Whisper (OpenAI API)
+5. Analyses with GPT-4o-mini using Matt's relevance profile
+6. POSTs `{"message": "<analysis text>"}` to `http://host.docker.internal:8199`
+7. Bridge handler receives it: `message = body.get("body", body.get("text", body.get("message", "")))`, `phone = body.get("phone", REPLY_TO)` → defaults to `+19705193013` ✅
+8. Bridge queues and sends via AppleScript → iMessage
+
+All of steps 1–8 were confirmed **working** for the last session (multiple
+`imessage_reply_sent` log entries on 2026-04-11 14:38–14:48). The bridge returned
+`HTTP/1.0 200 OK` on every call.
+
+---
+
+### Root cause: asyncio Task garbage-collected after pubsub async-generator conflict
+
+At `2026-04-11 14:46:32` the following error appeared in x-intake:
+
+```
+ERROR asyncio: Task was destroyed but it is pending!
+task: <Task pending name='Task-3' coro=<_redis_listener() running at /app/main.py:354>
+      wait_for=<Future pending cb=[Task.task_wakeup()]>>
+ERROR asyncio: Task exception was never retrieved
+future: <Task finished name='Task-52'
+        coro=<<async_generator_athrow without __name__>()>
+        exception=RuntimeError('aclose(): asynchronous generator is already running')>
+RuntimeError: aclose(): asynchronous generator is already running
+```
+
+**Cause chain:**
+
+1. Multiple concurrent tweets arrived in rapid succession
+2. `_redis_listener` called `asyncio.create_task(_process_url_and_reply(url))` for
+   each — spawning several concurrent background tasks
+3. Each task called `await asyncio.to_thread(_analyze_url_sync, url)`; inside that
+   thread, `_analyze_url_sync` creates a **new event loop**
+   (`asyncio.new_event_loop().run_until_complete(…)`) — an antipattern that puts
+   concurrent pressure on the outer event loop
+4. Under that pressure, the `async for message in pubsub.listen()` async generator
+   (backed by `redis.asyncio`) had its cleanup (`aclose()`) triggered while it was
+   still mid-iteration, producing `RuntimeError: aclose(): asynchronous generator is
+   already running`
+5. This exception propagated to `Task-52` (the generator cleanup future) and was
+   **never retrieved** — Python's GC then destroyed `Task-3` (the
+   `_redis_listener` coroutine) while it was still pending
+6. Because the Task object itself was garbage-collected, the `while True: try/except
+   … redis_reconnecting … sleep(5)` reconnect loop inside the coroutine **never
+   ran** — the task simply ceased to exist
+7. The already-spawned analysis tasks for the last two tweets completed normally
+   (final `imessage_reply_sent` at 14:47:43 and 14:48:50), then the listener was
+   permanently gone
+
+**Secondary antipattern (not today's trigger, but fragile):**
+
+`_analyze_url_sync` creates a brand-new `asyncio.new_event_loop()` inside
+`asyncio.to_thread()`. The correct pattern is to call the async function directly
+from the async context, without a nested event loop.
+
+---
+
+### Why no auto-recovery
+
+`asyncio.create_task(_redis_listener())` in the `startup` handler **does not store a
+reference** to the returned Task object. When the task is destroyed, nothing holds a
+reference to it, so it cannot be inspected or restarted. The `on_event("startup")`
+handler fires only once per process; without a watchdog, the dead task is never
+revived short of a container restart.
+
+---
+
+### Last confirmed working reply
+
+`2026-04-11 14:48:50 [info] imessage_reply_sent length=752`
+
+All X links sent after that — including today's `moondevonyt` link at 09:58 — were
+received by the bridge, published to Redis, and silently dropped.
+
+---
+
+### Secondary findings
+
+| # | Finding | Severity |
+|---|---|---|
+| 1 | `_analyze_url_sync` creates a nested `asyncio.new_event_loop()` inside `asyncio.to_thread()` — antipattern that stresses the outer loop | Medium |
+| 2 | `asyncio.create_task(_redis_listener())` result is not stored — task cannot be monitored or restarted | Medium |
+| 3 | `scripts/imessage-server.py` logged `Error processing request: name '_re' is not defined` at 09:01 today — a Python NameError in `handle_reset_command` where `_re` is referenced but only `_idea_re = re` is defined at module level | Low (separate bug) |
+| 4 | `172.18.0.1:64054 - "GET / HTTP/1.1" 404 Not Found` in x-intake log — some host-side probe hitting x-intake root; harmless but unexplained | Info |
+
+---
+
+### Recommended fix (next change)
+
+**Minimal fix — restart x-intake container:**
+```bash
+docker compose restart x-intake
+```
+This will re-run the `startup` handler, re-subscribe to `events:imessage`, and
+restore the flow immediately. No code change required. Replies for X links should
+resume within seconds.
+
+**Durable fix (code change needed):**
+
+In `integrations/x_intake/main.py`, the startup handler should store the task
+reference and add a watchdog:
+
+```python
+# Replace:
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(_redis_listener())
+
+# With (lifespan + watchdog):
+_listener_task: asyncio.Task | None = None
+
+async def _listener_watchdog():
+    global _listener_task
+    while True:
+        if _listener_task is None or _listener_task.done():
+            logger.warning("redis_listener_restarting")
+            _listener_task = asyncio.create_task(_redis_listener())
+        await asyncio.sleep(10)
+```
+
+Also remove the nested `asyncio.new_event_loop()` from `_analyze_url_sync` — call
+`_analyze_url` directly in the async call chain instead.
+
+---
+
+### Audit verdict
+
+| Question | Answer |
+|---|---|
+| Does X intake reach the server? | ✅ Yes — bridge receives links, publishes to Redis |
+| Does the server attempt an iMessage reply? | ❌ No — Redis listener Task is dead (0 subscribers since Apr 11 14:46) |
+| What is blocking the reply? | Asyncio Task garbage-collected after `RuntimeError: aclose(): asynchronous generator is already running` on redis.asyncio pubsub — no watchdog to restart it |
+| Immediate action | `docker compose restart x-intake` |
