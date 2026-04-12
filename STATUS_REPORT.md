@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (Z4 — calendar tile fix: sentinel filter + Zoho datetime normalization)
+Last updated: 2026-04-12 (Z5 — trading dashboard $0.00 diagnosis: Kraken env cleanup + wallet unfunded)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -298,6 +298,78 @@ When real events are present they will show structured `title`, `start_display`,
 - The Zoho API call is not retried on transient errors — the `try next path`
   loop in `api_calendar` covers only HTTP 5xx / connection failures, not
   temporary 4xx auth issues.
+
+---
+
+## 11. Z5 Trading Dashboard $0.00 Diagnosis (2026-04-12)
+
+### What was checked
+- `docker-compose.yml` — confirmed Kraken env var names passed to `polymarket-bot`
+- `polymarket-bot/src/main.py` — confirmed env var usage (`KRAKEN_API_KEY`, `KRAKEN_SECRET`)
+- `polymarket-bot/api/routes.py` — confirmed `/positions`, `/pnl`, `/kraken/status` endpoints
+- `.env` — inspected all `KRAKEN_API_KEY`, `KRAKEN_API_SECRET`, `KRAKEN_SECRET` entries
+- `docker compose logs --tail=200 polymarket-bot` — inspected startup and recurring errors
+
+### Findings
+
+**Finding 1 — Duplicate `# Crypto` block in `.env` (FIXED)**
+`KRAKEN_API_KEY` and `KRAKEN_API_SECRET` each appeared **twice** with identical values,
+under two identical `# Crypto` comment headers (original lines 282–284 and 286–288).
+Both values were the same — no ambiguity. The duplicate block has been removed.
+The deduplicated single block now reads:
+```
+# Crypto
+KRAKEN_API_KEY=R+buhGeA...  (real key preserved exactly)
+KRAKEN_API_SECRET=zKFr9f6...  (real secret preserved exactly)
+KRAKEN_SECRET=
+```
+
+**Finding 2 — `KRAKEN_SECRET` missing from `.env` (PLACEHOLDER ADDED)**
+`docker-compose.yml` injects `KRAKEN_SECRET=${KRAKEN_SECRET:-}` into the
+`polymarket-bot` container. `src/main.py` reads
+`os.environ.get("KRAKEN_SECRET", "")` for the `CryptoClient` api_secret.
+The `.env` had **`KRAKEN_API_SECRET`** (used by other callers) but **no
+`KRAKEN_SECRET`** — so the container always received an empty secret.
+Placeholder `KRAKEN_SECRET=` added after `KRAKEN_API_SECRET`.
+**Matt must set `KRAKEN_SECRET` to the real Kraken API secret before Kraken
+market-maker auth will succeed.**
+
+**Finding 3 — Kraken market maker fails auth on every tick (recurring error)**
+Logs show repeated warnings:
+```
+{"error": "kraken requires \"secret\" credential", "event": "avellaneda_inventory_sync_failed"}
+{"error": "kraken requires \"secret\" credential", "event": "avellaneda_fetch_fills_error"}
+{"error": "kraken requires \"secret\" credential", "event": "cancel_stale_orders_error"}
+{"error": "kraken requires \"secret\" credential", "event": "avellaneda_balance_fetch_error"}
+```
+All Kraken wallet/positions/P&L fetches fail → dashboard shows $0.00 for Kraken.
+
+**Finding 4 — Polymarket wallet is nearly unfunded (balance $1.94 USDC)**
+On-chain wallet `0xa791E3090312981A1E18ed93238e480a03E7C0d2` holds only **$1.94 USDC**.
+Configured bankroll is $500. All arb trades skip with `arb_skipped_low_balance`
+(minimum trade cost $7.50). No positions held, so P&L = $0.00.
+
+### Diagnosis classification: **Mixed causes**
+| Cause | Impact |
+|---|---|
+| `KRAKEN_SECRET` env var missing (mismatch between `.env` key name and compose var) | Kraken MM shows $0 wallet/P&L; auth error every tick |
+| Polymarket wallet unfunded ($1.94 vs $500 bankroll) | All Polymarket strategies skip; 0 open positions; $0 P&L |
+
+### Changes made
+| File | Change |
+|---|---|
+| `.env` | Removed duplicate `# Crypto` block (lines 286–288, identical values) |
+| `.env` | Added `KRAKEN_SECRET=` placeholder after `KRAKEN_API_SECRET` |
+
+### Next recommended actions (in order)
+1. **Set `KRAKEN_SECRET` in `.env`** to the real Kraken API secret value, then
+   `docker compose up -d --build polymarket-bot` to inject it.
+   Verify with: `docker compose logs --tail=50 polymarket-bot | grep kraken`
+   — errors should stop.
+2. **Fund the Polymarket wallet** — deposit USDC to
+   `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon.
+   Minimum useful balance: $50+ (to cover multiple $7.50 arb trades).
+3. After both fixes, confirm dashboard shows non-zero wallet, positions, and P&L.
 
 ---
 
