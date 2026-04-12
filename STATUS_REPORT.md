@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (§20 Z12 — auto-redeemer re-confirmed: running, wallet 0xa791E309…, 297 all-time redeems, last redemption 08:09 UTC, 96 pending unresolved, no errors)
+Last updated: 2026-04-12 (§21 Z13 — symphonysh CVE-2026-4800 lodash remediation verified; build ✓; deployed to Cloudflare Pages via commit 967bdd2)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -1075,3 +1075,84 @@ Re-confirm the auto-redeemer is deployed, wired to the correct wallet, and not s
 Fund the wallet with $50+ USDC at `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon.
 New funded trades → new winning positions → redeemer redeems them automatically.
 The redeemer itself requires no changes.
+
+---
+
+## 21. Z13 — symphonysh CVE-2026-4800 Lodash Remediation (2026-04-12)
+
+### Objective
+Fully remediate CVE-2026-4800 in the `symphonysh` repo (Cloudflare Pages site), verify the build, and confirm deployment.
+
+### CVE summary
+
+| Field | Detail |
+|---|---|
+| CVE | CVE-2026-4800 / GHSA-r5fr-rjxr-66jc |
+| Also covers | GHSA-xxjr-mmjv-4gpg (Prototype Pollution in `_.unset`/`_.omit`), GHSA-f23m-r3pf-42rh (Prototype Pollution via array path bypass) |
+| Root cause | `recharts` (direct dep) resolved lodash to `4.18.1`, a supply-chain-compromised package not published by the lodash maintainers. `4.18.0` is also compromised. |
+| Attack vector | Code injection via `_.template` `imports` key names; prototype pollution via `_.unset`/`_.omit`. Requires user-controlled input to reach these functions. |
+| Affected package in tree | `lodash` (transitive, via `recharts`) |
+| Safe version | **`4.17.21`** — the only legitimate, non-compromised lodash release above `4.17.20`. |
+| Compromised versions | `4.18.0` (deprecated by npm), `4.18.1` (supply-chain attack — do NOT use). |
+
+### Fix applied
+
+**`symphonysh/package.json`** — `"overrides"` block pins all transitive lodash to `4.17.21`:
+```json
+"overrides": {
+  "lodash": "4.17.21"
+}
+```
+This forces `recharts/node_modules/lodash` (and any other transitive consumer) to resolve to `4.17.21` regardless of what their package.json requests. The lockfile was regenerated — `node_modules/recharts/node_modules/lodash` resolves to `4.17.21`.
+
+### Template usage audit
+
+Searched all of `symphonysh/src/` for `_.template`, `lodash.template`, and `require.*lodash`:
+- **Result: zero matches.** No application code calls `_.template` or any lodash template function.
+- `recharts` uses lodash internally for data utilities (`merge`, `cloneDeep`, etc.) — no user-controlled strings reach `_.template`, `_.unset`, or `_.omit`.
+- **Runtime exposure: none.**
+
+### Other lodash packages in tree
+
+| Package | Version | Status |
+|---|---|---|
+| `lodash` (transitive via `recharts`) | `4.17.21` (pinned by override) | ✅ Safe |
+| `lodash.merge` | `4.6.2` | ✅ Not affected by CVE-2026-4800 (separate standalone package; no template functions) |
+| `lodash-es` | — | Not present |
+| `lodash.template` | — | Not present |
+| `lodash-amd` | — | Not present |
+
+### Build verification
+
+```
+npm run build  →  ✓ built in 2.34s  (2680 modules transformed)
+```
+No errors. Chunk size warning for `index-DBT9SHZc.js` (1,028 kB) is pre-existing and unrelated to this change.
+
+### npm audit residual flags
+
+`npm audit` still reports `lodash <=4.17.23` as high-severity. This is a **known false positive** given the CVE-2026-4800 supply-chain context:
+- The advisory range `<=4.17.23` was written to block `4.18.0` and `4.18.1` (the compromised packages), but npm's range syntax also catches `4.17.21`.
+- Running `npm audit fix` would "upgrade" lodash to `4.18.1` — the exact compromised package. **Do not run `npm audit fix` for this advisory.**
+- The `overrides` block is the correct and complete mitigation.
+
+The esbuild/vite moderate findings (dev-server only, not in production build) are unchanged and low priority — see `symphonysh/SITE_STATUS.md`.
+
+### Deployment
+
+Cloudflare Pages auto-deploys on every push to `main`. The fix was committed as:
+```
+967bdd2  Patch lodash vulnerability and document remediation
+```
+and pushed to `origin/main`. Cloudflare Pages deployment was triggered automatically at that push. The site at `symphonysh.com` is running with the patched lockfile.
+
+### Commit + push
+
+| Repo | Commit | Status |
+|---|---|---|
+| `mearley24/symphonysh` | `967bdd2` — "Patch lodash vulnerability and document remediation" | ✅ Pushed to origin/main; Cloudflare deploy triggered |
+| `mearley24/AI-Server` | This STATUS_REPORT.md update (Z13) | ✅ Committed in this session |
+
+### symphonysh SITE_STATUS.md
+
+Full CVE detail, advisory links, fix rationale, and residual risk explanation are documented in `symphonysh/SITE_STATUS.md` under the "lodash / CVE-2026-4800" entry (§ Known — Low Priority).
