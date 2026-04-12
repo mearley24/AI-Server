@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (§14 — runtime audit of prompts A, C, I, N: A=PASS, C=PASS, I=PARTIAL, N=PARTIAL)
+Last updated: 2026-04-12 (§15 — end-of-pass snapshot: Tasks 1–7 complete)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -586,3 +586,37 @@ Live code inspection of the four "PARTIAL" prompts from §3. All grep/compile ev
 | **C** | ✅ PASS | Sandbox wired in copytrade + main.py; `_tick_in_progress` + `_maybe_refresh_bankroll` fully implemented |
 | **I** | 🟡 PARTIAL | Code changes (delegated_to_redeemer, cleanup loop) confirmed; runtime redemption execution not verified |
 | **N** | 🟡 PARTIAL | 9/12 deliverables present; openwebui still in compose, email ops publish missing, orchestrator calendar fetch missing |
+
+---
+
+## 15. End-of-Pass Snapshot — Tasks 1–7 (2026-04-12)
+
+*Summary-only pass. No new feature work. Decision-oriented.*
+
+---
+
+### Category Status
+
+| Category | Status | Summary |
+|---|---|---|
+| **Dashboard (Cortex)** | ✅ IMPROVED | Calendar tile fixed (Z4 — Zoho sentinel filter + datetime normalizer). Follow-up noise filter fixed (Z3 — symphonysh.com suppressed). Email tile correctly returns 0 unread; root cause is upstream in email-monitor (all emails marked read=1), not the dashboard. Cortex running healthy at port 8102, defined in docker-compose. |
+| **Calendar** | ✅ IMPROVED | `_parse_zoho_datetime` + `_normalize_calendar_event` added to dashboard.py. Sentinel objects filtered. Frontend renders `start_display`, recurring badge, up to 5 events. Remaining gap: timezone handling strips UTC offset — acceptable for now (calendar-agent already queries in local Denver time). |
+| **Trading** | 🔴 BLOCKED (Matt action required) | Application code is healthy: strategies registered, arb scanning running, sandbox wired (Prompt C ✅), copytrade seeds removed (Prompt A ✅). Blocked on two credentials Matt must supply: (1) `KRAKEN_SECRET` in `.env` — placeholder exists, value missing; (2) Polymarket wallet funded — $1.94 USDC vs $500 bankroll, all trades skip. Until both are set, P&L = $0 and all strategies idle. Prompt I (redeem) code-complete; runtime unverified. |
+| **Bob system checks** | 🟡 NEEDS FOLLOW-UP | Lessons scorecard: **19/25 green** (up from 17/25). Dropbox-organizer LaunchAgent ✅ verified running (PID 32502, exit 0). iCloud ✅ verified signed-in, all 16 containers idle/synced. Remaining open: lesson #4 (Dropbox link validator), #17 (sell haircut rounding). 103 pending approvals in `decision_journal.db` — P0 backlog, no drain mechanism yet. client-portal still reports unhealthy (missing `/health` endpoint). |
+| **OpenClaw audit** | 🟡 NEEDS FOLLOW-UP | Orchestrator healthy: 40 jobs, 3413 decisions, 58 follow-ups, Redis flowing. Critical gap: `follow_up_log` in jobs.db has 0 rows while `follow_ups.db` has 58 — auto-send loop has not fired. Cortex starving: 1 entry/week, most services still not POSTing to `http://cortex:8102/api/entries`. Backfill of `client_preferences` started at audit time; completion unverified. |
+| **Prompts A/C/I/N audit** | ✅ IMPROVED | **A=PASS, C=PASS** (confirmed via code grep — no seeds, no injection, sandbox fully wired). **I=PARTIAL** (code changes confirmed; runtime redemption not verified — run `docker logs polymarket-bot \| grep redeem`). **N=PARTIAL** (9/12 deliverables; 3 gaps remain: openwebui still in compose, `ops:email_action` publish missing from email-monitor, `/calendar/daily-briefing` fetch missing from orchestrator). |
+| **symphonysh** | ✅ DONE (pending business input) | Site functionally live on Cloudflare Pages. This pass cleaned: 8 debug `console.log` statements, dead `testNavigation` button (was visible to visitors), debug service entries in booking dropdown, stale `console.log` from scheduling index, unused imports in AppointmentForm. Pending items are non-blocking and require Matt: real client testimonials, `BUSINESS_SAME_AS` social URLs, GBP claim/verify. Minor known: `App.tsx` console.log, stale Google Calendar stub files. |
+
+---
+
+### Top 3 Next Actions
+
+1. **Matt: unblock trading** — Set `KRAKEN_SECRET` in `.env` to the real Kraken API secret (same value as `KRAKEN_API_SECRET`), then `docker compose up -d polymarket-bot`. Fund Polymarket wallet at `0xa791E3090312981A1E18ed93238e480a03E7C0d2` with $50+ USDC on Polygon. Neither requires a code change — credentials and funding only.
+
+2. **Finish Prompt N (3 bounded tasks, ~55 min total)** — (a) Remove `openwebui` service block from `docker-compose.yml` and run `docker compose up -d`; (b) add `ops:email_action` Redis publish to `email-monitor/notifier.py` after action-required classification; (c) add `/calendar/daily-briefing` fetch to `openclaw/orchestrator.py` daily briefing assembly. All three are narrow, well-scoped changes.
+
+3. **Wire Cortex + drain approvals** — Cortex is receiving 1 entry/week while the system generates hundreds of events. Add `POST http://cortex:8102/api/entries` calls (with `try/except`) to email-monitor, daily_briefing, and follow_up_engine. Simultaneously write the one-shot approval-drain script (Prompt T) to triage the 103 pending approvals — stale >7 days auto-expire, remainder batched to Matt via iMessage.
+
+---
+
+*Next recommended prompt: **Prompt N finish** (bounded, no credentials required, closes 3 concrete gaps). Follow with Prompt T (approval drain) once Prompt N is merged.*
