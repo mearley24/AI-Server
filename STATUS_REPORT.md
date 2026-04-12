@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (§21 Z13 — symphonysh CVE-2026-4800 lodash remediation verified; build ✓; deployed to Cloudflare Pages via commit 967bdd2)
+Last updated: 2026-04-12 (§22 — Supabase usage audit: classified LEGACY in AI-Server, REQUIRED in symphonysh)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -1324,3 +1324,129 @@ Also remove the nested `asyncio.new_event_loop()` from `_analyze_url_sync` — c
 | Does the server attempt an iMessage reply? | ❌ No — Redis listener Task is dead (0 subscribers since Apr 11 14:46) |
 | What is blocking the reply? | Asyncio Task garbage-collected after `RuntimeError: aclose(): asynchronous generator is already running` on redis.asyncio pubsub — no watchdog to restart it |
 | Immediate action | `docker compose restart x-intake` |
+
+---
+
+## 22. Supabase Usage Audit (2026-04-12)
+
+### Scope
+Both repos inspected: `/Users/bob/AI-Server` and `/Users/bob/symphonysh`.
+Read-only audit — no keys or configs modified.
+
+---
+
+### AI-Server (`~/AI-Server`) — LEGACY
+
+**Classification: 🟡 LEGACY — env vars exist, no live code paths consume them.**
+
+#### Files referencing Supabase (outside `.venv`)
+
+| File | Type | Content |
+|---|---|---|
+| `.env` | Config | Two blocks: `SUPABASE_WEBSITE_URL` / `SUPABASE_WEBSITE_KEY` (labeled "legacy") and `SUPABASE_URL` / `SUPABASE_KEY` (labeled "AI-Server - team brain database") — both populated with real values |
+| `.env.bak` | Backup | Same vars — historic snapshot |
+| `.env.example` | Template | Documents `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY` as "Central Database" |
+| `integrations/supabase/` | Directory | Contains only `__pycache__/` — **no Python source files exist** |
+| `data/notes_index.json` | Data file | Word "supabase" appears as content/metadata — not code |
+| `.cursor/prompts/testimonial-collection-flow.md` | Planning doc | References Supabase in a future testimonial feature spec — not implemented, not production code |
+
+#### Live code audit
+
+`grep -r "supabase" /Users/bob/AI-Server --include="*.py" --include="*.js" --include="*.yml"` (excluding `.venv`) → **zero matches**.
+
+No Python, JavaScript, or Compose file outside the virtualenv imports, instantiates, or calls any Supabase client. The `integrations/supabase/` directory was likely scaffolded but never populated. The `.venv` has the `supabase` Python package installed (visible in `.venv/lib/python3.14/site-packages/supabase/`), but nothing on the live Docker service path imports it.
+
+#### Impact if Supabase is turned off
+
+**None on AI-Server.** No running Docker service reads `SUPABASE_URL` or `SUPABASE_KEY`. Removing the vars from `.env` would have zero runtime effect.
+
+---
+
+### symphonysh (`~/symphonysh`) — REQUIRED
+
+**Classification: 🔴 REQUIRED — Supabase is the active database AND function-hosting platform for the live website.**
+
+#### Source files with live Supabase usage
+
+| File | Purpose | Supabase role |
+|---|---|---|
+| `src/integrations/supabase/client.ts` | Singleton client (hardcoded prod URL + anon key) | Primary DB client — all PostgREST calls flow through this |
+| `src/lib/supabase.ts` | Secondary client (reads `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` env vars) | Duplicate client — created from env vars; largely superseded by the hardcoded one above |
+| `src/utils/appointments/dbUtils.ts` | Appointment booking write path | **Database**: inserts rows into `appointments` table directly via `supabase.from('appointments').insert()` |
+| `src/utils/appointments/index.ts` | Appointment submit orchestrator | **Edge function call**: POSTs to `{SUPABASE_URL}/functions/v1/send-confirmation-email` after DB insert |
+| `src/utils/appointments/notificationUtils.ts` | Appointment notification | **Edge function fallback**: calls `supabase.functions.invoke('notify-appointment')` if Zapier webhook fails |
+| `src/pages/Contact.tsx` | Contact form handler | **Edge function call**: POSTs directly to `https://symphonysh.supabase.co/functions/v1/send-contact-email` (hardcoded URL) |
+| `src/pages/admin/UploadMatterport.tsx` | Admin file upload | **Edge function + Storage**: POSTs to `https://bxsdjxkbhjtdrrtjtyto.supabase.co/functions/v1/upload-matterport` (hardcoded URL) |
+
+#### Supabase Edge Functions in use
+
+| Function | Role | What breaks if removed |
+|---|---|---|
+| `send-contact-email` | Stores contact submission in `contact_submissions` table + sends Resend email to business + confirmation to visitor | Contact form silently fails — no lead capture, no email |
+| `create-appointment` | Admin insert to `appointments` table + triggers `notify-appointment` | Appointment booking fails at DB layer |
+| `upload-matterport` | Uploads file to Supabase Storage bucket `matterport-files` | Admin Matterport upload page broken |
+| `appointment-trigger` | Calls `notify-appointment` + `create-calendar-event` | Appointment chain notifications stop |
+| `available-time-slots` (utils) | Queries `appointments` to filter out already-booked slots | Time slot picker shows all slots as available regardless of bookings |
+| `send-confirmation-email` (referenced, not in tree) | Sends email confirmation to booking visitor | Visitors receive no confirmation |
+| `notify-appointment` (referenced, not in tree) | Notifies Matt of new appointment | Matt gets no notification of new bookings |
+
+#### Database tables in use
+
+| Table | Used by | Purpose |
+|---|---|---|
+| `appointments` | `dbUtils.ts`, `create-appointment`, `available-time-slots` | Live appointment records |
+| `contact_submissions` | `send-contact-email` edge function | Contact form lead storage |
+| `google_tokens` | Defined in schema (type inference only) | Google OAuth tokens for calendar integration |
+| `scheduling` | Defined in schema | Time-slot availability overrides |
+
+#### Environment variables
+
+| Repo | Variable | Status |
+|---|---|---|
+| `symphonysh/.env` | `VITE_SUPABASE_PROJECT_ID` | Populated |
+| `symphonysh/.env` | `VITE_SUPABASE_PUBLISHABLE_KEY` | Populated |
+| `symphonysh/.env` | `VITE_SUPABASE_URL` | Populated |
+| `AI-Server/.env` | `SUPABASE_WEBSITE_URL` | Populated (labeled "legacy") |
+| `AI-Server/.env` | `SUPABASE_WEBSITE_KEY` | Populated (labeled "legacy") |
+| `AI-Server/.env` | `SUPABASE_URL` | Populated (labeled "AI-Server team brain db" — not used by any service) |
+| `AI-Server/.env` | `SUPABASE_KEY` | Populated (same — not used by any service) |
+
+---
+
+### Removal impact summary
+
+| Functionality | Current provider | What breaks if Supabase is off | Migration path |
+|---|---|---|---|
+| Contact form (lead capture + email) | Supabase Edge Function + Supabase DB + Resend | Form submission silently fails; no email sent; no lead stored | Replace edge function with a Bob-hosted endpoint (e.g. on `proposals:8091` or a new `website-api` service); keep Resend for email delivery; store leads in a SQLite table on Bob |
+| Appointment booking (write) | Supabase PostgREST (`appointments` table) | Booking write fails; visitor sees error | Expose a `POST /appointments` endpoint on Bob; store in `data/website/appointments.db` |
+| Appointment slot availability (read) | Supabase Edge Function queries `appointments` | All time slots appear available | Same Bob endpoint serves `GET /appointments/available-slots?date=...` |
+| Appointment confirmation email | Supabase Edge Function + Resend | Visitor gets no confirmation | Move to Bob-hosted endpoint; Resend key already in `.env` |
+| Matterport file upload (admin only) | Supabase Storage (`matterport-files` bucket) | Admin upload page broken | Replace with Cloudflare R2 (already in ecosystem) or a local directory served from Bob |
+| Appointment notifications to Matt | `notify-appointment` edge function | Matt gets no new-booking alert | Wire into notification-hub (`POST http://notification-hub:8095/notify`) — already handles iMessage/Telegram |
+
+**Not in use from Supabase:**
+- Auth (GoTrue) — no user accounts, no sessions, no sign-in flow on symphonysh
+- Realtime (broadcast/presence channels) — no WebSocket subscriptions in source
+- RPC (custom Postgres functions) — `update_time_slot_availability` is defined in the schema but nothing in the frontend calls it
+
+---
+
+### Classification
+
+| Repo | Classification | Rationale |
+|---|---|---|
+| **AI-Server** | 🟡 **LEGACY** | Env vars are set and the Python package is installed in `.venv`, but zero live service code paths use Supabase. `integrations/supabase/` is an empty shell. Removing the vars and uninstalling the package would have no runtime effect. |
+| **symphonysh** | 🔴 **REQUIRED** | Contact form, appointment booking (read + write), confirmation emails, and admin file uploads all depend on Supabase. Turning it off would break three user-facing flows. Replaceable, but not yet replaced. |
+
+---
+
+### Migration effort estimate (symphonysh → Supabase-free)
+
+| Task | Effort | Notes |
+|---|---|---|
+| Stand up `website-api` microservice on Bob (Flask/FastAPI, one Dockerfile) | ~2 h | Exposes `/contact`, `/appointments`, `/appointments/slots` endpoints; SQLite-backed; exposed via Cloudflare Tunnel |
+| Migrate edge functions to Bob endpoints (contact form, appointment create, slot query, confirmation email) | ~3 h | Resend API key already in `.env`; no new third-party deps needed |
+| Replace Supabase Storage (`matterport-files`) with Cloudflare R2 or local path | ~2 h | R2 is already in the Cloudflare account; alternatively store files on Bob and serve via the API |
+| Remove `@supabase/supabase-js` from `symphonysh/package.json`, delete `src/integrations/supabase/`, `src/lib/supabase.ts`, and `supabase/` directory | ~1 h | Update all import sites; remove VITE_SUPABASE_* vars from `.env` |
+| Clean AI-Server `.env` (remove all SUPABASE_* vars, uninstall Python package from `.venv`) | ~15 min | Safe to do now |
+| **Total** | **~8–9 h** | Can be done in one focused session; low risk since there are no user auth sessions to migrate |
