@@ -647,6 +647,14 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         except Exception as exc:
             return {"events": [], "count": 0, "error": str(exc)}
 
+    @app.get("/api/redeemer")
+    async def api_redeemer():
+        """Redeemer status: last cycle time, conditions redeemed, gas balance."""
+        data = await _safe_get(f"{TRADING_BOT_URL}/redeem/status", timeout=5.0)
+        if data is None:
+            return {"status": "unavailable", "error": "bot unreachable"}
+        return data
+
     @app.get("/api/system")
     async def api_system():
         """System info: uptime, disk, memory, container count."""

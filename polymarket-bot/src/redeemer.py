@@ -189,6 +189,30 @@ class PolymarketRedeemer:
             abi=NEG_RISK_ADAPTER_ABI,
         )
 
+    def _save_summary(self) -> None:
+        """Persist last cycle summary to redeemer_summary.json for dashboard / monitoring."""
+        try:
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            summary = {
+                "wallet": self._wallet_address,
+                "running": self._running,
+                "check_interval_sec": int(self._check_interval),
+                "redeemed_conditions_total": len(self._redeemed_conditions),
+                "last_cycle_at": self._last_cycle_at,
+                "last_cycle_at_iso": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime(self._last_cycle_at)
+                ) if self._last_cycle_at else None,
+                "last_cycle_summary": self._last_cycle_summary,
+                "updated_at": time.time(),
+            }
+            summary_path = self._data_dir / "redeemer_summary.json"
+            summary_path.write_text(
+                json.dumps(summary, separators=(",", ":")),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("redeemer_save_summary_failed", error=str(exc)[:120])
+
     def _load_redeemed(self) -> set[str]:
         try:
             if self._redeemed_path.is_file():
@@ -454,7 +478,7 @@ class PolymarketRedeemer:
             })
 
         if not redeemable:
-            logger.debug(
+            logger.info(
                 "redeemer_nothing_to_redeem",
                 total_positions=len(positions),
                 pending=pending_count,
@@ -463,6 +487,7 @@ class PolymarketRedeemer:
             out = {"redeemed": 0, "total_value": 0, "pending": pending_count, "losers": loser_count}
             self._last_cycle_at = time.time()
             self._last_cycle_summary = {**out, "status": "idle"}
+            self._save_summary()
             return out
 
         # Deduplicate by condition_id
@@ -551,6 +576,7 @@ class PolymarketRedeemer:
         }
         self._last_cycle_at = time.time()
         self._last_cycle_summary = result
+        self._save_summary()
         return result
 
     async def _redeem_single(

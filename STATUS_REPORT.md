@@ -709,6 +709,76 @@ Overall status from new banner line: `║  Status:     [!!] BLOCKED — no trade
 
 ---
 
+## 18. Z10 Redeemer Path Audit & Observability (2026-04-12)
+
+### Objective
+Confirm a clear, automated path exists to redeem resolved Polymarket positions and bring USDC.e back into the main wallet. Wire observability so the state is visible at a glance.
+
+### Findings (live from `GET /redeem/status`)
+
+| Field | Value |
+|---|---|
+| Status | `running: true` |
+| Wallet | `0xa791E3090312981A1E18ed93238e480a03E7C0d2` (same as trading wallet) |
+| MATIC gas balance | 62.85 POL — well above the 0.05 minimum |
+| USDC.e balance | $1.94 (wallet drained by prior live trades, not by missing redemption) |
+| Check interval | 180 s (every 3 minutes) |
+| Redeemed conditions (all-time) | **297** — persisted in `data/polymarket/redeemed_conditions.json` |
+| Last cycle | pending=96, redeemable=0, status=idle |
+| API endpoints | `GET /redeem/status`, `POST /redeem`, `POST /redeem/force` — all live |
+
+**Key finding:** The redeemer is fully wired and has been operational. 297 conditions have already been redeemed. The wallet is empty because live trades depleted it (-$5.11 net), not because redemptions were skipped. The 96 "pending" positions are awaiting on-chain resolution (their markets have not settled yet).
+
+### What runs automatically
+
+1. **`PolymarketRedeemer`** starts with `polymarket-bot` (wired in `src/main.py` — requires `POLY_PRIVATE_KEY` set, which it is).
+2. Every **3 minutes** (`REDEEMER_CHECK_INTERVAL_SEC=180`) it:
+   - Checks POL gas balance (skips if < 0.05 POL)
+   - Checks gas price (skips if > 800 gwei)
+   - Fetches **all** positions from `data-api.polymarket.com` (paginated, `sizeThreshold=0`)
+   - Verifies on-chain: ERC1155 token balance + `payoutDenominator > 0`
+   - Calls `CTF.redeemPositions` (standard) or `NegRiskAdapter.redeemPositions` (neg-risk markets) — routing is automatic
+   - Logs `redeemer_redeemed` (INFO) or `redeemer_nothing_to_redeem` (INFO) for every cycle
+3. Redeemed condition IDs persisted to `data/polymarket/redeemed_conditions.json` (survives restarts).
+4. **NEW:** After every cycle, `data/polymarket/redeemer_summary.json` is written with last cycle time, summary, and wallet address — readable by any monitoring tool without hitting the API.
+
+### Changes made this pass
+
+| File | Change |
+|---|---|
+| `polymarket-bot/src/redeemer.py` | `redeemer_nothing_to_redeem` promoted from `debug` to `info` (now visible in normal logs) |
+| `polymarket-bot/src/redeemer.py` | Added `_save_summary()` — writes `data/polymarket/redeemer_summary.json` after every cycle |
+| `polymarket-bot/src/redeemer.py` | `_save_summary()` called at end of both `redeem_all_winning()` code paths (idle + redeemed) |
+| `cortex/dashboard.py` | Added `GET /api/redeemer` — proxies `http://vpn:8430/redeem/status` with 5s timeout |
+| `cortex/static/index.html` | Added **Auto-Redeemer** card in Trading column with: running status dot, total redeemed count, pending count, last run time, gas balance, cycle interval |
+
+### How to confirm it is working
+
+```bash
+# Live API status
+curl http://localhost:8430/redeem/status | jq .
+
+# Persisted summary (readable without hitting the API)
+cat data/polymarket/redeemer_summary.json | jq .
+
+# Container logs — look for redeemer events (now at INFO level)
+docker compose logs --tail=50 polymarket-bot | grep redeemer
+
+# Cortex dashboard tile (refreshes every 60s)
+open http://localhost:8102/dashboard
+# → "Auto-Redeemer" card in Trading column shows status dot, redeemed count, last run
+
+# Manual force-redeem (safe — only redeems already-resolved winning positions)
+curl -X POST http://localhost:8430/redeem/force | jq .
+```
+
+### When redemptions will next fire
+A redemption will execute the **next time a market the wallet holds resolves on-chain**. The 96 currently-pending positions will be checked every 3 minutes. Once any resolves (payoutDenominator > 0 on-chain), USDC.e flows back to the wallet automatically — no human action required.
+
+**Prerequisite for meaningful redemptions:** The wallet must hold winning positions. That requires the wallet to be funded ($50+ USDC) so new trades can execute. See §17 for funding instructions.
+
+---
+
 ## 17. Z9 Trading Mode Diagnosis (2026-04-12)
 
 **One-line mode diagnosis:** LIVE mode (`POLY_DRY_RUN=false`) — Polymarket wallet drained to $1.94 USDC by prior live trades; all signals skip with `copytrade_skip: low_bankroll`; zero active positions; Kraken MM dry-run + missing secret; Kalshi in demo mode; dashboard zeroes are correct.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Bob — Symphony AI</title>
+<title>Bob &mdash; Symphony AI</title>
 <style>
   :root {
     --bg: #000;
@@ -252,86 +252,91 @@
 <body>
 <header>
   <div class="brand">
-    <h1>Bob — Symphony AI</h1>
+    <h1>Bob &mdash; Symphony AI</h1>
     <span class="sub">cortex dashboard</span>
   </div>
   <div class="meta">
-    <span class="clock mono" id="clock">—</span>
-    <span class="badge" id="uptime">uptime —</span>
-    <span id="refreshed">refreshed —</span>
+    <span class="clock mono" id="clock">&mdash;</span>
+    <span class="badge" id="uptime">uptime &mdash;</span>
+    <span id="refreshed">refreshed &mdash;</span>
   </div>
 </header>
 
 <main class="grid">
-  <!-- ── Column 1: Operations ─────────────────────────────────── -->
+  <!-- Column 1: Operations -->
   <section class="column">
     <div class="card">
       <h2>Service Health</h2>
       <div id="services" class="svc-grid">
-        <div class="unavailable">loading…</div>
+        <div class="unavailable">loading</div>
       </div>
       <div class="small" id="services-summary" style="margin-top:8px"></div>
     </div>
 
     <div class="card">
       <h2>Email</h2>
-      <div id="emails"><div class="unavailable">loading…</div></div>
+      <div id="emails"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>Calendar</h2>
-      <div id="calendar"><div class="unavailable">loading…</div></div>
+      <div id="calendar"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>Follow-ups</h2>
-      <div id="followups"><div class="unavailable">loading…</div></div>
+      <div id="followups"><div class="unavailable">loading</div></div>
     </div>
   </section>
 
-  <!-- ── Column 2: Trading ─────────────────────────────────── -->
+  <!-- Column 2: Trading -->
   <section class="column">
     <div class="card">
       <h2>Wallet</h2>
-      <div id="wallet"><div class="unavailable">loading…</div></div>
+      <div id="wallet"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>Positions</h2>
-      <div id="positions"><div class="unavailable">loading…</div></div>
+      <div id="positions"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>P&amp;L</h2>
-      <div id="pnl"><div class="unavailable">loading…</div></div>
+      <div id="pnl"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>Recent Activity</h2>
-      <div id="activity"><div class="unavailable">loading…</div></div>
+      <div id="activity"><div class="unavailable">loading</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Auto-Redeemer</h2>
+      <div id="redeemer"><div class="unavailable">loading</div></div>
     </div>
   </section>
 
-  <!-- ── Column 3: Brain ─────────────────────────────────── -->
+  <!-- Column 3: Brain -->
   <section class="column">
     <div class="card">
       <h2>Memory</h2>
-      <div id="memory"><div class="unavailable">loading…</div></div>
+      <div id="memory"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>Goals</h2>
-      <div id="goals"><div class="unavailable">loading…</div></div>
+      <div id="goals"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card" id="decisions-card">
       <h2>Decisions</h2>
-      <div id="decisions"><div class="unavailable">loading…</div></div>
+      <div id="decisions"><div class="unavailable">loading</div></div>
     </div>
 
     <div class="card">
       <h2>Daily Digest</h2>
-      <div id="digest"><div class="unavailable">loading…</div></div>
+      <div id="digest"><div class="unavailable">loading</div></div>
     </div>
   </section>
 </main>
@@ -340,9 +345,9 @@
   <div class="stats" id="footer-stats"></div>
   <div>
     <a href="/digest/today">full digest</a>
-    &nbsp;·&nbsp;
+    &nbsp;&middot;&nbsp;
     <a href="/memories">memories</a>
-    &nbsp;·&nbsp;
+    &nbsp;&middot;&nbsp;
     <a href="/goals">goals</a>
   </div>
 </footer>
@@ -351,7 +356,7 @@
 (() => {
   const REFRESH_MS = 60000;
 
-  // ── helpers ────────────────────────────────────────────────
+  // helpers
   const $ = (id) => document.getElementById(id);
   const fmtNum = (n, d = 2) =>
     (n == null || isNaN(n)) ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -360,7 +365,7 @@
   const unavailable = (msg = 'unavailable') => `<div class="unavailable">${esc(msg)}</div>`;
   const timeAgo = (iso) => {
     if (!iso) return '';
-    const t = new Date(iso).getTime();
+    const t = typeof iso === 'number' ? iso * 1000 : new Date(iso).getTime();
     if (isNaN(t)) return '';
     const s = Math.max(0, Math.floor((Date.now() - t) / 1000));
     if (s < 60) return `${s}s ago`;
@@ -379,7 +384,7 @@
     }
   }
 
-  // ── clock ──────────────────────────────────────────────────
+  // clock
   function tickClock() {
     try {
       const s = new Date().toLocaleString('en-US', {
@@ -393,7 +398,7 @@
     }
   }
 
-  // ── renderers ──────────────────────────────────────────────
+  // renderers
   function renderServices(data) {
     const host = $('services');
     const summary = $('services-summary');
@@ -442,12 +447,10 @@
     const list = (data.events || []).slice(0, 5);
     if (!list.length) { host.innerHTML = `<div class="small">no upcoming events</div>`; return; }
     host.innerHTML = `<ul>${list.map((e) => {
-      // Prefer normalized start_display (set by dashboard.py normalization).
-      // Fall back through legacy field names for forward-compatibility.
       const when = e.start_display || e.start || e.time || e.date || '';
       const title = e.title || e.summary || '(no title)';
       const recur = e.is_recurring
-        ? ' <span style="font-size:10px;color:var(--gold-dim)" title="recurring">↻</span>'
+        ? ' <span style="font-size:10px;color:var(--gold-dim)" title="recurring">&#8635;</span>'
         : '';
       const desc = e.description
         ? `<span class="small" style="display:block;color:var(--muted);margin-top:1px">${esc(e.description.slice(0, 60))}</span>`
@@ -573,6 +576,43 @@
     host.innerHTML = `<ul>${items.join('')}</ul>`;
   }
 
+  function renderRedeemer(data) {
+    const host = $('redeemer');
+    if (!data || data.error) { host.innerHTML = unavailable(data && data.error ? data.error : 'unavailable'); return; }
+    const running = data.running;
+    const statusDot = running
+      ? '<span class="dot healthy" style="display:inline-block;vertical-align:middle;margin-right:5px"></span>'
+      : '<span class="dot down" style="display:inline-block;vertical-align:middle;margin-right:5px"></span>';
+    const statusLabel = running ? 'running' : 'stopped';
+    const cycleTs = data.last_cycle_at;
+    const lastRun = cycleTs ? timeAgo(cycleTs) : 'never';
+    const summary = data.last_cycle_summary || {};
+    const redeemed = summary.redeemed ?? 0;
+    const pending = summary.pending ?? 0;
+    const status = summary.status || (redeemed > 0 ? 'redeemed' : 'idle');
+    const matic = Number(data.matic_balance || 0).toFixed(2);
+    const interval = data.check_interval ? Math.round(data.check_interval / 60) + ' min' : '—';
+    const total = data.redeemed_conditions || 0;
+    const recovered = summary.recovered != null ? fmtUsd(summary.recovered) : null;
+    host.innerHTML = `
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        ${statusDot}<span class="small">${esc(statusLabel)}</span>
+        <span class="small" style="margin-left:auto">${esc(interval)} cycle</span>
+      </div>
+      <div class="stat-row">
+        <div>
+          <div class="stat-big">${esc(total)}</div>
+          <div class="stat-label">redeemed total</div>
+        </div>
+        <div>
+          <div class="stat-big" style="color:${pending > 0 ? 'var(--yellow)' : 'var(--muted)'}">${esc(pending)}</div>
+          <div class="stat-label">pending</div>
+        </div>
+      </div>
+      <div class="small" style="margin-top:8px">last run: ${esc(lastRun)} &mdash; ${esc(status)}${recovered && redeemed > 0 ? ' &mdash; recovered ' + recovered : ''}</div>
+      <div class="small" style="margin-top:4px">gas (POL): ${esc(matic)}</div>`;
+  }
+
   function renderMemory(stats, memories) {
     const host = $('memory');
     if (!stats && !memories) { host.innerHTML = unavailable(); return; }
@@ -657,10 +697,10 @@
     }
   }
 
-  // ── orchestrator ───────────────────────────────────────────
+  // orchestrator
   async function refresh() {
     tickClock();
-    const [services, wallet, positions, pnlSeries, activity, emails, calendar, followups, goals, health, memories, decisions, digest, system] =
+    const [services, wallet, positions, pnlSeries, activity, emails, calendar, followups, goals, health, memories, decisions, digest, system, redeemer] =
       await Promise.all([
         fetchJson('/api/services'),
         fetchJson('/api/wallet'),
@@ -676,6 +716,7 @@
         fetchJson('/api/decisions/recent?limit=20'),
         fetchJson('/digest/today'),
         fetchJson('/api/system'),
+        fetchJson('/api/redeemer'),
       ]);
 
     renderServices(services);
@@ -686,6 +727,7 @@
     renderPositions(positions);
     renderPnl(wallet, pnlSeries);
     renderActivity(activity);
+    renderRedeemer(redeemer);
     renderMemory(health && health.memories, memories);
     renderGoals(goals);
     renderDecisions(decisions);
