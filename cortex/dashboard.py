@@ -45,6 +45,40 @@ DECISION_JOURNAL_DB_CANDIDATES = [
     Path("data/openclaw/decision_journal.db"),
 ]
 
+# Senders that are NOT real client follow-ups — vendors, newsletters, automated systems.
+# Matched case-insensitively against client_name OR client_email.
+FOLLOWUP_NOISE_SENDERS = {
+    "somfy", "control4", "autodesk", "phoenix marketing", "screen innovations",
+    "shade innovations", "cablewholesale", "ups", "zapier", "the futurist",
+    "linq", "snapone", "snap one", "netlify", "hiscox", "vyde",
+    "d-tools", "billing", "no-reply", "noreply", "mailer-daemon",
+    "donotreply", "do-not-reply", "unsubscribe",
+}
+
+# Subject patterns that indicate automated/marketing emails (case-insensitive substrings)
+FOLLOWUP_NOISE_SUBJECTS = {
+    "webinar", "unsubscribe", "newsletter", "recommended for you",
+    "your order", "credit memo", "payment received", "your shipment",
+    "trial has ended", "financial report", "see your business insights",
+    "sandbox", "new properties recommended",
+}
+
+
+def _is_followup_noise(followup: dict) -> bool:
+    """Return True if a follow-up entry looks like vendor/marketing noise."""
+    name = (followup.get("client_name") or "").lower()
+    email = (followup.get("client_email") or "").lower()
+    subject = (followup.get("last_client_subject") or "").lower()
+
+    for noise in FOLLOWUP_NOISE_SENDERS:
+        if noise in name or noise in email:
+            return True
+    for noise in FOLLOWUP_NOISE_SUBJECTS:
+        if noise in subject:
+            return True
+    return False
+
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 # Service map — ports updated for current stack (notification-hub=8095,
@@ -365,6 +399,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             recent_emails = [
                 e for e in emails
                 if (e.get("received_at") or e.get("date") or "") >= seven_days_ago
+                and not e.get("read") and not e.get("processed")
             ]
             unread = sum(
                 1 for e in recent_emails
@@ -418,6 +453,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             recent_followups = [
                 f for f in followups
                 if (f.get("last_client_ts") or "") >= thirty_days_ago
+                and not _is_followup_noise(f)
             ]
             overdue = 0
             for f in recent_followups:
