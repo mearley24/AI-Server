@@ -46,7 +46,7 @@ AI-Server/
 │   ├── set-env.sh         # Safe .env key setter
 │   ├── api-post.sh        # JSON POST helper (no inline JSON)
 │   └── bob-watchdog.sh    # Service watchdog
-├── docker-compose.yml     # 20 containers (cortex added in Prompt S)
+├── docker-compose.yml     # 19 containers (cortex replaced mission-control in Prompt S)
 ├── .clinerules            # Cline context (kept for compatibility)
 ├── CLAUDE.md              # THIS FILE — Claude Code reads this first
 └── .cursor/prompts/       # Task prompts (A through P, plus operational)
