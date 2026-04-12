@@ -449,7 +449,10 @@
       const recur = e.is_recurring
         ? ' <span style="font-size:10px;color:var(--gold-dim)" title="recurring">↻</span>'
         : '';
-      return `<li><strong>${esc(title)}</strong>${recur}<br><span class="small">${esc(when) || '&nbsp;'}</span></li>`;
+      const desc = e.description
+        ? `<span class="small" style="display:block;color:var(--muted);margin-top:1px">${esc(e.description.slice(0, 60))}</span>`
+        : '';
+      return `<li><strong>${esc(title)}</strong>${recur}<br><span class="small">${esc(when) || '&nbsp;'}</span>${desc}</li>`;
     }).join('')}</ul>`;
   }
 

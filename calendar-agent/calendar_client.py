@@ -89,11 +89,18 @@ class ZohoCalendarClient:
     def _to_zoho_date(iso_str: str) -> str:
         """Convert an ISO-8601 datetime string to Zoho's ``yyyyMMddTHHmmssZ`` format.
 
-        Accepts formats like ``2026-03-24T00:00:00+00:00`` or ``2026-03-24T12:30:00``.
+        Accepts formats like ``2026-03-24T00:00:00+00:00``, ``2026-03-24T12:30:00``,
+        or ``2026-03-24T12:30:00.123456`` (microseconds stripped).
         Returns ``20260324T000000Z`` style strings that Zoho expects.
+
+        Zoho rejects decimal seconds (e.g. ``T073439.123456Z``) with
+        "PATTERN_NOT_MATCHED" — always truncate before the dot.
         """
         # Strip timezone suffix (±HH:MM or Z) — Zoho always uses trailing 'Z'
         clean = iso_str.replace("+00:00", "").replace("Z", "")
+        # Strip microseconds / sub-seconds (e.g. ".123456") — Zoho rejects them
+        if "." in clean:
+            clean = clean.split(".")[0]
         # Remove dashes and colons: 2026-03-24T00:00:00 → 20260324T000000
         clean = clean.replace("-", "").replace(":", "")
         if "T" not in clean:

@@ -232,6 +232,10 @@ def _normalize_calendar_event(event: dict) -> dict:
         # Fallback: surface raw string rather than showing nothing
         start_display = start_raw
 
+    # Surface a brief description/notes snippet if present (max 80 chars)
+    description = (event.get("description") or event.get("notes") or "").strip()
+    desc_snippet = description[:80] if description else ""
+
     return {
         "title": title,
         "start": start_iso,
@@ -239,6 +243,7 @@ def _normalize_calendar_event(event: dict) -> dict:
         "is_all_day": is_all_day,
         "is_recurring": is_recurring,
         "uid": event.get("uid") or "",
+        "description": desc_snippet,
     }
 
 
@@ -516,11 +521,16 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                 e for e in raw_events
                 if e.get("uid") or e.get("title") or e.get("dateandtime")
             ]
+            # If this endpoint returned no real events (e.g. today is empty),
+            # continue to the next path so the tile can show upcoming events
+            # from /calendar/upcoming (next 4 h) or /calendar/week (next 7 d).
+            if not real_events:
+                continue
             # Normalize each event: flatten dateandtime.start, parse Zoho compact
             # datetime format, produce human-readable start_display.
             events = [_normalize_calendar_event(e) for e in real_events]
             return {"events": events[:10]}
-        return {"events": [], "error": "unavailable"}
+        return {"events": []}
 
     @app.get("/api/followups")
     async def api_followups():

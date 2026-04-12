@@ -162,7 +162,11 @@ async def upcoming(hours: int = Query(4, ge=1, le=24)):
     _require_configured(client)
     now = datetime.now()
     end = now + timedelta(hours=hours)
-    events = await client.list_events(now.isoformat(), end.isoformat())
+    # Use strftime (no microseconds) — Zoho rejects decimal seconds in the range param
+    events = await client.list_events(
+        now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        end.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+    )
     return {"hours": hours, "events": events, "count": len(events)}
 
 
