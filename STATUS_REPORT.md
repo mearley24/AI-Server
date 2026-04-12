@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (Z3 validation — follow-up noise filter + email read-state audit)
+Last updated: 2026-04-12 (Z4 — calendar tile fix: sentinel filter + Zoho datetime normalization)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -239,6 +239,65 @@ In order, each should be one self-contained prompt:
 
 ### Recommended next fix
 > Audit `email-monitor/notifier.py` and `monitor.py::_scan_sent_for_replies()`. Find where `read=1` is set and verify it's only applied to emails that Matt has actually responded to (checked Sent folder In-Reply-To match), not to all processed/notified emails. Until fixed, the email tile will always show 0 unread.
+
+---
+
+## 10. Z4 Calendar Tile Fix (2026-04-12)
+
+### Root causes (two, both in the data path)
+
+**Cause 1 — Zoho sentinel object not filtered.**
+When Zoho Calendar has no events in a date range it returns
+`[{"message": "No events found."}]` instead of `[]`.
+`calendar_client.list_events` passes this straight through, so `api_calendar`
+received a one-element list containing a fake event with no `uid`, `title`, or
+`dateandtime`.  The frontend rendered it as `"event"` (old fallback) / `"(no
+title)"` with no time.
+
+**Cause 2 — Raw Zoho events were never normalised.**
+Zoho nests the event start time inside `dateandtime.start` using a compact
+format (`20260412T080000Z`), not at the top-level `start` field.
+`api_calendar` was returning raw Zoho objects, so the frontend's
+`e.start || e.time || e.date` chain always resolved to `''`, leaving the time
+blank.
+
+### Fix applied
+
+**`cortex/dashboard.py`** (bind-mounted → `docker restart cortex` only):
+
+- Added `_parse_zoho_datetime(raw)` — handles Zoho compact format
+  (`20260412T080000Z`), date-only compact (`20260412`), and standard ISO-8601.
+- Added `_normalize_calendar_event(event)` — extracts `title`, detects
+  all-day (`isallday` flag or date-only start), detects recurring
+  (`recurrence`/`rrule`), and produces a human-readable `start_display`
+  ("8:30 AM" for today's events, "4/15 2:30 PM" for future events, "4/15 all
+  day" for all-day events).
+- Updated `api_calendar` to:
+  1. Filter out Zoho sentinel objects (no `uid`, `title`, or `dateandtime`).
+  2. Call `_normalize_calendar_event` on every real event before returning.
+
+**`cortex/static/index.html`**:
+
+- `renderCalendar` now reads `e.start_display` (falls back to `e.start` for
+  forward-compat), title fallback changed from `'event'` → `'(no title)'`,
+  shows `↻` badge for recurring events, displays up to 5 events (was 3).
+
+### Verification
+```
+GET /api/calendar  →  {"events": []}          # empty-calendar case, sentinel gone
+```
+When real events are present they will show structured `title`, `start_display`,
+`is_all_day`, `is_recurring` fields.
+
+### Remaining limitations
+- `_parse_zoho_datetime` strips all timezone info and treats times as local.
+  If Zoho stores events in UTC and the Mac Mini timezone differs, times may be
+  off by the UTC offset.  A proper fix would read `dateandtime.timezone` and
+  convert; acceptable for now since the calendar-agent already uses local Denver
+  time for its queries.
+- The Zoho API call is not retried on transient errors — the `try next path`
+  loop in `api_calendar` covers only HTTP 5xx / connection failures, not
+  temporary 4xx auth issues.
 
 ---
 

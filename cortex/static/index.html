@@ -439,11 +439,17 @@
   function renderCalendar(data) {
     const host = $('calendar');
     if (!data || !data.events) { host.innerHTML = unavailable(); return; }
-    const list = (data.events || []).slice(0, 3);
+    const list = (data.events || []).slice(0, 5);
     if (!list.length) { host.innerHTML = `<div class="small">no upcoming events</div>`; return; }
     host.innerHTML = `<ul>${list.map((e) => {
-      const when = e.start || e.time || e.date || '';
-      return `<li><strong>${esc(e.title || e.summary || 'event')}</strong><br><span class="small">${esc(when)}</span></li>`;
+      // Prefer normalized start_display (set by dashboard.py normalization).
+      // Fall back through legacy field names for forward-compatibility.
+      const when = e.start_display || e.start || e.time || e.date || '';
+      const title = e.title || e.summary || '(no title)';
+      const recur = e.is_recurring
+        ? ' <span style="font-size:10px;color:var(--gold-dim)" title="recurring">↻</span>'
+        : '';
+      return `<li><strong>${esc(title)}</strong>${recur}<br><span class="small">${esc(when) || '&nbsp;'}</span></li>`;
     }).join('')}</ul>`;
   }
 

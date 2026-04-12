@@ -160,6 +160,88 @@ async def _check_service_health(service: dict) -> dict:
         }
 
 
+def _parse_zoho_datetime(raw: str):
+    """Parse a Zoho Calendar datetime string to a naive local datetime (or None).
+
+    Zoho returns compact strings like ``20260412T080000Z`` (yyyyMMddTHHmmssZ)
+    *or* standard ISO-8601 like ``2026-04-12T08:00:00+00:00``.
+    Both forms are handled; timezone info is stripped (we treat times as local).
+    """
+    if not raw:
+        return None
+    s = raw.strip()
+    try:
+        # Compact Zoho with time: "20260412T080000Z" or "20260412T080000+0530"
+        if len(s) >= 15 and "T" in s and s[:8].isdigit() and "-" not in s[:8]:
+            # Drop trailing Z / timezone offset
+            base = s.split("+")[0].rstrip("Zz")  # → "20260412T080000"
+            date_part = base[:8]   # "20260412"
+            time_part = base[9:15] # "080000"
+            return datetime(
+                int(date_part[0:4]), int(date_part[4:6]), int(date_part[6:8]),
+                int(time_part[0:2]), int(time_part[2:4]), int(time_part[4:6]),
+            )
+        # Compact all-day: "20260412"
+        if len(s) == 8 and s.isdigit():
+            return datetime(int(s[0:4]), int(s[4:6]), int(s[6:8]))
+    except (ValueError, IndexError):
+        pass
+    # Standard ISO — strip timezone suffix then parse
+    try:
+        clean = s.split("+")[0].rstrip("Zz")
+        return datetime.fromisoformat(clean)
+    except (ValueError, TypeError):
+        return None
+
+
+def _normalize_calendar_event(event: dict) -> dict:
+    """Flatten a raw Zoho Calendar event into a clean shape for the dashboard.
+
+    Zoho nests the start/end times inside ``dateandtime.start`` and uses a
+    compact non-ISO date format.  This function extracts a human-readable
+    ``start_display`` string and normalises the other fields the tile needs.
+    """
+    title = (event.get("title") or event.get("summary") or "").strip() or "(no title)"
+
+    dt_block = event.get("dateandtime") or {}
+    start_raw = dt_block.get("start") or event.get("start") or ""
+
+    # All-day: Zoho sets isallday == "true" OR start has no time component
+    is_all_day = str(event.get("isallday", "")).lower() in ("true", "1", "yes")
+    if not is_all_day and start_raw:
+        # Date-only compact ("20260412") or ISO date ("2026-04-12") with no T
+        is_all_day = "T" not in start_raw and len(start_raw.strip()) <= 10
+
+    is_recurring = bool(
+        event.get("recurrence") or event.get("rrule") or event.get("recurring")
+    )
+
+    dt_obj = _parse_zoho_datetime(start_raw)
+
+    start_iso = ""
+    start_display = ""
+    if dt_obj is not None:
+        start_iso = dt_obj.isoformat()
+        today = datetime.now().date()
+        if dt_obj.date() == today:
+            start_display = "today, all day" if is_all_day else dt_obj.strftime("%-I:%M %p")
+        else:
+            day_str = dt_obj.strftime("%-m/%-d")
+            start_display = f"{day_str} all day" if is_all_day else dt_obj.strftime("%-m/%-d %-I:%M %p")
+    elif start_raw:
+        # Fallback: surface raw string rather than showing nothing
+        start_display = start_raw
+
+    return {
+        "title": title,
+        "start": start_iso,
+        "start_display": start_display,
+        "is_all_day": is_all_day,
+        "is_recurring": is_recurring,
+        "uid": event.get("uid") or "",
+    }
+
+
 def _find_db(candidates: list[Path]) -> Path | None:
     """Return the first candidate DB file that exists on disk."""
     for path in candidates:
@@ -422,11 +504,21 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             data = await _safe_get(f"{CALENDAR_AGENT_URL}{path}")
             if data is None:
                 continue
-            events = (
+            raw_events = (
                 data
                 if isinstance(data, list)
                 else data.get("events", data.get("upcoming", []))
             )
+            # Filter out Zoho sentinel objects.  When no events exist Zoho
+            # returns [{"message": "No events found."}] instead of [].
+            # A real event always has at least one of: uid, title, dateandtime.
+            real_events = [
+                e for e in raw_events
+                if e.get("uid") or e.get("title") or e.get("dateandtime")
+            ]
+            # Normalize each event: flatten dateandtime.start, parse Zoho compact
+            # datetime format, produce human-readable start_display.
+            events = [_normalize_calendar_event(e) for e in real_events]
             return {"events": events[:10]}
         return {"events": [], "error": "unavailable"}
 
