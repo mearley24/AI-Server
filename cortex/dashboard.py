@@ -54,6 +54,8 @@ FOLLOWUP_NOISE_SENDERS = {
     "d-tools", "billing", "no-reply", "noreply", "mailer-daemon",
     "donotreply", "do-not-reply", "unsubscribe",
     "symphony.placeholder", "pending+",
+    # Internal Symphony addresses — self-emails / notification bots are not client follow-ups
+    "symphonysh.com",
 }
 
 # Subject patterns that indicate automated/marketing emails (case-insensitive substrings)

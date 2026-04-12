@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-11 (Prompt S — Mission Control merged into Cortex)
+Last updated: 2026-04-12 (Z3 validation — follow-up noise filter + email read-state audit)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -211,6 +211,34 @@ In order, each should be one self-contained prompt:
 4. **Prompt U — client-portal health + jobs DB consolidation.** (a) Add `/health` to `client-portal/main.py`. (b) Decide canonical home for follow-up data — either fold `follow_ups.db` into `jobs.db.follow_up_log` or kill the empty table. (c) Decide canonical home for client preferences and retire the duplicate.
 5. **Prompt V — CLAUDE.md accuracy pass.** Run the audit in §5 and §1 of this report, fix the service table (notification-hub port, proposals, browser-agent removal, cortex path), and add the two CLAUDE.md gaps exposed by this audit: (i) cortex must be in docker-compose, (ii) any new service MUST have a `/health` endpoint that matches its healthcheck.
 6. **Prompt W — pull.sh hardening, round 2.** Finish close-all-gaps Task 5 exactly as specified: `py_compile` every service dir, `--verify` flag runs smoke-test, auto `docker compose up -d --build <changed>` on compose.yml change.
+
+---
+
+## 9. Z3 Validation — Follow-up Noise Filter + Email Read-State (2026-04-12)
+
+### What was tested
+- `GET http://localhost:8102/api/emails` — email tile unread count, 7-day window, read filtering
+- `GET http://localhost:8102/api/followups` — follow-ups tile, noise filter, overdue count
+- `data/email-monitor/emails.db` — raw row counts and `read` field distribution
+- `data/openclaw/follow_ups.db` — raw follow_ups rows to verify noise filtering
+- `cortex/dashboard.py` — code review of `_is_followup_noise()`, `FOLLOWUP_NOISE_SENDERS`, `api_emails()`
+
+### What passed ✅
+- **7-day email filter**: `api_emails()` correctly limits to `received_at >= now-7d` and excludes `read=True` emails. Code path is sound.
+- **Follow-up noise filter (vendors)**: Somfy, Control4, Autodesk, Phoenix Marketing, Screen Innovations, CableWholesale, UPS, no-reply, Zapier, The Futurist, Linq — **all correctly suppressed** by `FOLLOWUP_NOISE_SENDERS`.
+- **Follow-up 30-day window**: entries older than 30 days are correctly excluded.
+- **Legit clients showing**: Adam Bersin, PK MWD, stopletz1, Ceri Howard, muchgreenest@aol.com, austin hukill — all correctly surfaced (6 entries after fix).
+
+### What was wrong / fixed ❌→✅
+- **"Symphony Smart Homes" (notifications@symphonysh.com) and "Bob" (bob@symphonysh.com) were NOT filtered.** Internal notification bot and self-email were being counted as client follow-ups. Fix: added `"symphonysh.com"` to `FOLLOWUP_NOISE_SENDERS` in `cortex/dashboard.py`. Follow-ups tile dropped from 8→6 (2 noise entries removed); cortex restarted to apply.
+
+### Root cause still open ⚠️ (email-monitor fix needed)
+- **Email tile shows 0 unread — but this is correct behavior given the data.** All 438 emails in `emails.db` have `read=1` (verified: `min(read)=1, max(read)=1`). 147 emails are within the 7-day window; 0 are unread.
+- The dashboard `api_emails()` filter logic is **correct**. The problem is upstream: the email-monitor is storing or updating ALL emails to `read=1`. Most likely cause: `_scan_sent_for_replies()` or `notifier.py` is marking emails read too aggressively after processing. The `store_email()` function correctly defaults `read=0`, but something overwrites it for every email.
+- **This requires an email-monitor classifier fix, not another dashboard patch.**
+
+### Recommended next fix
+> Audit `email-monitor/notifier.py` and `monitor.py::_scan_sent_for_replies()`. Find where `read=1` is set and verify it's only applied to emails that Matt has actually responded to (checked Sent folder In-Reply-To match), not to all processed/notified emails. Until fixed, the email tile will always show 0 unread.
 
 ---
 
