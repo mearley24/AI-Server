@@ -1,213 +1,196 @@
 # Cline Prompt Y — Full Apple Notes Ingest to Cortex
 
 ## Objective
-Scan every Apple Notes folder. Extract ALL useful content — not just photos. Categorize, dedupe, and feed everything into Cortex memory via the remember() API. This includes system shells, access codes, work procedures, model numbers, proposal cheat sheets, troubleshooting steps, client preferences, and installation notes.
+The current notes indexer (integrations/apple_notes/notes_indexer.py) has too-narrow category rules and misses the majority of valuable content. Notes about procedures, model numbers, wiring techniques, vendor info, proposal cheat sheets, client preferences, and troubleshooting steps all get dumped into "unknown" or "stale_draft" and flagged for deletion. Fix the indexer, then run a comprehensive ingest that feeds EVERYTHING useful into Cortex.
 
-## Context
-- Cortex runs on port 8102 with a POST /remember endpoint
-- Cortex memory.py accepts: category, title, content, source, confidence, importance, tags, metadata, subcategory
-- Valid categories: trading_rule, strategy_idea, strategy_performance, market_pattern, whale_intel, x_intel, infrastructure, edge, meta_learning, external_research
-- We need to ADD new categories for smart home business content (see Step 2)
-- The notes indexer at integrations/apple_notes/notes_indexer.py already has category detection rules
-- Notes are accessed via JXA/osascript (macOS only, runs on Bob)
+## Problem with Current Indexer
+The CATEGORY_RULES dict only covers: access_codes, project_reference, photo_log, meeting_notes, learning, idea, stale_draft. That misses at LEAST:
+- Work procedures / cheat sheets (step-by-step instructions for installs)
+- Model numbers / product specs / part numbers
+- Proposal language / scope templates / pricing notes
+- Client preferences and decisions
+- Troubleshooting notes (problem/solution pairs)
+- Vendor/supplier contacts and account info
+- Wiring diagrams / cable schedules / rack layouts
+- System configuration notes (Control4, Lutron, networking)
+- Business process notes (scheduling, inventory, truck stock)
 
 ## Steps
 
-### 1. Run Full Notes Export
-Run the notes indexer first to get a complete inventory:
-```
-python3 integrations/apple_notes/notes_indexer.py --index
-```
-This creates data/notes_index.json. Read the output to understand what folders exist and how many notes are in each.
+### 1. Expand CATEGORY_RULES in notes_indexer.py
+Replace the existing CATEGORY_RULES dict with this expanded version:
 
-### 2. Expand Cortex Categories
-Edit cortex/memory.py and add these categories to the CATEGORIES set:
 ```python
-CATEGORIES = {
-    # existing
-    "trading_rule",
-    "strategy_idea",
-    "strategy_performance",
-    "market_pattern",
-    "whale_intel",
-    "x_intel",
-    "infrastructure",
-    "edge",
-    "meta_learning",
-    "external_research",
-    # new — smart home business
-    "system_shell",        # VLAN configs, device registries, cable schedules per client
-    "access_codes",        # WiFi, alarm, gate codes, IP addresses per client
-    "work_procedure",      # Step-by-step install/config procedures, cheat sheets
-    "product_reference",   # Model numbers, specs, compatibility notes, pricing
-    "proposal_template",   # Proposal language, scope blocks, pricing formulas
-    "client_preference",   # Client-specific preferences, decisions, communication style
-    "install_notes",       # Job site notes, photos, field conditions, gotchas
-    "troubleshooting",     # Problem/solution pairs, debug steps, known issues
-    "vendor_contact",      # Supplier contacts, rep info, account numbers
-    "training",            # Certifications, study notes, Control4/Lutron/CEDIA material
-    "business_operations", # Scheduling, inventory, truck stock, process improvements
+CATEGORY_RULES: dict[str, list[str]] = {
+    "access_codes": [
+        r"wifi|ssid|password|passcode|alarm code|gate code|lock code|pin:|code:",
+        r"\b\d{4,6}\b",
+        r"\b192\.168\.\d+\.\d+\b",
+        r"username|login|credential",
+    ],
+    "project_reference": [],  # filled from project keywords
+    "photo_log": [
+        r"photo|picture|image|site photo|job site|install photo",
+    ],
+    "meeting_notes": [
+        r"meeting|call|discussed|action item|follow up|next steps|walkthrough|site visit",
+    ],
+    "learning": [
+        r"certification|exam|study|cedia|c4 certification|control4 training|training|notes on|how to",
+    ],
+    "idea": [
+        r"idea:|concept:|what if|could we|potential|brainstorm",
+    ],
+    "work_procedure": [
+        r"step\s*\d|step\s*one|step\s*two|how\s*to|procedure|instructions|cheat\s*sheet|process|checklist",
+        r"first.*then.*next|install\s*steps|setup\s*guide|configuration\s*steps",
+        r"rough[\s-]*in|trim[\s-]*out|commissioning|programming\s*steps",
+        r"mount.*steps|wire.*steps|run\s*cat6|terminate|punch\s*down",
+    ],
+    "product_reference": [
+        r"model\s*number|part\s*number|sku|specs|specification|compatibility",
+        r"pricing|msrp|cost|wholesale|dealer\s*price|map\s*price",
+        r"\b[A-Z]{2,4}[\-\.]\d{3,6}\b",
+        r"araknis|triad|control4|lutron|sonos|luma|qolsys|episode|snap\s*one",
+        r"an[\-]?\d{3}|ts[\-]?ams|ea[\-]?\d|c4[\-]",
+    ],
+    "proposal_template": [
+        r"proposal|scope\s*of\s*work|agreement|quote|estimate|bid",
+        r"scope\s*block|deliverable|exclusion|inclusion|payment\s*schedule",
+        r"change\s*order|addendum|revision|terms|warranty",
+    ],
+    "client_preference": [
+        r"client\s*wants|client\s*prefers|they\s*want|decided\s*on|chose|selected",
+        r"homeowner|client\s*note|preference|approved|rejected|feedback",
+        r"wife\s*wants|husband\s*wants|they\s*like|don.t\s*like",
+    ],
+    "install_notes": [
+        r"installed|ran\s*wire|mounted|pulled\s*cable|terminated|field\s*note",
+        r"rough\s*in|trim\s*out|punch\s*down|rack\s*build|cable\s*pull",
+        r"on[\s-]*site|job\s*site|attic|crawl\s*space|basement|garage|rack",
+        r"conduit|low[\s-]*voltage|junction\s*box|back\s*box|mud\s*ring",
+    ],
+    "troubleshooting": [
+        r"fix|fixed|solved|issue\s*was|workaround|debug|troubleshoot",
+        r"problem|error|not\s*working|failed|broken|reset|reboot",
+        r"root\s*cause|solution|resolved|firmware|update|flash",
+    ],
+    "vendor_contact": [
+        r"rep\b|supplier|vendor|distributor|account\s*number|dealer",
+        r"sales\s*rep|territory|order\s*from|lead\s*time|eta",
+    ],
+    "system_config": [
+        r"vlan|subnet|ip\s*address|switch\s*port|dhcp|dns",
+        r"composer|programming|driver|zigbee|zwave|z-wave",
+        r"scene|keypad|button|macro|event|trigger|agent",
+        r"audio\s*matrix|amp|amplifier|receiver|avr",
+        r"network\s*config|firewall|port\s*forward|nat",
+    ],
+    "wiring_reference": [
+        r"cable\s*schedule|cable\s*label|wire\s*map|wire\s*run",
+        r"cat6|cat5|coax|rg6|hdmi|fiber|speaker\s*wire|14[\-/]2|16[\-/]2",
+        r"home\s*run|distribution|patch\s*panel|rack\s*layout",
+    ],
+    "business_operations": [
+        r"schedule|calendar|inventory|truck\s*stock|order|purchase",
+        r"invoice|payment|profit|margin|labor|cost\s*tracking",
+        r"process\s*improvement|workflow|efficiency",
+    ],
+    "stale_draft": [],
 }
 ```
 
-### 3. Write the Ingest Script
+### 2. Update Classification Priority
+In the keyword_category() function, update the priority list to check in this order (most specific first):
+
+```python
+priority = [
+    "access_codes",
+    "system_config",
+    "wiring_reference",
+    "work_procedure",
+    "product_reference",
+    "proposal_template",
+    "troubleshooting",
+    "client_preference",
+    "install_notes",
+    "vendor_contact",
+    "business_operations",
+    "photo_log",
+    "meeting_notes",
+    "learning",
+    "idea",
+    "project_reference",
+]
+```
+
+### 3. Fix the "stale_draft" Aggressive Deletion
+In suggest_action(), change the logic so notes are NOT flagged for deletion just because they are short or old. Many valuable notes (like a quick "Araknis AN-520 default IP: 192.168.1.1") are under 40 chars but extremely useful. New rules:
+- Only flag_for_deletion if: body is completely empty AND no attachments AND title is "New Note" or blank
+- Everything else: at minimum "archive" or "needs_review", never auto-delete
+- Notes with ANY category match other than "unknown" or "stale_draft": always "keep"
+
+### 4. Expand Cortex Categories
+Edit cortex/memory.py — add to the CATEGORIES set:
+```python
+"system_shell",
+"access_codes",
+"work_procedure",
+"product_reference",
+"proposal_template",
+"client_preference",
+"install_notes",
+"troubleshooting",
+"vendor_contact",
+"training",
+"business_operations",
+"system_config",
+"wiring_reference",
+```
+
+### 5. Write the Full Ingest Script
 Create scripts/notes_to_cortex.py that:
 
-a) Reads data/notes_index.json (from Step 1)
+a) Runs the updated indexer: subprocess call to notes_indexer.py --index --no-llm
+b) Reads data/notes_index.json
+c) For EVERY note where action is NOT "flag_for_deletion":
+   - Map the indexer category to a Cortex category
+   - POST to http://localhost:8102/remember with the full note body
+   - Include metadata: note_id, folder, created_at, modified_at, attachment_count
+   - Tag with: client names, brand names, service types, locations found in content
+d) Track what was ingested and what was skipped
 
-b) For each note, categorizes it using these rules (in priority order):
-
-| If note contains... | Category | Subcategory | Importance |
-|---|---|---|---|
-| VLAN, subnet, 10.x.x.x, device registry, switch port | system_shell | {client_name} | 9 |
-| wifi, password, alarm code, gate code, pin, ssid | access_codes | {client_name} | 10 |
-| step 1, step 2, how to, procedure, instructions, process | work_procedure | {topic} | 8 |
-| model, part number, SKU, specs, compatibility, pricing | product_reference | {brand} | 7 |
-| proposal, scope, agreement, quote, pricing template | proposal_template | {type} | 8 |
-| client preference, likes, dislikes, decided on, chose | client_preference | {client_name} | 7 |
-| job site, installed, ran wire, mounted, field note | install_notes | {project} | 6 |
-| fix, solved, issue was, workaround, debug, troubleshoot | troubleshooting | {system} | 8 |
-| rep, supplier, vendor, account number, distributor | vendor_contact | {vendor} | 6 |
-| certification, exam, training, study, CEDIA, C4 | training | {topic} | 5 |
-| schedule, inventory, truck, process, business | business_operations | {topic} | 5 |
-
-c) Extracts the client name or project name from the note title or folder when possible
-
-d) Skips notes that are:
-  - Empty or under 20 characters
-  - Purely photo attachments with no text (those are handled by Prompt X)
-  - Default "New Note" titles with no content
-  - Duplicate content (hash the content, skip if already ingested)
-
-e) For each valid note, POSTs to Cortex:
+Tag extraction patterns:
 ```python
-import httpx
-
-CORTEX_URL = "http://localhost:8102"
-
-def ingest_note(note):
-    category, subcategory, importance = categorize(note)
-    
-    payload = {
-        "category": category,
-        "subcategory": subcategory,
-        "title": note["title"],
-        "content": note["body"],
-        "source": f"apple_notes/{note['folder']}",
-        "confidence": 0.8,  # human-written notes are high confidence
-        "importance": importance,
-        "tags": extract_tags(note),
-        "metadata": {
-            "note_id": note["note_id"],
-            "folder": note["folder"],
-            "created_at": note["created_at"],
-            "modified_at": note["modified_at"],
-            "attachment_count": note.get("attachment_count", 0),
-            "ingested_from": "notes_to_cortex.py"
-        }
-    }
-    
-    resp = httpx.post(f"{CORTEX_URL}/remember", json=payload, timeout=5.0)
-    return resp.status_code == 200
+CLIENT_NAMES = ["topletz", "gates", "hernaiz", "kelly", "hukill", "timber ridge"]
+BRAND_NAMES = ["control4", "lutron", "sonos", "triad", "araknis", "luma", "qolsys", 
+               "samsung", "sony", "lg", "episode", "snap one", "wirepath", "binary",
+               "strong", "middle atlantic", "panamax", "furman"]
+SERVICE_TYPES = ["prewire", "networking", "audio", "lighting", "security", "shades", 
+                 "theater", "tv mount", "surveillance", "automation", "climate"]
+LOCATIONS = ["vail", "beaver creek", "edwards", "avon", "eagle", "singletree", 
+             "cordillera", "minturn", "arrowhead", "bachelor gulch"]
 ```
 
-f) Tag extraction — pull tags from content:
-  - Client names (Topletz, Gates, Hernaiz, Kelly, etc.)
-  - Brand names (Control4, Lutron, Sonos, Triad, Araknis, Luma, Qolsys, Samsung)
-  - Service types (prewire, networking, audio, lighting, security, shades, theater)
-  - Location markers (Vail, Beaver Creek, Edwards, Avon, Eagle, Singletree, Cordillera)
+### 6. Build Structured Knowledge Files
+In addition to Cortex memory, also write organized files:
 
-### 4. Build System Shells from Notes
-For any notes that contain network configs, device lists, or cable schedules that do NOT already have a system shell in knowledge/projects/:
+a) knowledge/procedures/ — one .md file per work_procedure note, cleaned up
+b) knowledge/product_reference.md — aggregated table of all product_reference notes
+c) knowledge/troubleshooting.md — aggregated problem/solution pairs
+d) Update knowledge/projects/{client}/ with any new system_config or wiring_reference data
 
-a) Extract the structured data into the standard system shell format (matching the existing format in knowledge/projects/topletz/system_shell.md)
+### 7. Run and Report
+After the full ingest:
 
-b) Create a new directory: knowledge/projects/{client_slug}/
+a) Print stats: total notes, ingested count, by category, skipped count
+b) Write data/notes_ingest_report.md with full breakdown
+c) Query Cortex: curl http://localhost:8102/health to verify memories grew
 
-c) Write system_shell.md and system_shell_data.json
-
-d) Also POST to Cortex as category "system_shell"
-
-### 5. Build Procedure Library
-For notes that contain step-by-step procedures, cheat sheets, or how-to content:
-
-a) Clean up the formatting (Notes exports can be messy)
-
-b) Save to knowledge/procedures/{slug}.md in a standard format:
-```markdown
-# {Procedure Title}
-## When to Use
-{context}
-## Steps
-1. ...
-2. ...
-## Notes
-{gotchas, tips}
-## Related
-{links to other procedures}
-```
-
-c) POST each to Cortex as category "work_procedure"
-
-### 6. Build Product Reference
-For notes with model numbers, specs, or pricing:
-
-a) Extract into a structured format
-
-b) Append to knowledge/product_reference.md (create if not exists):
-```markdown
-# Product Reference Library
-
-## Control4
-| Model | Description | Use Case | Notes |
-|---|---|---|---|
-
-## Araknis Networking
-| Model | Description | Use Case | Notes |
-|---|---|---|---|
-
-## Triad Audio
-...
-```
-
-c) POST each product entry to Cortex as category "product_reference"
-
-### 7. Validation and Report
-After all ingestion:
-
-a) Query Cortex to verify: curl http://localhost:8102/api/stats (or whatever the stats endpoint is)
-
-b) Write data/notes_ingest_report.md:
-```markdown
-# Notes Ingest Report — {date}
-
-## Summary
-- Total notes scanned: X
-- Notes ingested to Cortex: X
-- Skipped (empty/duplicate): X
-- Categories breakdown:
-  - system_shell: X
-  - access_codes: X
-  - work_procedure: X
-  - product_reference: X
-  - ...
-
-## New System Shells Created
-- {client}: knowledge/projects/{slug}/
-
-## Procedures Extracted
-- {procedure title}: knowledge/procedures/{slug}.md
-
-## Product References Added
-- X entries added to knowledge/product_reference.md
-
-## Notes Flagged for Manual Review
-- {note title}: {reason} (e.g., "contains potential PII", "unclear categorization")
-```
-
-### 8. Security Note
-- Access codes and passwords should be ingested with importance=10 and tagged with "sensitive"
-- Do NOT log password values to stdout or the report
-- System shells with IP addresses are fine to log (internal network only)
+### 8. Important
+- Do NOT skip notes just because they are short. A 30-char note with a model number is valuable.
+- Do NOT skip notes just because they are old. Procedures and product specs don't expire.
+- Do NOT skip notes in unfamiliar folders. Scan EVERY folder.
+- The goal is to capture EVERYTHING that could possibly be useful for the smart home business, proposal generation, job execution, or training the future Symphony Smart Home Builders AI.
 
 Commit and push when done.
