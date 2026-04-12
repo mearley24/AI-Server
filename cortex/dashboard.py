@@ -53,6 +53,7 @@ FOLLOWUP_NOISE_SENDERS = {
     "linq", "snapone", "snap one", "netlify", "hiscox", "vyde",
     "d-tools", "billing", "no-reply", "noreply", "mailer-daemon",
     "donotreply", "do-not-reply", "unsubscribe",
+    "symphony.placeholder", "pending+",
 }
 
 # Subject patterns that indicate automated/marketing emails (case-insensitive substrings)
@@ -452,7 +453,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             # Only surface follow-ups with client activity in the last 30 days
             recent_followups = [
                 f for f in followups
-                if (f.get("last_client_ts") or "") >= thirty_days_ago
+                if (f.get("last_client_ts") or "").strip() >= thirty_days_ago
                 and not _is_followup_noise(f)
             ]
             overdue = 0
