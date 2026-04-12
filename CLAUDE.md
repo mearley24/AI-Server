@@ -46,7 +46,7 @@ AI-Server/
 │   ├── set-env.sh         # Safe .env key setter
 │   ├── api-post.sh        # JSON POST helper (no inline JSON)
 │   └── bob-watchdog.sh    # Service watchdog
-├── docker-compose.yml     # 19 containers
+├── docker-compose.yml     # 20 containers (cortex added in Prompt S)
 ├── .clinerules            # Cline context (kept for compatibility)
 ├── CLAUDE.md              # THIS FILE — Claude Code reads this first
 └── .cursor/prompts/       # Task prompts (A through P, plus operational)
@@ -99,9 +99,14 @@ AI-Server/
 - **Services NEVER import Python modules from other containers.** All inter-service communication is via HTTP endpoints. `from other_service import ...` causes ModuleNotFoundError (lesson 15).
 - OpenClaw API: `http://openclaw:3000`
 - Email Monitor: `http://email-monitor:8092`
-- Cortex Memory: `http://cortex:8102`
-- D-Tools Bridge: `http://dtools-bridge:8096`
-- Mission Control: `http://mission-control:8098`
+- Cortex (brain + dashboard): `http://cortex:8102`
+  - Health: `http://cortex:8102/health`
+  - Dashboard: `http://cortex:8102/dashboard`
+  - Memory POST: `http://cortex:8102/remember`
+  - API: `http://cortex:8102/api/*`
+- Notification Hub: `http://notification-hub:8095`
+- D-Tools Bridge: `http://dtools-bridge:5050` (internal) / host port 8096
+- Proposals: `http://proposals:8091`
 
 ### Verification — Trust Nothing
 - **After every prompt, verify files exist.** Cursor/Cline/Claude Code may report "done" when files were never created (lessons 12, 20). Run: `for f in [expected files]; do [ -f "$f" ] && echo "OK: $f" || echo "MISSING: $f"; done`
@@ -183,6 +188,8 @@ AI-Server/
 | D-Tools sync creates zero jobs | Logic was find-only, not auto-create | Check DB tables have rows after deployment |
 | Trading bot lost $1,900 in one day | Strategy filters never deployed (no rebuild) | Always `--build` after code changes |
 | Document pricing out of sync | No staleness detection across doc types | Doc staleness tracker flags stale docs |
+| Cortex orphaned from compose | Service running but not in docker-compose.yml | Every service MUST be defined in docker-compose.yml |
+| Service reports unhealthy in compose | Missing `/health` endpoint in the app | Every service MUST have a `GET /health` endpoint matching its healthcheck path |
 
 ---
 
@@ -192,6 +199,11 @@ All task prompts live in `.cursor/prompts/`. Key series:
 - **A-N**: Infrastructure, trading, monitoring, operations backbone
 - **O**: Website experience overhaul (symphonysh repo)
 - **P**: Full site audit and polish (symphonysh repo)
+- **Q**: Full stack audit and status baseline → `STATUS_REPORT.md`
+- **S**: Mission Control merged into Cortex — single brain + dashboard
+- **T**: Approval drain — auto-expire stale pending approvals
+- **U**: Client portal health + DB consolidation
+- **V**: CLAUDE.md accuracy pass (this prompt)
 - `lessons-learned-april4.md`: 25 documented failures with root causes
 - `close-all-gaps-april10.md`: 6 independent gap-closing tasks
 - `symphony-mega-prompt.md`: Full stack fix (7 parts)
@@ -217,8 +229,9 @@ When starting a session, verify these before doing anything else:
 cd ~/AI-Server
 docker compose ps                                    # all containers running?
 curl -s http://127.0.0.1:8099/health                 # openclaw alive?
-curl -s http://127.0.0.1:8098/health                 # mission control alive?
-curl -s http://127.0.0.1:8102/api/stats              # cortex alive?
+curl -s http://127.0.0.1:8102/health                 # cortex brain + dashboard alive?
+curl -s http://127.0.0.1:8092/health                 # email-monitor alive?
+curl -s http://127.0.0.1:8095/health                 # notification-hub alive?
 docker exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 PING   # redis alive?
 docker exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 LRANGE events:log 0 2  # events flowing?
 ls ~/Library/CloudStorage/Dropbox*/ >/dev/null 2>&1 && echo "Dropbox OK" || echo "Dropbox NOT syncing"
