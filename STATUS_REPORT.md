@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (Z5 — trading dashboard $0.00 diagnosis: Kraken env cleanup + wallet unfunded)
+Last updated: 2026-04-12 (Z6 — re-verification run: env clean, both root causes confirmed still active)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -370,6 +370,51 @@ Configured bankroll is $500. All arb trades skip with `arb_skipped_low_balance`
    `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon.
    Minimum useful balance: $50+ (to cover multiple $7.50 arb trades).
 3. After both fixes, confirm dashboard shows non-zero wallet, positions, and P&L.
+
+---
+
+## 12. Z6 Re-Verification Run (2026-04-12)
+
+### What was checked
+- `scripts/pull.sh` — repo synced, last commit was `0a30c68` (Z5 env cleanup)
+- `docker-compose.yml` — Kraken env var names passed to `polymarket-bot`: `KRAKEN_API_KEY` and `KRAKEN_SECRET`
+- `polymarket-bot/src/main.py` — confirmed `os.environ.get("KRAKEN_SECRET", "")` is the api_secret path
+- `.env` lines 283–285 — inspected with `rg -n '^KRAKEN'`
+- `docker compose logs --tail=200 polymarket-bot` — filtered for kraken/balance/wallet/skip events
+- `docker compose ps polymarket-bot` — confirmed service state
+- `GET http://localhost:8430/kraken/status` — spot-checked endpoint
+
+### Findings
+
+**`.env` is clean — no action taken.**
+`KRAKEN_API_KEY` appears exactly once (line 283, real value present).
+`KRAKEN_API_SECRET` appears exactly once (line 284, real value present).
+`KRAKEN_SECRET=` appears exactly once (line 285, empty placeholder — added in Z5).
+No duplicates. No ambiguity. No `.env` changes made this run.
+
+**Both root causes from Z5 remain active.**
+
+| Cause | Evidence |
+|---|---|
+| `KRAKEN_SECRET` still empty → Kraken auth fails | Log: `{"pair":"XRP/USD","error":"kraken requires \"secret\" credential","event":"cancel_stale_orders_error"}` recurring every tick |
+| Polymarket bankroll still $1.94 USDC | Log: `{"reason":"low_bankroll","bankroll":1.94,"event":"copytrade_skip"}` — all copytrade signals skipped |
+
+`GET /kraken/status` returns HTTP 500 — Kraken strategy fails to initialize due to missing secret.
+`wallet: "unknown"` in whale-signal logs confirms Polymarket wallet address not connected.
+`polymarket-bot` container is healthy (Up 34 min) and processing market data normally — the issues are purely credential + funding, not application errors.
+
+### Changes made this run
+| File | Change |
+|---|---|
+| `STATUS_REPORT.md` | Updated header timestamp; added this Z6 section |
+
+### Next required actions (unchanged from Z5)
+1. **Matt: set `KRAKEN_SECRET` in `.env`** to the real Kraken API secret, then run
+   `docker compose up -d polymarket-bot` (image already built; env-only change, no rebuild needed).
+   Verify: `docker compose logs --tail=30 polymarket-bot | grep kraken` — auth errors should stop.
+2. **Matt: fund Polymarket wallet** — deposit USDC to
+   `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon (minimum $50+).
+3. After both: confirm `/kraken/status` returns 200, dashboard wallet/P&L non-zero.
 
 ---
 
