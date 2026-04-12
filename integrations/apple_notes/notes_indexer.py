@@ -534,6 +534,7 @@ def run_index(
                 "title": note.title,
                 "folder": note.folder,
                 "modified_at": note.modified_at[:10] if note.modified_at else "",
+                "created_at": note.created_at[:10] if note.created_at else "",
                 "category": cat,
                 "project": proj,
                 "value_score": score,
@@ -543,6 +544,8 @@ def run_index(
                 "action": action,
                 "extracted_codes": codes,
                 "summary": one_line_summary(note, cat),
+                # Store first 3000 chars of body so notes_to_cortex.py can ingest
+                "body": note.body[:3000] if note.body else "",
             }
         )
 

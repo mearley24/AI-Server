@@ -183,7 +183,9 @@ def ingest_notes(dry_run: bool) -> dict[str, Any]:
     for note in notes:
         stats["total"] += 1
         title = (note.get("title") or "").strip()
-        body = (note.get("body") or "").strip()
+        # notes_index.json stores "body" (full text, added in Y2) or
+        # falls back to "summary" (one-line) for older index files.
+        body = (note.get("body") or note.get("summary") or "").strip()
         folder = (note.get("folder") or "").strip()
         note_id = note.get("note_id", "")
 
