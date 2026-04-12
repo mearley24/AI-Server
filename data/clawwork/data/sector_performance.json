@@ -1,6 +1,6 @@
 {
   "Finance and Insurance": {
-    "tasks": 142,
+    "tasks": 160,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -8,7 +8,7 @@
     "avg_net_profit": 0.0
   },
   "Professional, Scientific, and Technical Services": {
-    "tasks": 209,
+    "tasks": 238,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -24,7 +24,7 @@
     "avg_net_profit": 0.0
   },
   "Information": {
-    "tasks": 7,
+    "tasks": 8,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -40,7 +40,7 @@
     "avg_net_profit": 0.0
   },
   "Retail Trade": {
-    "tasks": 11,
+    "tasks": 12,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -48,7 +48,7 @@
     "avg_net_profit": 0.0
   },
   "Manufacturing": {
-    "tasks": 8,
+    "tasks": 9,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
