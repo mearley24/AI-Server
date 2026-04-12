@@ -418,6 +418,68 @@ No duplicates. No ambiguity. No `.env` changes made this run.
 
 ---
 
+## 13. Z7 Dropbox-Organizer LaunchAgent + iCloud Status (2026-04-12)
+
+### Commands run
+```
+launchctl list | grep -i "dropbox\|organizer"
+launchctl list com.symphonysh.dropbox-organizer
+ls ~/Library/LaunchAgents/ | grep -i "dropbox\|organizer"
+brctl status
+```
+
+### Dropbox-organizer LaunchAgent ✅ HEALTHY
+
+| Field | Value |
+|---|---|
+| Label | `com.symphonysh.dropbox-organizer` |
+| PID | 32502 (process is running) |
+| LastExitStatus | 0 (clean) |
+| Program | `/opt/homebrew/bin/python3 /Users/bob/AI-Server/scripts/dropbox-organizer.py` |
+| Plist path | `~/Library/LaunchAgents/com.symphonysh.dropbox-organizer.plist` (created 2026-04-10) |
+| Logs | `stdout + stderr → /tmp/dropbox-organizer.log` |
+
+**Conclusion:** The LaunchAgent is loaded, running, and exited clean on its last invocation.
+Lesson 6 (close-all-gaps Task 6) is ✅ **DONE** — no further action needed.
+
+### iCloud / CloudDocs ✅ SIGNED IN, ACTIVE, NO STALLED ITEMS
+
+`brctl status` returned 16 containers. Every container shows:
+- `client:idle` — no active local writes
+- `server:full-sync|fetched-recents|fetched-favorites|ever-full-sync` — server fully synced
+- `sync:oob-sync-ack` — out-of-band sync acknowledged (healthy state)
+
+Notable containers:
+
+| Obfuscated ID | State | Last Sync | Notes |
+|---|---|---|---|
+| `c.a.Archives` | background | 2026-04-04 05:10 | consistent |
+| `c.a.CloudDocs` | foreground | 2026-04-09 07:52 | caught-up, `ever-caught-up:YES` |
+| `c.a.CloudDocs (container)` | foreground | 2026-04-09 07:53 | caught-up, `ever-caught-up:YES`, `newly-created-during-initial-sync:YES` (initial sync completed) |
+| `id.c.a.iCloud.MobileDocuments` | foreground | 2026-04-04 05:10 | consistent |
+| Other 12 containers | background | 2026-04-04 05:10 | all consistent |
+
+No error states. No stalled or stuck items. No `uploading`/`downloading` in-progress flags.
+Last sync timestamps (2026-04-04 to 2026-04-09) are consistent with a stable, idle machine.
+
+**Conclusion:** iCloud is signed in and healthy. Lesson 8 (`iCloud not signed in on Bob`) is ✅ **DONE / VERIFIED**.
+
+### Updated lessons scorecard (§6 delta)
+
+| # | Lesson | Was | Now |
+|---|---|---|---|
+| 6 | Dropbox-organizer LaunchAgent | 🟡 PARTIAL | ✅ DONE |
+| 8 | iCloud not signed in on Bob | ⚪ UNKNOWN | ✅ DONE |
+
+Overall score moves from 17/25 → **19/25 green**.
+
+### P2 items closed from §7
+
+- ~~Item 9: Verify Dropbox-organizer LaunchAgent is actually loaded~~ ✅ closed
+- ~~Item 10: Verify iCloud sign-in on Bob~~ ✅ closed
+
+---
+
 ## Audit meta
 
 - Audit run by Claude Code on 2026-04-11 using CLAUDE.md as context.
