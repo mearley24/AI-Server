@@ -1,76 +1,83 @@
-# Cline Prompt X — Notes Photo Harvest + Dedupe
+# Prompt X — Photo Harvest from Apple Notes + HEIC Conversion
 
-## Objective
-Scan all Apple Notes folders, extract photos from project/install notes, dedupe against existing repo photos, convert HEIC to JPG, and update projects.ts with new unique images.
+Read CLAUDE.md first. This prompt harvests project photos from Apple Notes
+attachments, dedupes them against lovable-uploads/, and converts HEIC files.
 
-## Steps
+## CONTEXT
 
-### 1. Scan Apple Notes
-Run the existing notes indexer:
-```
-python3 integrations/apple_notes/notes_indexer.py --index
-```
-This exports all notes to data/notes_index.json with titles, bodies, folders, and attachment counts.
+The symphonysh website repo lives at ~/symphonysh.
+All site photos go to ~/symphonysh/public/lovable-uploads/.
+There are already HEIC files there that need converting.
+The notes_indexer.py JXA times out when Notes has a large iCloud library —
+work around this by writing a standalone AppleScript export.
 
-### 2. Extract Photo Notes
-Write a script at scripts/photo_harvest.py that:
-- Reads data/notes_index.json
-- Filters notes where category is "photo_log" OR attachment_count > 0 OR folder name contains "photo", "install", "project", "job", "symphony"
-- For each matching note, use osascript JXA to export image attachments (.jpg, .jpeg, .png, .heic) to a staging directory: /tmp/notes_photos/{folder_name}/{note_title}/
-- Use the JXA from integrations/apple_notes/notes_parser.py get_attachments() to list them, then use AppleScript to save the actual files:
+## STEP 1: Convert existing HEIC files in lovable-uploads
 
-```applescript
-tell application "Notes"
-  set theNote to first note whose id is "{note_id}"
-  repeat with att in attachments of theNote
-    save att in POSIX file "/tmp/notes_photos/{folder}/{filename}"
-  end repeat
-end tell
-```
+These files already exist and MUST be converted to JPG — the website cannot
+serve HEIC:
 
-- Log each extracted photo with source note title and folder
+~/symphonysh/public/lovable-uploads/wiring/Wire Relocation/IMG_2841.HEIC
+~/symphonysh/public/lovable-uploads/wiring/Wire Relocation/IMG_2840.HEIC
+~/symphonysh/public/lovable-uploads/wiring/IMG_0444.HEIC
+~/symphonysh/public/lovable-uploads/wiring/IMG_2330.HEIC
+~/symphonysh/public/lovable-uploads/wiring/IMG_0443.HEIC
+~/symphonysh/public/lovable-uploads/mounted tvs/Misc/IMG_0012.HEIC
 
-### 3. Scan Existing Repo Photos
-Build a hash index of every photo already in public/lovable-uploads/ using:
-- File size + first 8KB hash (fast approximate dedupe)
-- Generate: /tmp/photo_harvest_existing_hashes.json
+For each:
+  sips -s format jpeg "$heic" --out "${heic%.HEIC}.jpg"
+  rm "$heic"
 
-### 4. Dedupe
-Compare extracted notes photos against existing hashes.
-- Exact dupes: skip
-- Unique photos: copy to public/lovable-uploads/ organized by project folder
-- Near-dupes (same size within 5 percent): flag for manual review
-- Write report: data/photo_harvest_report.md listing:
-  - Total notes scanned
-  - Photos found
-  - Dupes removed
-  - New unique photos added (with paths)
-  - Near-dupes flagged for review
+After conversion, update any references in src/data/projects.ts that point
+to the .HEIC paths to use .jpg instead.
 
-### 5. HEIC Conversion
-Convert ALL .heic files to .jpg using sips:
-```
-sips -s format jpeg input.heic --out output.jpg
-```
-The site cannot serve HEIC files. This includes existing unconverted files:
-- public/lovable-uploads/wiring/Wire Relocation/IMG_2841.HEIC
-- public/lovable-uploads/wiring/Wire Relocation/IMG_2840.HEIC
-- public/lovable-uploads/wiring/IMG_2330.HEIC
-- public/lovable-uploads/wiring/IMG_0444.HEIC
-- public/lovable-uploads/wiring/IMG_0443.HEIC
-- public/lovable-uploads/mounted tvs/Misc/IMG_0012.HEIC
+## STEP 2: Skip Apple Notes JXA (it times out on large iCloud libraries)
 
-After conversion, delete the original .heic files and update any references in source code (src/utils/photos/*.ts, src/data/projects.ts) to point to the new .jpg versions.
+The JXA approach in notes_parser.py times out on large Notes libraries.
+Instead, write scripts/photo_harvest.py that:
+- Skips Notes entirely
+- Focuses on what we already have: scan ~/symphonysh/public/lovable-uploads/
+  for all images, build a hash index, and write a report
 
-### 6. Update Projects Data
-- For the "full-home-install" project (slug: full-home-install in src/data/projects.ts), add all new unique photos from the Home-related notes
-- For any other projects that gained new photos, update their entries too
-- For the wiring project (slug: structured-wiring-showcase), add the newly converted JPGs from the wiring HEIC files
-- Make sure every photo path in projects.ts actually exists on disk
+## STEP 3: Build hash index of existing lovable-uploads photos
 
-### 7. Validation
-- Run: find public/lovable-uploads -name "*.heic" -o -name "*.HEIC" (should return nothing)
-- Run: grep -r "\.heic\|\.HEIC" src/ (should return nothing)
-- Verify the dev server builds without errors
+scripts/photo_harvest.py should:
+1. Walk ~/symphonysh/public/lovable-uploads/ recursively
+2. For each image file (.jpg, .jpeg, .png, .gif, .webp, .heic):
+   - Compute sha256 of first 8KB (fast dedupe signal)
+   - Record: path, size, hash, folder
+3. Write /tmp/photo_harvest_existing_hashes.json
 
-Commit and push when done.
+## STEP 4: Write the photo harvest report
+
+Write data/photo_harvest_report.md with:
+- Total images found in lovable-uploads
+- Images by folder
+- HEIC files found (and converted status)
+- Any near-dupes detected (same base filename in multiple folders)
+- Recommendations for projects.ts coverage
+
+## STEP 5: Update projects.ts HEIC references
+
+After converting HEIC → JPG:
+- Read ~/symphonysh/src/data/projects.ts
+- Replace every .HEIC reference with .jpg
+- Write back
+
+## STEP 6: Check projects.ts coverage
+
+Read ~/symphonysh/src/data/projects.ts and verify every image path in it
+actually exists in ~/symphonysh/public/lovable-uploads/. Report any broken
+paths in the harvest report.
+
+## COMMIT
+
+Commit to AI-Server repo:
+  git add scripts/photo_harvest.py data/photo_harvest_report.md .cursor/prompts/cline-prompt-X-photo-harvest.md
+  git commit -m "Add photo harvest script and HEIC conversion report"
+  git push origin main
+
+Commit to symphonysh repo:
+  cd ~/symphonysh
+  git add public/lovable-uploads/ src/data/projects.ts
+  git commit -m "Convert HEIC to JPG — fix unservable image files"
+  git push origin main
