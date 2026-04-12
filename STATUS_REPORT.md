@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (Z6 — re-verification run: env clean, both root causes confirmed still active)
+Last updated: 2026-04-12 (§14 — runtime audit of prompts A, C, I, N: A=PASS, C=PASS, I=PARTIAL, N=PARTIAL)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -486,3 +486,103 @@ Overall score moves from 17/25 → **19/25 green**.
 - Did NOT re-explore the codebase from scratch — worked from the CLAUDE.md repo map.
 - Health checks, row counts, and compose diffs are from live commands at audit time.
 - Prompt status for A–P validated by skimming each prompt and checking referenced files exist with real content.
+
+---
+
+## 14. Runtime Audit — Prompts A, C, I, N (2026-04-12)
+
+Live code inspection of the four "PARTIAL" prompts from §3. All grep/compile evidence gathered from `main` at commit `3f1dd58`.
+
+### Prompt A — copytrade-cleanup | **PASS**
+
+| Check | Result |
+|---|---|
+| Fake P&L seeds (`65.48`, `copytrade_category_pnl_seeded`) | ✅ 0 matches — removed |
+| Priority wallet injection (`priority_wallets_injected`) | ✅ 0 matches — removed |
+| `neg_risk` reads from market data | ✅ All 4+ call sites use `mkt_data.get("neg_risk", mkt_data.get("negativeRisk", False))` |
+| Quiet hours | ⚠️ Drift: prompt spec was `hour >= 18 or hour < 5`; implementation disables entirely (`return False` — 24/7 trading). Intentional, documented in docstring. |
+
+**Evidence:** `grep -c "65.48" … → 0`; `grep -n "neg_risk" … → mkt_data.get(…)` pattern at lines 2217, 2264, 2968, 3000.
+
+**Drift:** Quiet hours disabled (more permissive than spec). Documented decision — no regression risk.
+
+**Next action:** None required. Monitor for liquidity issues on overnight trades if 24/7 causes bad fills.
+
+---
+
+### Prompt C — sandbox-bankroll | **PASS**
+
+| Check | Result |
+|---|---|
+| `sandbox=None` param in copytrade `__init__` | ✅ line 313 |
+| `self._sandbox` stored | ✅ line 318 |
+| `sandbox.check_trade()` before every order | ✅ lines 2219–2225, 2974–2980, 3169–3175 (method name adapted from spec's `check_order` → actual `check_trade`) |
+| `sandbox.record_trade()` after execution | ✅ lines 2233–2234, 2986–2987 |
+| `sandbox=sandbox` passed in `main.py` | ✅ `main.py` line 280 |
+| `_maybe_refresh_bankroll()` extracted method | ✅ line 616 |
+| `_tick_in_progress` flag | ✅ initialised line 537, guarded line 623, set True line 654, reset False line 718 |
+| Bankroll refreshes before tick flag set | ✅ refresh called line 653 then flag set True line 654 |
+
+**Evidence:** All grep checks confirm implementation. `ExecutionSandbox` imported and instantiated at `main.py` lines 25 and 220.
+
+**Drift:** None — spec followed precisely. `check_trade` vs `check_order` is method name adaptation to actual sandbox API.
+
+**Next action:** None required.
+
+---
+
+### Prompt I — redeem-cleanup | **PARTIAL**
+
+| Check | Result |
+|---|---|
+| `delegated_to_redeemer` action in `_check_and_redeem_positions` | ✅ line 3553 |
+| `_cleanup_resolved_positions()` method added | ✅ line 3566 |
+| Cleanup wired into main loop (every ~10 min) | ✅ line 688 |
+| `copytrade_cleanup_resolved` log on cleanup | ✅ line 3595 |
+| Runtime: redeemer actively redeeming positions | ❓ Not verifiable from code — requires live `docker logs` check |
+| Runtime: POL gas balance sufficient | ❓ Not checked this audit — operational check, not a code change |
+
+**Evidence:** All code-side changes from Steps 5–6 of the prompt are confirmed. Steps 1–4 (diagnostic: check logs, run diagnostic script, force redemption cycle, check POL balance) were one-time operational tasks, not persistent code changes.
+
+**Drift:** Prompt Steps 1–4 are operational diagnostics; whether they were executed at the time the code was shipped is unknown.
+
+**Next action:** Run `docker logs polymarket-bot 2>&1 | grep -i redeem | tail -20` to confirm redeemer is scanning and redeeming. Check POL balance on wallet `0xa791e309…`. If `redeemer_redeemed` events appear, classify as PASS.
+
+---
+
+### Prompt N — operations-backbone | **PARTIAL**
+
+| Deliverable | Result |
+|---|---|
+| OpenWebUI removed from `docker-compose.yml` | ❌ Still present at lines 8 and 662 |
+| `voice_receptionist/system_prompt.md` rewritten | ✅ 86 lines, real Symphony knowledge (company, pricing, Topletz, vendors, scheduling) |
+| `voice_receptionist/knowledge_loader.js` created | ✅ Present |
+| `voice_receptionist/server.js` uses knowledge_loader | ✅ `BASE_PROMPT + getKnowledge()` at line 133 |
+| `voice_receptionist/scheduler.js` → calendar-agent API | ✅ `CALENDAR_AGENT_URL` + `/calendar/free-slots` + `/calendar/events` |
+| `voice_receptionist/GO_LIVE_CHECKLIST.md` created | ✅ Present |
+| `calendar-agent/api.py` — `_publish_calendar_event()` | ✅ line 48, called after create at line 126 |
+| `calendar-agent/api.py` — `/daily-briefing` endpoint | ✅ line 173 |
+| `operations/linear_ops.py` created | ✅ Present |
+| `voice_receptionist/server.js` publishes `ops:voice_followup` | ✅ line 241 |
+| `email-monitor` publishes `ops:email_action` | ❌ No matches in `email-monitor/` |
+| OpenClaw orchestrator fetches `/calendar/daily-briefing` | ❌ No matches in `openclaw/orchestrator.py` |
+
+**Evidence:** 9 of 12 deliverables confirmed present. Three gaps remain.
+
+**Drift:** openwebui removal was the first item in the implementation order — it was skipped. Email-monitor wiring (Part 4c) and orchestrator calendar pull (Part 3c) were not implemented.
+
+**Next action (3 items, bounded):**
+1. Remove `openwebui:` service block and its `volumes:` entry from `docker-compose.yml`. Run `docker compose up -d` to stop the container. (15 min)
+2. Add `ops:email_action` Redis publish to `email-monitor/notifier.py` after action-required email classification. (20 min)
+3. Add `/calendar/daily-briefing` fetch to `openclaw/orchestrator.py` daily briefing assembly. (20 min)
+
+---
+
+### One-line summary
+
+| Prompt | Status | Key evidence |
+|---|---|---|
+| **A** | ✅ PASS | Seeds/injection gone; neg_risk wired from market data; quiet hours disabled (intentional 24/7 decision) |
+| **C** | ✅ PASS | Sandbox wired in copytrade + main.py; `_tick_in_progress` + `_maybe_refresh_bankroll` fully implemented |
+| **I** | 🟡 PARTIAL | Code changes (delegated_to_redeemer, cleanup loop) confirmed; runtime redemption execution not verified |
+| **N** | 🟡 PARTIAL | 9/12 deliverables present; openwebui still in compose, email ops publish missing, orchestrator calendar fetch missing |
