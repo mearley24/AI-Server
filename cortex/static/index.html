@@ -404,7 +404,7 @@
         <div class="svc-item" title="${esc(s.name)} — ${esc(s.status)}">
           <span class="dot ${st}"></span>
           <span class="name">${esc(s.name)}</span>
-          <span class="port">:${esc(s.port)}</span>
+          <span class="port">${s.port != null ? ':' + esc(s.port) : 'internal'}</span>
         </div>`;
     }).join('');
     host.innerHTML = items;
@@ -471,6 +471,7 @@
     const usdc = Number(data.usdc_balance || 0);
     const active = Number(data.active_value || data.position_value || 0);
     const total = usdc + active;
+    const snapAge = data.snapshot_age ? 'updated ' + timeAgo(data.snapshot_age) : 'live';
     host.innerHTML = `
       <div class="stat-big">${fmtUsd(total)}</div>
       <div class="stat-label">account value</div>
@@ -483,7 +484,8 @@
           <div class="small">Open</div>
           <div class="mono">${fmtUsd(active)}</div>
         </div>
-      </div>`;
+      </div>
+      <div class="small" style="margin-top:6px">${esc(snapAge)}</div>`;
   }
 
   function renderPositions(data) {
@@ -550,16 +552,17 @@
     const items = data.slice(0, 5).map((e) => {
       const payload = e.payload || e;
       const t = payload.type || e.channel || 'event';
-      const when = e.ts || e.timestamp || '';
-      return `<li><span class="mono small">${esc(t)}</span> <span class="small">${esc(timeAgo(when))}</span></li>`;
+      const when = e.ts || e.timestamp || payload.ts || payload.timestamp || '';
+      const msg = payload.message || payload.msg || e.message || '';
+      return `<li><span class="mono small">${esc(t)}</span> ${esc((msg || '').slice(0, 50))} <span class="small">${esc(timeAgo(when))}</span></li>`;
     });
     host.innerHTML = `<ul>${items.join('')}</ul>`;
   }
 
   function renderMemory(stats, memories) {
     const host = $('memory');
-    if (!stats) { host.innerHTML = unavailable(); return; }
-    const total = stats.total ?? stats.memories ?? 0;
+    if (!stats && !memories) { host.innerHTML = unavailable(); return; }
+    const total = (stats && (stats.total ?? stats.memories)) ?? 0;
     const recent = (memories || []).slice(0, 5);
     host.innerHTML = `
       <div class="stat-big">${esc(total)}</div>
@@ -622,16 +625,16 @@
 
   function renderFooter(stats, wallet, emails, system) {
     const chunks = [];
-    if (stats) chunks.push(`<span><strong>${stats.total ?? 0}</strong>memories</span>`);
-    if (wallet) chunks.push(`<span><strong>${fmtUsd((wallet.usdc_balance || 0) + (wallet.active_value || wallet.position_value || 0))}</strong>AUM</span>`);
-    if (emails) chunks.push(`<span><strong>${emails.unread_count ?? 0}</strong>unread</span>`);
+    if (stats) chunks.push(`<span><strong>${stats.total ?? 0}</strong> memories</span>`);
+    if (wallet) chunks.push(`<span><strong>${fmtUsd((wallet.usdc_balance || 0) + (wallet.active_value || wallet.position_value || 0))}</strong> AUM</span>`);
+    if (emails) chunks.push(`<span><strong>${emails.unread_count ?? 0}</strong> unread</span>`);
     if (system) {
       if (system.containers_total != null)
-        chunks.push(`<span><strong>${system.containers_healthy ?? 0}/${system.containers_total ?? 0}</strong>svcs</span>`);
+        chunks.push(`<span><strong>${system.containers_healthy ?? 0}/${system.containers_total ?? 0}</strong> svcs</span>`);
       if (system.memory_percent != null)
-        chunks.push(`<span><strong>${system.memory_percent}%</strong>mem</span>`);
+        chunks.push(`<span><strong>${system.memory_percent}%</strong> mem</span>`);
       if (system.disk_percent != null)
-        chunks.push(`<span><strong>${system.disk_percent}%</strong>disk</span>`);
+        chunks.push(`<span><strong>${system.disk_percent}%</strong> disk</span>`);
     }
     $('footer-stats').innerHTML = chunks.join('');
     if (system && system.uptime_seconds != null) {

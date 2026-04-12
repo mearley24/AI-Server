@@ -15,7 +15,7 @@ import os
 import shutil
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +58,7 @@ SERVICES: list[dict[str, Any]] = [
     {"name": "Voice Receptionist", "host": "voice-receptionist", "port": 3000, "ext_port": 8093},
     {"name": "ClawWork", "host": "clawwork", "port": 8097, "ext_port": 8097, "optional": True},
     {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096},
-    {"name": "Client Portal", "host": "client-portal", "port": 8096, "ext_port": 8096, "optional": True},
+    {"name": "Client Portal", "host": "client-portal", "port": 8096, "ext_port": None, "optional": True},
     {"name": "Polymarket Bot", "host": "vpn", "port": 8430, "ext_port": 8430},
     {"name": "Knowledge Scanner", "host": "knowledge-scanner", "port": 8100, "ext_port": 8100, "optional": True},
     {"name": "X Intake", "host": "x-intake", "port": 8101, "ext_port": 8101, "optional": True},
@@ -92,7 +92,7 @@ async def _check_service_health(service: dict) -> dict:
     """Check a single service's /health endpoint; return a status dict."""
     url = f"http://{service['host']}:{service['port']}/health"
     name = service["name"]
-    ext_port = service["ext_port"]
+    ext_port = service.get("ext_port")  # may be None for internal-only services
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url)
@@ -229,6 +229,13 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                         "dust_count",
                     ):
                         data.setdefault(key, 0)
+                    # Pass snapshot timestamp so UI can show staleness
+                    snap_ts = (
+                        data.get("timestamp")
+                        or data.get("updated_at")
+                        or data.get("ts")
+                    )
+                    data["snapshot_age"] = snap_ts
                     return data
             except Exception:
                 pass
@@ -340,7 +347,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
     # ── Email / calendar / follow-ups ──────────────────────────────────
     @app.get("/api/emails")
     async def api_emails():
-        for path in ("/emails/recent", "/api/emails", "/emails"):
+        for path in ("/emails", "/emails/recent", "/api/emails"):
             data = await _safe_get(f"{EMAIL_MONITOR_URL}{path}")
             if data is None:
                 continue
@@ -357,7 +364,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
 
     @app.get("/api/calendar")
     async def api_calendar():
-        for path in ("/calendar/today", "/api/events", "/events", "/calendar"):
+        for path in ("/calendar/today", "/calendar/upcoming", "/calendar/week"):
             data = await _safe_get(f"{CALENDAR_AGENT_URL}{path}")
             if data is None:
                 continue
@@ -388,17 +395,27 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             ).fetchall()
             conn.close()
             followups = [dict(r) for r in rows]
-            now = datetime.now().astimezone()
+            now_utc = datetime.now(timezone.utc)
             overdue = 0
             for f in followups:
-                last_alert = f.get("last_overdue_alert_ts")
-                if last_alert:
+                last_client = f.get("last_client_ts")
+                last_matthew = f.get("last_matthew_ts")
+                if not last_client:
+                    continue
+                try:
+                    client_dt = datetime.fromisoformat(last_client)
+                    if client_dt.tzinfo is None:
+                        client_dt = client_dt.replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    continue
+                waiting_on_matt = (not last_matthew) or (last_client > last_matthew)
+                if waiting_on_matt and (now_utc - client_dt).total_seconds() >= 4 * 3600:
                     overdue += 1
             return {
                 "followups": followups[:20],
                 "total": len(followups),
                 "overdue_count": overdue,
-                "as_of": now.isoformat(),
+                "as_of": now_utc.isoformat(),
             }
         except Exception as exc:
             logger.debug("followups_db_fail error=%s", exc)
@@ -420,7 +437,11 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         cortex_decisions: list[dict] = []
         if engine is not None:
             try:
-                cortex_decisions = engine.memory.recall("", limit=limit)
+                rows = engine.memory.conn.execute(
+                    "SELECT * FROM decisions ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+                cortex_decisions = [dict(r) for r in rows]
             except Exception:
                 cortex_decisions = []
 
