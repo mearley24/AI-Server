@@ -612,6 +612,37 @@ async def lifespan(app: FastAPI):
 
     _print_banner(settings)
 
+    # ── Trading readiness structured log ──────────────────────────────
+    # Emit once at startup so the blocker state is grep-able in logs.
+    # Does NOT make any network calls — reads only what is already resolved.
+    _r_kraken_ok = bool(os.environ.get("KRAKEN_SECRET", "").strip())
+    _r_ct = (getattr(deps, "strategies", None) or {}).get("copytrade")
+    _r_bankroll = getattr(_r_ct, "_bankroll", float(os.environ.get("COPYTRADE_BANKROLL", "300")))
+    _r_wallet = (getattr(deps, "client", None) and deps.client.wallet_address) or "not_configured"
+    _r_min_trade = 7.50
+    _r_blockers: list[str] = []
+    if not _r_kraken_ok:
+        _r_blockers.append("KRAKEN_SECRET_MISSING")
+    if _r_bankroll < _r_min_trade:
+        _r_blockers.append(f"BANKROLL_${_r_bankroll:.2f}_BELOW_MIN_${_r_min_trade:.2f}")
+    _r_log = log.warning if _r_blockers else log.info
+    _r_log(
+        "trading_readiness_summary",
+        status="BLOCKED" if _r_blockers else "READY",
+        blockers=_r_blockers or ["none"],
+        polymarket_wallet=_r_wallet,
+        actual_bankroll_usdc=round(_r_bankroll, 2),
+        kraken_secret_configured=_r_kraken_ok,
+        next_action_1=(
+            "Set KRAKEN_SECRET in .env then: docker compose up -d polymarket-bot"
+            if not _r_kraken_ok else "n/a"
+        ),
+        next_action_2=(
+            f"Fund {_r_wallet} with $50+ USDC on Polygon (current: ${_r_bankroll:.2f})"
+            if _r_bankroll < _r_min_trade else "n/a"
+        ),
+    )
+
     yield
 
     # Shutdown
@@ -681,7 +712,7 @@ async def lifespan(app: FastAPI):
 
 
 def _print_banner(settings) -> None:
-    """Print startup banner."""
+    """Print startup banner with trading readiness indicators."""
     mode_str = "OBSERVER (dry-run)" if settings.dry_run else "LIVE"
     mode_line = f"  Mode:     {mode_str:<37}"
 
@@ -691,6 +722,21 @@ def _print_banner(settings) -> None:
     active_strats = list((getattr(deps, "strategies", None) or {}).keys())
     strat_line_1 = ", ".join(active_strats[:4]) if active_strats else "none"
     strat_line_2 = ", ".join(active_strats[4:]) if len(active_strats) > 4 else ""
+
+    # ── Trading readiness indicators ──────────────────────────────────
+    _kraken_ok = bool(os.environ.get("KRAKEN_SECRET", "").strip())
+    _ct = (getattr(deps, "strategies", None) or {}).get("copytrade")
+    _actual_bankroll = getattr(_ct, "_bankroll", float(os.environ.get("COPYTRADE_BANKROLL", "300")))
+    _min_trade = 7.50
+
+    kraken_status = "[OK] authenticated" if _kraken_ok else "[!!] MISSING KRAKEN_SECRET"
+    bankroll_status = (
+        f"[OK] ${_actual_bankroll:.2f} USDC on-chain"
+        if _actual_bankroll >= _min_trade
+        else f"[!!] UNFUNDED ${_actual_bankroll:.2f} USDC (need >=${_min_trade:.2f})"
+    )
+    _blocked = (not _kraken_ok) or (_actual_bankroll < _min_trade)
+    trading_status = "[!!] BLOCKED — no trades will execute" if _blocked else "[OK] READY"
 
     banner = f"""
 ╔══════════════════════════════════════════════════════╗
@@ -709,6 +755,11 @@ def _print_banner(settings) -> None:
 
     banner += f"""
 ║  + whale_scanner + LLM_validator                     ║
+║                                                      ║
+║  TRADING READINESS:                                  ║
+║  {"Kraken MM:  " + kraken_status[:40]:<52}║
+║  {"Polymarket: " + bankroll_status[:40]:<52}║
+║  {"Status:     " + trading_status[:40]:<52}║
 ║                                                      ║
 ║  Endpoints:                                          ║
 ║    GET  /health        — Health check                ║

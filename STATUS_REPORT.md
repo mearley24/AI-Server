@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (§15 — end-of-pass snapshot: Tasks 1–7 complete)
+Last updated: 2026-04-12 (§16 — trading observability improved; exact blocker documented)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -620,3 +620,89 @@ Live code inspection of the four "PARTIAL" prompts from §3. All grep/compile ev
 ---
 
 *Next recommended prompt: **Prompt N finish** (bounded, no credentials required, closes 3 concrete gaps). Follow with Prompt T (approval drain) once Prompt N is merged.*
+
+---
+
+## 16. Z8 Trading Observability Pass (2026-04-12)
+
+### Objective
+Push trading diagnosis to an actionable, observable state: funded/authenticated/observable enough to know whether the bot can truly trade.
+
+### Commands run
+```
+bash scripts/pull.sh
+docker compose ps
+docker compose logs --tail=200 polymarket-bot
+grep -n "bankroll|low_bankroll|COPYTRADE_BANKROLL" polymarket-bot/strategies/polymarket_copytrade.py
+sed -n '200,260p' polymarket-bot/src/main.py
+sed -n '680,724p' polymarket-bot/src/main.py
+docker compose up -d --build polymarket-bot
+docker compose logs --tail=80 polymarket-bot | grep -E "trading_readiness|READINESS|Kraken MM|Polymarket:|Status:"
+```
+
+### Current trading mode
+**LIVE mode** — `POLY_DRY_RUN=false` in compose. Bot is processing real market data and attempting real trades.  
+All strategies are registered and ticking (copytrade, weather_trader, cvd_arb, mean_reversion, presolution_scalp, sports_arb, flash_crash, stink_bid, liquidity_provider, kraken_mm, redeemer — 11 total).  
+No trades are executing because both blockers below prevent it.
+
+### Current blockers (confirmed live from logs)
+
+| # | Blocker | Evidence |
+|---|---|---|
+| 1 | **`KRAKEN_SECRET` is empty** | `{"error": "kraken requires \"secret\" credential", "event": "cancel_stale_orders_error"}` every tick. New startup log: `"KRAKEN_SECRET_MISSING"` in `trading_readiness_summary`. Banner: `║  Kraken MM:  [!!] MISSING KRAKEN_SECRET` |
+| 2 | **Polymarket wallet unfunded** | On-chain balance = **$1.94 USDC**. Minimum to execute any trade = $7.50. New startup log: `"BANKROLL_$1.94_BELOW_MIN_$7.50"` in `trading_readiness_summary`. Banner: `║  Polymarket: [!!] UNFUNDED $1.94 USDC (need >=$7.50)` |
+
+Overall status from new banner line: `║  Status:     [!!] BLOCKED — no trades will execute`
+
+### Observability improvements shipped (this pass)
+
+**`polymarket-bot/src/main.py`** — rebuilt and redeployed:
+
+1. **`_print_banner` — new TRADING READINESS section** added to the ASCII startup banner.  
+   Three new lines printed on every container start:
+   ```
+   ║  TRADING READINESS:                                  ║
+   ║  Kraken MM:  [!!] MISSING KRAKEN_SECRET              ║
+   ║  Polymarket: [!!] UNFUNDED $1.94 USDC (need >=$7.50) ║
+   ║  Status:     [!!] BLOCKED — no trades will execute   ║
+   ```
+   Reads `KRAKEN_SECRET` env var and copytrade's `_bankroll` (set by startup on-chain sync — no extra network call).
+
+2. **New `trading_readiness_summary` structured log** emitted once at startup (after banner, before `yield`).  
+   Level: `warning` when blocked, `info` when ready. Grep-able JSON:
+   ```json
+   {
+     "event": "trading_readiness_summary",
+     "status": "BLOCKED",
+     "blockers": ["KRAKEN_SECRET_MISSING", "BANKROLL_$1.94_BELOW_MIN_$7.50"],
+     "polymarket_wallet": "0xa791E3090312981A1E18ed93238e480a03E7C0d2",
+     "actual_bankroll_usdc": 1.94,
+     "kraken_secret_configured": false,
+     "next_action_1": "Set KRAKEN_SECRET in .env then: docker compose up -d polymarket-bot",
+     "next_action_2": "Fund 0xa791E3090312981A1E18ed93238e480a03E7C0d2 with $50+ USDC on Polygon (current: $1.94)"
+   }
+   ```
+
+### Exact next actions required by Matt (in order)
+
+1. **Set `KRAKEN_SECRET` in `.env`**  
+   The value to use is the same as `KRAKEN_API_SECRET` (already in `.env` line 284 with a real value).  
+   Run: `bash scripts/set-env.sh KRAKEN_SECRET <value>`  
+   Then: `docker compose up -d polymarket-bot`  
+   No rebuild needed (env-only change).  
+   Verify: `docker compose logs --tail=20 polymarket-bot | grep kraken` — auth errors stop, `/kraken/status` returns 200.
+
+2. **Fund the Polymarket wallet**  
+   Wallet: `0xa791E3090312981A1E18ed93238e480a03E7C0d2`  
+   Network: Polygon (MATIC chain)  
+   Minimum: **$50 USDC** (covers ~6 trades at $7.50 min; bankroll configured at $500 for full operation)  
+   No code change or container restart needed — copytrade re-reads on-chain balance every 5 minutes.  
+   Verify: `docker compose logs --tail=10 polymarket-bot | grep bankroll_onchain_check` — will show actual vs internal balance.
+
+### What changes once both actions are taken
+
+| After action | Expected change |
+|---|---|
+| `KRAKEN_SECRET` set + container restarted | `kraken_market_maker_enabled` in startup logs. Auth errors stop. `/kraken/status` returns 200 with real balance. Dashboard Kraken wallet non-zero. |
+| Polymarket wallet funded ($50+) | `bankroll_onchain_check` logs show updated balance. `copytrade_skip` reason changes from `low_bankroll` to actual trade attempts. First `copytrade_executed` events appear. Dashboard P&L non-zero. |
+| Both done | `trading_readiness_summary` flips to `"status": "READY"`. Banner shows `[OK]` for both lines. Bot is fully operational. |
