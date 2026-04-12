@@ -2,11 +2,11 @@
 
 ## Summary
 
-**Total ingested to Cortex this run: 2** (0 failed)
+**Total ingested to Cortex this run: 393** (0 failed)
 
 | Source | Files | Ingested | Skipped (dup/empty) | Failed |
 |---|---|---|---|---|
-| Apple Notes | 2 | 2 | 0 | 0 |
+| Apple Notes | 504 | 393 | 111 | 0 |
 | Products (knowledge/products/) | 20 | 0 | 20 | 0 |
 | System shells (knowledge/projects/) | 4 | 0 | 4 | 0 |
 | Procedures (knowledge/procedures/) | 3 | 0 | 3 | 0 |
@@ -23,7 +23,16 @@
 
 ## Apple Notes — Categories Breakdown
 
-- **install_notes**: 2
+- **install_notes**: 326
+- **access_codes**: 25
+- **work_procedure**: 10
+- **business_operations**: 8
+- **proposal_template**: 7
+- **product_reference**: 6
+- **troubleshooting**: 5
+- **vendor_contact**: 3
+- **training**: 2
+- **client_preference**: 1
 
 ## Procedures Extracted
 
