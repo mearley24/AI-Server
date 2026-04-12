@@ -1,7 +1,7 @@
 # STATUS REPORT — Symphony AI-Server
 
 Generated: 2026-04-11 (Prompt Q — Full Project Audit & Status Baseline)
-Last updated: 2026-04-12 (§16 — trading observability improved; exact blocker documented)
+Last updated: 2026-04-12 (§17 — trading mode confirmed: LIVE, wallet drained to $1.94 USDC, all trades skipped)
 Host: Bob (Mac Mini M4), branch: main.
 
 > **Prompt S update (2026-04-11):** Mission Control has been dissolved. Cortex
@@ -706,3 +706,60 @@ Overall status from new banner line: `║  Status:     [!!] BLOCKED — no trade
 | `KRAKEN_SECRET` set + container restarted | `kraken_market_maker_enabled` in startup logs. Auth errors stop. `/kraken/status` returns 200 with real balance. Dashboard Kraken wallet non-zero. |
 | Polymarket wallet funded ($50+) | `bankroll_onchain_check` logs show updated balance. `copytrade_skip` reason changes from `low_bankroll` to actual trade attempts. First `copytrade_executed` events appear. Dashboard P&L non-zero. |
 | Both done | `trading_readiness_summary` flips to `"status": "READY"`. Banner shows `[OK]` for both lines. Bot is fully operational. |
+
+---
+
+## 17. Z9 Trading Mode Diagnosis (2026-04-12)
+
+**One-line mode diagnosis:** LIVE mode (`POLY_DRY_RUN=false`) — Polymarket wallet drained to $1.94 USDC by prior live trades; all signals skip with `copytrade_skip: low_bankroll`; zero active positions; Kraken MM dry-run + missing secret; Kalshi in demo mode; dashboard zeroes are correct.
+
+---
+
+### Sources inspected (no network calls, no trade actions)
+
+| Source | Finding |
+|---|---|
+| `polymarket-bot/.env` | **Does not exist** — no service-level `.env` file |
+| Root `.env` (via docker-compose) | `POLY_DRY_RUN=false` · `POLY_PRIVATE_KEY` set (64-hex) · `POLY_SAFE_ADDRESS` set · `KRAKEN_SECRET=` (empty) · `KRAKEN_DRY_RUN=true` · `KALSHI_DRY_RUN=true` |
+| `docker-compose.yml` env block | Injects `${POLY_DRY_RUN:-false}` into container → LIVE mode confirmed |
+| `polymarket-bot/src/config.py` | `dry_run` field: `default=True` but overridden by `POLY_DRY_RUN=false` env var |
+| `polymarket-bot/config/paper_trading.json` | `"enabled": true, "initial_bankroll": 50000` — **backtest-only config**, loaded by `paper_runner.py` only; live bot (`src/main.py`) never reads this file |
+| `data/polymarket/paper_trades.jsonl` | **Does not exist** — paper ledger has never been written |
+| `data/polymarket/trades.csv` | **477 rows** — live trades from Apr 3–12; real USDC amounts; bot HAS traded live |
+| `data/polymarket/copytrade_positions.json` | `"positions": []` — zero open positions; `category_pnl: {crypto: +2.11, weather: -7.22}` = **net -$5.11 realized** |
+| Container logs (bounded, `--tail 80`) | `"bankroll": 1.94, "event": "copytrade_skip"` repeated for every detected signal — all trades blocked |
+
+---
+
+### Exact mode per platform
+
+| Platform | Mode | Why |
+|---|---|---|
+| **Polymarket** | **LIVE** (blocked by funds) | `POLY_DRY_RUN=false`; real private key + safe address configured; on-chain USDC = $1.94 → below $7.50 min trade |
+| **Kraken MM** | **DRY-RUN + AUTH BROKEN** | `KRAKEN_DRY_RUN=true` AND `KRAKEN_SECRET=` empty; doubly non-trading |
+| **Kalshi** | **DEMO/PAPER** | `KALSHI_DRY_RUN=true`, `KALSHI_ENVIRONMENT=demo` |
+
+---
+
+### Why the dashboard is all zeroes
+
+The dashboard is **correct** — it accurately reflects an empty state:
+
+1. **No open positions** — `copytrade_positions.json` confirms `"positions": []`. All prior positions were exited (last exit: Apr 12 07:27).
+2. **No new trades executing** — every copytrade signal fires `copytrade_skip: low_bankroll` because the Polygon wallet holds only **$1.94 USDC** (below $7.50 minimum). This has been the state since at least the last container restart.
+3. **Kraken P&L = $0** — `KRAKEN_SECRET` is empty; auth fails on every tick; no Kraken positions or balance readable.
+4. **PnL tracker** — `PnLTracker.load_csv()` loads `trades.csv` at startup (read-only reconstruction) but `_update_position()` is not called per-row, so open positions are not reconstructed from history. The current-session realized P&L from this boot cycle is $0 because no trades have executed since the container last started.
+
+Historical realized P&L **does exist** in `copytrade_positions.json`: crypto +$2.11, weather −$7.22 = **−$5.11 net**. This reflects the live trades in `trades.csv` (477 rows) that depleted the wallet from its original seed to $1.94.
+
+---
+
+### What needs to happen for non-zero activity
+
+| Action | Effect | Who |
+|---|---|---|
+| Fund Polygon wallet with $50+ USDC | `copytrade_skip` stops; first `copytrade_executed` events appear within 5 min (copytrade re-reads on-chain balance every 5 min — no restart needed) | Matt |
+| Set `KRAKEN_SECRET` = value of `KRAKEN_API_SECRET` in `.env`, then `docker compose up -d polymarket-bot` | Kraken MM auth succeeds; `/kraken/status` returns 200; Kraken P&L visible | Matt |
+| _(optional)_ Set `KALSHI_ENVIRONMENT=production` + `KALSHI_DRY_RUN=false` | Kalshi trades live | Matt (after Kalshi API key verified) |
+
+No code changes are needed. This is purely a credentials + funding gap.
