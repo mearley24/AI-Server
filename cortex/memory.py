@@ -82,16 +82,34 @@ CREATE TABLE IF NOT EXISTS improvement_log (
 
 # Valid memory categories
 CATEGORIES = {
+    # ── trading / markets ────────────────────────────────────────────────────
     "trading_rule",
     "strategy_idea",
     "strategy_performance",
     "market_pattern",
     "whale_intel",
     "x_intel",
-    "infrastructure",
     "edge",
+    # ── general learning / research ──────────────────────────────────────────
     "meta_learning",
     "external_research",
+    "infrastructure",
+    # ── smart home business ──────────────────────────────────────────────────
+    "system_shell",         # VLAN configs, device registries, cable schedules per client
+    "access_codes",         # WiFi, alarm, gate codes, IP addresses per client
+    "work_procedure",       # Step-by-step install/config procedures, cheat sheets
+    "product_reference",    # Model numbers, specs, compatibility notes, pricing
+    "proposal_template",    # Proposal language, scope blocks, pricing formulas
+    "client_preference",    # Client-specific preferences, decisions, communication style
+    "install_notes",        # Job site notes, photos, field conditions, gotchas
+    "troubleshooting",      # Problem/solution pairs, debug steps, known issues
+    "vendor_contact",       # Supplier contacts, rep info, account numbers
+    "training",             # Certifications, study notes, Control4/Lutron/CEDIA material
+    "business_operations",  # Scheduling, inventory, truck stock, process improvements
+    # catch-all (from notes indexer)
+    "email",
+    "follow_up",
+    "system",
 }
 
 
