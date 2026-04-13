@@ -26,7 +26,7 @@ _Action-required items this week. Most require Matt's input (credentials/funding
 
 _Important but not blocking; no credentials required._
 
-- **Fix email `read=1` upstream** — all 438 emails in `emails.db` have `read=1`; the email tile correctly shows 0 unread but the data is wrong. Audit `email-monitor/notifier.py` and `monitor.py::_scan_sent_for_replies()` to find where read is set to 1 and limit it to emails Matt has actually replied to (Sent folder In-Reply-To match). See §Z3.
+- ~~**Fix email `read=1` upstream**~~ ✅ **Done 2026-04-13** — Root cause: `notifier.py` called `mark_email_read()` on every dispatched notification, which is wrong (notification ≠ reply). Removed that call. `read=1` is now set **only** by `monitor._scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` header is found. Migration script `email-monitor/migrate_reset_read.py` ran and reset 438 incorrectly-marked rows (`responded=0, read=1 → read=0`). DB now shows 452 emails all `read=0, responded=0`. See §Z3.
 
 - **Wire Cortex (all services)** — Cortex receives ~1 entry/week; most services still not POSTing to `http://cortex:8102/api/entries`. Add calls (with `try/except`) to `email-monitor`, `daily_briefing`, `follow_up_engine`, and `notification-hub`. Target: >100 entries within 24h of deploy. See §3 close-all-gaps Task 3.
 
@@ -89,6 +89,7 @@ _Completed since the April 11 audit baseline._
 - ✅ **symphonysh debug cleanup** — 8 debug console.log statements removed, dead `testNavigation` button removed, debug dropdown entries removed (§15).
 - ✅ **x-intake rebuilt + restarted (2026-04-13 08:14 MDT)** — Image rebuilt (`ai-server-x-intake:latest`), container recreated. Redis listener live on `events:imessage`, Uvicorn on port 8101, health endpoint returning HTTP 200. Volume mounts for `data/x_intake` (queue.db) and `data/transcripts` now applied. Status: `Up (healthy)`. Remaining follow-up: durable listener watchdog per §Z14.
 - ✅ **Prompt T drain (2026-04-13 08:24 MDT)** — `scripts/prompt_t_drain.py` ran once against `decision_journal.db`. Drained all 63 `pending` rows (1 auto_low_value + 62 duplicate_entry); 103 pre-existing `expired` rows left untouched. `pending_approvals` now shows 0 pending. Both `pending_approvals.status` and linked `decisions.outcome` updated atomically. iMessage summary sent to Matt via notification-hub. Cortex log entry written. See Reference: Prompt T Drain (§T).
+- ✅ **Email `read=1` bug fixed (2026-04-13 08:41 MDT)** — `notifier.py` was calling `mark_email_read()` on every dispatched notification — wrong because notification ≠ reply. Removed that block. `read=1` is now set **only** by `_scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` is found. Migration script `email-monitor/migrate_reset_read.py` reset 438 rows (`responded=0, read=1 → read=0`). DB: 452 emails, all `read=0, responded=0`. (§Z3)
 
 ---
 
@@ -100,7 +101,7 @@ _Snapshot from 2026-04-12. Re-run `docker compose ps` for current state._
 |---|---|---|---|---|
 | openclaw | 8099 | Up | 🟢 | `/health` → 200. 40 active jobs, backfilling client preferences. |
 | cortex | 8102 | Up | 🟢 | 21 entries, 10 neural paths. Starving — only 1 entry/week (see Next). |
-| email-monitor | 8092 | Up | 🟢 | 435 emails in DB; all marked `read=1` (see Next). |
+| email-monitor | 8092 | Up | 🟢 | 452 emails in DB; `read=1` bug fixed 2026-04-13 — 438 rows reset to `read=0`. `read=1` now only set on confirmed reply (In-Reply-To match in Sent). |
 | notification-hub | 8095 | Up | 🟢 | Python on 8095 — CLAUDE.md incorrectly says 8091/Node. |
 | proposals | 8091 | Up | 🟢 | Not in CLAUDE.md service table. |
 | polymarket-bot | 8430 (via vpn) | Up | 🟢 | LIVE mode; 11 strategies registered; blocked on credentials + funding (see Now). |
@@ -133,7 +134,7 @@ _Row counts from 2026-04-12 audit._
 | `data/openclaw/decision_journal.db` | decisions | 4642 | flowing |
 | | pending_approvals | **0 pending** (103 expired, 63 skipped) | ✅ Drained 2026-04-13 by Prompt T — see §T |
 | `data/openclaw/follow_ups.db` | follow_ups | 58 | flowing — canonical home TBD (see Next) |
-| `data/email-monitor/emails.db` | emails | 435 | flowing; all `read=1` (see Next) |
+| `data/email-monitor/emails.db` | emails | 452 | flowing; `read=1` bug fixed 2026-04-13 (438 rows reset to `read=0`) |
 
 Redis `events:log`: 1000 entries (capped), real traffic flowing across all subscribed channels.
 
@@ -618,7 +619,7 @@ _Evidence-based pass. All findings from live commands, file inspection, and cont
 
 | What is "good enough for now" | Note |
 |---|---|
-| All 435 emails marked `read=1` | Data is wrong (see §Z3) but dashboard filter (7-day + unread) masks the bug correctly |
+| ~~All 435 emails marked `read=1`~~ | ✅ Fixed 2026-04-13 — `notifier.py` no longer sets `read=1`; 438 rows reset via migration script; `read=1` now requires Sent-folder In-Reply-To match |
 | follow_ups.db canonical | 58 rows; `follow_up_log` in `jobs.db` still 0 — dual-home not yet resolved |
 | Calendar timezone | Stripped + treated as local Denver time; acceptable but technically imprecise |
 

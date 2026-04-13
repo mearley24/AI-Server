@@ -199,14 +199,11 @@ async def run_subscriber() -> None:
                         except Exception as pub_err:
                             logger.warning("ops:email_action publish failed: %s", pub_err)
 
-                    # Mark email as read in the emails table
-                    msg_id = data.get("message_id") or ""
-                    if msg_id:
-                        try:
-                            from monitor import mark_email_read
-                            mark_email_read(msg_id)
-                        except Exception:
-                            pass
+                    # NOTE: read=1 is NOT set here.
+                    # Receiving a notification does not mean Matt replied.
+                    # read is set to 1 only by monitor._scan_sent_for_replies()
+                    # when a Sent-folder message with a matching In-Reply-To header
+                    # is found, via mark_email_responded().
 
                     # Prune old records every 50 dispatches
                     prune_counter += 1
