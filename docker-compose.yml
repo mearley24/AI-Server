@@ -1,9 +1,36 @@
 # =============================================================================
 # AI-Server Docker Compose
-# Active services: 14
+# Active services: 15
 # =============================================================================
 
 services:
+
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:8080"
+    volumes:
+      - openwebui:/app/backend/data
+      - "./data:/data"
+    environment:
+      - WEBUI_NAME=AI-Server
+      - ENABLE_API_KEYS=True
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   remediator:
     build:
@@ -637,4 +664,5 @@ networks:
         - subnet: 172.18.0.0/16
 
 volumes:
+  openwebui:
   redis_data:

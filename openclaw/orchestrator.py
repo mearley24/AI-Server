@@ -1347,16 +1347,6 @@ class Orchestrator:
             pass
 
         try:
-            resp = await self.http.get(f"{SERVICES['calendar']}/calendar/daily-briefing")
-            if resp.status_code == 200:
-                cal_brief = resp.json()
-                summary = cal_brief.get("summary") or cal_brief.get("briefing", "")
-                if summary:
-                    briefing_parts.append(f"Calendar Briefing: {summary}")
-        except Exception as e:
-            logger.debug("calendar daily-briefing skipped: %s", e)
-
-        try:
             resp = await self.http.get(f"{SERVICES['dtools']}/pipeline")
             if resp.status_code == 200:
                 pipe = resp.json()
