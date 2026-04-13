@@ -185,6 +185,20 @@ async def run_subscriber() -> None:
                     await dispatch(redis_client, notification, priority)
                     _mark_notified(dedup_key)
 
+                    # Publish ops event for action-required (urgent) emails
+                    if urgent:
+                        try:
+                            action_payload = json.dumps({
+                                "message_id": msg_id,
+                                "subject": subject,
+                                "sender": sender,
+                                "urgency": priority,
+                            })
+                            await redis_client.publish("ops:email_action", action_payload)
+                            logger.debug("Published ops:email_action for %s", dedup_key[:60])
+                        except Exception as pub_err:
+                            logger.warning("ops:email_action publish failed: %s", pub_err)
+
                     # Mark email as read in the emails table
                     msg_id = data.get("message_id") or ""
                     if msg_id:

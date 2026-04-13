@@ -18,10 +18,7 @@ _Action-required items this week. Most require Matt's input (credentials/funding
 
 - ~~**Drain 103 pending approvals**~~ ✅ **Done 2026-04-13 08:24 MDT** — `scripts/prompt_t_drain.py` ran once. 63 `pending` rows drained (1 auto_low_value + 62 duplicate_entry); 103 pre-existing `expired` rows untouched. `pending_approvals` is now at 0. See Reference: Prompt T Drain for full details.
 
-- **Finish Prompt N** — 3 bounded changes remaining (9 of 12 deliverables already done):
-  1. Remove `openwebui:` service block and its `volumes:` entry from `docker-compose.yml`, then `docker compose up -d`.
-  2. Add `ops:email_action` Redis publish to `email-monitor/notifier.py` after action-required classification.
-  3. Add `/calendar/daily-briefing` fetch to `openclaw/orchestrator.py` daily briefing assembly.
+- ~~**Finish Prompt N**~~ ✅ **Done 2026-04-13 08:32 MDT** — All 3 remaining items complete: (1) `openwebui` service block + volume removed from `docker-compose.yml`, orphan container stopped/removed; (2) `ops:email_action` Redis publish added to `email-monitor/notifier.py` after urgent classification; (3) `/calendar/daily-briefing` fetch wired into `openclaw/orchestrator.py` daily briefing assembly. `docker compose config` validated clean. Services restarted healthy.
 
 ---
 
@@ -158,7 +155,7 @@ Cortex memory: 21 entries, 1 this week — most services not yet POSTing.
 | **K** | x-intake-bot-bridge | ✅ COMPLETE |
 | **L** | x-alpha-collector | ✅ COMPLETE |
 | **M** | cortex | ✅ COMPLETE — in docker-compose, running |
-| **N** | operations-backbone | 🟡 PARTIAL — 9/12 done; 3 gaps remain (see Now) |
+| **N** | operations-backbone | ✅ COMPLETE — openwebui removed; ops:email_action Redis publish added; /calendar/daily-briefing wired in orchestrator (2026-04-13) |
 | **O, P** | website-experience, site-audit-polish | ✅ EXTERNAL — symphonysh repo; debug cleanup done |
 
 ### close-all-gaps-april10 tasks
