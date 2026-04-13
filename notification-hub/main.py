@@ -213,6 +213,15 @@ async def execute_hermes(req: NotificationRequest) -> dict:
 
     via = "+".join(results)
     store_notification("hermes", title, text, req.priority, "api_send", via)
+    # Post every hermes dispatch to Cortex (fire-and-forget).
+    await _post_to_cortex({
+        "category": "notification",
+        "title": f"Hermes dispatch [{','.join(channels)}]: {(title or text[:40])[:80]}",
+        "content": text[:300],
+        "source": "notification-hub",
+        "importance": 6 if req.priority in ("high", "urgent") else 4,
+        "tags": ["notification", "hermes"] + channels,
+    })
     return {"channels": channels, "via": via}
 
 
@@ -223,15 +232,15 @@ async def dispatch(title: str, body: str, priority: str = "normal", source: str 
         await send_console(title, body)
         via = "console"
     store_notification(NOTIFICATION_CHANNEL, title, body, priority, source, via)
-    # Feed Cortex only when the notification actually matters (high priority).
-    if priority in ("high", "urgent"):
-        await _post_to_cortex({
-            "category": "system",
-            "title": f"Notification sent to Matt: {title[:80]}",
-            "content": (body or "")[:300],
-            "importance": 7,
-            "tags": ["notification", priority, source],
-        })
+    # Post to Cortex for every dispatched notification (not suppressed ones).
+    await _post_to_cortex({
+        "category": "notification",
+        "title": f"Notification dispatched [{priority}]: {title[:80]}",
+        "content": (body or "")[:300],
+        "source": "notification-hub",
+        "importance": 7 if priority in ("high", "urgent") else 4,
+        "tags": ["notification", priority, source, via],
+    })
     return via
 
 

@@ -403,4 +403,19 @@ def run_cycle(
 
     conn.commit()
     conn.close()
+
+    # Always post a cycle summary to Cortex so memory stays current.
+    _post_to_cortex({
+        "category": "follow_up",
+        "title": "Follow-up cycle complete",
+        "content": (
+            f"Clients tracked: {len(rows)}. "
+            f"Overdue alerts: {overdue_alerts}. "
+            f"Follow-up (no-reply) alerts: {followup_alerts}."
+        ),
+        "source": "follow_up_tracker",
+        "importance": 6 if (overdue_alerts + followup_alerts) > 0 else 3,
+        "tags": ["follow_up", "cycle", "summary"],
+    })
+
     return {"overdue_alerts": overdue_alerts, "followup_alerts": followup_alerts}

@@ -319,12 +319,46 @@ def send_briefing() -> dict:
 
     briefing_text = format_briefing(emails, bids, decisions, trading)
 
+    # Record briefing assembly in Cortex regardless of send success.
+    _post_to_cortex({
+        "category": "system",
+        "title": "Daily briefing assembled",
+        "content": (
+            f"Emails (24h): {len(emails)}. "
+            f"Bid deadlines: {len(bids)}. "
+            f"Pending decisions: {len(decisions)}. "
+            f"Trading data: {'yes' if trading else 'no'}."
+        ),
+        "source": "daily_briefing",
+        "importance": 4,
+        "tags": ["briefing", "daily", "assembly"],
+    })
+
+    # Log each bid deadline as a separate Cortex entry so they surface in memory.
+    for bid in bids:
+        _post_to_cortex({
+            "category": "bid",
+            "title": f"Bid deadline: {bid['name']} — due in {bid['days_until']} day(s)",
+            "content": f"GC: {bid.get('gc', '')}. Due: {bid.get('due', '')}. Status: {bid.get('status', '')}.",
+            "source": "daily_briefing",
+            "importance": 8 if bid["days_until"] <= 1 else 6,
+            "tags": ["bid", "deadline"],
+        })
+
     # Send via iMessage webhook
     url = os.environ.get("IMESSAGE_WEBHOOK_URL", "http://localhost:8098/send")
     phone = os.environ.get("OWNER_PHONE_NUMBER", "")
 
     if not phone:
         logger.error("OWNER_PHONE_NUMBER not set — cannot send briefing")
+        _post_to_cortex({
+            "category": "system",
+            "title": "Daily briefing failed: no phone number configured",
+            "content": "OWNER_PHONE_NUMBER env var not set.",
+            "source": "daily_briefing",
+            "importance": 6,
+            "tags": ["briefing", "error"],
+        })
         return {"status": "error", "reason": "no_phone_number"}
 
     try:
@@ -335,13 +369,14 @@ def send_briefing() -> dict:
         )
         resp.raise_for_status()
         logger.info("Daily briefing sent to Matthew")
-        # Record the briefing in Cortex memory (fire-and-forget).
+        # Record successful send in Cortex with full preview.
         _post_to_cortex({
             "category": "system",
-            "title": "Daily briefing sent",
+            "title": "Daily briefing sent to Matt",
             "content": briefing_text[:500],
+            "source": "daily_briefing",
             "importance": 5,
-            "tags": ["briefing", "daily"],
+            "tags": ["briefing", "daily", "sent"],
         })
         return {"status": "sent", "sections": {
             "emails": len(emails),
@@ -351,6 +386,14 @@ def send_briefing() -> dict:
         }}
     except Exception as e:
         logger.error("Failed to send briefing: %s", e)
+        _post_to_cortex({
+            "category": "system",
+            "title": "Daily briefing send failed",
+            "content": f"iMessage send error: {str(e)[:200]}",
+            "source": "daily_briefing",
+            "importance": 5,
+            "tags": ["briefing", "error"],
+        })
         return {"status": "error", "reason": str(e)}
 
 

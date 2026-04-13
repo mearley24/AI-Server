@@ -28,7 +28,7 @@ _Important but not blocking; no credentials required._
 
 - ~~**Fix email `read=1` upstream**~~ ✅ **Done 2026-04-13** — Root cause: `notifier.py` called `mark_email_read()` on every dispatched notification, which is wrong (notification ≠ reply). Removed that call. `read=1` is now set **only** by `monitor._scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` header is found. Migration script `email-monitor/migrate_reset_read.py` ran and reset 438 incorrectly-marked rows (`responded=0, read=1 → read=0`). DB now shows 452 emails all `read=0, responded=0`. See §Z3.
 
-- **Wire Cortex (all services)** — Cortex receives ~1 entry/week; most services still not POSTing to `http://cortex:8102/api/entries`. Add calls (with `try/except`) to `email-monitor`, `daily_briefing`, `follow_up_engine`, and `notification-hub`. Target: >100 entries within 24h of deploy. See §3 close-all-gaps Task 3.
+- ~~**Wire Cortex (all services)**~~ ✅ **Done 2026-04-13** — All four services now POST to `http://cortex:8102/remember`. See §3 close-all-gaps Task 3 and Reference: Cortex Wire-Up below.
 
 - **x-intake listener watchdog** — store the `_redis_listener` Task reference and add a 10-second watchdog loop so the listener restarts on failure. Also remove the nested `asyncio.new_event_loop()` from `_analyze_url_sync` — call the async function directly instead. See §Z14.
 
@@ -90,6 +90,7 @@ _Completed since the April 11 audit baseline._
 - ✅ **x-intake rebuilt + restarted (2026-04-13 08:14 MDT)** — Image rebuilt (`ai-server-x-intake:latest`), container recreated. Redis listener live on `events:imessage`, Uvicorn on port 8101, health endpoint returning HTTP 200. Volume mounts for `data/x_intake` (queue.db) and `data/transcripts` now applied. Status: `Up (healthy)`. Remaining follow-up: durable listener watchdog per §Z14.
 - ✅ **Prompt T drain (2026-04-13 08:24 MDT)** — `scripts/prompt_t_drain.py` ran once against `decision_journal.db`. Drained all 63 `pending` rows (1 auto_low_value + 62 duplicate_entry); 103 pre-existing `expired` rows left untouched. `pending_approvals` now shows 0 pending. Both `pending_approvals.status` and linked `decisions.outcome` updated atomically. iMessage summary sent to Matt via notification-hub. Cortex log entry written. See Reference: Prompt T Drain (§T).
 - ✅ **Email `read=1` bug fixed (2026-04-13 08:41 MDT)** — `notifier.py` was calling `mark_email_read()` on every dispatched notification — wrong because notification ≠ reply. Removed that block. `read=1` is now set **only** by `_scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` is found. Migration script `email-monitor/migrate_reset_read.py` reset 438 rows (`responded=0, read=1 → read=0`). DB: 452 emails, all `read=0, responded=0`. (§Z3)
+- ✅ **Cortex event ingestion wired (2026-04-13 08:52 MDT)** — Four services now POST to `http://cortex:8102/remember` on every meaningful event. Rate verified: 1 entry/min (follow_up cycle) sustained → ~1440+ entries/24h, well above 100 target. Cortex grew 733→735 in 65s post-deploy. See Reference: Cortex Wire-Up.
 
 ---
 
@@ -100,7 +101,7 @@ _Snapshot from 2026-04-12. Re-run `docker compose ps` for current state._
 | Service | Port | State | Health | Notes |
 |---|---|---|---|---|
 | openclaw | 8099 | Up | 🟢 | `/health` → 200. 40 active jobs, backfilling client preferences. |
-| cortex | 8102 | Up | 🟢 | 21 entries, 10 neural paths. Starving — only 1 entry/week (see Next). |
+| cortex | 8102 | Up | 🟢 | **735 entries** across 24 categories (2026-04-13). Actively receiving ~1 entry/min from follow_up, email, notification-hub, and daily_briefing. |
 | email-monitor | 8092 | Up | 🟢 | 452 emails in DB; `read=1` bug fixed 2026-04-13 — 438 rows reset to `read=0`. `read=1` now only set on confirmed reply (In-Reply-To match in Sent). |
 | notification-hub | 8095 | Up | 🟢 | Python on 8095 — CLAUDE.md incorrectly says 8091/Node. |
 | proposals | 8091 | Up | 🟢 | Not in CLAUDE.md service table. |
@@ -138,7 +139,7 @@ _Row counts from 2026-04-12 audit._
 
 Redis `events:log`: 1000 entries (capped), real traffic flowing across all subscribed channels.
 
-Cortex memory: 21 entries, 1 this week — most services not yet POSTing.
+Cortex memory: **735+ entries** across 24 categories, actively growing ~1 entry/min from 4 wired services (2026-04-13).
 
 ---
 
@@ -165,7 +166,7 @@ Cortex memory: 21 entries, 1 this week — most services not yet POSTing.
 |---|---|---|
 | 1 | x-intake deep analysis | 🟡 PARTIAL — files present; Cortex POST + thread wiring unverified |
 | 2 | follow-up engine auto-send | 🟡 PARTIAL — engine present; `follow_up_log` empty → auto-send loop not yet fired |
-| 3 | Cortex wire-up (all services) | 🟡 PARTIAL — see Next |
+| 3 | Cortex wire-up (all services) | ✅ DONE — 4 services wired 2026-04-13; ~1440 entries/day (follow_up cycle). See §Cortex Wire-Up |
 | 4 | daily briefing improvements | 🟡 PARTIAL — last run 2026-04-11; Cortex neural-paths section unverified |
 | 5 | pull.sh hardening | 🟡 PARTIAL — see Later |
 | 6 | Dropbox organizer fix | ✅ DONE — LaunchAgent verified running (§Z7) |
