@@ -702,6 +702,26 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         except Exception as exc:
             return {"ok": False, "error": str(exc)[:100]}
 
+    @app.get("/api/x-intake/transcripts/stats")
+    async def api_xintake_transcript_stats():
+        """Return transcript analysis stats from x-intake."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{X_INTAKE_URL}/transcripts/stats")
+                return resp.json()
+        except Exception as exc:
+            return {"error": str(exc)[:100], "files_on_disk": 0, "analyzed": 0, "pending_analysis": 0}
+
+    @app.post("/api/x-intake/transcripts/backfill")
+    async def api_xintake_transcript_backfill(body: dict = {}):
+        """Trigger transcript backfill analysis via x-intake."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(f"{X_INTAKE_URL}/transcripts/backfill", json=body)
+                return resp.json()
+        except Exception as exc:
+            return {"task_started": False, "error": str(exc)[:100]}
+
     @app.get("/api/system")
     async def api_system():
         """System info: uptime, disk, memory, container count."""

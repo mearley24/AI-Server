@@ -439,3 +439,136 @@ This would close the loop from "video watched → transcript filed → insights 
 _Audit run by Claude Code on 2026-04-11/12. Health checks, row counts, and compose diffs are from live commands at audit time._
 _X Intake review queue section added 2026-04-13._
 _Transcript storage audit added 2026-04-13._
+_Transcript AI analysis pipeline added 2026-04-13._
+
+---
+
+## Reference: Transcript AI Analysis Pipeline (2026-04-13)
+
+### What was built
+
+Three fragmentation problems identified in the transcript storage audit were fixed:
+
+| Problem | Fix |
+|---|---|
+| Transcripts lost on container restart (no volume) | Added `./data/transcripts:/data/transcripts` volume + `TRANSCRIPT_DIR=/data/transcripts` env to x-intake in `docker-compose.yml` |
+| `transcript_path` not stored in queue DB | Added `transcript_path TEXT` and `analyzed INTEGER` columns to `x_intake_queue`; schema migrates automatically on first boot |
+| No agent reads transcripts | Created `transcript_analyst.py` — full deep-analysis pipeline reading .md files and writing to Cortex |
+
+### Where transcript analysis now happens
+
+**Entry point:** `integrations/x_intake/main.py`
+
+After every successful video transcription, `main.py` now:
+1. Stores the `.md` file path in `queue.db` (`transcript_path` column)
+2. Fires `_analyze_transcript_background(transcript_path)` as an asyncio background task
+
+**Analysis module:** `integrations/x_intake/transcript_analyst.py`
+
+`analyze_transcript_file(md_path)` runs:
+1. Parses the .md file (Summary, Flags, Strategies, Key Quotes, Full Transcript sections)
+2. Builds a deep-analysis prompt covering all of Matt's interest areas (not just trading)
+3. Tries Ollama first (`qwen3:8b`) → GPT-4o-mini fallback
+4. Writes results to Cortex via `POST http://cortex:8102/remember`
+5. Marks queue row `analyzed=1` (success) or `analyzed=2` (failed)
+
+### What structured outputs are produced
+
+The LLM returns a JSON object with:
+
+| Field | What it contains | Written to Cortex as |
+|---|---|---|
+| `summary` | 3-5 sentences on the TRUE message of the video | `x_intel` memory |
+| `key_topics` | 3-8 specific topics/techniques covered | Included in `x_intel` content |
+| `hidden_gems` | Surprising/counterintuitive insights most people miss + why they matter to Matt | Included in `x_intel` content |
+| `actionable_tasks` | Specific things Matt could build/implement/investigate, with priority | High+medium priority → separate `strategy_idea` or `external_research` memories |
+| `content_ideas` | Angles for X posts or client education | Included in `x_intel` content |
+| `tags` | 3-8 topic tags | Memory tags |
+| `usefulness_score` | 0-100 integer (Matt-specific relevance) | Cortex memory `importance` (scaled) |
+| `confidence` | 0.0-1.0 (transcript quality) | Cortex memory `confidence` |
+
+**Cortex memory categories used:**
+- `x_intel` — main insight (summary + hidden gems + content ideas); `importance` scales with usefulness score; 30-day TTL
+- `strategy_idea` — high/medium priority "build" or "implement" tasks; 60-day TTL
+- `external_research` — high/medium priority "research" or "investigate" tasks; 60-day TTL
+
+### How Bob/agents find hidden gems
+
+Once transcripts are analyzed, agents query Cortex normally:
+```bash
+# Find all transcript-derived insights
+curl http://localhost:8102/memories?category=x_intel
+
+# Search by topic
+curl -X POST http://localhost:8102/query -H "Content-Type: application/json" -d '{"question":"trading strategy edge"}'
+
+# Find all transcript tasks
+curl http://localhost:8102/memories?category=strategy_idea
+```
+
+Transcript-sourced memories are tagged with the author handle and `transcript_task`, making them filterable.
+
+### Backfill of existing transcripts
+
+Two existing `.md` files in `data/transcripts/` (written before the volume was mounted) will be picked up by backfill:
+
+```bash
+# Trigger via API (runs in background, returns immediately)
+curl -X POST http://localhost:8101/transcripts/backfill
+
+# Or via Cortex proxy
+curl -X POST http://localhost:8102/api/x-intake/transcripts/backfill
+
+# Check status
+curl http://localhost:8101/transcripts/stats
+curl http://localhost:8102/api/x-intake/transcripts/stats
+```
+
+Backfill processes:
+1. Queue DB rows with `has_transcript=1` and `analyzed=0` that have `transcript_path` set
+2. Orphaned .md files in `data/transcripts/` not yet in the queue DB (the 2 pre-existing files)
+
+### Listener watchdog (§Z14 fix also applied)
+
+The Redis listener crash bug from 2026-04-11 was fixed in the same pass: startup now launches `_listener_watchdog()` instead of `_redis_listener()` directly. The watchdog checks every 10 seconds and restarts the listener if it has died.
+
+### Observability
+
+| Log event | When it fires |
+|---|---|
+| `transcript_analyst_start` | File processing begins |
+| `transcript_analyzed` | LLM returned results (score, gem count, task count) |
+| `transcript_cortex_written` | Memories posted to Cortex (count) |
+| `transcript_cortex_posted` | Individual Cortex POST succeeded |
+| `transcript_cortex_failed` | Cortex POST failed (Cortex down?) |
+| `transcript_analysis_failed` | Both Ollama and OpenAI failed |
+| `transcript_too_sparse` | Transcript is too short/garbled to analyze |
+| `transcript_bg_analysis` | Background task completed (from main.py) |
+| `transcript_bg_analysis_failed` | Background task threw exception |
+| `redis_listener_restarting` | Watchdog detected dead listener |
+
+### Remaining limitations
+
+1. **Cortex must be running** — Cortex POST failures are logged and retried only via the backfill path. There is no internal queue to retry failed POSTs automatically.
+2. **Transcript file format is fixed** — `transcript_analyst.py` expects the `.md` format written by `video_transcriber.save_transcript()`. Manually created or differently-formatted files may parse incompletely but won't crash.
+3. **Ollama host must be accessible** — Ollama is tried first. If `http://192.168.1.199:11434` is unreachable (e.g. running outside the home network), the system falls back to OpenAI automatically.
+4. **No cross-transcript de-dup** — If the same video is processed twice (two separate X links pointing to the same content), two separate Cortex memories are created. Low frequency in practice.
+
+### Deploy commands
+
+```bash
+# Full rebuild required (new volume mount + new source file)
+docker compose up -d --build x-intake
+
+# Cortex is bind-mounted — restart sufficient for dashboard.py change
+docker compose restart cortex
+
+# Verify transcript volume mounted correctly
+docker exec x-intake ls /data/transcripts
+
+# Trigger backfill of the 2 existing transcripts
+curl -X POST http://localhost:8101/transcripts/backfill
+
+# Check analysis stats after backfill
+curl http://localhost:8101/transcripts/stats
+```

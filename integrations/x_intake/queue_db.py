@@ -23,25 +23,34 @@ DB_PATH = Path("/data/x_intake/queue.db")
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS x_intake_queue (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    url            TEXT    NOT NULL,
-    author         TEXT    DEFAULT '',
-    post_type      TEXT    DEFAULT 'info',
-    relevance      INTEGER DEFAULT 0,
-    summary        TEXT    DEFAULT '',
-    action         TEXT    DEFAULT 'none',
-    suggested_dest TEXT    DEFAULT '',
-    status         TEXT    NOT NULL DEFAULT 'pending',
-    source         TEXT    DEFAULT 'imessage',
-    poly_signals   TEXT    DEFAULT '{}',
-    has_transcript INTEGER DEFAULT 0,
-    created_at     REAL    NOT NULL,
-    reviewed_at    REAL,
-    review_note    TEXT
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url             TEXT    NOT NULL,
+    author          TEXT    DEFAULT '',
+    post_type       TEXT    DEFAULT 'info',
+    relevance       INTEGER DEFAULT 0,
+    summary         TEXT    DEFAULT '',
+    action          TEXT    DEFAULT 'none',
+    suggested_dest  TEXT    DEFAULT '',
+    status          TEXT    NOT NULL DEFAULT 'pending',
+    source          TEXT    DEFAULT 'imessage',
+    poly_signals    TEXT    DEFAULT '{}',
+    has_transcript  INTEGER DEFAULT 0,
+    transcript_path TEXT    DEFAULT '',
+    analyzed        INTEGER DEFAULT 0,
+    created_at      REAL    NOT NULL,
+    reviewed_at     REAL,
+    review_note     TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_xi_status  ON x_intake_queue(status);
-CREATE INDEX IF NOT EXISTS idx_xi_created ON x_intake_queue(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_xi_status     ON x_intake_queue(status);
+CREATE INDEX IF NOT EXISTS idx_xi_created    ON x_intake_queue(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_xi_transcript ON x_intake_queue(has_transcript, analyzed);
 """
+
+# Columns added after initial schema — applied to existing databases.
+_MIGRATE_COLUMNS = [
+    "ALTER TABLE x_intake_queue ADD COLUMN transcript_path TEXT DEFAULT ''",
+    "ALTER TABLE x_intake_queue ADD COLUMN analyzed INTEGER DEFAULT 0",
+]
 
 _PRUNE_DAYS = 30
 
@@ -51,6 +60,13 @@ def _conn() -> sqlite3.Connection:
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.executescript(_CREATE_SQL)
+    # Apply schema migrations for existing databases (silently skip if already done).
+    for stmt in _MIGRATE_COLUMNS:
+        try:
+            conn.execute(stmt)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     return conn
 
 
@@ -94,6 +110,7 @@ def enqueue(
     source: str = "imessage",
     poly_signals: Optional[dict] = None,
     has_transcript: bool = False,
+    transcript_path: str = "",
 ) -> int:
     """Insert a new analyzed item and return its row id.
 
@@ -108,8 +125,8 @@ def enqueue(
             """INSERT INTO x_intake_queue
                (url, author, post_type, relevance, summary, action,
                 suggested_dest, status, source, poly_signals,
-                has_transcript, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                has_transcript, transcript_path, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 url,
                 author,
@@ -122,6 +139,7 @@ def enqueue(
                 source,
                 json.dumps(poly_signals or {}),
                 int(bool(has_transcript)),
+                (transcript_path or "")[:500],
                 time.time(),
             ),
         )

@@ -42,6 +42,7 @@ PORT = int(os.getenv("PORT", "8101"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 IMESSAGE_BRIDGE_URL = os.getenv("IMESSAGE_BRIDGE_URL", "http://host.docker.internal:8199")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+CORTEX_URL = os.getenv("CORTEX_URL", "http://cortex:8102")
 
 _TWEET_RE = re.compile(r"https?://(?:x\.com|twitter\.com)/\S+/status/\d+\S*", re.I)
 
@@ -296,6 +297,7 @@ async def _analyze_url(url: str) -> dict:
             "post_type": analysis.get("type", "info"),
             "action": analysis.get("action", "none"),
             "has_transcript": True,
+            "transcript_path": result.get("transcript_path", "") if isinstance(result, dict) else "",
         }
 
     analysis = _analyze_with_llm(post_text, author, has_video, transcript)
@@ -307,6 +309,7 @@ async def _analyze_url(url: str) -> dict:
         "post_type": analysis.get("type", "info"),
         "action": analysis.get("action", "none"),
         "has_transcript": analysis.get("has_transcript", False),
+        "transcript_path": "",
     }
 
 
@@ -322,6 +325,7 @@ async def analyze_endpoint(body: dict):
         try:
             analysis = result.get("analysis", {})
             summary = analysis.get("summary", "") if isinstance(analysis, dict) else ""
+            transcript_path = result.get("transcript_path", "")
             _db_enqueue(
                 url=url,
                 author=result.get("author", ""),
@@ -332,7 +336,10 @@ async def analyze_endpoint(body: dict):
                 source=source,
                 poly_signals={},
                 has_transcript=bool(result.get("has_transcript")),
+                transcript_path=transcript_path,
             )
+            if transcript_path:
+                asyncio.create_task(_analyze_transcript_background(transcript_path))
         except Exception as _qexc:
             logger.warning("analyze_enqueue_failed", error=str(_qexc)[:100])
     return result
@@ -546,6 +553,7 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                     relevance = int(rel_match.group(1))
 
             # Persist to review queue for dashboard visibility
+            transcript_path = result.get("transcript_path", "")
             if _db_enqueue is not None:
                 try:
                     _db_enqueue(
@@ -558,9 +566,14 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                         source=source,
                         poly_signals=poly_signals,
                         has_transcript=bool(result.get("has_transcript")),
+                        transcript_path=transcript_path,
                     )
                 except Exception as _qexc:
                     logger.warning("queue_enqueue_failed", error=str(_qexc)[:100])
+
+            # Kick off deep transcript analysis in the background
+            if transcript_path:
+                asyncio.create_task(_analyze_transcript_background(transcript_path))
 
             await _publish_to_bot(url, author, {
                 "summary": summary,
@@ -617,6 +630,46 @@ async def _redis_listener() -> None:
             await asyncio.sleep(5)
 
 
+# ── Transcript background analysis ───────────────────────────────────────────
+
+async def _analyze_transcript_background(transcript_path: str) -> None:
+    """Run deep transcript analysis in a background task after a new file is saved.
+
+    Calls transcript_analyst.analyze_transcript_file() then marks the queue row
+    as analyzed (1=success, 2=failed).  Never raises — must not crash the caller.
+    """
+    try:
+        import transcript_analyst as _ta
+        from pathlib import Path as _Path
+        result = await asyncio.to_thread(_ta.analyze_transcript_file, _Path(transcript_path))
+        success = result.get("success", False)
+        logger.info(
+            "transcript_bg_analysis",
+            path=transcript_path,
+            success=success,
+            memories=result.get("memories_written", 0),
+            score=result.get("usefulness_score", 0),
+        )
+        _ta._mark_analyzed(_ta._ANALYSIS_DB_PATH, transcript_path, success)
+    except Exception as exc:
+        logger.warning("transcript_bg_analysis_failed", path=transcript_path, error=str(exc)[:200])
+
+
+# ── Listener watchdog (§Z14 durable fix) ─────────────────────────────────────
+
+_listener_task: asyncio.Task | None = None
+
+
+async def _listener_watchdog() -> None:
+    """Keep the Redis listener Task alive.  Restarts it if it dies."""
+    global _listener_task
+    while True:
+        if _listener_task is None or _listener_task.done():
+            logger.warning("redis_listener_restarting")
+            _listener_task = asyncio.create_task(_redis_listener())
+        await asyncio.sleep(10)
+
+
 # ── Review queue API ─────────────────────────────────────────────────────────
 
 @app.get("/queue/stats")
@@ -671,9 +724,40 @@ async def queue_reject_endpoint(item_id: int, body: dict = {}):
         return {"ok": False, "error": str(exc)[:100]}
 
 
+# ── Transcript analysis API ───────────────────────────────────────────────────
+
+@app.get("/transcripts/stats")
+async def transcripts_stats_endpoint():
+    """Return transcript analysis counts: files on disk, analyzed, pending, failed."""
+    try:
+        import transcript_analyst as _ta
+        return _ta.get_stats()
+    except Exception as exc:
+        return {"error": str(exc)[:100]}
+
+
+@app.post("/transcripts/backfill")
+async def transcripts_backfill_endpoint(body: dict = {}):
+    """Trigger deep analysis of all unanalyzed transcripts (queue DB + orphaned .md files).
+
+    Optional body: {"limit": 50}  (default 50, max 200)
+    Returns immediately with a task_started=True; analysis runs in the background.
+    """
+    limit = min(int((body or {}).get("limit", 50)), 200)
+    try:
+        import transcript_analyst as _ta
+        asyncio.create_task(asyncio.to_thread(_ta.run_backfill, limit))
+        return {"task_started": True, "limit": limit}
+    except Exception as exc:
+        return {"task_started": False, "error": str(exc)[:100]}
+
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+
 @app.on_event("startup")
 async def startup():
-    asyncio.create_task(_redis_listener())
+    # Start the listener watchdog — restarts _redis_listener if it dies (§Z14 fix).
+    asyncio.create_task(_listener_watchdog())
     logger.info("x_intake_started", port=PORT, openai_key_set=bool(OPENAI_API_KEY))
 
 
