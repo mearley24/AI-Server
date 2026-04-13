@@ -443,6 +443,246 @@ _Transcript AI analysis pipeline added 2026-04-13._
 
 ---
 
+---
+
+## Reference: In-Place vs Missing Systems Audit (2026-04-13)
+
+_Evidence-based pass. All findings from live commands, file inspection, and container state at audit time._
+
+---
+
+### 1 — symphonysh Site Readiness
+
+**Classification: PARTIAL**
+
+| What exists | Evidence |
+|---|---|
+| Build clean, 0 errors | `npm run build` — 2680 modules, 3.21s, no warnings |
+| 128/128 assets matched in dist/ | `diff public/ dist/` — zero differences |
+| SPA routing correct | `public/_redirects` + `dist/_redirects` both present; all sampled routes return HTTP 200 |
+| Live on Cloudflare Pages | `symphonysh.com` → HTTP 200 verified April 13 |
+| Real project data (15 projects) | `src/data/projects.ts` populated; no placeholder images |
+| SEO schema wired | `businessSchema.ts` — LocalBusiness, NAP, geo coords, opening hours |
+| Booking flow | `/scheduling` — multi-step form, Zapier webhook, confirmation page |
+
+| What is missing / needs business input | Note |
+|---|---|
+| All `testimonial` fields are `null` | `projects.ts` — needs real client quotes before a Testimonials section can go live |
+| `BUSINESS_SAME_AS` is an empty array | No Google Business Profile URL confirmed yet — highest-ROI SEO action remaining |
+| Business address confirmation | `45 Aspen Glen Ct` is in schema; Matt needs to confirm it as the public-facing address |
+| No "Previous Work" page | `src/pages/` has no `PreviousWork.tsx` — portfolio lives in `Projects.tsx`; may be intentional |
+| `gptengineer.js` still loaded | Lovable editor hook in `index.html`; adds a third-party script request per page load |
+
+**What still needs to happen:**
+- Matt: claim Google Business Profile, paste Share URL into `BUSINESS_SAME_AS`
+- Matt: provide 2–3 real client testimonial quotes
+- Matt: confirm business address is OK to publish
+- Optional: remove `gptengineer.js` once Lovable is fully retired
+
+---
+
+### 2 — X Intake Workflow
+
+**Classification: PARTIAL (pipeline functional, storage ephemeral)**
+
+| What exists | Evidence |
+|---|---|
+| Full ingestion pipeline | Redis `events:imessage` → fetch → transcribe → analyze → Cortex POST |
+| Listener watchdog | `_listener_watchdog()` running at startup — restarts dead listener every 10s |
+| Queue DB + review API | `queue_db.py` + 4 new endpoints (`/queue/stats`, `/queue`, `/approve`, `/reject`) |
+| Dashboard card | 17 references to x-intake in `cortex/static/index.html`; approve/reject buttons wired |
+| Active transcription | Logs show 12-chunk video being transcribed via OpenAI Whisper API right now |
+| Cortex POST working | 84 `x_intel` memories in `brain.db` — pipeline IS writing intelligence |
+
+| What is missing | Evidence |
+|---|---|
+| Volume mounts NOT applied to running container | `docker ps` `Mounts:""` for x-intake; `data/x_intake/queue.db` is 0 bytes on host |
+| All queue data is ephemeral | queue.db in-container has 1 pending item; host-side file is 0 bytes — lost on restart |
+| All transcript .md files are ephemeral | Writes to container-internal `/data/transcripts`; not mounted to host |
+| x-alpha-collector source not tagged | `POST /analyze` body sends no `source` field — dashboard can't distinguish iMessage vs collector traffic |
+
+**Critical gap:** The container is running on a pre-rebuild image. `docker compose up -d --build x-intake` is required to apply the `./data/x_intake` and `./data/transcripts` volume mounts. All active transcript work (currently mid-transcription) will be lost on next restart until this is done.
+
+---
+
+### 3 — Transcript Pipeline
+
+**Classification: PARTIAL (analysis running, persistence at risk)**
+
+| What exists | Evidence |
+|---|---|
+| `transcript_analyst.py` | Full pipeline: parse .md → Ollama/GPT-4o-mini → Cortex POST |
+| Hidden gem extraction | Structured JSON output: `hidden_gems`, `actionable_tasks`, `content_ideas`, `usefulness_score` |
+| Cortex memory writing | 84 `x_intel` entries in `brain.db` (analysis IS running and persisting via HTTP) |
+| Backfill endpoint | `POST /transcripts/backfill` — processes orphaned .md files not in queue DB |
+| Stats endpoint | `GET /transcripts/stats` — files on disk, analyzed, pending, failed counts |
+| 2 host-side .md files | `data/transcripts/@hrundel75...md` and `@moondevonyt...md` (written April 3–4) |
+
+| What is missing | Evidence |
+|---|---|
+| Volume mount not applied | Same issue as §2 — transcripts written inside container are ephemeral |
+| `transcript_path` not reliably stored | When container doesn't have the volume, transcript_path in queue rows is a container-internal path that won't be readable after rebuild |
+| No cross-transcript synthesis | No agent reads multiple transcripts to find patterns across authors or themes |
+| No retry queue for failed Cortex POSTs | If Cortex is down during analysis, result is logged but not retried |
+
+**Note:** The 84 `x_intel` memories confirm the LLM analysis pipeline is functioning end-to-end. The weak link is storage durability (ephemeral container), not the analysis logic.
+
+---
+
+### 4 — Dashboard / Operational Visibility
+
+**Classification: PARTIAL**
+
+| What exists | Evidence |
+|---|---|
+| Cortex dashboard at `/dashboard` | Running at `localhost:8102/dashboard`; all service tiles loading |
+| Service health matrix | 16 services polled; healthy/degraded/down per tile |
+| X intake card | 17 refs in `index.html`; shows pending/auto-approved counts; approve/reject buttons |
+| Events log | Redis `events:log` — 1000 capped entries, real traffic flowing |
+| Trading tile | P&L, positions, redeemer status proxied from polymarket-bot |
+| Follow-ups tile | Reads `follow_ups.db` directly; 30-day filter, overdue count |
+| Decisions tile | Reads `decision_journal.db` and Cortex memory in parallel |
+| Memory: 654 entries | `brain.db` has 654 memories across 21 categories |
+
+| What is missing / blind spot | Evidence |
+|---|---|
+| `/api/memory/stats` returns 404 | No memory breakdown visible in dashboard by category |
+| `/api/entries` returns 404 | No direct memory list API — must use `/memories` (unfiltered) |
+| 163 pending_approvals with no drain UI | All `email_classification` kind; growing (103 → 163 since April 12); no dashboard tile |
+| email-monitor events missing from feed | `notifier.py` has zero `cortex` or `redis.publish` calls — email actions are invisible |
+| openwebui tile still present | Container still running (Prompt N item 1 not done) |
+
+---
+
+### 5 — Background Bob / Team Automation
+
+**Classification: PARTIAL**
+
+| What is truly running automatically | Evidence |
+|---|---|
+| OpenClaw orchestrator | 40 active jobs, runs every 5 min; `orchestrator.py` confirmed |
+| Daily briefing at 6 AM | Line 1288 in `orchestrator.py` — `send_daily_briefing` confirmed; posts to Cortex |
+| Follow-up tracker | `follow_up_tracker.py` posts to Cortex on follow-up events |
+| Approval drain | `approval_drain.py` posts to Cortex — exists, but 163 rows unprocessed |
+| Remediator | Running healthy (no healthcheck); auto-restart watchdog for containers |
+| x-intake listener watchdog | Restarts dead Redis listener every 10s |
+| Redeemer | Runs every 180s; 297 conditions redeemed; gas 62.85 POL |
+
+| Where human review is still required | Note |
+|---|---|
+| 163 `pending_approvals` (email_classification) | No automated drain; no iMessage batch-approval script; growing backlog |
+| Follow-up send approvals | `follow_up_log` has 0 rows — auto-send loop has not fired; needs approval to send |
+| Trading credentials | KRAKEN_SECRET and Polymarket wallet funding are Matt's actions |
+| Testimonials / GBP | symphonysh business content inputs |
+
+| What is clearly missing | Evidence |
+|---|---|
+| `email-monitor/notifier.py` → Cortex or `ops:email_action` | Zero matches for `cortex`, `remember`, `ops:email` in notifier.py — Prompt N item 2 not done |
+| `/calendar/daily-briefing` fetch in orchestrator | Zero matches for `calendar/daily-briefing` in `orchestrator.py` — Prompt N item 3 not done |
+| openwebui removal from docker-compose.yml | Container still running — Prompt N item 1 not done |
+
+---
+
+### 6 — Trading / Polymarket
+
+**Classification: PARTIAL (engineering complete, blocked on credentials + funding)**
+
+| What exists | Evidence |
+|---|---|
+| Bot running LIVE mode | `POLY_DRY_RUN=false`; 11 strategies registered and ticking; `status: running` |
+| Redeemer operational | 297 conditions redeemed all-time; last cycle idle (96 pending markets unresolved) |
+| POL gas adequate | 62.85 POL — well above 0.05 minimum |
+| Bot receives X intel | 84 `x_intel` Cortex memories; Redis `polymarket:intel_signals` channel active |
+| Trading observability | Startup banner TRADING READINESS section present |
+
+| What is blocked | Evidence |
+|---|---|
+| `KRAKEN_SECRET` empty | `/kraken/status` returns empty body (auth failure every tick) |
+| Wallet: $1.94 USDC | All 11 strategies skip with `copytrade_skip: low_bankroll` |
+| Kalshi in demo mode | `KALSHI_DRY_RUN=true`, `KALSHI_ENVIRONMENT=demo` |
+
+**Next step is funding + credentials, not engineering.** All code is in place. No code changes needed to unblock trading — only Matt's actions (wallet deposit + KRAKEN_SECRET).
+
+---
+
+### 7 — Email / Calendar / Prompt Follow-Up
+
+**Classification: PARTIAL**
+
+| What is fixed | Evidence |
+|---|---|
+| Calendar tile fixed | Zoho sentinel filtering + compact datetime parsing confirmed in `dashboard.py` |
+| Follow-up noise filter | `symphonysh.com` in `FOLLOWUP_NOISE_SENDERS`; tile shows accurate count |
+| Daily briefing runs | `orchestrator.py` confirmed; posts to Cortex |
+| approval_drain.py exists | Posts to Cortex on decisions |
+
+| What is "good enough for now" | Note |
+|---|---|
+| All 435 emails marked `read=1` | Data is wrong (see §Z3) but dashboard filter (7-day + unread) masks the bug correctly |
+| follow_ups.db canonical | 58 rows; `follow_up_log` in `jobs.db` still 0 — dual-home not yet resolved |
+| Calendar timezone | Stripped + treated as local Denver time; acceptable but technically imprecise |
+
+| What needs another pass | Evidence |
+|---|---|
+| email-monitor NOT posting to Cortex or ops:email_action | `notifier.py` — zero references to `/remember` or `ops:email_action` |
+| Calendar daily-briefing not fetched in orchestrator | `orchestrator.py` — no `calendar/daily-briefing` call found |
+| 163 pending_approvals unprocessed | No batch-drain script exists yet |
+
+---
+
+### 8 — Monitoring / Governance
+
+**Classification: PARTIAL**
+
+| What exists | Evidence |
+|---|---|
+| Redis `events:log` | 1000 capped entries; real traffic from all Redis-publishing services |
+| Remediator | Running; auto-restarts unhealthy containers |
+| `scripts/verify-cursor.sh` | Post-edit verification — checks files exist and are non-empty |
+| `scripts/verify-deploy.sh` | Post-deploy smoke test — Redis PING + health checks |
+| `scripts/pull.sh` | Safe git pull with stash + conflict scan |
+| Cortex `brain.db` audit trail | 654 memories across 21 categories; decisions, x_intel, strategy_idea all flowing |
+
+| Blind spots / gaps | Evidence |
+|---|---|
+| email-monitor emits no Redis ops events | `notifier.py` confirmed — no `ops:email_action` publish |
+| Dropbox link validator absent | No validator found for `scl/fi/` vs `/preview/` enforcement (Lesson #4) |
+| Lesson #17 (sell haircut rounding) unverified | Not confirmed in `polymarket-bot` code |
+| 163 `pending_approvals` growing unchecked | Was 103 on April 12; no threshold alert, no auto-drain |
+| openwebui still running | Prompt N item 1 not done; consuming memory unnecessarily |
+| Cortex memory stats endpoint missing | `/api/memory/stats` → 404; dashboard has no memory category breakdown |
+
+---
+
+### NEXT 5 ITEMS
+
+_Ranked by leverage — highest-impact, lowest-friction actions first._
+
+**1. Rebuild x-intake** (`docker compose up -d --build x-intake`)
+A video is actively being transcribed right now in 12 chunks. Without this rebuild, the volume mounts from `docker-compose.yml` are not applied, `queue.db` is ephemeral, and every transcript will be lost on the next container restart. One command. Zero code changes needed.
+
+**2. Complete Prompt N items 1, 2, 3 (3 bounded changes)**
+- Item 1: Remove `openwebui:` block from `docker-compose.yml` + `docker compose up -d` — frees memory, eliminates dead service tile
+- Item 2: Add `redis.publish("ops:email_action", ...)` to `email-monitor/notifier.py` after action-required classification — closes the single biggest event-flow blind spot
+- Item 3: Add `GET /calendar/daily-briefing` fetch to `openclaw/orchestrator.py` daily briefing assembly — confirmed missing by code grep
+
+**3. Drain pending_approvals backlog (163 rows, all email_classification)**
+Growing from 103 → 163 since April 12, with no drain mechanism. Implement Prompt T: group by kind, send batch to Matt via iMessage with YES/NO, auto-expire entries >7 days to `skipped` state with a log entry. Until this runs, 163 stale decisions are clogging the journal.
+
+**4. Fund Polymarket wallet + set KRAKEN_SECRET** _(Matt action)_
+Bot is live, all 11 strategies are ticking, redeemer is operational — blocked only by two missing inputs. `$50+ USDC` on Polygon wallet `0xa791...` + `KRAKEN_SECRET` via `bash scripts/set-env.sh KRAKEN_SECRET <value>` + `docker compose up -d polymarket-bot`. No code change needed.
+
+**5. Update STATUS_REPORT stack health snapshot**
+The April 12 snapshot says "21 entries, 1 this week" for Cortex. The live count is **654 memories across 21 categories** (84 x_intel, 328 install_notes, 55 proposal_template, 37 strategy_performance, etc.). The report is significantly out of date and misleads future agents about system health.
+
+---
+
+_Note on business-input dependencies: items 3–5 in "symphonysh" (testimonials, GBP, address) are exclusively waiting on Matt's real-world input. No engineering work is blocking them._
+
+_Audit run: 2026-04-13. Evidence: live `docker ps`, `sqlite3` row counts, `curl` endpoint probes, file `grep` for code paths, container log tail. Weak evidence called out inline._
+
+---
+
 ## Reference: Transcript AI Analysis Pipeline (2026-04-13)
 
 ### What was built
