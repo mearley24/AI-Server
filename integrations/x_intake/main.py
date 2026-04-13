@@ -25,6 +25,16 @@ from fastapi import FastAPI
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+try:
+    from queue_db import (
+        enqueue as _db_enqueue,
+        get_queue as _db_get_queue,
+        update_status as _db_update_status,
+        get_stats as _db_get_stats,
+    )
+except ImportError:
+    _db_enqueue = _db_get_queue = _db_update_status = _db_get_stats = None  # type: ignore[assignment]
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = structlog.get_logger(__name__)
 
@@ -261,24 +271,42 @@ async def _analyze_url(url: str) -> dict:
         if llm.get("action", "none").lower() != "none":
             image_summary += f"\n\nAction: {llm['action']}"
         image_summary += f"\nRelevance: {llm.get('relevance', 0)}%"
-        return {"url": url, "author": author, "analysis": {"summary": image_summary}}
+        return {
+            "url": url,
+            "author": author,
+            "analysis": {"summary": image_summary},
+            "relevance": llm.get("relevance", 0),
+            "post_type": llm.get("type", "info"),
+            "action": llm.get("action", "none"),
+            "has_transcript": False,
+        }
 
     if has_video and result.get("summary"):
         analysis = _analyze_with_llm(post_text, author, has_video, transcript)
         video_summary = result.get("summary", "")
-        if analysis.get("relevance", 0) > 30 or True:
-            combined = video_summary
-            if analysis.get("action", "none").lower() != "none":
-                combined += f"\n\nAction: {analysis['action']}"
-            combined += f"\nRelevance: {analysis.get('relevance', 0)}%"
-            return {"url": url, "analysis": {"summary": combined}}
-        return {"url": url, "analysis": {"summary": video_summary}}
+        combined = video_summary
+        if analysis.get("action", "none").lower() != "none":
+            combined += f"\n\nAction: {analysis['action']}"
+        combined += f"\nRelevance: {analysis.get('relevance', 0)}%"
+        return {
+            "url": url,
+            "author": author,
+            "analysis": {"summary": combined},
+            "relevance": analysis.get("relevance", 0),
+            "post_type": analysis.get("type", "info"),
+            "action": analysis.get("action", "none"),
+            "has_transcript": True,
+        }
 
     analysis = _analyze_with_llm(post_text, author, has_video, transcript)
     return {
         "url": url,
         "author": author,
         "analysis": {"summary": analysis.get("summary", "")},
+        "relevance": analysis.get("relevance", 0),
+        "post_type": analysis.get("type", "info"),
+        "action": analysis.get("action", "none"),
+        "has_transcript": analysis.get("has_transcript", False),
     }
 
 
@@ -288,7 +316,25 @@ async def analyze_endpoint(body: dict):
     url = body.get("url", "")
     if not url:
         return {"error": "url required"}
+    source = body.get("source", "api")
     result = await asyncio.to_thread(lambda: _analyze_url_sync(url))
+    if _db_enqueue is not None and isinstance(result, dict):
+        try:
+            analysis = result.get("analysis", {})
+            summary = analysis.get("summary", "") if isinstance(analysis, dict) else ""
+            _db_enqueue(
+                url=url,
+                author=result.get("author", ""),
+                post_type=result.get("post_type", "info"),
+                relevance=result.get("relevance", 0),
+                summary=summary,
+                action=result.get("action", "none"),
+                source=source,
+                poly_signals={},
+                has_transcript=bool(result.get("has_transcript")),
+            )
+        except Exception as _qexc:
+            logger.warning("analyze_enqueue_failed", error=str(_qexc)[:100])
     return result
 
 
@@ -471,8 +517,8 @@ async def _send_reply(text: str) -> None:
         logger.warning("imessage_send_failed", error=str(exc)[:200])
 
 
-async def _process_url_and_reply(url: str) -> None:
-    """Analyze a tweet URL, publish signals to bot, and send result via iMessage."""
+async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
+    """Analyze a tweet URL, queue for review, publish signals, send iMessage reply."""
     try:
         result = await asyncio.to_thread(_analyze_url_sync, url)
         summary = ""
@@ -485,29 +531,45 @@ async def _process_url_and_reply(url: str) -> None:
             if isinstance(analysis, dict):
                 summary = analysis.get("summary", "")
 
-            # NEW: Extract Polymarket-specific signals
-            post_text = summary  # Use the summary as context
+            # Extract Polymarket-specific signals
+            post_text = summary
             poly_signals = await asyncio.to_thread(
                 _extract_polymarket_signals, post_text, author, transcript
             )
 
-            # NEW: Publish to polymarket-bot via Redis
-            relevance = 0
-            if isinstance(analysis, dict):
-                # Parse relevance from summary text
+            # Use structured relevance from result; fall back to text parse
+            relevance = result.get("relevance", 0)
+            if not relevance and summary:
                 import re as _re
                 rel_match = _re.search(r"Relevance:\s*(\d+)%", summary)
                 if rel_match:
                     relevance = int(rel_match.group(1))
 
+            # Persist to review queue for dashboard visibility
+            if _db_enqueue is not None:
+                try:
+                    _db_enqueue(
+                        url=url,
+                        author=author,
+                        post_type=result.get("post_type", "info"),
+                        relevance=relevance,
+                        summary=summary,
+                        action=result.get("action", "none"),
+                        source=source,
+                        poly_signals=poly_signals,
+                        has_transcript=bool(result.get("has_transcript")),
+                    )
+                except Exception as _qexc:
+                    logger.warning("queue_enqueue_failed", error=str(_qexc)[:100])
+
             await _publish_to_bot(url, author, {
                 "summary": summary,
                 "relevance": relevance,
-                "type": "info",
-                "action": "none",
+                "type": result.get("post_type", "info"),
+                "action": result.get("action", "none"),
             }, poly_signals)
 
-            # NEW: Ingest into knowledge graph if high relevance
+            # Ingest into knowledge graph if high relevance
             if relevance >= 50 or poly_signals.get("signals"):
                 await _ingest_to_knowledge(url, author, summary, poly_signals)
 
@@ -553,6 +615,60 @@ async def _redis_listener() -> None:
         except Exception as exc:
             logger.warning("redis_reconnecting", error=str(exc)[:200])
             await asyncio.sleep(5)
+
+
+# ── Review queue API ─────────────────────────────────────────────────────────
+
+@app.get("/queue/stats")
+async def queue_stats_endpoint():
+    """Return intake queue counts by status (used by Cortex dashboard)."""
+    if _db_get_stats is None:
+        return {"error": "db not available", "pending": 0, "auto_approved": 0,
+                "auto_rejected": 0, "approved": 0, "rejected": 0, "total": 0}
+    try:
+        return _db_get_stats()
+    except Exception as exc:
+        return {"error": str(exc)[:100]}
+
+
+@app.get("/queue")
+async def queue_list_endpoint(status: str = "", limit: int = 50):
+    """List intake queue items, optionally filtered by status."""
+    if _db_get_queue is None:
+        return {"items": [], "count": 0, "error": "db not available"}
+    try:
+        items = _db_get_queue(status=status or None, limit=min(limit, 200))
+        return {"items": items, "count": len(items)}
+    except Exception as exc:
+        return {"items": [], "count": 0, "error": str(exc)[:100]}
+
+
+@app.post("/queue/{item_id}/approve")
+async def queue_approve_endpoint(item_id: int, body: dict = {}):
+    """Mark an item as approved — records human feedback for learning."""
+    if _db_update_status is None:
+        return {"ok": False, "error": "db not available"}
+    try:
+        note = (body or {}).get("note", "")
+        changed = _db_update_status(item_id, "approved", note)
+        logger.info("queue_item_approved", id=item_id)
+        return {"ok": changed, "id": item_id, "status": "approved"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:100]}
+
+
+@app.post("/queue/{item_id}/reject")
+async def queue_reject_endpoint(item_id: int, body: dict = {}):
+    """Mark an item as rejected — records human feedback for learning."""
+    if _db_update_status is None:
+        return {"ok": False, "error": "db not available"}
+    try:
+        note = (body or {}).get("note", "")
+        changed = _db_update_status(item_id, "rejected", note)
+        logger.info("queue_item_rejected", id=item_id)
+        return {"ok": changed, "id": item_id, "status": "rejected"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:100]}
 
 
 @app.on_event("startup")

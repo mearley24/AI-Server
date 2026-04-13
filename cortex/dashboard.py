@@ -32,6 +32,7 @@ TRADING_BOT_URL = os.environ.get("POLYMARKET_BOT_URL", "http://vpn:8430")
 EMAIL_MONITOR_URL = os.environ.get("EMAIL_MONITOR_URL", "http://email-monitor:8092")
 CALENDAR_AGENT_URL = os.environ.get("CALENDAR_AGENT_URL", "http://calendar-agent:8094")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://openclaw:3000")
+X_INTAKE_URL = os.environ.get("X_INTAKE_URL", "http://x-intake:8101")
 
 # Data paths (mounted read-only by docker-compose into /app/data/openclaw)
 FOLLOW_UPS_DB_CANDIDATES = [
@@ -654,6 +655,52 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         if data is None:
             return {"status": "unavailable", "error": "bot unreachable"}
         return data
+
+    # ── X Intake review queue proxies ──────────────────────────────────
+    @app.get("/api/x-intake/stats")
+    async def api_xintake_stats():
+        """Proxy to x-intake /queue/stats — counts by status."""
+        data = await _safe_get(f"{X_INTAKE_URL}/queue/stats", timeout=5.0)
+        if data is None:
+            return {"error": "x-intake unavailable", "pending": 0,
+                    "auto_approved": 0, "auto_rejected": 0, "approved": 0,
+                    "rejected": 0, "total": 0}
+        return data
+
+    @app.get("/api/x-intake/queue")
+    async def api_xintake_queue(status: str = "", limit: int = 50):
+        """Proxy to x-intake /queue — list items optionally filtered by status."""
+        qs = f"?limit={min(limit, 100)}"
+        if status:
+            qs = f"?status={status}&limit={min(limit, 100)}"
+        data = await _safe_get(f"{X_INTAKE_URL}/queue{qs}", timeout=5.0)
+        if data is None:
+            return {"items": [], "count": 0, "error": "x-intake unavailable"}
+        return data
+
+    @app.post("/api/x-intake/{item_id}/approve")
+    async def api_xintake_approve(item_id: int):
+        """Proxy approve action to x-intake."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    f"{X_INTAKE_URL}/queue/{item_id}/approve", json={}
+                )
+                return resp.json()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:100]}
+
+    @app.post("/api/x-intake/{item_id}/reject")
+    async def api_xintake_reject(item_id: int):
+        """Proxy reject action to x-intake."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    f"{X_INTAKE_URL}/queue/{item_id}/reject", json={}
+                )
+                return resp.json()
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)[:100]}
 
     @app.get("/api/system")
     async def api_system():

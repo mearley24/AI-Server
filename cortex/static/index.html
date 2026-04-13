@@ -334,6 +334,11 @@
       <div id="decisions"><div class="unavailable">loading</div></div>
     </div>
 
+    <div class="card" id="xintake-card">
+      <h2>X Intake</h2>
+      <div id="xintake"><div class="unavailable">loading</div></div>
+    </div>
+
     <div class="card">
       <h2>Daily Digest</h2>
       <div id="digest"><div class="unavailable">loading</div></div>
@@ -697,10 +702,104 @@
     }
   }
 
+  // ── X Intake ─────────────────────────────────────────────────────────────
+
+  window.xintakeAction = async function xintakeAction(id, action) {
+    try {
+      await fetch(`/api/x-intake/${id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+    } catch (_) {}
+    // Refresh only the xintake card after action
+    const [stats, queue] = await Promise.all([
+      fetchJson('/api/x-intake/stats'),
+      fetchJson('/api/x-intake/queue?status=pending&limit=5'),
+    ]);
+    renderXIntake(stats, queue);
+  }
+
+  function renderXIntake(stats, queue) {
+    const host = $('xintake');
+    const card = $('xintake-card');
+    if (!stats && !queue) { host.innerHTML = unavailable(); return; }
+    const s = stats || {};
+    const pendingCnt  = s.pending        || 0;
+    const approvedCnt = s.auto_approved  || 0;
+    const rejectedCnt = (s.auto_rejected || 0) + (s.rejected || 0);
+    const humanOk     = s.approved       || 0;
+    const totalCnt    = s.total          || 0;
+
+    // Alert card border when review queue is non-empty
+    if (pendingCnt > 0) card.classList.add('alert');
+    else card.classList.remove('alert');
+
+    const items = ((queue && queue.items) || []).slice(0, 5);
+
+    let html = `
+      <div class="stat-row">
+        <div>
+          <div class="stat-big" style="color:${pendingCnt > 0 ? 'var(--yellow)' : 'var(--muted)'}">
+            ${pendingCnt}
+          </div>
+          <div class="stat-label">pending review</div>
+        </div>
+        <div>
+          <div class="stat-big" style="color:var(--green)">${approvedCnt}</div>
+          <div class="stat-label">auto-approved</div>
+        </div>
+      </div>
+      <div class="small" style="margin-top:4px;margin-bottom:8px">
+        ${rejectedCnt} rejected &middot; ${humanOk} human &check; &middot; ${totalCnt} total (30d)
+      </div>`;
+
+    if (items.length) {
+      html += '<ul style="margin-top:2px">';
+      for (const item of items) {
+        const rel     = item.relevance  || 0;
+        const author  = item.author     || '?';
+        const ptype   = item.post_type  || 'info';
+        const dest    = item.suggested_dest || '';
+        const rawSum  = item.summary    || '';
+        // Strip "✉️ @author\n\nSUMMARY…\n\nAction:…\nRelevance:…" to bare text
+        const sumLine = rawSum.split('\n').find((l) => l.length > 10 && !l.startsWith('Action:') && !l.startsWith('Relevance:') && !l.startsWith('\u2139') && !l.startsWith('\u{1f528}') && !l.startsWith('@')) || rawSum;
+        const sumDisp = sumLine.slice(0, 90);
+        const relCol  = rel >= 70 ? 'var(--green)' : rel >= 40 ? 'var(--yellow)' : 'var(--red)';
+        html += `<li style="padding:7px 0">
+          <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">
+            <span class="small mono" style="color:var(--gold)">@${esc(author)}</span>
+            <span class="small" style="color:var(--muted)">${esc(ptype)}</span>
+            ${dest ? `<span class="small" style="color:var(--muted);margin-left:2px">&rarr;${esc(dest)}</span>` : ''}
+            <span class="small mono" style="margin-left:auto;color:${relCol}">${rel}%</span>
+          </div>
+          <div class="small" style="color:var(--muted);margin-bottom:5px;line-height:1.3">${esc(sumDisp)}</div>
+          <div style="display:flex;gap:5px;align-items:center">
+            <button onclick="xintakeAction(${item.id},'approve')"
+              style="font-size:10px;padding:2px 9px;background:rgba(74,222,128,0.15);color:var(--green);border:1px solid rgba(74,222,128,0.3);border-radius:3px;cursor:pointer;line-height:1.6">
+              &#10003; approve
+            </button>
+            <button onclick="xintakeAction(${item.id},'reject')"
+              style="font-size:10px;padding:2px 9px;background:var(--surface-2);color:var(--muted);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.6">
+              &#10007; reject
+            </button>
+            <a href="${esc(item.url)}" target="_blank" rel="noopener"
+              style="font-size:10px;margin-left:auto;color:var(--gold-dim)">view &rarr;</a>
+          </div>
+        </li>`;
+      }
+      html += '</ul>';
+    } else if (pendingCnt === 0) {
+      html += '<div class="small" style="color:var(--green);margin-top:4px">&#10003; queue clear</div>';
+    }
+
+    host.innerHTML = html;
+  }
+
   // orchestrator
   async function refresh() {
     tickClock();
-    const [services, wallet, positions, pnlSeries, activity, emails, calendar, followups, goals, health, memories, decisions, digest, system, redeemer] =
+    const [services, wallet, positions, pnlSeries, activity, emails, calendar, followups, goals, health, memories, decisions, digest, system, redeemer, xintakeStats, xintakeQueue] =
       await Promise.all([
         fetchJson('/api/services'),
         fetchJson('/api/wallet'),
@@ -717,6 +816,8 @@
         fetchJson('/digest/today'),
         fetchJson('/api/system'),
         fetchJson('/api/redeemer'),
+        fetchJson('/api/x-intake/stats'),
+        fetchJson('/api/x-intake/queue?status=pending&limit=5'),
       ]);
 
     renderServices(services);
@@ -731,6 +832,7 @@
     renderMemory(health && health.memories, memories);
     renderGoals(goals);
     renderDecisions(decisions);
+    renderXIntake(xintakeStats, xintakeQueue);
     renderDigest(digest);
     renderFooter(health && health.memories, wallet, emails, system);
 

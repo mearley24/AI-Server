@@ -602,6 +602,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8101:8101"
+    volumes:
+      - ./data/x_intake:/data/x_intake
     environment:
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199

@@ -14,7 +14,7 @@ _Action-required items this week. Most require Matt's input (credentials/funding
 
 - **[Matt] Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $1.94 USDC; all strategies skip with `low_bankroll`. No code change needed — bot re-reads on-chain balance every 5 minutes. Full operation needs $500 (configured bankroll).
 
-- **Restart x-intake** — `docker compose restart x-intake` restores the X-link → iMessage reply flow. The Redis listener Task died on 2026-04-11 14:46 (`RuntimeError: aclose(): asynchronous generator is already running`); 0 subscribers since. Every X link sent since then was silently dropped. Restart is the immediate fix; see §Z14 for the durable code fix.
+- **Rebuild + restart x-intake** — `docker compose up -d --build x-intake` deploys the new queue DB, review API endpoints, and volume mount. Previous listener died 2026-04-11 14:46; restart is the immediate fix. See §Z14 for the durable listener watchdog fix still needed.
 
 - **Drain 103 pending approvals** — `decision_journal.db` has 103 `pending_approvals` rows (P0 threshold: 20). Write a one-shot Prompt T script: group by kind, batch to Matt via iMessage with YES/NO actions, auto-expire stale entries >7 days to a "skipped" state with a log entry.
 
@@ -306,4 +306,58 @@ Forced all transitive consumers (via `recharts`) to `4.17.21` — the only safe,
 
 ---
 
+---
+
+## Reference: X Intake Review Queue (2026-04-13)
+
+### Current behavior (before this change)
+
+| Step | What happens |
+|---|---|
+| **Entry** | iMessage → Redis `events:imessage` (primary) OR x-alpha-collector → `POST /analyze` (every 10 min) |
+| **Classification** | GPT-4o-mini: RELEVANCE 0-100, TYPE (build/alpha/stat/tool/warn/info), SUMMARY, ACTION. Fallback: keyword scoring when no OpenAI key. |
+| **Routing** | relevance ≥ 40 → `polymarket:intel_signals`; ≥ 50 → `polymarket:knowledge_ingest`; always → iMessage reply |
+| **Storage** | None — all ephemeral (Redis pub/sub + iMessage only). No persistence, no visibility, no approvals. |
+| **Dedupe** | x-alpha-collector: JSON file (`/data/x_alpha_seen.json`, 7-day TTL). Main pipeline: none. |
+| **Errors** | Logged only; silently dropped on task death (see §Z14 listener failure). |
+
+### What was added (2026-04-13)
+
+- **`integrations/x_intake/queue_db.py`** — lightweight SQLite queue at `/data/x_intake/queue.db` (Docker volume `./data/x_intake:/data/x_intake`). Every analyzed post is written with status, relevance, author, summary, action, poly_signals, and source. Auto-pruned after 30 days.
+- **`integrations/x_intake/main.py`** — three changes:
+  1. `_analyze_url` now returns structured `relevance`, `post_type`, `action`, `has_transcript` fields (previously swallowed).
+  2. `_process_url_and_reply(url, source="imessage")` now enqueues every analyzed item; `/analyze` endpoint enqueues with `source=api`.
+  3. Four new API endpoints: `GET /queue/stats`, `GET /queue?status=&limit=`, `POST /queue/{id}/approve`, `POST /queue/{id}/reject`.
+- **`cortex/dashboard.py`** — four new proxy endpoints (`/api/x-intake/stats`, `/api/x-intake/queue`, `/api/x-intake/{id}/approve`, `/api/x-intake/{id}/reject`) routing to x-intake.
+- **Cortex dashboard (X Intake card)** — new card in Column 3 (Brain) between Decisions and Daily Digest. Shows pending / auto-approved counts, up to 5 pending items with ✓ approve / ✗ reject buttons and "view →" link. Card border turns red when pending > 0. Refreshes every 60s (part of main refresh cycle) and immediately on action.
+
+### Auto-approve thresholds (recommended default policy)
+
+| Relevance | Status | Routing | Review needed? |
+|---|---|---|---|
+| ≥ 70 | `auto_approved` | polymarket+memory (as before) | No |
+| 30–69 | `pending` | polymarket if ≥ 40 (unchanged) | Yes — visible in dashboard |
+| < 30 | `auto_rejected` | none | No — visible in dashboard only |
+
+Background automation is **unchanged** — all existing routing thresholds (40/50) continue to fire regardless of queue status. The queue is purely additive visibility and feedback capture, not a gate.
+
+### Learning hooks
+
+Human approve/reject decisions are stored in `reviewed_at` + `review_note` columns. These can be used to:
+- Tune the auto-approve threshold (if most "pending" items are approved, raise the floor from 30 to 40).
+- Identify high-value authors to promote to `ALWAYS_PROCESS_AUTHORS`.
+- Build a fine-tuning dataset for the relevance classifier.
+
+Query feedback: `sqlite3 data/x_intake/queue.db "SELECT status, COUNT(*) FROM x_intake_queue GROUP BY status"`
+
+### Remaining follow-up work
+
+1. **Rebuild x-intake** — `docker compose up -d --build x-intake` (new volume mount + queue_db.py).
+2. **Rebuild cortex** — `docker compose restart cortex` (new proxy endpoints; bind-mounted so restart sufficient).
+3. **Listener watchdog** — still needed (§Z14); the queue will have a gap while the listener is dead.
+4. **Optional**: promote `x-alpha-collector` to pass `"source": "alpha_collector"` in its `POST /analyze` body so the dashboard distinguishes iMessage vs collector traffic.
+
+---
+
 _Audit run by Claude Code on 2026-04-11/12. Health checks, row counts, and compose diffs are from live commands at audit time._
+_X Intake review queue section added 2026-04-13._
