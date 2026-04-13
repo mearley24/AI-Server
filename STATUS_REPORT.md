@@ -359,5 +359,83 @@ Query feedback: `sqlite3 data/x_intake/queue.db "SELECT status, COUNT(*) FROM x_
 
 ---
 
+---
+
+## Reference: Transcript Storage & Agent Access (2026-04-13)
+
+### Q1 — Where are transcripts stored?
+
+Two stores exist; neither is complete.
+
+**A. Flat-file store — `~/AI-Server/data/transcripts/`**
+
+Created by `integrations/x_intake/video_transcriber.py::save_transcript()`.
+Format: Markdown files named `@{author} — {topic summary} — {date}.md`.
+Content: Summary, emoji-flagged insights (🔨💡📊🔧⚠️), strategies, key quotes, full transcript text.
+Currently contains **2 files** (both written 2026-04-03/04).
+
+Key finding: `TRANSCRIPT_DIR` defaults to `~/AI-Server/data/transcripts` in the Python source, but the x-intake docker-compose service block sets **no `TRANSCRIPT_DIR` env var and mounts no transcript volume**. Inside the container, `~` expands to the container home (not the host), so any transcripts produced by the Docker service are written to an ephemeral container path and **lost on restart**. The 2 existing host-side files were written by `scripts/imessage-server.py` calling `video_transcriber` directly on the host — not by the containerized x-intake service.
+
+**B. SQLite queue DB — `data/x_intake/queue.db`**
+
+Schema: `x_intake_queue` table (see §X Intake Review Queue above).
+The `has_transcript` column is an **integer flag (0/1)** — it records whether a transcript was produced, but does **not store the transcript text or path**. The `summary` column holds up to 2,000 chars of the iMessage-formatted analysis output, not the raw transcript.
+
+---
+
+### Q2 — Does every new video/X item get transcribed into that store?
+
+**No.** Transcription is attempted for all incoming X links, but succeeds and persists only under specific conditions:
+
+| Condition | Result |
+|---|---|
+| Post has no video (text-only) | No transcription attempted; LLM analyzes post text directly |
+| Post is image-only | GPT-4o vision analysis runs; `mode=image_vision` returns before `save_transcript()` — **no .md file written** |
+| Video download fails (yt-dlp / gallery-dl / fxtwitter all fail) | `has_transcript=False`; nothing written |
+| Video has no audio stream | Skipped with `video_has_no_audio_stream` log; nothing written |
+| Transcription too short (≤1 char) | Error returned; nothing written |
+| **Video transcribes successfully** | .md file written to `TRANSCRIPT_DIR` (host path if running outside Docker; ephemeral if inside container) |
+
+The Whisper fallback chain is: whisper.cpp CLI → mlx-whisper → openai-whisper Python package → OpenAI Whisper API. If all four fail (e.g., no local Whisper installed and no `OPENAI_API_KEY`), nothing is written.
+
+**Bottom line:** Only successfully-transcribed videos produce a .md file, and only then if the code is running on the host (not inside the container). The Docker x-intake service produces no durable transcript files today.
+
+---
+
+### Q3 — Do Bob and the agents read transcripts to analyze content and find hidden gems?
+
+**No.** There is no reader anywhere in the codebase.
+
+| Component | Transcript access |
+|---|---|
+| OpenClaw (orchestrator) | Zero references to `transcript`, `data/transcripts`, or `video_transcriber` in any `.py` file |
+| Cortex engine | Receives `polymarket:knowledge_ingest` Redis events; these contain the ~500-char `summary` string only — not the full transcript |
+| Cortex dashboard | Proxies x-intake queue stats and list; displays `has_transcript` boolean and truncated summary; does not fetch or render transcript text |
+| iMessage reply | Receives the iMessage-formatted summary (flags + strategies); full transcript is never surfaced |
+| bookmark_scraper.py | Writes a `_master_summary.md` to `TRANSCRIPT_DIR`; no agent reads it |
+
+The .md files in `data/transcripts/` are **write-only dead ends** — produced as a best-effort artifact, never queried by any service or agent.
+
+---
+
+### Next Steps — Single Source of Truth (notes only, no code changes)
+
+The current setup has three fragmentation problems:
+
+1. **Volume not mounted.** The x-intake Docker service needs `./data/transcripts:/data/transcripts` added to its `volumes:` block, and `TRANSCRIPT_DIR=/data/transcripts` in its `environment:` block. Without this, all container-side transcripts are lost on restart and only the host-side imessage-server path ever writes durable files.
+
+2. **Transcript text not persisted in the queue DB.** The `x_intake_queue` table has `has_transcript INTEGER` but no `transcript_path TEXT` or `transcript_text TEXT` column. Adding `transcript_path` (the .md file path) would let any agent find and read the file by querying the DB, creating a proper index.
+
+3. **No agent reads transcripts.** Even if storage were fixed, no agent currently opens a .md file and mines it. A single-source-of-truth pattern would be:
+   - x-intake writes transcript to `data/transcripts/@{author}...md` (persistent volume)
+   - `queue.db` stores the path in a new `transcript_path` column
+   - A new Cortex endpoint (e.g. `GET /api/x-intake/transcripts`) reads the queue for rows where `has_transcript=1` and serves the file content
+   - OpenClaw's orchestrator (or a dedicated digest step) queries that endpoint, summarizes high-relevance transcripts, and writes insights to Cortex memory via `POST /remember`
+
+This would close the loop from "video watched → transcript filed → insights surfaced in brain."
+
+---
+
 _Audit run by Claude Code on 2026-04-11/12. Health checks, row counts, and compose diffs are from live commands at audit time._
 _X Intake review queue section added 2026-04-13._
+_Transcript storage audit added 2026-04-13._
