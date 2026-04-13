@@ -440,6 +440,7 @@ _Audit run by Claude Code on 2026-04-11/12. Health checks, row counts, and compo
 _X Intake review queue section added 2026-04-13._
 _Transcript storage audit added 2026-04-13._
 _Transcript AI analysis pipeline added 2026-04-13._
+_Transcript integration verification added 2026-04-13 (live audit)._
 
 ---
 
@@ -812,3 +813,161 @@ curl -X POST http://localhost:8101/transcripts/backfill
 # Check analysis stats after backfill
 curl http://localhost:8101/transcripts/stats
 ```
+
+---
+
+## Reference: Transcript Integration Verification (2026-04-13 live audit)
+
+_All findings from live commands against the running container and host filesystem. No assumptions._
+
+**Overall status: NOT WORKING — 0% analysis success rate, 0 memories from transcript_analyst in Cortex.**
+
+---
+
+### Q1 — Where do transcripts actually live today?
+
+| Location | Path | Files | Durable? |
+|---|---|---|---|
+| Host filesystem | `~/AI-Server/data/transcripts/` | 2 files (Apr 3–4) | ✅ Yes — but orphaned (never analyzed) |
+| Container ephemeral | `/root/AI-Server/data/transcripts/` (inside x-intake) | 4 files (Apr 13) | ❌ No — lost on container restart |
+| Bind-mount target | `/data/transcripts` (inside x-intake) | Does not exist | — env var not applied |
+
+**Root cause:** The running x-intake container is missing `TRANSCRIPT_DIR` and `CORTEX_URL` from its environment (`docker exec x-intake env` confirmed). The `docker-compose.yml` has both, but the container was last created before those vars were added. It was restarted (not recreated) since, so it runs with the old env. Without `TRANSCRIPT_DIR`, `video_transcriber.py` falls back to `~/AI-Server/data/transcripts` which expands to `/root/AI-Server/data/transcripts` inside the container — an unbound ephemeral path.
+
+Verified: `docker exec x-intake ls /root/AI-Server/data/transcripts/` lists 4 files. `docker exec x-intake ls /data/transcripts/` exits non-zero (directory does not exist).
+
+---
+
+### Q2 — How do transcripts enter the analysis pipeline?
+
+The wiring is correct in code:
+
+1. `video_transcriber.process_x_video()` → calls `save_transcript()` → writes `.md` to `TRANSCRIPT_DIR`
+2. `main.py._process_url_and_reply()` → calls `_analyze_transcript_background(transcript_path)` after enqueue if `transcript_path` is set
+3. `_analyze_transcript_background()` → calls `transcript_analyst.analyze_transcript_file(path)` in a thread
+4. `transcript_analyst` → Ollama (primary) → GPT-4o-mini (fallback) → `POST /remember` to Cortex
+
+The trigger fires correctly. The path is wired. The failures occur inside step 3.
+
+---
+
+### Q3 — Are transcripts being analyzed into structured outputs?
+
+**No. 100% failure rate on all attempts.**
+
+Evidence from `docker logs x-intake --tail 200`:
+
+| Log event | Count (last 200 lines) | Expected |
+|---|---|---|
+| `transcript_analyst_start` | 2 | ✓ fires correctly |
+| `transcript_bg_analysis_failed` | 2 | ✗ should be 0 |
+| `transcript_analyzed` | 0 | ✗ should match start count |
+| `transcript_cortex_posted` | 0 | ✗ should follow success |
+
+Error captured: `error='\'\\n  "summary"\''` — this is an exception (likely JSONDecodeError or KeyError) where the value `'\n  "summary"'` appears as the error string. This points to Ollama's qwen3:8b model producing malformed JSON in its response — qwen3:8b has a "thinking" mode that prepends reasoning tokens before the JSON output. With `format: json` enabled, the response body may contain a partial or prefix-corrupted JSON structure that both `json.loads()` and the code-block regex fail to parse, ultimately causing an unhandled exception that propagates out of `analyze_transcript_file` and is caught by the outer `transcript_bg_analysis_failed` handler.
+
+The OpenAI fallback (`_openai_analyze`) runs only if `_ollama_analyze` returns `None` cleanly. If Ollama raises an exception that is NOT caught inside `_ollama_analyze`, it propagates before the fallback can run. Reviewing `_ollama_analyze`: all exceptions ARE caught (`except Exception as exc: logger.info(...); return None`). So the exception must originate elsewhere — most likely inside `_write_to_cortex` or `analyze_transcript_file` itself when processing the analysis dict, suggesting Ollama IS returning a response, but the response dict has unexpected structure that causes a downstream error.
+
+**Net result: neither Ollama nor OpenAI paths are successfully producing Cortex memories from transcripts.**
+
+---
+
+### Q4 — Which agent/service is responsible?
+
+| Component | Role | Status |
+|---|---|---|
+| `x-intake` container (port 8101) | Hosts the pipeline; triggers analysis | Running healthy |
+| `integrations/x_intake/transcript_analyst.py` | Deep analysis + Cortex write | Code complete; runtime failing |
+| `integrations/x_intake/main.py` | Triggers background analysis task | Wired correctly |
+| `integrations/x_intake/video_transcriber.py` | Downloads, transcribes, saves .md | Working (files written) |
+| Cortex `POST /remember` | Receives analysis output | Reachable (other services posting successfully) |
+
+---
+
+### Q5 — Are results visible anywhere?
+
+| Store | Transcript-analyst memories | Source |
+|---|---|---|
+| `brain.db` — `x_intel` category | **0 rows** with `source LIKE 'x_intake:@%'` | Confirmed by `sqlite3` query |
+| `brain.db` — `strategy_idea` category | **0 rows** with `title LIKE '[Task/@%'` | Confirmed by `sqlite3` query |
+| `brain.db` — total `x_intel` | 92 entries, all titled "X Signal" | From x_alpha_collector / main.py quick-analysis path |
+| `data/x_intake/queue.db` (host) | 0 bytes — never initialized | Container DB is ephemeral (no bind mount applied) |
+| Cortex dashboard transcript stats | Proxied endpoint exists; returns 0 analyzed | `GET /transcripts/stats` works but shows nothing done |
+
+The 92 `x_intel` memories that DO exist in Cortex come from the **short first-pass analysis** in `main.py._analyze_with_llm()` — not from `transcript_analyst`. These are the `RELEVANCE / TYPE / SUMMARY / ACTION` formatted memories, not the deep structured analysis (no hidden gems, no actionable tasks, no content ideas).
+
+---
+
+### Q6 — What is missing for this to work reliably?
+
+Two blockers, in order of severity:
+
+**Blocker 1 — Container not recreated (CRITICAL)**
+
+```bash
+docker compose up -d --build x-intake
+```
+
+This one command applies `TRANSCRIPT_DIR=/data/transcripts`, `CORTEX_URL=http://cortex:8102`, and the `./data/transcripts:/data/transcripts` volume mount. Until it runs:
+- All new transcripts go to the ephemeral `/root/AI-Server/data/transcripts/` and are lost on restart
+- `queue.db` on the host remains 0 bytes (container DB is not bind-mounted)
+- The 4 transcripts written today inside the container will be lost on next restart
+
+**Blocker 2 — Ollama JSON parse failure (BUG)**
+
+`qwen3:8b` is the configured `OLLAMA_ANALYSIS_MODEL`. This model's thinking mode causes it to return JSON that the current parser cannot handle, producing an exception that bypasses the OpenAI fallback. Fix options (smallest first):
+
+Option A — Strip thinking tags before parsing in `_ollama_analyze`:
+```python
+# After: content = raw.get("message", {}).get("content", "")
+import re as _re
+content = _re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+```
+
+Option B — Disable thinking via Ollama options:
+```python
+# In the payload dict, change options to:
+"options": {"temperature": 0.2, "think": false}
+```
+
+Option C — Switch to a model without thinking mode (e.g., `llama3.2`, `mistral`).
+
+Until Blocker 2 is fixed, even after the container rebuild, `transcript_analyst` will fail on every Ollama call and fall through to OpenAI. OpenAI may succeed independently — needs verification after Blocker 1 is resolved.
+
+**Gap 3 — 2 orphaned host-side transcripts never analyzed**
+
+`data/transcripts/@hrundel75...md` (Apr 3) and `@moondevonyt...md` (Apr 4) are on disk but have never been processed. After the container is rebuilt and Blocker 2 is fixed, run:
+
+```bash
+curl -X POST http://localhost:8101/transcripts/backfill
+curl http://localhost:8101/transcripts/stats
+```
+
+Note: `@hrundel75` has only `🎵` as its full transcript — `transcript_analyst` will correctly skip it as "too sparse". `@moondevonyt` has real transcript text (trading strategies, win rates) and should produce 1–3 Cortex memories.
+
+---
+
+### Exact next step
+
+```bash
+# Step 1: recreate the container with correct env + volumes
+docker compose up -d --build x-intake
+
+# Step 2: verify env applied
+docker exec x-intake env | grep -E "TRANSCRIPT|CORTEX"
+# Expected: TRANSCRIPT_DIR=/data/transcripts  CORTEX_URL=http://cortex:8102
+
+# Step 3: verify volume mounted
+docker exec x-intake ls /data/transcripts
+# Expected: 2 .md files (the April 3-4 host files)
+
+# Step 4: trigger backfill of existing transcripts
+curl -X POST http://localhost:8101/transcripts/backfill
+
+# Step 5: check results
+curl http://localhost:8101/transcripts/stats
+# If analyzed > 0, also check Cortex:
+curl "http://localhost:8102/memories?category=x_intel" | python3 -m json.tool | grep -A3 "x_intake:@"
+```
+
+If step 5 shows `analyzed=0` and `failed=1` for the moondevonyt file, Blocker 2 (Ollama JSON parse) is confirmed and the qwen3:8b thinking-tag strip fix must be applied before the next rebuild.
