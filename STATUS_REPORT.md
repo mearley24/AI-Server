@@ -1,6 +1,6 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-12
+Generated: 2026-04-11 | Last updated: 2026-04-13
 Host: Bob (Mac Mini M4), branch: main.
 Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches.
 
@@ -14,7 +14,7 @@ _Action-required items this week. Most require Matt's input (credentials/funding
 
 - **[Matt] Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $1.94 USDC; all strategies skip with `low_bankroll`. No code change needed — bot re-reads on-chain balance every 5 minutes. Full operation needs $500 (configured bankroll).
 
-- **Rebuild + restart x-intake** — `docker compose up -d --build x-intake` deploys the new queue DB, review API endpoints, and volume mount. Previous listener died 2026-04-11 14:46; restart is the immediate fix. See §Z14 for the durable listener watchdog fix still needed.
+- ~~**Rebuild + restart x-intake**~~ ✅ **Done 2026-04-13 08:14 MDT** — Rebuilt image (`ai-server-x-intake:latest`) and recreated container. Redis listener started on `events:imessage`, Uvicorn running on port 8101, health endpoint returning HTTP 200. Container status: `Up (healthy)`. Queue DB (`data/x_intake/queue.db`) and transcript volume (`data/transcripts`) mounted via `docker-compose.yml`. Follow-up still needed: durable listener watchdog (§Z14) — see Next.
 
 - **Drain 103 pending approvals** — `decision_journal.db` has 103 `pending_approvals` rows (P0 threshold: 20). Write a one-shot Prompt T script: group by kind, batch to Matt via iMessage with YES/NO actions, auto-expire stale entries >7 days to a "skipped" state with a log entry.
 
@@ -90,6 +90,7 @@ _Completed since the April 11 audit baseline._
 - ✅ **Lessons scorecard 19/25 green** — up from 17/25; lessons #6 (Dropbox organizer) and #8 (iCloud) closed this pass.
 - ✅ **.env deduplication** — duplicate `# Crypto` block removed; `KRAKEN_SECRET=` placeholder added (§Z5).
 - ✅ **symphonysh debug cleanup** — 8 debug console.log statements removed, dead `testNavigation` button removed, debug dropdown entries removed (§15).
+- ✅ **x-intake rebuilt + restarted (2026-04-13 08:14 MDT)** — Image rebuilt (`ai-server-x-intake:latest`), container recreated. Redis listener live on `events:imessage`, Uvicorn on port 8101, health endpoint returning HTTP 200. Volume mounts for `data/x_intake` (queue.db) and `data/transcripts` now applied. Status: `Up (healthy)`. Remaining follow-up: durable listener watchdog per §Z14.
 
 ---
 
@@ -117,7 +118,7 @@ _Snapshot from 2026-04-12. Re-run `docker compose ps` for current state._
 | knowledge-scanner | 8100 | Up | 🟢 | — |
 | openwebui | 3000→8080 | Up | 🟢 | Pending removal (Prompt N). |
 | remediator | 8090 | Up | 🟢 (no healthcheck) | — |
-| x-intake | 8101 | Up | 🟢 | Redis listener dead since 2026-04-11 14:46 — needs restart (see Now). |
+| x-intake | 8101 | Up | 🟢 | **Rebuilt + restarted 2026-04-13 08:14 MDT.** Listener up on `events:imessage`, health → 200. Volumes: `data/x_intake` + `data/transcripts` mounted. Watchdog (§Z14) still needed. |
 | browser-agent | 9091 | Not running | ⚪ | In CLAUDE.md but never existed — remove from docs. |
 
 ---
