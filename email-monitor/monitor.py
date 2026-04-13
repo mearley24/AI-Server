@@ -595,9 +595,6 @@ class EmailMonitor:
         self._redis: Optional[aioredis.Redis] = None
         self._running = False
         self._catchup_done = False
-        # Cortex heartbeat tracking
-        self._last_cortex_stats_ts: float = 0.0
-        self._scan_count: int = 0
 
     async def _get_redis(self) -> aioredis.Redis:
         if self._redis is None:
@@ -849,19 +846,6 @@ class EmailMonitor:
                             category, sender_email, subject[:80],
                         )
 
-                        # Post lightweight entry to Cortex for every new non-internal email.
-                        # analyze_and_store() adds a richer follow-up post for non-noise emails.
-                        if category != "INTERNAL":
-                            _dom = sender_email.split("@", 1)[1].lower() if "@" in sender_email else ""
-                            await _post_to_cortex({
-                                "category": "email",
-                                "title": f"Email received [{category}]: {subject[:80]}",
-                                "content": f"From: {sender_name or sender_email}. Priority: {priority}.",
-                                "source": "email-monitor",
-                                "importance": 5 if priority in ("high", "medium") else 2,
-                                "tags": ["email", "received", category.lower(), _dom],
-                            })
-
                         # Run LLM analysis (non-blocking — runs in thread)
                         analysis = None
                         if not _skip_notification_noise(category, priority):
@@ -931,20 +915,6 @@ class EmailMonitor:
             logger.error("IMAP error: %s", e)
         except Exception as e:
             logger.error("Email poll error: %s", e)
-
-        # Periodic hourly heartbeat to Cortex (tracks scan count + availability)
-        self._scan_count += 1
-        _now_ts = time.time()
-        if _now_ts - self._last_cortex_stats_ts >= 3600:
-            self._last_cortex_stats_ts = _now_ts
-            await _post_to_cortex({
-                "category": "system",
-                "title": "Email monitor hourly heartbeat",
-                "content": f"Scan #{self._scan_count} complete. Inbox monitored.",
-                "source": "email-monitor",
-                "importance": 2,
-                "tags": ["email", "heartbeat"],
-            })
 
         return new_count
 
