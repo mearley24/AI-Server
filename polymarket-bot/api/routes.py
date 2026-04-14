@@ -725,6 +725,25 @@ async def arb_status() -> dict[str, Any]:
 
 # ── Strategy Manager endpoints ────────────────────────────────────────
 
+@router.get("/x-intel/status")
+async def x_intel_status() -> dict[str, Any]:
+    """Get current X intelligence signal state."""
+    x_intel = getattr(deps, "x_intel", None)
+    if not x_intel:
+        return {"status": "not_initialized"}
+    return x_intel.get_signal_summary()
+
+
+@router.get("/x-intel/signals")
+async def x_intel_signals() -> dict[str, Any]:
+    """Get active X intel signals (last 2 hours)."""
+    x_intel = getattr(deps, "x_intel", None)
+    if not x_intel:
+        return {"signals": [], "count": 0}
+    signals = x_intel.get_active_signals()
+    return {"signals": signals, "count": len(signals)}
+
+
 @router.get("/strategies/status")
 async def strategies_status() -> dict[str, Any]:
     """Per-strategy status: bankroll allocation, P/L, positions, last tick."""

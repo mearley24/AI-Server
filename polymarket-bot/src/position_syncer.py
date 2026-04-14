@@ -273,7 +273,7 @@ def persist_snapshot_redis(snap: PositionSnapshot) -> None:
         return
     try:
         payload = json.dumps(snap.to_api_dict(), default=str)
-        r.set("portfolio:snapshot", payload)
+        r.set("portfolio:snapshot", payload, ex=600)  # expire after 10 min (2x sync interval)
         r.lpush("portfolio:history", payload)
         r.ltrim("portfolio:history", 0, HISTORY_MAX - 1)
         for p in snap.positions:

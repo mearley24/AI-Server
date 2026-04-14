@@ -689,27 +689,21 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       </ul>`;
   }
 
-  function renderPnl(wallet, series) {
+  function renderPnl(wallet, pnlSummary) {
     const host = $('pnl');
     if (!wallet || wallet.error) { host.innerHTML = unavail(); return; }
-    const daily  = Number(wallet.daily_pnl  || 0);
-    const weekly = Number(wallet.weekly_pnl || 0);
+    const daily   = Number(wallet.daily_pnl || 0);
+    const allTime = pnlSummary && !pnlSummary.error ? Number(pnlSummary.realized_pnl || 0) : null;
     const cls  = (n) => n > 0 ? 'pnl-positive' : n < 0 ? 'pnl-negative' : 'pnl-neutral';
     const sign = (n) => n >= 0 ? '+' : '';
-    let sparkline = '';
-    if (Array.isArray(series) && series.length > 1) {
-      const vals = series.map((p) => Number(p.pnl || p.value || p.total || 0));
-      const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1;
-      const w = 160, h = 30, step = w / (vals.length - 1);
-      const pts = vals.map((v, i) => `${(i*step).toFixed(1)},${(h-((v-min)/span)*h).toFixed(1)}`).join(' ');
-      sparkline = `<svg width="${w}" height="${h}" style="margin-top:8px;opacity:0.9">
-        <polyline fill="none" stroke="var(--gold)" stroke-width="1.5" points="${pts}" /></svg>`;
-    }
+    const allTimeHtml = allTime !== null
+      ? `<div><div class="stat-big ${cls(allTime)}">${sign(allTime)}${fmtUsd(allTime)}</div><div class="stat-label">all-time realized</div></div>`
+      : `<div><div class="stat-big pnl-neutral">—</div><div class="stat-label">all-time realized</div></div>`;
     host.innerHTML = `
       <div class="stat-row">
         <div><div class="stat-big ${cls(daily)}">${sign(daily)}${fmtUsd(daily)}</div><div class="stat-label">today</div></div>
-        <div><div class="stat-big ${cls(weekly)}">${sign(weekly)}${fmtUsd(weekly)}</div><div class="stat-label">7d</div></div>
-      </div>${sparkline}`;
+        ${allTimeHtml}
+      </div>`;
   }
 
   function renderActivity(data) {
@@ -1170,7 +1164,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
   async function refresh() {
     tickClock();
     const [
-      services, wallet, positions, pnlSeries, activity,
+      services, wallet, positions, pnlSummary, activity,
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
       xiStats, xiQueue,
@@ -1178,7 +1172,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
       fetchJson('/api/positions'),
-      fetchJson('/api/pnl-series'),
+      fetchJson('/api/pnl-summary'),
       fetchJson('/api/activity'),
       fetchJson('/api/emails'),
       fetchJson('/api/calendar'),
@@ -1200,7 +1194,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     renderFollowups(followups);
     renderWallet(wallet);
     renderPositions(positions);
-    renderPnl(wallet, pnlSeries);
+    renderPnl(wallet, pnlSummary);
     renderActivity(activity);
     renderRedeemer(redeemer);
     renderMemory(health && health.memories, memories);

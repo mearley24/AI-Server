@@ -393,6 +393,37 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                 }
             except (TypeError, ValueError):
                 pass
+        # Third fallback — query Polymarket data API directly (public, no auth)
+        poly_wallet = os.environ.get("POLY_WALLET_ADDRESS", "0xa791E3090312981A1E18ed93238e480a03E7C0d2")
+        positions_data = await _safe_get(
+            f"https://data-api.polymarket.com/positions?user={poly_wallet}&sizeThreshold=0",
+            timeout=10.0,
+        )
+        if positions_data and isinstance(positions_data, list):
+            try:
+                total_value = sum(float(p.get("currentValue", 0)) for p in positions_data)
+                total_initial = sum(float(p.get("initialValue", 0) or 0) for p in positions_data)
+                active_value = sum(
+                    float(p.get("currentValue", 0))
+                    for p in positions_data
+                    if 0.05 < float(p.get("curPrice", p.get("currentPrice", 0)) or 0) < 0.95
+                )
+                return {
+                    "usdc_balance": 0.0,  # can't get USDC from data API
+                    "position_value": round(total_value, 2),
+                    "active_value": round(active_value, 2),
+                    "redeemable_value": 0.0,
+                    "redeemable_count": 0,
+                    "lost_count": 0,
+                    "dust_count": sum(1 for p in positions_data if float(p.get("currentValue", 0)) < 0.50),
+                    "daily_pnl": 0.0,
+                    "weekly_pnl": 0.0,
+                    "source": "polymarket_data_api",
+                    "position_count": len(positions_data),
+                    "unrealized_pnl": round(total_value - total_initial, 2),
+                }
+            except (TypeError, ValueError):
+                pass
         return empty
 
     @app.get("/api/positions")
@@ -406,11 +437,30 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             except Exception:
                 pass
         data = await _safe_get(f"{TRADING_BOT_URL}/positions", timeout=5.0)
-        if data is None:
-            return []
-        if isinstance(data, list):
-            return data
-        return data.get("positions", [])
+        if data is not None:
+            if isinstance(data, list):
+                return data
+            return data.get("positions", [])
+        # Third fallback — Polymarket data API
+        poly_wallet = os.environ.get("POLY_WALLET_ADDRESS", "0xa791E3090312981A1E18ed93238e480a03E7C0d2")
+        positions_data = await _safe_get(
+            f"https://data-api.polymarket.com/positions?user={poly_wallet}&sizeThreshold=0",
+            timeout=10.0,
+        )
+        if positions_data and isinstance(positions_data, list):
+            return [
+                {
+                    "title": p.get("title", "?"),
+                    "outcome": p.get("outcome", "?"),
+                    "size": float(p.get("size", 0)),
+                    "currentValue": float(p.get("currentValue", 0)),
+                    "curPrice": float(p.get("curPrice", p.get("currentPrice", 0)) or 0),
+                    "source": "polymarket_data_api",
+                }
+                for p in sorted(positions_data, key=lambda x: float(x.get("currentValue", 0)), reverse=True)
+                if float(p.get("currentValue", 0)) > 0.01
+            ]
+        return []
 
     @app.get("/api/pnl-series")
     async def api_pnl_series():
@@ -423,6 +473,39 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             except Exception:
                 pass
         return []
+
+    @app.get("/api/pnl-summary")
+    async def api_pnl_summary():
+        """Realized P&L from Polymarket activity API (public, no auth needed)."""
+        poly_wallet = os.environ.get("POLY_WALLET_ADDRESS", "0xa791E3090312981A1E18ed93238e480a03E7C0d2")
+        try:
+            all_activity = []
+            for offset in range(0, 5001, 500):
+                data = await _safe_get(
+                    f"https://data-api.polymarket.com/activity?user={poly_wallet}&limit=500&offset={offset}",
+                    timeout=15.0,
+                )
+                if not data or not isinstance(data, list) or len(data) == 0:
+                    break
+                all_activity.extend(data)
+                if len(data) < 500:
+                    break
+
+            total_spent = sum(float(a.get("usdcSize", 0)) for a in all_activity if a.get("type") in ("TRADE", "BUY"))
+            total_redeemed = sum(float(a.get("usdcSize", 0)) for a in all_activity if a.get("type") == "REDEEM")
+            trade_count = sum(1 for a in all_activity if a.get("type") in ("TRADE", "BUY"))
+            redeem_count = sum(1 for a in all_activity if a.get("type") == "REDEEM")
+
+            return {
+                "total_spent": round(total_spent, 2),
+                "total_redeemed": round(total_redeemed, 2),
+                "realized_pnl": round(total_redeemed - total_spent, 2),
+                "trade_count": trade_count,
+                "redeem_count": redeem_count,
+                "activity_count": len(all_activity),
+            }
+        except Exception as exc:
+            return {"error": str(exc)[:200]}
 
     @app.get("/api/activity")
     async def api_activity():
@@ -480,6 +563,14 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         if data is None:
             return {"error": "service unavailable", "positions": []}
         return data
+
+    @app.get("/api/trading/intel")
+    async def api_trading_intel():
+        """X-intel signal summary from the bot."""
+        data = await _safe_get(f"{TRADING_BOT_URL}/x-intel/status", timeout=5.0)
+        if data:
+            return data
+        return {"active_signals": 0, "market_boosts": 0, "status": "unavailable"}
 
     # ── Email / calendar / follow-ups ──────────────────────────────────
     @app.get("/api/emails")

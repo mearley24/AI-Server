@@ -492,6 +492,7 @@ async def lifespan(app: FastAPI):
         from strategies.x_intel_processor import XIntelProcessor
         x_intel = XIntelProcessor()
         signal_bus.subscribe(SignalType.MARKET_DATA, x_intel.on_intel_signal)
+        deps.x_intel = x_intel
         log.info("x_intel_processor_registered")
     except Exception as exc:
         log.warning("x_intel_processor_failed", error=str(exc)[:100])
@@ -532,6 +533,28 @@ async def lifespan(app: FastAPI):
         )
     except Exception as _exc:
         log.debug("startup_position_sync_skipped", error=str(_exc))
+
+    # Periodic position sync — publish fresh data to Redis every 5 minutes
+    async def _position_sync_loop():
+        """Keep Redis portfolio snapshot fresh for the dashboard."""
+        from src.position_syncer import sync_positions as _sync_fn, persist_snapshot_redis
+        await asyncio.sleep(60)  # wait 1 min after startup before first periodic sync
+        while True:
+            try:
+                snap = await _sync_fn(client)
+                persist_snapshot_redis(snap)
+                log.info(
+                    "periodic_position_sync",
+                    positions=len(snap.positions),
+                    total_value=round(snap.total_position_value, 2),
+                    usdc=round(snap.usdc_balance, 2),
+                )
+            except Exception as exc:
+                log.warning("periodic_position_sync_error", error=str(exc)[:200])
+            await asyncio.sleep(300)  # 5 minutes
+
+    asyncio.create_task(_position_sync_loop())
+    log.info("position_sync_loop_started", interval_sec=300)
 
     # Start StrategyManager for the 3-strategy architecture (weather/copytrade/cvd_arb)
     if strategy_manager_enabled and managed_strategies:
