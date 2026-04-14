@@ -14,7 +14,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <string>/Users/bob/Library/Python/3.9/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
         <key>MOBILE_API_PORT</key>
         <string>8420</string>
         <key>MOBILE_API_BIND_HOST</key>
