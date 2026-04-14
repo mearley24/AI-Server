@@ -10,9 +10,9 @@ Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 pat
 
 _Action-required items this week. Most require Matt's input (credentials/funding)._
 
-- **[Matt] Set `KRAKEN_SECRET`** — add the real Kraken API secret (same value as `KRAKEN_API_SECRET` in `.env` line 284) using `bash scripts/set-env.sh KRAKEN_SECRET <value>`, then `docker compose up -d polymarket-bot` (no rebuild needed). Kraken MM auth fails on every tick until this is set.
+- **[Matt] Set `KRAKEN_SECRET`** — add the real Kraken API secret (same value as `KRAKEN_API_SECRET` in `.env` line 284) using `bash scripts/set-env.sh KRAKEN_SECRET <value>`, then `docker compose up -d polymarket-bot` (no rebuild needed). Kraken MM auth fails on every tick until this is set. **Still pending Matt action.**
 
-- **[Matt] Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $1.94 USDC; all strategies skip with `low_bankroll`. No code change needed — bot re-reads on-chain balance every 5 minutes. Full operation needs $500 (configured bankroll).
+- **[Matt] Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $1.94 USDC; all strategies skip with `low_bankroll`. No code change needed — bot re-reads on-chain balance every 5 minutes. Full operation needs $500 (configured bankroll). **Still pending Matt action ($750+ in positions as of April 12).**
 
 - ~~**Rebuild + restart x-intake**~~ ✅ **Done 2026-04-13 08:14 MDT** — Rebuilt image (`ai-server-x-intake:latest`) and recreated container. Redis listener started on `events:imessage`, Uvicorn running on port 8101, health endpoint returning HTTP 200. Container status: `Up (healthy)`. Queue DB (`data/x_intake/queue.db`) and transcript volume (`data/transcripts`) mounted via `docker-compose.yml`. Follow-up still needed: durable listener watchdog (§Z14) — see Next.
 
@@ -30,15 +30,11 @@ _Important but not blocking; no credentials required._
 
 - ~~**Wire Cortex (all services)**~~ ✅ **Done 2026-04-13** — All four services now POST to `http://cortex:8102/remember`. See §3 close-all-gaps Task 3 and Reference: Cortex Wire-Up below.
 
-- **x-intake listener watchdog** — store the `_redis_listener` Task reference and add a 10-second watchdog loop so the listener restarts on failure. Also remove the nested `asyncio.new_event_loop()` from `_analyze_url_sync` — call the async function directly instead. See §Z14.
+- ~~**x-intake listener watchdog**~~ ✅ **Done 2026-04-14** — `_listener_watchdog()` implemented (§Z14); `asyncio.new_event_loop()` anti-pattern removed from `_analyze_url_sync` (replaced with `asyncio.run()`); both async callers updated to use `await _analyze_url(url)` directly.
 
 - **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot 2>&1 | grep redeemer` to confirm `redeemer_redeemed` events appear. Check POL gas balance on the wallet. See §14.
 
-- **Fix CLAUDE.md service table** — four stale entries:
-  - `notification-hub` is Python on port **8095** (not 8091/Node).
-  - `proposals` (**8091**) is missing from the table.
-  - `browser-agent` (9091) does not exist — remove or create.
-  - `integrations/cortex/*` path is wrong — the service is top-level `cortex/`.
+- ~~**Fix CLAUDE.md service table**~~ ✅ **Done 2026-04-14** — Removed knowledge-scanner, context-preprocessor, remediator, openwebui rows; added cortex-autobuilder, x-alpha-collector, rsshub; updated container count to 18; synced .clinerules.
 
 - **jobs.db consolidation** — `follow_up_log` in `jobs.db` has 0 rows while `follow_ups.db` has 58. Pick one canonical home and retire the duplicate to avoid confusion as the orchestrator backfill runs. See §7 item 7.
 

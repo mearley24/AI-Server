@@ -320,7 +320,7 @@ async def analyze_endpoint(body: dict):
     if not url:
         return {"error": "url required"}
     source = body.get("source", "api")
-    result = await asyncio.to_thread(lambda: _analyze_url_sync(url))
+    result = await _analyze_url(url)
     if _db_enqueue is not None and isinstance(result, dict):
         try:
             analysis = result.get("analysis", {})
@@ -346,12 +346,8 @@ async def analyze_endpoint(body: dict):
 
 
 def _analyze_url_sync(url: str) -> dict:
-    """Sync wrapper for the async analyze pipeline."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(_analyze_url(url))
-    finally:
-        loop.close()
+    """Sync wrapper for the async analyze pipeline (sync callers only)."""
+    return asyncio.run(_analyze_url(url))
 
 
 def _extract_polymarket_signals(text: str, author: str, transcript: str = "") -> dict:
@@ -527,7 +523,7 @@ async def _send_reply(text: str) -> None:
 async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
     """Analyze a tweet URL, queue for review, publish signals, send iMessage reply."""
     try:
-        result = await asyncio.to_thread(_analyze_url_sync, url)
+        result = await _analyze_url(url)
         summary = ""
         author = ""
         transcript = ""

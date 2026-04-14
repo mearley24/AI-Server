@@ -46,7 +46,7 @@ AI-Server/
 │   ├── set-env.sh         # Safe .env key setter
 │   ├── api-post.sh        # JSON POST helper (no inline JSON)
 │   └── bob-watchdog.sh    # Service watchdog
-├── docker-compose.yml     # 20 containers (rsshub + x-alpha-collector added in x-intake loop)
+├── docker-compose.yml     # 18 containers (3 dead services removed in security cleanup)
 ├── .clinerules            # Cline context (kept for compatibility)
 ├── CLAUDE.md              # THIS FILE — Claude Code reads this first
 └── .cursor/prompts/       # Task prompts (A through P, plus operational)
@@ -58,7 +58,7 @@ AI-Server/
 
 | Layer | Technology |
 |---|---|
-| Runtime | Docker Compose, 20 containers on Mac Mini M4 ("Bob") |
+| Runtime | Docker Compose, 18 containers on Mac Mini M4 ("Bob") |
 | Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
 | AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
 | Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db) |
@@ -108,7 +108,7 @@ echo 'line1' > file.txt && echo 'line2' >> file.txt
 - `pull.sh` auto-detects changed service directories and rebuilds them.
 
 ### Redis
-- **All connections MUST use auth:** `redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379`
+- **All connections MUST use auth:** `redis://:<password>@redis:6379` (credentials in `.env` as `REDIS_URL` — never hardcode)
 - Redis has a static IP in docker-compose.yml to prevent the polymarket bot from losing connection after restarts (lesson 13).
 
 ### Inter-Service Communication
@@ -169,19 +169,17 @@ echo 'line1' > file.txt && echo 'line2' >> file.txt
 | email-monitor | 8092 | Python | Zoho IMAP, SQLite dedup. POSTs each classified email to Cortex. |
 | notification-hub | 8095 | Python | iMessage / Telegram / email routing. POSTs high-priority sends to Cortex. |
 | proposals | 8091 | Python | Proposal PDF + approval flow |
-| client-portal | 8096 (internal) | Python | E-signature, per-client pages (no published host port). |
+| client-portal | 8096 (internal) | Python | E-signature, per-client pages — health endpoint on 8096. |
 | dtools-bridge | 8096 → 5050 | Python | D-Tools Cloud API bridge (published on 8096). |
 | polymarket-bot | 8430 (via vpn) | Python | Trading via VPN. Records every trade into Cortex. |
 | calendar-agent | 8094 | Python | Zoho calendar sync |
 | voice-receptionist | 8093 → 3000 | Node.js | Twilio voice |
 | clawwork | 8097 | Python | Background workflow runner |
-| knowledge-scanner | 8100 | Python | Symphony knowledge ingest |
 | x-intake | 8101 | Python | X/Twitter link analysis |
+| cortex-autobuilder | 8115 | Python | Bob/Betty research loop + topic scanning |
 | rsshub | 1200 (internal) | Node.js | RSS feed proxy for X accounts |
 | x-alpha-collector | — | Python | Monitors 40+ X accounts every 10 min via RSSHub |
 | intel-feeds | 8765 | Python | Intel RSS aggregator |
-| context-preprocessor | 8028 | Python | Pre-filter for agent context |
-| remediator | 8090 | Python | Auto-remediation watchdog |
 | redis | 6379 | — | Auth required, static IP `172.18.0.100` |
 | vpn | — | — | WireGuard, polymarket-bot routes through this |
 
@@ -235,7 +233,6 @@ The `DONE/` subfolder contains completed prompts.
 - All API keys via environment variables in `.env` — never hardcoded.
 - Version numbers are internal only — client-facing docs use "updated proposal."
 - Each client document needs its own separate Dropbox share link.
-- Redis password is in this file for operational convenience — it's internal-only on Docker network.
 
 ---
 
@@ -250,8 +247,8 @@ curl -s http://127.0.0.1:8099/health                 # openclaw alive?
 curl -s http://127.0.0.1:8102/health                 # cortex brain + dashboard alive?
 curl -s http://127.0.0.1:8092/health                 # email-monitor alive?
 curl -s http://127.0.0.1:8095/health                 # notification-hub alive?
-docker exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 PING   # redis alive?
-docker exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 LRANGE events:log 0 2  # events flowing?
+docker exec redis redis-cli -a "$REDIS_PASSWORD" PING   # redis alive?
+docker exec redis redis-cli -a "$REDIS_PASSWORD" LRANGE events:log 0 2  # events flowing?
 ls ~/Library/CloudStorage/Dropbox*/ >/dev/null 2>&1 && echo "Dropbox OK" || echo "Dropbox NOT syncing"
 ```
 
@@ -294,7 +291,7 @@ docker logs <service> --tail 50 2>&1
 docker restart openclaw
 
 # Safe .env update
-bash scripts/set-env.sh REDIS_URL "redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379"
+bash scripts/set-env.sh REDIS_URL "redis://:<password>@redis:6379"
 
 # Safe API POST (no inline JSON)
 bash scripts/api-post.sh http://localhost:8099/api/endpoint '{"key":"value"}'
@@ -303,7 +300,7 @@ bash scripts/api-post.sh http://localhost:8099/api/endpoint '{"key":"value"}'
 docker compose exec openclaw python -c "from daily_briefing import DailyBriefing; import asyncio; asyncio.run(DailyBriefing().send())"
 
 # Check Redis events
-docker exec redis redis-cli -a d19c9b0faebeee9927555eb8d6b28ec9 LRANGE events:log 0 10
+docker exec redis redis-cli -a "$REDIS_PASSWORD" LRANGE events:log 0 10
 ```
 
 ---

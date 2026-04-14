@@ -35,6 +35,7 @@ from typing import Optional
 from urllib.request import Request, urlopen
 from urllib.parse import quote
 
+import re as _re
 import redis as _redis_lib
 
 logging.basicConfig(
@@ -98,10 +99,7 @@ def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:
         return None
 
 # Redis publish for downstream consumers (e.g. Docker x-intake on events:imessage)
-_REDIS_URL = os.environ.get(
-    "REDIS_URL",
-    "redis://:d19c9b0faebeee9927555eb8d6b28ec9@127.0.0.1:6379",
-)
+_REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")
 _redis_pub = None
 
 
@@ -396,7 +394,6 @@ send_queue = None
 
 def _fetch_tweet_text(url: str) -> str:
     """Extract tweet text via Twitter's oEmbed API (no auth needed)."""
-    import re as _re
 
     if not _re.search(r'(?:twitter\.com|x\.com)/.+/status/', url):
         return ""
@@ -427,7 +424,6 @@ def research_link(url: str, context: str = "") -> str:
     For X/Twitter posts with video, downloads and transcribes the video
     using the video_transcriber module for deep analysis with emoji flags.
     """
-    import re as _re
     try:
         text = ""
 
@@ -699,7 +695,6 @@ def _draft_walkthrough_email(contact: str, contact_email: str) -> str:
 
 
 def handle_draft_to_command(message: str) -> str:
-    import re as _re
     m = _re.search(r"draft to\s+(.+?)(?:\s*:\s*(.+))?$", message, _re.IGNORECASE)
     if not m:
         return "Use: draft to [client] : [what to say]"
@@ -727,7 +722,6 @@ def handle_draft_to_command(message: str) -> str:
 
 
 def handle_schedule_walkthrough(message: str) -> str:
-    import re as _re
     m = _re.search(r"schedule walkthrough with\s+(.+)$", message, _re.IGNORECASE)
     if not m:
         return "Use: schedule walkthrough with [contact]"
@@ -759,7 +753,6 @@ def _read_last_approval_decision_id():
 
 def try_approval_reply(message: str):
     """Match YES/NO/EDIT replies for OpenClaw decision approvals (see close-the-loop-part2)."""
-    import re as _re
 
     raw = message.strip()
     lower = raw.lower()
@@ -841,7 +834,6 @@ def try_approval_reply(message: str):
 def ask_openclaw(message: str) -> str:
     """Send a message to OpenClaw and get a response."""
     try:
-        import re as _re
         urls = _re.findall(r'https?://[^\s<>"]+', message)
         if urls:
             x_pattern = _re.compile(
@@ -1114,7 +1106,6 @@ def get_trading_status() -> str:
 
 def get_email_status(query: str = "") -> str:
     """Smart email handler — searches or summarizes based on query."""
-    import re as _re
 
     lower = query.lower().strip() if query else ""
 
@@ -1230,7 +1221,6 @@ def get_weather_status() -> str:
 
 def get_job_status(query: str = "") -> str:
     """Get job status — list active jobs or search for specific job."""
-    import re as _re
     lower = query.lower().strip() if query else ""
 
     # "new job <client name>" — create a new job

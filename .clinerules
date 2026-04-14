@@ -19,11 +19,11 @@ AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration
 ### Tech Stack
 | Layer | Technology |
 |---|---|
-| Runtime | Docker Compose, 20 containers on Mac Mini M4 ("Bob") |
+| Runtime | Docker Compose, 18 containers on Mac Mini M4 ("Bob") |
 | Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
 | AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
 | Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db, brain.db) |
-| Messaging | Redis (auth required: `redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379`) |
+| Messaging | Redis (auth required — credentials in `.env` as `REDIS_URL`, never hardcode) |
 | Infrastructure | Docker, Tailscale VPN, Mac Mini M4 |
 | Frontend | Vanilla JS/HTML/CSS (no frameworks, except cortex/static/index.html) |
 | Website | React + Vite + shadcn/ui (separate repo: mearley24/symphonysh) |
@@ -42,12 +42,11 @@ AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration
 | calendar-agent | 8094 | Zoho calendar |
 | voice-receptionist | 8093 | Twilio voice (internal port 3000) |
 | clawwork | 8097 | Background workflow runner |
-| knowledge-scanner | 8100 | Symphony knowledge ingest |
 | x-intake | 8101 | X/Twitter link analysis |
+| cortex-autobuilder | 8115 | Bob/Betty research loop + topic scanning |
+| x-alpha-collector | — | Monitors 40+ X accounts via RSSHub every 10 min |
+| rsshub | 1200 (internal) | RSS feed proxy for X accounts |
 | intel-feeds | 8765 | Intel RSS aggregator |
-| context-preprocessor | 8028 | Pre-filter for agent context |
-| remediator | 8090 | Auto-remediation watchdog |
-| openwebui | 3000 | Local LLM UI (internal 8080) |
 | redis | 6379 | Auth required, static IP 172.18.0.100 |
 | vpn | — | WireGuard — polymarket-bot routes through this |
 
