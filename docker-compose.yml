@@ -466,6 +466,7 @@ services:
       - "127.0.0.1:8100:8100"
     volumes:
       - ./data/knowledge-scanner:/data
+      - ./openclaw:/app/openclaw
     depends_on:
       redis:
         condition: service_healthy

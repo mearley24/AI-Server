@@ -5,9 +5,8 @@ from __future__ import annotations
 import logging
 import os
 
-import httpx
-
 from knowledge.ollama_local import ollama_chat
+from strategies.llm_completion import completion as llm_complete
 from knowledge.query import KnowledgeQuery
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,6 @@ async def generate_daily_digest(anthropic_key: str = None) -> str:
     Returns:
         Formatted daily digest string.
     """
-    api_key = anthropic_key or os.environ.get("ANTHROPIC_API_KEY")
     query = KnowledgeQuery()
     recent = query.get_recent_learnings(days=1)
 
@@ -45,25 +43,6 @@ Format as a brief daily briefing with sections:
     if local:
         return local
 
-    if not api_key:
-        return "Daily digest unavailable — Ollama unreachable and ANTHROPIC_API_KEY not set."
-
-    logger.warning("using_anthropic_for_daily_digest — Ollama unavailable")
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "content-type": "application/json",
-                "anthropic-version": "2023-06-01",
-            },
-            json={
-                "model": "claude-sonnet-4-20250514",
-                "max_tokens": 1024,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
-        )
-        data = resp.json()
-        return data["content"][0]["text"]
+    logger.warning("using_llm_router_for_daily_digest — Ollama unavailable")
+    result = await llm_complete(prompt=prompt, complexity="medium", max_tokens=1024)
+    return result.get("content", result.get("text", "Daily digest unavailable — all LLM routes failed."))

@@ -13,6 +13,7 @@ from typing import Optional
 import httpx
 
 from knowledge.ollama_local import ollama_chat, parse_json_loose
+from strategies.llm_completion import completion as llm_complete
 
 logger = logging.getLogger(__name__)
 
@@ -115,32 +116,18 @@ Focus on actionable trading intelligence. Ignore fluff."""
                     pass
             return {"title": "Unknown", "type": "research", "summary": content[:200]}
 
-        if not self.api_key:
-            return {"title": "Unknown", "type": "research", "summary": "Extraction skipped — no Ollama and no ANTHROPIC_API_KEY"}
-
-        logger.warning("using_anthropic_for_knowledge_extract — Ollama unavailable")
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": self.api_key,
-                    "content-type": "application/json",
-                    "anthropic-version": "2023-06-01",
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 1024,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=60,
-            )
-            data = resp.json()
-            content = data["content"][0]["text"]
-            json_match = re.search(r"\{.*\}", content, re.DOTALL)
-            if json_match:
+        logger.warning("using_llm_router_for_knowledge_extract — Ollama unavailable")
+        result = await llm_complete(prompt=prompt, complexity="medium", max_tokens=1024)
+        content = result.get("content", result.get("text", ""))
+        if not content:
+            return {"title": "Unknown", "type": "research", "summary": "Extraction skipped — all LLM routes failed"}
+        json_match = re.search(r"\{.*\}", content, re.DOTALL)
+        if json_match:
+            try:
                 return json.loads(json_match.group())
-            return {"title": "Unknown", "type": "research", "summary": content[:200]}
+            except json.JSONDecodeError:
+                pass
+        return {"title": "Unknown", "type": "research", "summary": content[:200]}
 
     def _classify_target(self, extraction: dict) -> Path:
         """Determine which knowledge file to update."""

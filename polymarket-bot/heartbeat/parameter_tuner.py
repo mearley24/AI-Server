@@ -8,6 +8,8 @@ import re
 
 import structlog
 
+from strategies.llm_completion import completion as llm_complete
+
 logger = structlog.get_logger(__name__)
 
 
@@ -78,13 +80,8 @@ Only propose changes backed by resolved data. If too few trades have resolved, r
         if proposals is not None:
             return proposals
 
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.info("parameter_tuner_skipped", reason="no Ollama result and no ANTHROPIC_API_KEY")
-            return []
-
-        logger.warning("parameter_tuner_using_claude — Ollama was unavailable")
-        return await self._analyze_claude(prompt, api_key)
+        logger.warning("parameter_tuner_using_router — Ollama was unavailable")
+        return await self._analyze_claude(prompt)
 
     async def _analyze_ollama(self, prompt: str) -> list[dict] | None:
         """Try parameter analysis via Ollama. Returns None on failure; [] is valid success."""
@@ -143,39 +140,23 @@ Only propose changes backed by resolved data. If too few trades have resolved, r
                 return []
         return []
 
-    async def _analyze_claude(self, prompt: str, api_key: str) -> list[dict]:
-        """Fallback: parameter analysis via Claude (paid)."""
+    async def _analyze_claude(self, prompt: str, api_key: str = "") -> list[dict]:
+        """Fallback: parameter analysis via central LLM router."""
         try:
-            import httpx
-        except ImportError:
-            logger.error("httpx_not_available", msg="Cannot call Claude API")
-            return []
-
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": api_key,
-                        "content-type": "application/json",
-                        "anthropic-version": "2023-06-01",
-                    },
-                    json={
-                        "model": "claude-sonnet-4-20250514",
-                        "max_tokens": 1024,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                    timeout=60,
-                )
-                content = resp.json()["content"][0]["text"]
-                match = re.search(r"\[.*\]", content, re.DOTALL)
-                if match:
-                    proposals = json.loads(match.group())
-                    logger.info("parameter_proposals_generated", count=len(proposals))
-                    return proposals
+            result = await llm_complete(
+                prompt=prompt,
+                complexity="medium",
+                max_tokens=1024,
+                temperature=0.3,
+            )
+            content = result.get("content", result.get("text", ""))
+            if not content:
+                return []
+            proposals = self._parse_proposals_json(content)
+            logger.info("parameter_proposals_generated", count=len(proposals))
+            return proposals
         except Exception as e:
             logger.error("parameter_tuner_error", error=str(e))
-
         return []
 
 

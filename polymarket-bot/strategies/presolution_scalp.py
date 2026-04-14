@@ -16,6 +16,7 @@ import redis
 from src.client import ORDER_TYPE_GTC
 from src.signer import SIDE_BUY
 from strategies.base import BaseStrategy
+from strategies.llm_completion import completion as llm_complete
 
 logger = logging.getLogger(__name__)
 
@@ -231,51 +232,18 @@ class PresolutionScalpStrategy(BaseStrategy):
             "Is the opposite outcome virtually certain (>90%)? "
             'Reply JSON {{"approve": true}} or {{"approve": false}} only.'
         )
-        if OLLAMA_HOST:
-            try:
-                async with httpx.AsyncClient(timeout=12.0) as client:
-                    r = await client.post(
-                        f"{OLLAMA_HOST.rstrip('/')}/api/chat",
-                        headers={"Content-Type": "application/json"},
-                        json={
-                            "model": OLLAMA_VALIDATE_MODEL,
-                            "messages": [{"role": "user", "content": prompt}],
-                            "stream": False,
-                            "format": "json",
-                            "options": {"temperature": 0, "num_predict": 128},
-                        },
-                    )
-                if r.status_code == 200:
-                    txt = (r.json().get("message") or {}).get("content") or ""
-                    approve = _parse_approve_from_llm_text(txt)
-                    self._llm_cache[cid] = approve
-                    return approve
-            except Exception as exc:
-                logger.warning("presolution_scalp.ollama_validate_skip: %s", str(exc)[:100])
-                self._llm_cache[cid] = False
-                return False  # REJECT when Ollama is down
-
-        key = os.environ.get("OPENAI_API_KEY", "")
-        if not key:
-            self._llm_cache[cid] = False
-            return False  # REJECT when no LLM available
-        logger.warning("using_openai_for_presolution_scalp_validation — Ollama unavailable")
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                r = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                    json={
-                        "model": "gpt-4o-mini",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "temperature": 0,
-                    },
-                )
-                data = r.json()
-                txt = data["choices"][0]["message"]["content"]
-                approve = _parse_approve_from_llm_text(txt)
-        except Exception:
-            approve = False  # REJECT when OpenAI fails
+            result = await llm_complete(
+                prompt=prompt,
+                complexity="medium",
+                max_tokens=512,
+                temperature=0.2,
+            )
+            text = result.get("content", result.get("text", ""))
+            approve = _parse_approve_from_llm_text(text)
+        except Exception as exc:
+            logger.warning("presolution_scalp.llm_validate_skip: %s", str(exc)[:100])
+            approve = False  # REJECT when LLM fails
         self._llm_cache[cid] = approve
         return approve
 

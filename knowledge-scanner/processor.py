@@ -16,6 +16,12 @@ logger = structlog.get_logger(__name__)
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
 
+try:
+    from openclaw.llm_router import completion as _router_completion
+    _HAS_ROUTER = True
+except ImportError:
+    _HAS_ROUTER = False
+
 # Max insights per scan cycle
 MAX_INSIGHTS_PER_CYCLE = 20
 
@@ -85,50 +91,24 @@ async def _process_with_ollama(combined: str) -> list[dict] | None:
         return None
 
 
-async def _process_with_haiku(combined: str, api_key: str) -> list[dict]:
-    """Fallback to Claude Haiku (paid)."""
-    logger.warning("using_anthropic_haiku_fallback", reason="ollama_unavailable_or_failed")
-    async with httpx.AsyncClient(timeout=60) as http:
-        resp = await http.post(
-            ANTHROPIC_API_URL,
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-3-5-20241022",
-                "max_tokens": 2000,
-                "system": [
-                    {
-                        "type": "text",
-                        "text": PROCESS_SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": f"Extract actionable insights from these research results:\n\n{combined}",
-                    }
-                ],
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-
-    content = ""
-    for block in data.get("content", []):
-        if block.get("type") == "text":
-            content = block["text"]
-            break
-
-    if not content:
-        logger.warning("processor_empty_response")
+async def _process_with_router(combined: str) -> list[dict]:
+    """Fallback to central LLM router (Ollama first, cloud fallback, with caching + cost tracking)."""
+    if not _HAS_ROUTER:
+        logger.warning("llm_router_unavailable", reason="openclaw not mounted")
         return []
-
+    logger.info("using_llm_router_for_processing")
+    result = await _router_completion(
+        prompt=f"Extract actionable insights from these research results:\n\n{combined}",
+        system_prompt=PROCESS_SYSTEM_PROMPT,
+        complexity="medium",
+        max_tokens=2000,
+    )
+    content = result.get("content", "")
+    if not content:
+        logger.warning("processor_empty_response_router")
+        return []
     insights = _parse_json_response(content)
-    logger.info("processing_complete_haiku", insights_extracted=len(insights))
+    logger.info("processing_complete_router", insights_extracted=len(insights))
     return insights
 
 
@@ -156,12 +136,8 @@ async def process_results(raw_results: list[dict], api_key: str) -> list[dict]:
         if result is not None:
             return result
 
-        # Fallback to Claude Haiku (paid)
-        if api_key:
-            return await _process_with_haiku(combined, api_key)
-
-        logger.warning("processing_disabled", reason="Ollama failed and no ANTHROPIC_API_KEY")
-        return []
+        # Fallback to central LLM router (caching + cost tracking)
+        return await _process_with_router(combined)
 
     except json.JSONDecodeError as exc:
         logger.error("processor_json_error", error=str(exc))

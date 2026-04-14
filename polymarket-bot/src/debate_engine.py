@@ -18,6 +18,7 @@ import structlog
 
 from src.config import Settings
 from src.market_intel import MarketIntel
+from strategies.llm_completion import completion as llm_complete
 
 logger = structlog.get_logger(__name__)
 
@@ -274,19 +275,38 @@ class DebateEngine:
         return None
 
     async def _llm_turn(self, system_prompt: str, user_message: str) -> tuple[str, str]:
-        """One debate turn: Ollama first, then Claude. Returns (text, 'ollama'|'claude'|'none')."""
-        ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
-        if ollama_host:
-            o = await self._call_ollama(system_prompt, user_message)
-            if o:
-                return o, "ollama"
-        if not self._api_key:
-            logger.warning("debate_no_llm_available — Ollama down and no ANTHROPIC_API_KEY")
+        """One debate turn: routes through central LLM router (Ollama first, cloud fallback).
+
+        Returns (text, 'ollama'|'claude'|'openai'|'none').
+        """
+        try:
+            result = await llm_complete(
+                prompt=user_message,
+                system_prompt=system_prompt,
+                complexity="complex",
+                max_tokens=1024,
+            )
+            text = result.get("content", result.get("text", ""))
+            provider = result.get("provider", "unknown")
+            if provider == "ollama":
+                return text, "ollama"
+            elif provider in ("anthropic", "claude"):
+                return text, "claude"
+            elif text:
+                return text, provider
             return "", "none"
-        if ollama_host:
-            logger.warning("debate_using_claude — Ollama was unavailable")
-        text = await self._call_claude_direct(system_prompt, user_message)
-        return text, "claude"
+        except Exception as exc:
+            logger.warning("debate_llm_router_failed", error=str(exc)[:100])
+            # Fallback: try direct Ollama then Claude
+            ollama_host = os.environ.get("OLLAMA_HOST", "").strip()
+            if ollama_host:
+                o = await self._call_ollama(system_prompt, user_message)
+                if o:
+                    return o, "ollama"
+            if not self._api_key:
+                return "", "none"
+            text = await self._call_claude_direct(system_prompt, user_message)
+            return text, "claude"
 
     async def _call_claude_direct(self, system_prompt: str, user_message: str) -> str:
         """Direct Claude API call (paid fallback)."""
