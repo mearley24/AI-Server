@@ -1,3 +1,5 @@
+> **Before starting:** Read CLAUDE.md at the repo root. Follow every rule in it, especially the Shell/Terminal section. No heredocs, no multi-line quoted strings, no inline interpreters, bounded commands only.
+
 ---
 description: Import ChatGPT conversation history into Cortex memory system
 ---

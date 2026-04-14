@@ -1,3 +1,5 @@
+> **Before starting:** Read CLAUDE.md at the repo root. Follow every rule in it, especially the Shell/Terminal section. No heredocs, no multi-line quoted strings, no inline interpreters, bounded commands only.
+
 # Cline Prompt: Replace Mobile API Monolith with Slim Gateway
 
 ## Objective
