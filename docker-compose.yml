@@ -1,6 +1,6 @@
 # =============================================================================
 # AI-Server Docker Compose
-# Active services: 20
+# Active services: 21
 # =============================================================================
 
 services:
@@ -493,8 +493,7 @@ services:
       - ./cortex:/app/cortex
       - ./data/cortex:/data/cortex
       - ./data/openclaw:/app/data/openclaw:ro
-      - ./tools:/app/tools
-      - ./knowledge:/app/knowledge
+      - ./polymarket-bot/knowledge:/app/knowledge:ro
     environment:
       - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - CORTEX_PORT=8102
@@ -504,9 +503,6 @@ services:
       - EMAIL_MONITOR_URL=http://email-monitor:8092
       - CALENDAR_AGENT_URL=http://calendar-agent:8094
       - OPENCLAW_URL=http://openclaw:3000
-      - PROPOSALS_URL=http://proposals:8091
-      - CLIENT_PORTAL_URL=http://client-portal:8096
-      - MARKUP_URL=http://host.docker.internal:8088
     depends_on:
       redis:
         condition: service_healthy
@@ -687,6 +683,45 @@ services:
       options:
         max-size: "5m"
         max-file: "3"
+
+  cortex-autobuilder:
+    build:
+      context: .
+      dockerfile: integrations/cortex_autobuilder/Dockerfile
+    container_name: cortex-autobuilder
+    ports:
+      - "127.0.0.1:8115:8115"
+    volumes:
+      - ./integrations:/app/integrations
+      - ./openclaw:/app/openclaw
+      - ./data:/data
+    environment:
+      - CORTEX_URL=http://cortex:8102
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - LLM_ROUTER_MODE=local_first
+      - AUTOBUILDER_PORT=8115
+      - MAX_QUESTIONS_PER_HOUR=30
+      - GENERATION_INTERVAL_MINUTES=60
+    depends_on:
+      cortex:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8115/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 networks:
   default:
