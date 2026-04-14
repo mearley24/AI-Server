@@ -744,6 +744,19 @@ async def x_intel_signals() -> dict[str, Any]:
     return {"signals": signals, "count": len(signals)}
 
 
+@router.get("/api/x-intel/performance")
+async def x_intel_performance() -> dict[str, Any]:
+    """Signal tracking performance metrics."""
+    try:
+        from src.signal_tracker import get_signal_summary, get_author_leaderboard
+        return {
+            "summary": get_signal_summary(),
+            "leaderboard": get_author_leaderboard(10),
+        }
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
+
+
 @router.get("/strategies/status")
 async def strategies_status() -> dict[str, Any]:
     """Per-strategy status: bankroll allocation, P/L, positions, last tick."""

@@ -1285,175 +1285,49 @@ class Orchestrator:
     # Daily briefing
     # ------------------------------------------------------------------
     async def maybe_send_briefing(self):
-        """Send daily briefing at 6 AM MT. Persists delivery state and retries on failure."""
+        """Send intel briefing at 7 AM MT. Persists delivery state and retries on failure."""
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
         if self.last_briefing_date == today:
             return
 
+        # Only send between 6:50 AM and 7:30 AM MT
+        if not (6 <= now.hour <= 7 and (now.hour == 7 and now.minute <= 30 or now.hour == 6 and now.minute >= 50)):
+            return
+
         # Reset daily auto-responder counters once per day
         self._auto_responder_stats["drafts_created_today"] = 0
         self._auto_responder_stats["errors_today"] = 0
 
-        hour = int(os.getenv("BRIEFING_HOUR", "6"))
-        if not (now.hour == hour and now.minute < 10):
-            return
-
-        logger.info("Generating daily briefing")
-
-        trading_summary = ""
-        project_health = ""
         try:
-            from trade_learner import generate_trading_summary
-
-            trading_summary = await asyncio.to_thread(generate_trading_summary, self._redis_url)
-        except Exception as e:
-            logger.debug("trade_learner: %s", e)
-        try:
-            from project_learner import generate_project_health
-
-            project_health = await asyncio.to_thread(generate_project_health, self._redis_url)
-        except Exception as e:
-            logger.debug("project_learner: %s", e)
-
-        briefing_parts = [
-            f"=== Daily Briefing — {today} ===\n",
-            "TRADING:\n",
-            trading_summary or "(unavailable)",
-            "\nPROJECTS:\n",
-            project_health or "(unavailable)",
-            "\n---\nGood morning — here's your daily briefing:\n",
-        ]
-
-        try:
-            resp = await self.http.get(f"{SERVICES['email']}/emails/summary")
-            if resp.status_code == 200:
-                briefing_parts.append(f"Emails: {resp.json()}")
-        except Exception:
-            pass
-
-        try:
-            resp = await self.http.get(f"{SERVICES['calendar']}/calendar/today")
-            if resp.status_code == 200:
-                cal = resp.json()
-                events = cal if isinstance(cal, list) else cal.get("events", [])
-                briefing_parts.append(f"Calendar: {len(events)} events today")
-                for e in events[:5]:
-                    title = e.get("title", e.get("summary", ""))
-                    start = e.get("start", e.get("start_time", ""))
-                    briefing_parts.append(f"  - {title} at {start}")
-        except Exception:
-            pass
-
-        try:
-            resp = await self.http.get(f"{SERVICES['dtools']}/pipeline")
-            if resp.status_code == 200:
-                pipe = resp.json()
-                opps = pipe.get("opportunities", [])
-                briefing_parts.append(f"Pipeline: {len(opps)} open opportunities")
-        except Exception:
-            pass
-
-        if self._memory:
-            try:
-                trading_mem = self._memory.recall("trading_bot_status", category="trading_insight", limit=1)
-                if trading_mem:
-                    briefing_parts.append(f"Trading: {trading_mem[0]['value']}")
-            except Exception:
-                pass
-
-        if self._job_worker:
-            try:
-                active = self._job_worker._jobs.get_active_jobs()
-                if active:
-                    briefing_parts.append(f"Active jobs: {len(active)}")
-                    for j in active[:5]:
-                        briefing_parts.append(
-                            f"  - {j['client_name']}: {j['project_name'] or '(unnamed)'} [{j['phase']}]"
-                        )
-            except Exception:
-                pass
-
-        if self._health_failures:
-            down = [f"{k} ({v} ticks)" for k, v in self._health_failures.items()]
-            briefing_parts.append(f"Services down: {', '.join(down)}")
-        else:
-            briefing_parts.append("All services healthy")
-
-        try:
-            from pattern_engine import load_patterns
-
-            briefing_parts.append("\n— This week (decisions) —")
-            briefing_parts.append(
-                self._journal().weekly_digest_text(patterns=load_patterns(self._data_dir))
-            )
-        except Exception:
-            pass
-        if self._token_tracker:
-            try:
-                ts = self._token_tracker.summary()
-                briefing_parts.append(
-                    "Tokens today: %(tokens_used)d / %(budget)d (remaining %(remaining)d)" % ts
+            from intel_briefing import send_intel_briefing
+            result = await asyncio.to_thread(send_intel_briefing)
+            if result.get("status") in ("sent", "sent_fallback"):
+                self.last_briefing_date = today
+                logger.info("intel_briefing_delivered result=%s", result)
+                await self._redis_publish(
+                    "events:system",
+                    {"type": "briefing.delivered", "data": {"date": today, "length": result.get("length", 0)}},
                 )
-            except Exception:
-                pass
-        try:
-            from cost_tracker import CostTracker
-
-            ws = CostTracker(self._data_dir).get_weekly_summary()
-            if ws:
-                briefing_parts.append(
-                    "Costs (7d) by category: " + ", ".join(f"{k}=${v:.2f}" for k, v in ws.items())
+                # Run daily approval drain after briefing is confirmed delivered.
+                try:
+                    from approval_drain import drain_stale_approvals
+                    drain_result = await drain_stale_approvals()
+                    expired = drain_result.get("expired", 0)
+                    remaining = drain_result.get("remaining", 0)
+                    if expired > 0:
+                        logger.info("approval_drain expired=%d remaining=%d", expired, remaining)
+                except Exception as exc:
+                    logger.debug("approval_drain_error: %s", exc)
+            else:
+                logger.warning("intel_briefing_failed result=%s", result)
+                await self._redis_publish(
+                    "events:system",
+                    {"type": "briefing.delivery_failed", "data": {"date": today, "result": str(result)}},
                 )
-        except Exception:
-            pass
-
-        briefing = "\n".join(briefing_parts)
-        result = await self.notify("briefing", briefing)
-
-        delivered = isinstance(result, dict) and result.get("ok", False)
-        status = {
-            "last_date": today,
-            "delivered": delivered,
-            "length": len(briefing),
-            "timestamp": datetime.now().isoformat(),
-            "http_status": result.get("status_code") if isinstance(result, dict) else None,
-        }
-
-        try:
-            status_path = self._data_dir / "briefing_status.json"
-            status_path.parent.mkdir(parents=True, exist_ok=True)
-            status_path.write_text(json.dumps(status), encoding="utf-8")
         except Exception as exc:
-            logger.debug("briefing_status write: %s", exc)
-
-        if delivered:
-            self.last_briefing_date = today
-            logger.info("Daily briefing delivered for %s (%d chars)", today, len(briefing))
-            await self._redis_publish(
-                "events:system",
-                {"type": "briefing.delivered", "data": {"date": today, "length": len(briefing)}},
-            )
-            # Run daily approval drain after briefing is confirmed delivered.
-            try:
-                from approval_drain import drain_stale_approvals
-
-                drain_result = await drain_stale_approvals()
-                expired = drain_result.get("expired", 0)
-                remaining = drain_result.get("remaining", 0)
-                if expired > 0:
-                    logger.info(
-                        "approval_drain expired=%d remaining=%d", expired, remaining
-                    )
-            except Exception as exc:
-                logger.debug("approval_drain_error: %s", exc)
-        else:
-            logger.warning("Briefing delivery failed — will retry next tick")
-            await self._redis_publish(
-                "events:system",
-                {"type": "briefing.delivery_failed", "data": {"date": today, "error": str(result)}},
-            )
+            logger.error("intel_briefing_error error=%s", str(exc)[:200])
 
     # ------------------------------------------------------------------
     # Notification helper

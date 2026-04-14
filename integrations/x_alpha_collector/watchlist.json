@@ -1,6 +1,6 @@
 {
   "description": "Curated X accounts for Polymarket/prediction market alpha",
-  "last_updated": "2026-04-11",
+  "last_updated": "2026-04-14",
   "accounts": {
     "polymarket_whales": {
       "description": "Top Polymarket traders with >$100k PnL",
@@ -36,7 +36,10 @@
         "StarsAndStripes",
         "NateSilver538",
         "EuroMcKinney",
-        "PredictHQ"
+        "PredictHQ",
+        "theo_polymarket",
+        "norbertmilisits",
+        "StarPoly_"
       ]
     },
     "trading_alpha": {
@@ -45,11 +48,12 @@
         "DefiIgnas",
         "Route2FI",
         "CryptoCobain",
-        "coaborneogadget",
         "whale_alert",
         "WatcherGuru",
         "lookonchain",
-        "EmberCN"
+        "EmberCN",
+        "0xMert_",
+        "taikimaeda2"
       ]
     },
     "ai_agents_infra": {
@@ -57,20 +61,15 @@
       "handles": [
         "AnthropicAI",
         "OpenAI",
-        "kaborneogadget",
         "cursor_ai",
-        "windaborneog",
-        "replaborneog"
+        "LangChainAI"
       ]
     },
     "macro_and_weather": {
       "description": "Fed, macro, weather for weather_trader strategy",
       "handles": [
         "NWSStormReports",
-        "NWS",
-        "CMaborneogGroup",
-        "zaborneog",
-        "NickTimaborneog"
+        "NWS"
       ]
     }
   }

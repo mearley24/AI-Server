@@ -524,6 +524,9 @@ class PolymarketCopyTrader:
         # ── Whale signal scanner (set externally via set_whale_scanner) ──
         self._whale_scanner = None
 
+        # ── X Intel Processor (set externally via set_x_intel) ──
+        self._x_intel = None  # Set via set_x_intel() after startup
+
         # ── Wallet quality decay — re-score every 30 minutes ──────────
         self._last_wallet_refresh: float = 0.0
         self._wallet_refresh_interval: float = 1800.0  # 30 minutes
@@ -597,6 +600,11 @@ class PolymarketCopyTrader:
     def set_whale_scanner(self, scanner) -> None:
         """Inject the whale scanner engine (called by main.py after both are initialized)."""
         self._whale_scanner = scanner
+
+    def set_x_intel(self, x_intel) -> None:
+        """Wire the X Intel Processor for signal-aware trading."""
+        self._x_intel = x_intel
+        logger.info("x_intel_wired_to_copytrade")
 
     async def stop(self) -> None:
         self._running = False
@@ -2137,6 +2145,46 @@ class PolymarketCopyTrader:
             except Exception as exc:
                 logger.debug("metar_check_error", error=str(exc)[:80])
 
+        # ── X-Intel signal boost ──
+        x_boost = None
+        matched_keyword = ""
+        if self._x_intel is not None:
+            try:
+                x_boost = self._x_intel.get_market_boost(market_question)
+                if x_boost is not None:
+                    x_confidence = x_boost.get("confidence", 0)
+                    x_direction = x_boost.get("direction", "")
+                    x_author = x_boost.get("author", "unknown")
+                    matched_keyword = x_boost.get("keyword", "")
+
+                    # Copytrade always buys YES tokens
+                    trade_side = "yes"
+                    if x_direction == trade_side:
+                        # Intel agrees — boost size_usd by up to 20%
+                        boost_pct = min(x_confidence * 0.2, 0.20)
+                        size_usd *= (1.0 + boost_pct)
+                        logger.info(
+                            "x_intel_boost_applied",
+                            market=market_question[:60],
+                            author=x_author,
+                            x_confidence=round(x_confidence, 2),
+                            boost_pct=round(boost_pct, 3),
+                            new_size=round(size_usd, 2),
+                        )
+                    elif x_direction and x_direction != trade_side:
+                        # Intel disagrees — suppress by 30%
+                        size_usd *= 0.70
+                        logger.info(
+                            "x_intel_suppress_applied",
+                            market=market_question[:60],
+                            author=x_author,
+                            x_direction=x_direction,
+                            trade_side=trade_side,
+                            new_size=round(size_usd, 2),
+                        )
+            except Exception as exc:
+                logger.debug("x_intel_boost_error", error=str(exc)[:80])
+
         loop = asyncio.get_event_loop()
 
         # Use the wallet's trade price directly
@@ -2348,6 +2396,29 @@ class PolymarketCopyTrader:
             strategy="copytrade",
         )
         self._pnl_tracker.record_trade(pnl_trade)
+
+        # Record signal-influenced trade for performance tracking
+        if x_boost is not None:
+            try:
+                from src.signal_tracker import record_signal_trade
+                record_signal_trade(
+                    signal={
+                        "author": x_boost.get("author", ""),
+                        "keyword": matched_keyword,
+                        "direction": x_boost.get("direction", ""),
+                        "confidence": x_boost.get("confidence", 0),
+                        "relevance": x_boost.get("relevance", 0),
+                        "timestamp": x_boost.get("timestamp", 0),
+                    },
+                    trade={
+                        "market": market_question,
+                        "side": "yes",
+                        "price": price,
+                        "size_usd": size_usd,
+                    },
+                )
+            except Exception as exc:
+                logger.debug("signal_tracker_record_failed", error=str(exc)[:80])
 
         # Send notification with full context
         # Position lifecycle info — category-specific TP/SL

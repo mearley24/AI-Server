@@ -500,6 +500,14 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.warning("x_intel_processor_failed", error=str(exc)[:100])
 
+    # Wire x_intel boost into copytrade strategy for signal-aware position sizing
+    try:
+        copytrade_strat = (getattr(deps, "strategies", None) or {}).get("copytrade")
+        if copytrade_strat is not None and hasattr(deps, "x_intel") and hasattr(copytrade_strat, "set_x_intel"):
+            copytrade_strat.set_x_intel(deps.x_intel)
+    except Exception as exc:
+        log.warning("x_intel_copytrade_wire_failed", error=str(exc)[:100])
+
     await orderbook.start()
     await latency_detector.start()
     await order_flow.start()

@@ -46,7 +46,7 @@ AI-Server/
 │   ├── set-env.sh         # Safe .env key setter
 │   ├── api-post.sh        # JSON POST helper (no inline JSON)
 │   └── bob-watchdog.sh    # Service watchdog
-├── docker-compose.yml     # 19 containers (cortex replaced mission-control in Prompt S)
+├── docker-compose.yml     # 21 containers (rsshub + x-alpha-collector added in x-intake loop)
 ├── .clinerules            # Cline context (kept for compatibility)
 ├── CLAUDE.md              # THIS FILE — Claude Code reads this first
 └── .cursor/prompts/       # Task prompts (A through P, plus operational)
@@ -58,7 +58,7 @@ AI-Server/
 
 | Layer | Technology |
 |---|---|
-| Runtime | Docker Compose, 19 containers on Mac Mini M4 ("Bob") |
+| Runtime | Docker Compose, 21 containers on Mac Mini M4 ("Bob") |
 | Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
 | AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
 | Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db) |
@@ -161,6 +161,8 @@ AI-Server/
 | clawwork | 8097 | Python | Background workflow runner |
 | knowledge-scanner | 8100 | Python | Symphony knowledge ingest |
 | x-intake | 8101 | Python | X/Twitter link analysis |
+| rsshub | 1200 (internal) | Node.js | RSS feed proxy for X accounts |
+| x-alpha-collector | — | Python | Monitors 40+ X accounts every 10 min via RSSHub |
 | intel-feeds | 8765 | Python | Intel RSS aggregator |
 | context-preprocessor | 8028 | Python | Pre-filter for agent context |
 | remediator | 8090 | Python | Auto-remediation watchdog |

@@ -1,6 +1,6 @@
 # =============================================================================
 # AI-Server Docker Compose
-# Active services: 15
+# Active services: 17
 # =============================================================================
 
 services:
@@ -630,6 +630,59 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: rsshub
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - CACHE_TYPE=memory
+      - CACHE_EXPIRE=600
+      - REQUEST_TIMEOUT=30000
+      - PROXY_URI=
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:1200"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  x-alpha-collector:
+    build:
+      context: ./integrations/x_alpha_collector
+    container_name: x-alpha-collector
+    restart: unless-stopped
+    environment:
+      - RSSHUB_URL=http://rsshub:1200
+      - X_INTAKE_URL=http://x-intake:8101
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - POLL_INTERVAL_SECONDS=600
+      - SEEN_DB_PATH=/data/x_alpha_seen.json
+      - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
+    volumes:
+      - ./data/x_intake:/data
+    depends_on:
+      rsshub:
+        condition: service_healthy
+      x-intake:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   client-portal:
     build: ./client-portal
