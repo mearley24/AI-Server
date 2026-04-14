@@ -79,6 +79,26 @@ AI-Server/
 
 ### Shell and Terminal
 - **All scripts must be zsh-compatible.** Matt runs directly in Cline/Claude Code terminal on macOS.
+- **NEVER use heredocs (`<<EOF`, `<<'EOF'`, `<< 'DELIM'`).** Cline's zsh terminal locks up on heredoc syntax, leaving the session stuck at `heredoc>` or `dquote>` prompts that require manual intervention. This is the single most common session-killer.
+- **NEVER use multi-line quoted strings in shell commands.** Any string with a newline inside quotes (`"line1\nline2"` via literal newline) triggers `dquote>` lock-up in zsh. Always use `printf` with `\n`, or write content to a file using `python3 -c` or `tee` with escaped newlines.
+- **To create multi-line files, use one of these patterns:**
+  ```zsh
+  # GOOD: python3 one-liner
+  python3 -c "open('file.txt','w').write('line1\nline2\nline3\n')"
+
+  # GOOD: printf with escaped newlines
+  printf 'line1\nline2\nline3\n' > file.txt
+
+  # GOOD: multiple single-line appends
+  echo 'line1' > file.txt
+  echo 'line2' >> file.txt
+
+  # BAD — locks terminal:
+  cat <<EOF > file.txt    # NEVER DO THIS
+  cat << 'EOF' > file.txt # NEVER DO THIS
+  echo "multi
+  line" > file.txt       # NEVER DO THIS
+  ```
 - **No interactive editors.** Never use vim, nano, or `crontab -e`. One-liner commands only.
 - **No inline JSON in curl commands.** Write JSON to a temp file first, then `curl -d @file`. Shell escaping breaks every time (lesson 19). Use `scripts/api-post.sh` for API calls.
 - **Full paths in launchd scripts.** Always use `/usr/local/bin/docker`, `/opt/homebrew/bin/python3`, etc. Launchd has minimal PATH (lesson 24).
@@ -191,6 +211,7 @@ AI-Server/
 | Document pricing out of sync | No staleness detection across doc types | Doc staleness tracker flags stale docs |
 | Cortex orphaned from compose | Service running but not in docker-compose.yml | Every service MUST be defined in docker-compose.yml |
 | Service reports unhealthy in compose | Missing `/health` endpoint in the app | Every service MUST have a `GET /health` endpoint matching its healthcheck path |
+| Terminal stuck at `heredoc>` or `dquote>` | Used `<<EOF` heredoc or multi-line quoted string in zsh | NEVER use heredocs or multi-line quotes. Use `python3 -c` or `printf` with `\n` instead. This is the most common session-killer. |
 
 ---
 

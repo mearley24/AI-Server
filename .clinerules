@@ -59,6 +59,15 @@ AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration
 - **No interactive editors** — never use vim, nano, or crontab -e. One-liner commands only.
 - Every new service MUST have a `GET /health` endpoint returning `{"status":"ok"}` matching its Docker healthcheck path.
 
+### CRITICAL: Shell / Terminal Rules (zsh)
+- **NEVER use heredocs (`<<EOF`, `<<'EOF'`, `<< 'DELIM'`).** Cline's zsh terminal locks up on heredoc syntax, leaving the session stuck at `heredoc>` or `dquote>` prompts that require manual Ctrl+C. This is the single most common session-killer.
+- **NEVER use multi-line quoted strings in shell commands.** Any string with a literal newline inside quotes triggers `dquote>` lock-up. Always use `printf` with `\n`, or write content using `python3 -c`.
+- **To create multi-line files, use ONLY these patterns:**
+  - `python3 -c "open('file.txt','w').write('line1\nline2\nline3\n')"`
+  - `printf 'line1\nline2\nline3\n' > file.txt`
+  - Multiple single-line `echo` appends: `echo 'line1' > f; echo 'line2' >> f`
+- **No inline JSON in curl commands.** Write JSON to a temp file first, then `curl -d @file`.
+
 ### Git Rules
 - ALWAYS use `bash scripts/pull.sh` instead of bare `git pull`
 - Commit messages: imperative mood, 72 chars max subject
