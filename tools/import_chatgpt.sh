@@ -1,7 +1,4 @@
 #!/bin/zsh
-# Import ChatGPT conversations into Cortex
-# Usage: zsh tools/import_chatgpt.sh /path/to/conversations.json
-
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,7 +26,6 @@ fi
 echo "Importing ChatGPT conversations from: $JSON_FILE"
 echo "Target: Cortex memory system"
 
-# Run inside the cortex container (which has Redis access)
 docker cp "$JSON_FILE" cortex:/tmp/conversations.json
 docker cp "$AI_SERVER_DIR/tools/chatgpt_to_cortex.py" cortex:/tmp/chatgpt_to_cortex.py
 

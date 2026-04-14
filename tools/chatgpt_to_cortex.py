@@ -94,19 +94,15 @@ def summarize_conversation(title: str, messages: list[dict], max_chars: int = 20
     """Create a compact summary of the conversation for memory storage."""
     lines = [f"Conversation: {title}"]
 
-    # Include key user messages and assistant conclusions
     user_msgs = [m for m in messages if m["role"] == "user"]
     asst_msgs = [m for m in messages if m["role"] == "assistant"]
 
-    # First user message (the ask)
     if user_msgs:
         lines.append(f"User asked: {user_msgs[0]['text'][:300]}")
 
-    # Last assistant message (the conclusion/answer)
     if asst_msgs:
         lines.append(f"Result: {asst_msgs[-1]['text'][:500]}")
 
-    # Key decisions or action items
     for msg in messages:
         text_lower = msg["text"].lower()
         if any(kw in text_lower for kw in ["decided", "going with", "let's do", "approved", "confirmed", "we should"]):
@@ -144,12 +140,10 @@ def main():
             create_time = conv.get("create_time")
             messages = extract_messages(conv)
 
-            # Skip empty or very short conversations
             if len(messages) < 2:
                 stats["skipped"] += 1
                 continue
 
-            # Skip system-only or trivial conversations
             user_text = " ".join(m["text"] for m in messages if m["role"] == "user")
             if len(user_text) < 50:
                 stats["skipped"] += 1
@@ -158,7 +152,6 @@ def main():
             category, tags = categorize(title, messages)
             summary = summarize_conversation(title, messages)
 
-            # Determine importance based on conversation length and content
             importance = 5
             if len(messages) > 20:
                 importance = 7
@@ -167,7 +160,6 @@ def main():
             if any(kw in title.lower() for kw in ["symphony", "bob", "trading", "strategy", "architecture"]):
                 importance = min(importance + 1, 9)
 
-            # Create the date string for metadata
             date_str = ""
             if create_time:
                 date_str = datetime.fromtimestamp(create_time, tz=timezone.utc).strftime("%Y-%m-%d")
@@ -187,9 +179,8 @@ def main():
 
             if (i + 1) % 50 == 0:
                 print(f"  Processed {i+1}/{len(conversations)} — imported: {stats['imported']}, skipped: {stats['skipped']}")
-                time.sleep(0.5)  # Don't flood Redis
+                time.sleep(0.5)
 
-            # Small delay to not overwhelm Cortex
             time.sleep(0.05)
 
         except Exception as e:
