@@ -80,6 +80,7 @@ class _Deps:
     platform_clients: dict[str, Any] = {}  # {"polymarket": ..., "kalshi": ..., "crypto": ...}
     redeemer: Any = None  # PolymarketRedeemer instance
     whale_scanner: Any = None  # ScannerEngine instance
+    treasury_manager: Any = None  # TreasuryManager instance
 
 
 deps = _Deps()
@@ -755,6 +756,33 @@ async def x_intel_performance() -> dict[str, Any]:
         }
     except Exception as exc:
         return {"error": str(exc)[:200]}
+
+
+# ── Treasury endpoints ────────────────────────────────────────────────
+
+@router.get("/treasury")
+async def get_treasury() -> dict[str, Any]:
+    """Current treasury state — balances, runway, monthly P&L."""
+    if not hasattr(deps, 'treasury_manager') or deps.treasury_manager is None:
+        return {"error": "Treasury not initialized"}
+    try:
+        state = await deps.treasury_manager.get_current_state()
+        from dataclasses import asdict
+        return asdict(state)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+@router.get("/treasury/monthly")
+async def get_treasury_monthly() -> dict[str, Any]:
+    """Monthly financial breakdown."""
+    if not hasattr(deps, 'treasury_manager') or deps.treasury_manager is None:
+        return {"error": "Treasury not initialized"}
+    try:
+        monthly = await deps.treasury_manager._get_monthly_hash()
+        return monthly
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 @router.get("/strategies/status")

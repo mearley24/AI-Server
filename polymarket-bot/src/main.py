@@ -587,6 +587,72 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.error("strategy_manager_start_failed", error=str(exc))
 
+    # ── Treasury system — profit reinvestment + bankroll scaling ──────────
+    treasury_manager = None
+    try:
+        from openclaw.treasury import TreasuryManager
+        treasury_manager = TreasuryManager()
+        await treasury_manager.update_state()
+        deps.treasury_manager = treasury_manager
+        log.info("treasury_manager_initialized")
+    except Exception as exc:
+        log.warning("treasury_init_failed", error=str(exc)[:200])
+
+    # Treasury periodic loop — update state, evaluate alerts, check bankroll scaling
+    async def _treasury_loop():
+        """Run treasury state update, alerts, bankroll scaling, and weekly report every 15 minutes."""
+        _last_treasury_pnl = 0.0
+        await asyncio.sleep(120)  # wait 2 min after startup
+        while True:
+            try:
+                if treasury_manager:
+                    state = await treasury_manager.update_state()
+                    await treasury_manager.evaluate_alerts(state)
+                    decision = await treasury_manager.evaluate_bankroll_scaling()
+                    if decision.action != "hold":
+                        log.info(
+                            "treasury_bankroll_scaled",
+                            action=decision.action,
+                            new_pct=decision.new_max_position_pct,
+                            reason=decision.reason,
+                        )
+                    report = await treasury_manager.maybe_publish_weekly_report()
+                    if report:
+                        log.info("treasury_weekly_report_sent")
+
+                    # Feed daily realized P&L from strategy manager into treasury
+                    current_total = 0.0
+                    try:
+                        current_total = sum(
+                            p.total_pnl for p in (deps.strategy_manager._pnl.values() if deps.strategy_manager else [])
+                        )
+                        delta = current_total - _last_treasury_pnl
+                        if abs(delta) > 0.01:
+                            await treasury_manager.record_trading_pnl(delta)
+                            _last_treasury_pnl = current_total
+                    except Exception:
+                        pass
+
+                    # Record weekly P&L for bankroll scaling decisions (Sunday rollover)
+                    from datetime import datetime, timezone
+                    now_utc = datetime.now(timezone.utc)
+                    _last_weekly_day = getattr(_treasury_loop, '_last_weekly_day', -1)
+                    if now_utc.weekday() == 6 and _last_weekly_day != now_utc.day:
+                        _treasury_loop._last_weekly_day = now_utc.day
+                        try:
+                            await treasury_manager.record_weekly_pnl(current_total)
+                            log.info("treasury_weekly_pnl_recorded", pnl=round(current_total, 2))
+                        except Exception:
+                            pass
+
+            except Exception as exc:
+                log.warning("treasury_loop_error", error=str(exc)[:200])
+            await asyncio.sleep(900)  # every 15 minutes
+
+    if treasury_manager:
+        asyncio.create_task(_treasury_loop())
+        log.info("treasury_loop_started", interval_sec=900)
+
     # Start Redis TA signal listener
     redis_task = await _start_redis_listener(settings, signal_bus, log)
 
@@ -740,6 +806,9 @@ async def lifespan(app: FastAPI):
             await pclient.close()
         except Exception:
             pass
+
+    if treasury_manager:
+        await treasury_manager.close()
 
     audit_trail.close()
     log.info("polymarket_bot_stopped")

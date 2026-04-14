@@ -642,6 +642,23 @@ class StrategyManager:
         pnl = trade.pnl
         pnl_pct = trade.pnl_pct * 100
 
+        # Feed realized P&L into Treasury for profit allocation
+        try:
+            import redis as redis_sync
+            redis_url = os.environ.get("REDIS_URL", "")
+            if redis_url and pnl != 0:
+                rc = redis_sync.from_url(redis_url, decode_responses=True, socket_timeout=2)
+                rc.publish("treasury:trade_pnl", json.dumps({
+                    "strategy": strategy,
+                    "pnl": round(pnl, 4),
+                    "token_id": token_id,
+                    "market": market_question[:60] if market_question else "",
+                    "timestamp": time.time(),
+                }))
+                rc.close()
+        except Exception:
+            pass
+
         if pnl >= 20.0:
             self._alert(
                 f"BIG WIN [{strategy}] {market_question[:40]}\n"

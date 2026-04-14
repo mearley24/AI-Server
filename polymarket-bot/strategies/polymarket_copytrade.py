@@ -2010,6 +2010,20 @@ class PolymarketCopyTrader:
         hard_cap = 20.0 if in_sweet_spot else 15.0 if in_solid_bracket else 10.0
         size_usd = min(size_usd, hard_cap)
 
+        # Check if treasury has set a dynamic max position percentage
+        try:
+            import redis as redis_sync
+            redis_url = os.environ.get("REDIS_URL", "")
+            if redis_url:
+                rc = redis_sync.from_url(redis_url, decode_responses=True, socket_timeout=1)
+                treasury_max_pct = rc.get("treasury:max_position_pct")
+                rc.close()
+                if treasury_max_pct:
+                    max_position = float(treasury_max_pct) * self._bankroll
+                    size_usd = min(size_usd, max_position)
+        except Exception:
+            pass
+
         logger.info("copytrade_category_sizing", category=category, multiplier=cat_mult, tier_cap=tier_cap, esports=is_esports, high_conviction=high_conviction, bankroll_ratio=round(bankroll_ratio, 3), pre_scale_size=round(size_usd, 2), category_pnl=round(self._category_pnl.get(category, 0), 2))
 
         # ── Correlation + category caps (SKIPPED for high conviction) ──
