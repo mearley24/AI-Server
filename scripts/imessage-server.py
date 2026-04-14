@@ -78,14 +78,6 @@ _load_repo_env()
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
 
-# LLM Router — try to import from openclaw for caching + cost tracking
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "openclaw"))
-try:
-    from llm_router import completion as _llm_router_completion  # type: ignore
-    _HAS_ROUTER = True
-except (ImportError, Exception):
-    _HAS_ROUTER = False
-
 
 def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:
     """Local LLM completion via Ollama (/api/chat)."""
@@ -499,18 +491,7 @@ Content from %s:
                 return "Link: %s\n\n%s" % (url, text[:500])
             return "Link: %s\nCan't analyze — Ollama is down and no OpenAI API key." % url
 
-        if _HAS_ROUTER:
-            log.warning("[research] Ollama unavailable — falling back to LLM router")
-            try:
-                import asyncio
-                router_result = asyncio.run(_llm_router_completion(prompt=prompt, max_tokens=400, temperature=0.5))
-                content = router_result.get("content", router_result.get("text", ""))
-                if content:
-                    return content
-            except Exception as _re:
-                log.warning("[research] LLM router failed: %s", str(_re)[:100])
-
-        log.warning("[research] Falling back to OpenAI directly")
+        log.warning("[research] Ollama unavailable — falling back to OpenAI")
         data = json.dumps({
             "model": "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
