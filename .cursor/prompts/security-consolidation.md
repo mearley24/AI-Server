@@ -20,34 +20,51 @@ The knowledge-scanner runs Perplexity queries on a fixed topic list every 6 hour
 
 1. Open `integrations/cortex_autobuilder/daemon.py`
 
-2. Add a new background task `_topic_scanner_loop()` that runs every 6 hours (configurable via env `SCAN_INTERVAL_HOURS`, default `6`). This loop should:
-   - Query Perplexity via OpenRouter for each topic (reuse the existing researcher.py HTTP client pattern)
-   - Process results through Ollama using the existing `_call_ollama()` or the llm_router
+2. Add a new background task `_topic_scanner_loop()` that wakes up every 30 minutes and checks each topic's `frequency_hours` against its `last_scanned_at` timestamp (stored in a dict in memory, initialized to epoch 0 so all topics run on first boot). Only topics whose interval has elapsed get scanned on each wake. This loop should:
+   - Query Perplexity via OpenRouter for each due topic (reuse the existing researcher.py HTTP client pattern)
+   - Process results through Ollama using the existing `_call_ollama()` or the llm_router — Ollama is free, always prefer it
    - Store insights into cortex via the existing `_store_to_cortex()` function (POST to `{CORTEX_URL}/remember`)
    - Publish high-relevance findings (score >= 7) to Redis channel `notifications:knowledge`
+   - Update the topic's `last_scanned_at` after successful processing
+   - Add a 5-second delay between queries to avoid rate limits
 
-3. Create `integrations/cortex_autobuilder/scan_topics.py` containing the topic list migrated from `knowledge-scanner/scanner.py`:
+3. Create `integrations/cortex_autobuilder/scan_topics.py` containing the topic list migrated from `knowledge-scanner/scanner.py`. Each topic has its own `frequency_hours` — trading scans aggressively (every hour), AI tools every 2 hours, business topics every 4-6 hours, and slower-moving industries every 8-12 hours:
 ```python
 SCAN_TOPICS = [
     {
         "query": "latest Polymarket prediction market trading strategies edges techniques Reddit",
         "category": "trading",
+        "frequency_hours": 1,
     },
     {
         "query": "latest crypto market making strategies DeFi automated trading bots Reddit",
         "category": "trading",
+        "frequency_hours": 1,
     },
     {
-        "query": "latest smart home automation Control4 Savant Crestron trends innovations 2026",
-        "category": "smart_home",
-    },
-    {
-        "query": "latest RFID NFC IoT tracking innovations real-time location systems",
-        "category": "iot",
+        "query": "Polymarket new markets high volume emerging events today",
+        "category": "trading",
+        "frequency_hours": 1,
     },
     {
         "query": "latest AI agent orchestration frameworks tools multi-agent systems",
         "category": "ai_tools",
+        "frequency_hours": 2,
+    },
+    {
+        "query": "latest AI coding assistants developer tools automation 2026",
+        "category": "ai_tools",
+        "frequency_hours": 2,
+    },
+    {
+        "query": "latest smart home automation Control4 Savant Crestron trends innovations 2026",
+        "category": "smart_home",
+        "frequency_hours": 8,
+    },
+    {
+        "query": "latest RFID NFC IoT tracking innovations real-time location systems",
+        "category": "iot",
+        "frequency_hours": 12,
     },
 ]
 ```
@@ -72,7 +89,11 @@ Return a JSON array of objects. Return ONLY valid JSON, no markdown."""
 
 7. Add a `/scan/topics` GET endpoint that returns the current topic list.
 
-8. Update the autobuilder's health endpoint to include `"scanning_enabled": True` and `"scan_interval_hours"` in its response.
+8. Update the autobuilder's health endpoint to include `"scanning_enabled": True` and a `"topic_schedule"` dict showing each topic's category, frequency_hours, and last_scanned_at.
+
+9. Add env var `SCANNER_ENABLED` (default `true`). When `false`, the scanner loop sleeps without querying — easy kill switch if needed.
+
+10. All LLM processing MUST route through Ollama first (`OLLAMA_HOST` env var). Only fall back to cloud APIs if Ollama is unreachable. This keeps scanning essentially free 24/7.
 
 ### What NOT to do
 - Do NOT create a separate SQLite database. All insights go into cortex via the existing HTTP API.
@@ -281,7 +302,8 @@ Before committing, verify:
 6. `PORTS.md` exists at repo root
 7. `openclaw/context_cleaner.py` exists and has `clean_context()` function
 8. `integrations/cortex_autobuilder/scan_topics.py` exists with 5 topics
-9. `cortex-autobuilder/daemon.py` has `_topic_scanner_loop` function and `/scan` endpoint
+9. `integrations/cortex_autobuilder/daemon.py` has `_topic_scanner_loop` function and `/scan` endpoint
+10. Each topic in `scan_topics.py` has a `frequency_hours` field (1, 2, 8, or 12)
 
 ## Git Commit
 
