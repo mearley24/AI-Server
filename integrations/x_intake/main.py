@@ -752,6 +752,26 @@ async def transcripts_backfill_endpoint(body: dict = {}):
         return {"task_started": False, "error": str(exc)[:100]}
 
 
+# ── Bookmark Organizer ───────────────────────────────────────────────────────
+
+@app.post("/organize-bookmarks")
+async def organize_bookmarks(request: dict):
+    """Organize and ingest bookmarks into Cortex."""
+    try:
+        from bookmark_organizer import BookmarkOrganizer
+    except ImportError:
+        from integrations.x_intake.bookmark_organizer import BookmarkOrganizer
+
+    bookmarks_path = request.get("path", "/data/bookmarks.json")
+    organizer = BookmarkOrganizer(CORTEX_URL, bookmarks_path)
+    categorized = await organizer.categorize_all()
+    if not categorized:
+        return {"ok": False, "error": "no bookmarks found or file missing", "path": bookmarks_path}
+    result = await organizer.ingest_to_cortex(categorized)
+    result["ok"] = True
+    return result
+
+
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
