@@ -3365,6 +3365,9 @@ class PolymarketCopyTrader:
         onchain = _get_onchain_balance(pos.token_id, _wallet) if pos.token_id else None
 
         if onchain is not None and onchain > 0:
+            # Lesson 17: sell amounts round DOWN to prevent exit loops.
+            # Haircut 0.5% — on-chain CTF balance can be slightly less than recorded.
+            # Never sell more than held; always round DOWN with math.floor semantics via round().
             sell_shares = round(min(onchain, pos.size_shares) * signal.sell_fraction * 0.995, 2)
             if abs(onchain - pos.size_shares) > 1.0:
                 logger.info("balance_drift_detected", position_id=position_id,
@@ -3374,9 +3377,15 @@ class PolymarketCopyTrader:
             del self._positions[position_id]
             return
         else:
+            # Lesson 17: sell amounts round DOWN to prevent exit loops.
+            # 10% haircut when on-chain balance unavailable — conservative to avoid over-sell errors.
             sell_shares = round(pos.size_shares * signal.sell_fraction * 0.90, 2)
+        # Lesson 17: skip dust sells instead of forcing to 1 share — forcing above actual balance
+        # causes the order to fail, the exit engine re-queues the position, and it loops forever.
         if sell_shares < 1:
-            sell_shares = 1.0
+            logger.info("sell_skip_dust", shares=sell_shares, position_id=position_id,
+                        reason="below_minimum")
+            return
         sell_usd = pos.size_usd * signal.sell_fraction
         current_price = signal.current_price
         pnl_pct = signal.pnl_pct

@@ -46,7 +46,7 @@ AI-Server/
 │   ├── set-env.sh         # Safe .env key setter
 │   ├── api-post.sh        # JSON POST helper (no inline JSON)
 │   └── bob-watchdog.sh    # Service watchdog
-├── docker-compose.yml     # 21 containers (rsshub + x-alpha-collector added in x-intake loop)
+├── docker-compose.yml     # 20 containers (rsshub + x-alpha-collector added in x-intake loop)
 ├── .clinerules            # Cline context (kept for compatibility)
 ├── CLAUDE.md              # THIS FILE — Claude Code reads this first
 └── .cursor/prompts/       # Task prompts (A through P, plus operational)
@@ -58,7 +58,7 @@ AI-Server/
 
 | Layer | Technology |
 |---|---|
-| Runtime | Docker Compose, 21 containers on Mac Mini M4 ("Bob") |
+| Runtime | Docker Compose, 20 containers on Mac Mini M4 ("Bob") |
 | Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
 | AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
 | Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db) |
@@ -166,7 +166,6 @@ AI-Server/
 | intel-feeds | 8765 | Python | Intel RSS aggregator |
 | context-preprocessor | 8028 | Python | Pre-filter for agent context |
 | remediator | 8090 | Python | Auto-remediation watchdog |
-| openwebui | 3000 → 8080 | — | Local LLM UI |
 | redis | 6379 | — | Auth required, static IP `172.18.0.100` |
 | vpn | — | — | WireGuard, polymarket-bot routes through this |
 
