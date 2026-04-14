@@ -10,12 +10,15 @@ Everything else proxies to Docker services.
 
 import os
 import asyncio
+import hashlib
+import secrets
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
 import httpx
 import uvicorn
 
@@ -52,22 +55,130 @@ SERVICES = {
     "trading":       "http://localhost:8430",
 }
 
-AUTH_EXEMPT = {"/", "/health", "/docs", "/openapi.json"}
+AUTH_EXEMPT = {"/", "/health", "/docs", "/openapi.json", "/login", "/auth"}
+
+SESSION_COOKIE = "symphony_session"
+SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
+
+# In-memory session store (survives until process restarts, then re-login)
+_sessions: dict[str, float] = {}  # token -> expiry timestamp
+
+
+def _valid_session(cookie: str) -> bool:
+    """Check if a session cookie is valid and not expired."""
+    if not cookie:
+        return False
+    expiry = _sessions.get(cookie)
+    if expiry is None:
+        return False
+    if time.time() > expiry:
+        _sessions.pop(cookie, None)
+        return False
+    return True
+
+
+def _create_session() -> str:
+    """Create a new session token."""
+    token = secrets.token_urlsafe(32)
+    _sessions[token] = time.time() + SESSION_MAX_AGE
+    return token
 
 
 @app.middleware("http")
 async def auth_check(request: Request, call_next):
-    """Bearer token auth — skipped for public endpoints and when no token is configured."""
+    """Auth: bearer token, query param, or session cookie. Skipped for public endpoints."""
     if not API_AUTH_TOKEN:
         return await call_next(request)
     if request.url.path in AUTH_EXEMPT:
         return await call_next(request)
+
+    # 1. Session cookie
+    cookie = request.cookies.get(SESSION_COOKIE, "")
+    if _valid_session(cookie):
+        return await call_next(request)
+
+    # 2. Bearer header
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
+
+    # 3. Query param (also sets cookie so browser stays logged in)
     if not token:
         token = request.query_params.get("token", "")
+        if token == API_AUTH_TOKEN:
+            session = _create_session()
+            response = await call_next(request)
+            response.set_cookie(
+                SESSION_COOKIE, session,
+                max_age=SESSION_MAX_AGE, httponly=True, samesite="lax",
+            )
+            return response
+
     if token != API_AUTH_TOKEN:
+        # Redirect browsers to login page, return 401 for API clients
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            return RedirectResponse("/login")
         return JSONResponse(status_code=401, content={"error": "unauthorized"})
     return await call_next(request)
+
+
+LOGIN_PAGE = """
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Symphony Gateway</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0a0a0a; color: #e0e0e0;
+         display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .card { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 2rem;
+          max-width: 340px; width: 90%; text-align: center; }
+  h1 { font-size: 1.4rem; margin: 0 0 0.5rem; }
+  p { color: #888; font-size: 0.85rem; margin: 0 0 1.5rem; }
+  input { width: 100%; padding: 0.75rem; border: 1px solid #333; border-radius: 8px;
+          background: #111; color: #e0e0e0; font-size: 1rem; box-sizing: border-box;
+          margin-bottom: 1rem; -webkit-appearance: none; }
+  input:focus { outline: none; border-color: #5b8def; }
+  button { width: 100%; padding: 0.75rem; border: none; border-radius: 8px;
+           background: #5b8def; color: white; font-size: 1rem; cursor: pointer; }
+  button:active { background: #4a7dde; }
+  .err { color: #ef5b5b; font-size: 0.85rem; margin-top: 0.5rem; display: none; }
+</style>
+</head><body>
+<div class="card">
+  <h1>Symphony Gateway</h1>
+  <p>Enter your access token</p>
+  <form method="POST" action="/auth">
+    <input type="password" name="token" placeholder="Token" autocomplete="current-password" required>
+    <button type="submit">Sign In</button>
+  </form>
+  <div class="err" id="err">Invalid token</div>
+</div>
+<script>
+  if (location.search.includes("error=1")) document.getElementById("err").style.display="block";
+</script>
+</body></html>
+"""
+
+
+@app.get("/login")
+async def login_page():
+    """Simple login form for browser access."""
+    return HTMLResponse(LOGIN_PAGE)
+
+
+@app.post("/auth")
+async def auth_post(request: Request):
+    """Handle login form submission — set session cookie on success."""
+    form = await request.form()
+    submitted = (form.get("token") or "").strip()
+    if submitted != API_AUTH_TOKEN:
+        return RedirectResponse("/login?error=1", status_code=303)
+    session = _create_session()
+    response = RedirectResponse("/dashboard", status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE, session,
+        max_age=SESSION_MAX_AGE, httponly=True, samesite="lax",
+    )
+    return response
 
 
 @app.get("/")
