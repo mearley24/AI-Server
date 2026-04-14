@@ -121,6 +121,16 @@ class SportsArbStrategy(BaseStrategy):
                 "found_at": time.time(),
             }
 
+            # Skip arbs with less than $0.50 expected profit
+            _position_size = self._params["max_position_per_side"]
+            _combined_price = arb.get("combined", 1.0)
+            _expected_profit = _position_size * (1.0 - _combined_price)
+            if _expected_profit < 0.50:
+                tick_skipped += 1
+                self._arbs_skipped_today += 1
+                self._last_skip_reason = "profit_too_small"
+                continue
+
             # Step 3 — Size position
             size_a, size_b = self._size_position(arb)
             if size_a <= 0 or size_b <= 0:

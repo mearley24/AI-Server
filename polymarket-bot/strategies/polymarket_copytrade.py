@@ -348,22 +348,23 @@ class PolymarketCopyTrader:
         self._daily_category_losses: dict[str, float] = {}
         self._halted_categories: set[str] = set()
         self._CATEGORY_LOSS_LIMITS: dict[str, float] = {
-            "crypto_updown": 8.0,
-            "crypto_binary": 0.0,
-            "sports": 10.0,
-            "us_sports": 10.0,
-            "tennis": 5.0,
-            "weather": 25.0,
-            "politics": 10.0,
-            "geopolitics": 5.0,
-            "science": 5.0,
-            "entertainment": 5.0,
-            "other": 15.0,
-            "esports": 10.0,
-            "economics": 10.0,
-            "soccer_intl": 5.0,
-            "f1": 5.0,
-            "motorsport": 5.0,
+            "crypto_updown": 15.0,   # highest conviction — allow more room
+            "crypto": 15.0,
+            "crypto_binary": 0.0,    # still blocked
+            "esports": 5.0,          # cut from 10 to 5
+            "tennis": 3.0,
+            "sports": 0.0,           # ZERO — no sports losses allowed
+            "us_sports": 0.0,        # ZERO
+            "soccer_intl": 0.0,      # ZERO
+            "weather": 0.0,          # ZERO from copytrade (weather_trader is separate)
+            "politics": 3.0,         # cut from 10 to 3
+            "geopolitics": 2.0,      # cut from 5 to 2
+            "science": 2.0,
+            "entertainment": 2.0,    # cut from 5 to 2
+            "other": 5.0,            # cut from 15 to 5
+            "economics": 5.0,
+            "f1": 0.0,               # ZERO
+            "motorsport": 0.0,       # ZERO
         }
         self._min_resolution_hours = float(os.environ.get("MIN_RESOLUTION_HOURS", "0.5"))
 
@@ -727,21 +728,25 @@ class PolymarketCopyTrader:
     # Default category sizing multipliers — data-driven from 206 market analysis (2026-03-29)
     # Winners: crypto_updown +$57, esports +$28, tennis +$18, politics +$2
     # Losers: us_sports -$15 (40% WR), soccer_intl -$8 (40% WR), weather +$4 (barely)
+    # Data-driven multipliers from 3,500-trade analysis (2026-04-13)
+    # Categories sorted by ROI: only positive-ROI categories get >= 1.0x
     _DEFAULT_CATEGORY_MULTIPLIERS: dict[str, float] = {
-        "crypto_updown": 1.2,   # +$57 — best earner after both-sides fix
-        "crypto": 1.2,          # alias
-        "esports": 1.0,         # +$28 — big swings, keep moderate
-        "tennis": 1.3,          # +$18 — consistent edge from copied wallets
-        "politics": 1.5,        # +$2 — small sample but positive, high potential
-        "us_sports": 0.3,       # -$15, 40% WR — NBA/NFL/NHL/MLB spreads are coin flips
-        "soccer_intl": 0.2,     # -$8, 40% WR — international friendlies unpredictable
-        "sports": 0.5,          # generic sports fallback — conservative
-        "weather": 0.5,         # +$4 barely — exact temps hard, was 1.0x
-        "other": 1.0,           # baseline
-        "geopolitics": 1.2,     # similar to politics
-        "economics": 1.0,       # fed/rates markets
-        "science": 0.8,         # lower sample
-        "entertainment": 0.6,   # lowest confidence
+        "crypto_updown": 1.5,   # BTC brackets are the #1 winner (+$178 single trade)
+        "crypto": 1.5,          # alias — crypto price brackets have real edge
+        "esports": 0.8,         # -$32 but has big individual winners (+$67 BLG/JDG)
+        "tennis": 0.3,          # demote — not enough data to justify 1.3x
+        "politics": 0.3,        # -$31 across 18 losses — no proven edge
+        "us_sports": 0.0,       # DISABLED — 23% win rate, -$618, zero edge
+        "soccer_intl": 0.0,     # DISABLED — part of sports -$618 disaster
+        "sports": 0.0,          # DISABLED — generic sports is pure gambling
+        "weather": 0.0,         # DISABLED from copytrade — weather_trader handles its own
+        "other": 0.2,           # -$476 from "other" — nearly all losers
+        "geopolitics": 0.2,     # -$31, 0% win rate on world politics
+        "economics": 0.5,       # fed rates have some structure
+        "science": 0.3,         # low sample
+        "entertainment": 0.3,   # +$8, mixed results
+        "f1": 0.0,              # DISABLED — part of sports
+        "motorsport": 0.0,      # DISABLED — part of sports
     }
 
     def _category_size_multiplier(self, category: str) -> float:
@@ -874,6 +879,7 @@ class PolymarketCopyTrader:
                             wins=round(self._daily_wins, 2),
                             net_pnl=round(net, 2),
                             trades=self._daily_trades)
+            self._log_daily_category_summary()
             self._daily_spend = 0.0
             self._daily_wins = 0.0
             self._daily_realized_losses = 0.0
@@ -883,6 +889,26 @@ class PolymarketCopyTrader:
             self._daily_category_losses = {}
             self._halted_categories = set()
             self._daily_spend_reset_time = today_midnight
+
+    def _log_daily_category_summary(self) -> None:
+        """Log daily P&L by category to Cortex for tracking."""
+        try:
+            import redis
+            import json as _json
+            url = os.environ.get("REDIS_URL", "")
+            if not url:
+                return
+            r = redis.Redis.from_url(url, decode_responses=True, socket_connect_timeout=2)
+            summary = {
+                "type": "trading_daily_summary",
+                "category_pnl": dict(self._category_pnl),
+                "category_multipliers": dict(self._CATEGORY_MULTIPLIERS),
+                "halted_categories": list(self._halted_categories),
+                "total_positions": len(self._positions),
+            }
+            r.publish("ops:trading_summary", _json.dumps(summary, default=str))
+        except Exception:
+            pass
 
     # ── 1. Wallet Discovery & Scoring ────────────────────────────────────
 
@@ -1836,6 +1862,11 @@ class PolymarketCopyTrader:
             return False
         if price > max_entry_price:
             logger.info("copytrade_skip", reason="above_max_entry_price", price=price, max=max_entry_price, category=category, market=market_question[:40])
+            return False
+
+        # Minimum ROI filter — don't risk capital for tiny returns
+        if price > 0.80:
+            logger.info("copytrade_skip_low_roi", price=price, market=market_question[:50])
             return False
 
         # Guard: already have position in this market

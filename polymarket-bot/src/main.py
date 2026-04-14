@@ -297,19 +297,22 @@ async def lifespan(app: FastAPI):
         log.warning("market_scanner_init_failed", error=str(exc))
 
     # Weather Trader — standalone autonomous weather strategy using NOAA data
-    try:
-        from strategies.weather_trader import WeatherTraderStrategy
-        weather_trader = WeatherTraderStrategy(
-            client=client, settings=settings, scanner=scanner,
-            orderbook=orderbook, pnl_tracker=pnl_tracker,
-        )
-        if strategy_manager_enabled:
-            managed_strategies.append(("weather_trader", weather_trader))
-        else:
-            platform_strategies.append(("weather_trader", weather_trader))
-        log.info("strategy_loaded", strategy="weather_trader")
-    except Exception as exc:
-        log.warning("strategy_load_failed", strategy="weather_trader", error=str(exc))
+    if settings.weather_trader_enabled:
+        try:
+            from strategies.weather_trader import WeatherTraderStrategy
+            weather_trader = WeatherTraderStrategy(
+                client=client, settings=settings, scanner=scanner,
+                orderbook=orderbook, pnl_tracker=pnl_tracker,
+            )
+            if strategy_manager_enabled:
+                managed_strategies.append(("weather_trader", weather_trader))
+            else:
+                platform_strategies.append(("weather_trader", weather_trader))
+            log.info("strategy_loaded", strategy="weather_trader")
+        except Exception as exc:
+            log.warning("strategy_load_failed", strategy="weather_trader", error=str(exc))
+    else:
+        log.warning("weather_trader_disabled", reason="Strategy lost $163 across 200 markets at 48% win rate. Set WEATHER_TRADER_ENABLED=true to re-enable.")
 
     # CVD/Arb Combined — order-flow divergence plus spread opportunities
     try:

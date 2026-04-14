@@ -141,6 +141,21 @@ class ExitEngine:
         effective_sl = tracker._sl_override if tracker._sl_override > 0 else self._sl
         effective_time_hours = tracker._time_hours_override if tracker._time_hours_override > 0 else self._time_hours
 
+        # Auto-exit positions older than 14 days at current market price
+        # Dead money in long-duration markets should be recycled
+        position_age_days = (now - tracker.entry_time) / 86400
+        if position_age_days > 14:
+            return ExitSignal(
+                position_id=position_id,
+                reason="stale_position",
+                sell_fraction=1.0,
+                current_price=current_price,
+                entry_price=entry,
+                pnl_pct=pnl_pct,
+                hold_time_hours=hold_hours,
+                peak_price=tracker.peak_price,
+            )
+
         # 0. HOLD RULE: cheap entries are asymmetric binary bets.
         # They either resolve at $1.00 (4-10x) or $0.00.
         # Trailing stops and partial TPs destroy the asymmetry.

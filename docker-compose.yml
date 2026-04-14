@@ -529,7 +529,6 @@ services:
       - EMAIL_MONITOR_URL=http://email-monitor:8092
       - CALENDAR_AGENT_URL=http://calendar-agent:8094
       - OPENCLAW_URL=http://openclaw:3000
-      - POLY_WALLET_ADDRESS=0xa791E3090312981A1E18ed93238e480a03E7C0d2
     depends_on:
       redis:
         condition: service_healthy

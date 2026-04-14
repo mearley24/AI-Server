@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     flash_crash_stop_loss: float = Field(default=0.10, description="Stop-loss delta")
 
     # --- Weather Trader ---
-    weather_trader_enabled: bool = Field(default=False, description="Enable weather trader strategy")
+    weather_trader_enabled: bool = Field(default=False, description="DISABLED — 48% win rate, -$163 P&L across 200 markets. Re-enable only with improved NOAA model.")
     weather_noaa_stations: list[str] = Field(
         default_factory=lambda: ["KNYC", "KORD", "KLAX", "KDEN", "KJFK", "KATL", "KMIA"],
         description="NOAA station IDs to track",
@@ -87,9 +87,9 @@ class Settings(BaseSettings):
     visual_crossing_api_key: str = Field(default="", description="Optional Visual Crossing API key for faster data")
 
     # --- Sports Arb ---
-    sports_arb_arb_threshold: float = Field(default=0.995, description="Max combined price for arbitrage")
+    sports_arb_arb_threshold: float = Field(default=0.97, description="Max combined price for arbitrage — tightened from 0.995 to require genuine arb")
     sports_arb_scan_interval_seconds: float = Field(default=45.0, description="Scan interval in seconds")
-    sports_arb_max_position_per_side: float = Field(default=5000.0, description="Max position per side in USDC")
+    sports_arb_max_position_per_side: float = Field(default=10.0, description="Max position per side — reduced from 5000 to 10")
     sports_arb_slippage_tolerance: float = Field(default=0.005, description="Slippage tolerance")
     sports_arb_min_liquidity_shares: int = Field(default=100, description="Min liquidity in shares")
 
@@ -190,7 +190,7 @@ class Settings(BaseSettings):
     # --- Polymarket Copy-Trading Strategy ---
     copytrade_enabled: bool = Field(default=True, description="Enable Polymarket copy-trading")
     copytrade_size_usd: float = Field(default=3.0, description="USD per copied trade — tiered by wallet quality and entry price bracket")
-    copytrade_max_positions: int = Field(default=60, description="Max concurrent copied positions")
+    copytrade_max_positions: int = Field(default=30, description="Max concurrent copied positions — concentrated, not spray-and-pray")
     copytrade_min_win_rate: float = Field(default=0.60, description="Minimum wallet win rate to copy")
     copytrade_min_trades: int = Field(default=20, description="Minimum resolved trades for wallet to qualify")
     copytrade_scan_interval_hours: float = Field(default=6.0, description="Hours between wallet re-scans")
