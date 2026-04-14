@@ -34,7 +34,7 @@ logger = logging.getLogger("x_alpha_collector")
 
 RSSHUB_BASE = os.getenv("RSSHUB_URL", "http://rsshub:1200")
 X_INTAKE_URL = os.getenv("X_INTAKE_URL", "http://x-intake:8101")
-REDIS_URL = os.getenv("REDIS_URL", "redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_SECONDS", "600"))  # 10 minutes
 WATCHLIST_PATH = Path(__file__).parent / "watchlist.json"
 SEEN_DB_PATH = Path(os.getenv("SEEN_DB_PATH", "/data/x_alpha_seen.json"))

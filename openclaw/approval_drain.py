@@ -39,7 +39,7 @@ DB_CANDIDATES = [
 
 REDIS_URL = os.environ.get(
     "REDIS_URL",
-    "redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379",
+    "redis://redis:6379",
 )
 CORTEX_URL = os.environ.get("CORTEX_URL", "http://cortex:8102")
 

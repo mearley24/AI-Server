@@ -20,7 +20,7 @@ PRIORITY_WALLET_ADDRESSES: tuple[str, ...] = (
 
 _PRIORITY_SET = {a.lower() for a in PRIORITY_WALLET_ADDRESSES}
 
-REDIS_URL_DEFAULT = "redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379"
+REDIS_URL_DEFAULT = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 
 def _redis_url() -> str:

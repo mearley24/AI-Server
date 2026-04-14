@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     debate_max_debate_time_seconds: float = Field(default=240.0, description="Max debate duration (local LLMs often need 60s+)")
 
     # --- Redis ---
-    redis_url: str = Field(default="redis://:d19c9b0faebeee9927555eb8d6b28ec9@host.docker.internal:6379", description="Redis connection URL")
+    redis_url: str = Field(default_factory=lambda: __import__("os").environ.get("REDIS_URL", "redis://redis:6379"), description="Redis connection URL")
 
     # Polygon chain id
     chain_id: int = Field(default=137)

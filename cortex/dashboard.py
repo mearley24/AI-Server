@@ -110,11 +110,9 @@ SERVICES: list[dict[str, Any]] = [
     {"name": "D-Tools Bridge", "host": "dtools-bridge", "port": 5050, "ext_port": 8096},
     {"name": "Client Portal", "host": "client-portal", "port": 8096, "ext_port": None, "optional": True},
     {"name": "Polymarket Bot", "host": "vpn", "port": 8430, "ext_port": 8430},
-    {"name": "Knowledge Scanner", "host": "knowledge-scanner", "port": 8100, "ext_port": 8100, "optional": True},
     {"name": "X Intake", "host": "x-intake", "port": 8101, "ext_port": 8101, "optional": True},
     {"name": "Intel Feeds", "host": "intel-feeds", "port": 8765, "ext_port": 8765, "optional": True},
-    {"name": "Context Preprocessor", "host": "context-preprocessor", "port": 8028, "ext_port": 8028, "optional": True},
-    {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "optional": True},
+    {"name": "Cortex Autobuilder", "host": "cortex-autobuilder", "port": 8115, "ext_port": 8115, "optional": True},
 ]
 
 
@@ -272,10 +270,7 @@ def _get_redis_sync():
     try:
         import redis
 
-        url = os.environ.get(
-            "REDIS_URL",
-            "redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379",
-        )
+        url = os.environ.get("REDIS_URL", "redis://redis:6379")
         return redis.from_url(url, decode_responses=True, socket_timeout=2)
     except Exception as exc:
         logger.debug("redis_connect_fail error=%s", exc)

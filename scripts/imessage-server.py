@@ -98,10 +98,7 @@ def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:
         return None
 
 # Redis publish for downstream consumers (e.g. Docker x-intake on events:imessage)
-_REDIS_URL = os.environ.get(
-    "REDIS_URL",
-    "redis://:d19c9b0faebeee9927555eb8d6b28ec9@127.0.0.1:6379",
-)
+_REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")
 _redis_pub = None
 
 
@@ -1380,7 +1377,10 @@ def get_system_status() -> str:
         "Notifications": 8095,
         "D-Tools": 8096,
         "ClawWork": 8097,
-        "Knowledge": 8100,
+        "Cortex": 8102,
+        "Intel Feeds": 8765,
+        "X-Intake": 8101,
+        "Autobuilder": 8115,
     }
     up = 0
     down = []
