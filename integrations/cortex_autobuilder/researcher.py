@@ -203,7 +203,14 @@ class BettyResearcher:
             self._incr_stat("errors")
             return {"error": str(exc), "question": question}
 
-        content = (result.get("content") or "").strip()
+        raw_response = (result.get("content") or "").strip()
+        # Clean the raw LLM response before storing — removes ANSI, normalizes whitespace
+        try:
+            from openclaw.context_cleaner import clean_context
+            content = clean_context(raw_response)
+        except Exception:
+            content = raw_response
+
         if not content:
             logger.warning("empty_llm_response question=%s", q_text[:60])
             self._incr_stat("errors")

@@ -305,12 +305,26 @@ async def completion(
     system_prompt: str | None = None,
     max_tokens: int = 512,
     temperature: float = 0.3,
+    clean_input: bool = False,
 ) -> dict[str, Any]:
     """Route LLM request with cache and cost tracking.
+
+    Args:
+        clean_input: When True, run the prompt through context_cleaner before
+                     sending to the LLM (strips ANSI, normalizes whitespace,
+                     truncates noise).  Defaults to False so existing callers
+                     are unaffected.
 
     Returns:
         dict with keys: content, model, cached, cost_usd, provider (optional), error (optional)
     """
+    if clean_input:
+        try:
+            from openclaw.context_cleaner import clean_context
+            prompt = clean_context(prompt)
+        except Exception:
+            pass  # never block on optional cleaning
+
     complexity = (complexity or "medium").lower()
     if complexity not in ("simple", "medium", "complex"):
         complexity = "medium"
