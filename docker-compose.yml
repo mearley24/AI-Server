@@ -1,9 +1,35 @@
 # =============================================================================
 # AI-Server Docker Compose
-# Active services: 18
+# Active services: 21
 # =============================================================================
 
 services:
+
+  remediator:
+    build:
+      context: ./remediator
+    container_name: remediator
+    restart: unless-stopped
+    env_file:
+      - ./remediator/.env
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/health | grep -q ok || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   redis:
     image: redis:7-alpine
@@ -73,7 +99,7 @@ services:
     # Redis + notification-hub use Docker DNS (redis:6379, notification-hub:8095)
     environment:
       - TZ=America/Denver
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - PLATFORMS_ENABLED=${PLATFORMS_ENABLED:-polymarket}
       - POLY_PRIVATE_KEY=${POLY_PRIVATE_KEY:-}
       - POLY_PROXY_ADDRESS=${POLY_PROXY_ADDRESS:-}
@@ -183,10 +209,10 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
-      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
-      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
+      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID:-1000.MO1TLB2AXFHH2YABDD2TSSIJ68SK5J}
+      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET:-1be316a2f0448b2a62bc9659f5a4e01fc800936810}
       - ZOHO_ACCOUNT_ID=${ZOHO_ACCOUNT_ID:-2928890000000008002}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CORTEX_URL=http://cortex:8102
@@ -255,7 +281,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
       - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - TZ=America/Denver
     ports:
       - "127.0.0.1:8094:8094"
@@ -286,12 +312,12 @@ services:
       - MATT_PHONE_NUMBER=${MATT_PHONE_NUMBER:-}
       - SYMPHONY_EMAIL=${SYMPHONY_EMAIL:-info@symphonysh.com}
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN:-}
-      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID}
-      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET}
+      - ZOHO_CLIENT_ID=${ZOHO_CLIENT_ID:-}
+      - ZOHO_CLIENT_SECRET=${ZOHO_CLIENT_SECRET:-}
       - ZOHO_MAIL_ACCOUNT_ID=${ZOHO_MAIL_ACCOUNT_ID:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_OWNER_CHAT_ID=${TELEGRAM_OWNER_CHAT_ID:-}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - CORTEX_URL=http://cortex:8102
     ports:
       - "127.0.0.1:8095:8095"
@@ -384,7 +410,7 @@ services:
       - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - AGENTS_DIR=/app/agents
       - DATA_DIR=/app/data
       - DTOOLS_API_KEY=${DTOOLS_API_KEY:-}
@@ -423,6 +449,38 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  knowledge-scanner:
+    build:
+      context: ./knowledge-scanner
+    container_name: knowledge-scanner
+    restart: unless-stopped
+    environment:
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
+      - TZ=America/Denver
+      - SCAN_INTERVAL_HOURS=6
+    ports:
+      - "127.0.0.1:8100:8100"
+    volumes:
+      - ./data/knowledge-scanner:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   cortex:
     build:
       context: .
@@ -437,7 +495,7 @@ services:
       - ./data/openclaw:/app/data/openclaw:ro
       - ./polymarket-bot/knowledge:/app/knowledge:ro
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - CORTEX_PORT=8102
       - TZ=America/Denver
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
@@ -466,7 +524,7 @@ services:
     container_name: intel-feeds
     restart: unless-stopped
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - TZ=America/Denver
     ports:
       - "127.0.0.1:8765:8765"
@@ -487,6 +545,30 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  context-preprocessor:
+    build:
+      context: ./context-preprocessor
+    container_name: context-preprocessor
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8028:8028"
+    environment:
+      - TZ=America/Denver
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8028/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   x-intake:
     build:
       context: ./integrations/x_intake
@@ -498,7 +580,7 @@ services:
       - ./data/x_intake:/data/x_intake
       - ./data/transcripts:/data/transcripts
     environment:
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
@@ -555,7 +637,7 @@ services:
     environment:
       - RSSHUB_URL=http://rsshub:1200
       - X_INTAKE_URL=http://x-intake:8101
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - POLL_INTERVAL_SECONDS=600
       - SEEN_DB_PATH=/data/x_alpha_seen.json
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
@@ -615,7 +697,7 @@ services:
       - ./data:/data
     environment:
       - CORTEX_URL=http://cortex:8102
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
       - LLM_ROUTER_MODE=local_first
       - AUTOBUILDER_PORT=8115
