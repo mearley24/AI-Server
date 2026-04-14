@@ -26,6 +26,7 @@ from typing import Optional
 import fitz  # pymupdf
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from jinja2 import Environment, BaseLoader
 from pydantic import BaseModel
@@ -57,6 +58,27 @@ def _init_db() -> None:
                 project_name TEXT NOT NULL,
                 current_phase TEXT NOT NULL DEFAULT 'Lead',
                 created_at   TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS contact_submissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS appointments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT DEFAULT '',
+                date TEXT NOT NULL,
+                time TEXT NOT NULL,
+                service TEXT NOT NULL,
+                address TEXT DEFAULT '',
+                notes TEXT DEFAULT '',
+                created_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS portal_documents (
@@ -1515,6 +1537,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS — allows symphonysh.com (Cloudflare Pages) to call this API.
+# NOTE: To expose this to the internet, set up a Cloudflare Tunnel or
+# Tailscale Funnel pointing at port 8096 on Bob.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://symphonysh.com", "https://www.symphonysh.com", "http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -1824,6 +1857,153 @@ async def attach_document(token: str, body: AttachDocumentRequest) -> JSONRespon
 
     logger.info("Document attached: token=%s path=%s", token, document_path)
     return JSONResponse({"status": "ok", "token": token, "document_path": document_path})
+
+
+# ---------------------------------------------------------------------------
+# Website Form Handlers (replaces Supabase edge functions)
+# ---------------------------------------------------------------------------
+
+class ContactSubmission(BaseModel):
+    name: str
+    email: str
+    message: str
+
+class AppointmentRequest(BaseModel):
+    name: str
+    email: str
+    phone: str = ""
+    date: str
+    time: str
+    service: str
+    address: str = ""
+    notes: str = ""
+
+WEBSITE_SERVICES = [
+    {"id": "home-integration", "name": "Home Automation"},
+    {"id": "audio-entertainment", "name": "Audio & Entertainment"},
+    {"id": "smart-lighting", "name": "Smart Lighting"},
+    {"id": "shades", "name": "Smart Shades"},
+    {"id": "networking", "name": "Networking"},
+    {"id": "climate-control", "name": "Climate Control"},
+    {"id": "security-systems", "name": "Security Systems"},
+    {"id": "maintenance", "name": "Troubleshooting & Maintenance"},
+    {"id": "matterport-scan", "name": "Matterport Scan"},
+]
+
+import httpx as _httpx
+
+
+@app.post("/api/contact")
+async def handle_contact(submission: ContactSubmission):
+    """Handle contact form submission — replaces Supabase send-contact-email."""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO contact_submissions (name, email, message, created_at) VALUES (?, ?, ?, ?)",
+            (submission.name, submission.email, submission.message, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    except Exception as e:
+        logger.warning("contact_db_error: %s", e)
+
+    hub_url = os.getenv("NOTIFICATION_HUB_URL", "http://notification-hub:8095")
+    # Notify Matt via notification-hub
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"{hub_url}/notify", json={
+                "title": "New Contact Form Submission",
+                "body": f"Name: {submission.name}\nEmail: {submission.email}\nMessage: {submission.message}",
+                "priority": "high",
+                "source": "website_contact",
+            })
+    except Exception as e:
+        logger.warning("notification_error: %s", e)
+
+    # Send confirmation email to customer via Zoho
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"{hub_url}/api/send", json={
+                "message": f"Dear {submission.name},\n\nThank you for reaching out. We've received your message and will respond within 1-2 business days.\n\nBest regards,\nSymphony Smart Homes",
+                "subject": "Thank you for contacting Symphony Smart Homes",
+                "channel": "email",
+                "recipient": submission.email,
+                "priority": "normal",
+                "source": "website_contact_confirmation",
+            })
+    except Exception as e:
+        logger.warning("confirmation_email_error: %s", e)
+
+    return {"success": True}
+
+
+@app.post("/api/appointment")
+async def handle_appointment(appt: AppointmentRequest):
+    """Handle appointment booking — replaces Supabase create-appointment."""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            """INSERT INTO appointments
+               (name, email, phone, date, time, service, address, notes, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (appt.name, appt.email, appt.phone, appt.date, appt.time,
+             appt.service, appt.address, appt.notes,
+             datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error("appointment_db_error: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to create appointment")
+
+    service_name = next((s["name"] for s in WEBSITE_SERVICES if s["id"] == appt.service), appt.service)
+
+    hub_url = os.getenv("NOTIFICATION_HUB_URL", "http://notification-hub:8095")
+    # Notify Matt
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"{hub_url}/notify", json={
+                "title": "New Appointment Booking",
+                "body": f"Service: {service_name}\nName: {appt.name}\nEmail: {appt.email}\nPhone: {appt.phone}\nDate: {appt.date} at {appt.time}\nAddress: {appt.address}\nNotes: {appt.notes}",
+                "priority": "high",
+                "source": "website_appointment",
+            })
+    except Exception as e:
+        logger.warning("notification_error: %s", e)
+
+    # Send confirmation to customer
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            await client.post(f"{hub_url}/api/send", json={
+                "message": f"Hi {appt.name},\n\nYour {service_name} appointment has been confirmed for {appt.date} at {appt.time}.\n\nAddress: {appt.address or 'TBD'}\n\nWe'll reach out if we need any additional details.\n\nSymphony Smart Homes\n(970) 519-3013",
+                "subject": "Appointment Confirmed — Symphony Smart Homes",
+                "channel": "email",
+                "recipient": appt.email,
+                "priority": "normal",
+                "source": "website_appointment_confirmation",
+            })
+    except Exception as e:
+        logger.warning("confirmation_email_error: %s", e)
+
+    return {"success": True}
+
+
+@app.get("/api/available-slots")
+async def get_available_slots(date: str):
+    """Return available appointment time slots for a given date."""
+    all_slots = [
+        "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+        "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+        "15:00", "15:30", "16:00", "16:30",
+    ]
+    conn = _get_conn()
+    try:
+        booked = conn.execute(
+            "SELECT time FROM appointments WHERE date = ?", (date,)
+        ).fetchall()
+        booked_times = {row["time"] for row in booked}
+        available = [t for t in all_slots if t not in booked_times]
+        return {"date": date, "available_slots": available}
+    except Exception:
+        return {"date": date, "available_slots": all_slots}
 
 
 # ---------------------------------------------------------------------------

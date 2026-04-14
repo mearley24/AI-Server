@@ -1,5 +1,5 @@
 {
-  "name": "telegram-openwebui-interface",
+  "name": "telegram-bot-interface",
   "version": "1.0.0",
   "private": true,
   "type": "module",

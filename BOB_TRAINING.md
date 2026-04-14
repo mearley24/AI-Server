@@ -64,7 +64,6 @@ Don't iterate — test thoroughly before pushing. Each failed deploy + log check
 | polymarket-bot | 8430 | Copy-trading bot + redeemer |
 | mission-control | 8098 | Dashboard + service health |
 | notification-hub | 8095 | Redis → iMessage dispatch |
-| openwebui | 3000 | Open WebUI interface |
 | remediator | 8090 | Service remediation |
 | proposals | 8091 | Proposal engine |
 | email-monitor | 8092 | Email monitoring |

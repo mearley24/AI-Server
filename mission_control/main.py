@@ -45,7 +45,6 @@ def _get_redis():
 # Service map: name -> (container_hostname, internal_port, external_port)
 # compose = docker compose service name for `docker compose restart <compose>` on the AI-Server host
 SERVICES = [
-    {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000, "compose": "openwebui"},
     {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "compose": "remediator", "optional": True},
     {"name": "Proposals", "host": "proposals", "port": 8091, "ext_port": 8091, "compose": "proposals"},
     {"name": "Email Monitor", "host": "email-monitor", "port": 8092, "ext_port": 8092, "compose": "email-monitor"},

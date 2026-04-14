@@ -114,7 +114,6 @@ SERVICES: list[dict[str, Any]] = [
     {"name": "X Intake", "host": "x-intake", "port": 8101, "ext_port": 8101, "optional": True},
     {"name": "Intel Feeds", "host": "intel-feeds", "port": 8765, "ext_port": 8765, "optional": True},
     {"name": "Context Preprocessor", "host": "context-preprocessor", "port": 8028, "ext_port": 8028, "optional": True},
-    {"name": "OpenWebUI", "host": "openwebui", "port": 8080, "ext_port": 3000, "optional": True},
     {"name": "Remediator", "host": "remediator", "port": 8090, "ext_port": 8090, "optional": True},
 ]
 

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """
-webhook_server.py — FastAPI webhook routes for DocuSign and Stripe.
+webhook_server.py — FastAPI webhook routes for DocuSign.
 
-Registers two endpoints on the shared OpenClaw FastAPI app (imported from main.py):
+Registers the DocuSign endpoint on the shared OpenClaw FastAPI app (imported from main.py):
     POST /webhook/docusign  — DocuSign Connect webhook receiver
-    POST /webhook/stripe    — Stripe webhook receiver
 
-Both endpoints:
-  1. Validate the incoming request
-  2. Delegate to the appropriate integration module
-  3. Publish events to Redis via event_bus
-  4. Return HTTP 200 immediately (required by both DocuSign and Stripe)
+Endpoint:
+  1. Validates the incoming request
+  2. Delegates to the DocuSign integration module
+  3. Publishes events to Redis via event_bus
+  4. Returns HTTP 200 immediately (required by DocuSign)
 
 Mount via: app.include_router(webhook_router) in main.py
 """
@@ -135,51 +134,6 @@ async def docusign_webhook(request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Stripe webhook
-# ---------------------------------------------------------------------------
-
-
-@webhook_router.post("/stripe", summary="Stripe payment webhook receiver")
-async def stripe_webhook(request: Request) -> Response:
-    """
-    Receives Stripe webhook events and validates the Stripe-Signature header.
-
-    On ``payment_intent.succeeded``, ``invoice.paid``, or
-    ``checkout.session.completed``: publishes ``events:stripe_payment`` to Redis.
-
-    Always returns 200 to prevent Stripe retries.
-    """
-    from stripe_billing import stripe_billing
-
-    body = await request.body()
-    signature = request.headers.get("stripe-signature", "")
-
-    if not signature:
-        logger.warning("webhook/stripe: missing Stripe-Signature header")
-        # Return 400 so Stripe knows the request was malformed (not a delivery failure)
-        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
-
-    try:
-        result = await stripe_billing.handle_webhook(payload=body, signature=signature)
-        logger.info(
-            "webhook/stripe: event=%s amount=%d metadata=%s",
-            result.get("event"),
-            result.get("amount", 0),
-            result.get("metadata"),
-        )
-    except ValueError as exc:
-        # Signature verification failed — reject clearly
-        logger.error("webhook/stripe: signature verification failed: %s", exc)
-        raise HTTPException(status_code=400, detail="Invalid Stripe signature") from exc
-    except Exception as exc:
-        logger.error("webhook/stripe: handle_webhook raised: %s", exc, exc_info=True)
-        # Return 200 to avoid Stripe retrying a legitimate delivery failure
-        return Response(content="OK (error logged)", status_code=200)
-
-    return Response(content="OK", status_code=200)
-
-
-# ---------------------------------------------------------------------------
 # Health check
 # ---------------------------------------------------------------------------
 
@@ -187,7 +141,7 @@ async def stripe_webhook(request: Request) -> Response:
 @webhook_router.get("/health", include_in_schema=False)
 async def webhook_health() -> JSONResponse:
     """Quick liveness probe for the webhook sub-router."""
-    return JSONResponse({"status": "ok", "routes": ["/webhook/docusign", "/webhook/stripe"]})
+    return JSONResponse({"status": "ok", "routes": ["/webhook/docusign"]})
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +160,7 @@ def create_app():
 
     _app = FastAPI(
         title="OpenClaw Webhook Server",
-        description="DocuSign + Stripe webhook receivers — Symphony Smart Homes",
+        description="DocuSign webhook receiver — Symphony Smart Homes",
         version="1.0.0",
     )
     _app.include_router(webhook_router)
@@ -220,4 +174,6 @@ app = create_app()
 #
 #   from webhook_server import webhook_router
 #   app.include_router(webhook_router)
+# ---------------------------------------------------------------------------
+# NOTE: Stripe has been removed — Symphony uses FirstBank ACH for payments.
 # ---------------------------------------------------------------------------

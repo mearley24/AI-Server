@@ -77,20 +77,8 @@
         "llama3.2:3b": { "description": "Fast simple tasks" },
         "mistral:7b":   { "description": "Structured output, JSON generation" }
       }
-    },
-
-    // ── Optional: Open WebUI (local proxy) ────────────────────────────────────
-    // Your existing Open WebUI container can act as an OpenAI-compatible API
-    // endpoint. Keep as fallback — OpenClaw can route through it too.
-    "open_webui": {
-      "enabled": false,                     // flip to true to activate
-      "base_url": "http://localhost:3000/api",
-      "api_key": "YOUR_OPEN_WEBUI_API_KEY", // from Open WebUI profile → API keys
-      "default_model": "llama3.2:latest",   // any model loaded in Open WebUI
-      "openai_compatible": true,            // Open WebUI speaks the OpenAI API
-      "max_tokens": 4096,
-      "timeout_ms": 90000                   // local models can be slow
     }
+
   },
 
   // ── Agents ───────────────────────────────────────────────────────────────────
