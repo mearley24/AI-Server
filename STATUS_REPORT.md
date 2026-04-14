@@ -92,6 +92,8 @@ _Completed since the April 11 audit baseline._
 - ✅ **Email `read=1` bug fixed (2026-04-13 08:41 MDT)** — `notifier.py` was calling `mark_email_read()` on every dispatched notification — wrong because notification ≠ reply. Removed that block. `read=1` is now set **only** by `_scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` is found. Migration script `email-monitor/migrate_reset_read.py` reset 438 rows (`responded=0, read=1 → read=0`). DB: 452 emails, all `read=0, responded=0`. (§Z3)
 - ✅ **Cortex event ingestion wired (2026-04-13 08:52 MDT)** — Four services now POST to `http://cortex:8102/remember` on every meaningful event. Rate verified: 1 entry/min (follow_up cycle) sustained → ~1440+ entries/24h, well above 100 target. Cortex grew 733→735 in 65s post-deploy. See Reference: Cortex Wire-Up.
 
+- ✅ **Dashboard: X Intake + Transcripts & Gems tabs added (2026-04-13)** — Three-tab Cortex dashboard replacing the single-page layout. New sections: **X Intake** (full review UI with status/date filters, paginated list, inline approve/reject/note, optimistic UI updates) and **Transcripts & Gems** (left panel transcript list + right panel detail with summary, flags, quotes, strategies, collapsible full transcript, and hidden gems from Cortex `x_intel` memories). Navigation badge on the X Intake tab shows live pending count. Overview widget kept as summary card with "full view →" link. Two new backend endpoints read the x_intake DB directly (bypassing the x-intake service): `GET /api/x-intake/items` (status + date filter, pagination) and `GET /api/transcripts/{id}` (queue row + parsed .md + Cortex gems). See Reference: Dashboard Sections 2026-04-13.
+
 ---
 
 ## Reference: Stack Health

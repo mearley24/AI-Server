@@ -46,6 +46,18 @@ DECISION_JOURNAL_DB_CANDIDATES = [
     Path("data/openclaw/decision_journal.db"),
 ]
 
+X_INTAKE_DB_CANDIDATES = [
+    Path("/app/data/x_intake/queue.db"),
+    Path("/data/x_intake/queue.db"),
+    Path("data/x_intake/queue.db"),
+]
+
+TRANSCRIPT_DIR_CANDIDATES = [
+    Path("/app/data/transcripts"),
+    Path("/data/transcripts"),
+    Path("data/transcripts"),
+]
+
 # Senders that are NOT real client follow-ups — vendors, newsletters, automated systems.
 # Matched case-insensitively against client_name OR client_email.
 FOLLOWUP_NOISE_SENDERS = {
@@ -773,3 +785,189 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         except Exception:
             pass
         return result
+
+    # ── X Intake — direct DB read with full filtering ──────────────────
+    @app.get("/api/x-intake/items")
+    async def api_xintake_items(
+        status: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        limit: int = Query(100, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+    ):
+        """Read x_intake queue directly with status + date range filtering.
+
+        date_from / date_to accept ISO-8601 date strings (YYYY-MM-DD).
+        This endpoint bypasses the x-intake service so it works even when
+        x-intake is down, and supports pagination + date filtering.
+        """
+        db_path = _find_db(X_INTAKE_DB_CANDIDATES)
+        if db_path is None:
+            return {"items": [], "count": 0, "total": 0, "error": "db not found"}
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+
+            where_clauses: list[str] = []
+            params: list[Any] = []
+
+            if status:
+                where_clauses.append("status = ?")
+                params.append(status)
+            if date_from:
+                try:
+                    ts_from = datetime.fromisoformat(date_from).timestamp()
+                    where_clauses.append("created_at >= ?")
+                    params.append(ts_from)
+                except ValueError:
+                    pass
+            if date_to:
+                try:
+                    # Inclusive end-of-day
+                    ts_to = datetime.fromisoformat(date_to).timestamp() + 86399
+                    where_clauses.append("created_at <= ?")
+                    params.append(ts_to)
+                except ValueError:
+                    pass
+
+            where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+            count_row = conn.execute(
+                f"SELECT COUNT(*) AS n FROM x_intake_queue {where_sql}", params
+            ).fetchone()
+            total = count_row["n"] if count_row else 0
+
+            rows = conn.execute(
+                f"SELECT * FROM x_intake_queue {where_sql} "
+                f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params + [limit, offset],
+            ).fetchall()
+            conn.close()
+            items = [dict(r) for r in rows]
+            return {"items": items, "count": len(items), "total": total,
+                    "offset": offset, "limit": limit}
+        except Exception as exc:
+            logger.debug("xintake_items_fail error=%s", exc)
+            return {"items": [], "count": 0, "total": 0, "error": str(exc)[:100]}
+
+    # ── Transcripts — list and detail ──────────────────────────────────
+    @app.get("/api/transcripts")
+    async def api_transcripts_list(
+        limit: int = Query(50, ge=1, le=200),
+        author: str = "",
+    ):
+        """List x_intake queue items that have an associated transcript."""
+        db_path = _find_db(X_INTAKE_DB_CANDIDATES)
+        if db_path is None:
+            return {"transcripts": [], "total": 0, "error": "db not found"}
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            if author:
+                rows = conn.execute(
+                    "SELECT * FROM x_intake_queue "
+                    "WHERE has_transcript = 1 AND author = ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (author, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM x_intake_queue "
+                    "WHERE has_transcript = 1 "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            conn.close()
+            items = [dict(r) for r in rows]
+            return {"transcripts": items, "total": len(items)}
+        except Exception as exc:
+            logger.debug("transcripts_list_fail error=%s", exc)
+            return {"transcripts": [], "total": 0, "error": str(exc)[:100]}
+
+    @app.get("/api/transcripts/{item_id}")
+    async def api_transcript_detail(item_id: int):
+        """Return full transcript detail: queue row + parsed .md sections + Cortex gems."""
+        import re as _re
+
+        db_path = _find_db(X_INTAKE_DB_CANDIDATES)
+        if db_path is None:
+            return {"error": "db not found"}
+
+        # Fetch queue row
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM x_intake_queue WHERE id = ?", (item_id,)
+            ).fetchone()
+            conn.close()
+        except Exception as exc:
+            return {"error": str(exc)[:100]}
+
+        if row is None:
+            return {"error": "item not found"}
+
+        item = dict(row)
+        author = item.get("author", "")
+        transcript_path = item.get("transcript_path", "")
+
+        # Parse .md file
+        parsed_summary = ""
+        parsed_transcript = ""
+        flags: list[str] = []
+        key_quotes: list[str] = []
+        strategies_text = ""
+
+        if transcript_path:
+            try:
+                md_file = Path(transcript_path)
+                if md_file.exists():
+                    content = md_file.read_text(encoding="utf-8", errors="replace")
+                    m = _re.search(r"## Summary\s*\n(.*?)(?=\n##|\Z)", content, _re.DOTALL)
+                    if m:
+                        parsed_summary = m.group(1).strip()
+                    m = _re.search(r"## Full Transcript\s*\n(.*?)(?=\n##|\Z)", content, _re.DOTALL)
+                    if m:
+                        parsed_transcript = m.group(1).strip()
+                    m = _re.search(r"## Flags\s*\n(.*?)(?=\n##|\Z)", content, _re.DOTALL)
+                    if m:
+                        for line in m.group(1).strip().splitlines():
+                            line = line.strip()
+                            if line.startswith("-"):
+                                flags.append(line[1:].strip())
+                    m = _re.search(r"## Key Quotes\s*\n(.*?)(?=\n##|\Z)", content, _re.DOTALL)
+                    if m:
+                        for line in m.group(1).strip().splitlines():
+                            line = line.strip().lstrip(">").strip()
+                            if line:
+                                key_quotes.append(line)
+                    m = _re.search(r"## Strategies\s*\n(.*?)(?=\n##|\Z)", content, _re.DOTALL)
+                    if m:
+                        strategies_text = m.group(1).strip()
+            except Exception as exc:
+                logger.debug("transcript_md_read_fail path=%s error=%s", transcript_path, exc)
+
+        # Fetch Cortex x_intel memories for this author (gems from transcript_analyst)
+        gems: list[dict] = []
+        engine = engine_ref()
+        if engine is not None and author:
+            try:
+                gem_rows = engine.memory.conn.execute(
+                    "SELECT id, title, content, source, created_at, metadata "
+                    "FROM memories WHERE category = 'x_intel' AND source LIKE ? "
+                    "ORDER BY created_at DESC LIMIT 10",
+                    (f"x_intake:@{author}:%",),
+                ).fetchall()
+                gems = [dict(r) for r in gem_rows]
+            except Exception as exc:
+                logger.debug("transcript_gems_fail author=%s error=%s", author, exc)
+
+        return {
+            "item": item,
+            "parsed_summary": parsed_summary,
+            "parsed_transcript": parsed_transcript,
+            "flags": flags,
+            "key_quotes": key_quotes,
+            "strategies": strategies_text,
+            "gems": gems,
+        }
