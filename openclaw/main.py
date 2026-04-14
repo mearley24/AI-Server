@@ -1297,6 +1297,26 @@ async def get_agent_messages(
     return {"messages": messages, "count": len(messages)}
 
 
+# ---------------------------------------------------------------------------
+# Intel Briefing endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/intel-briefing/preview")
+async def preview_intel_briefing():
+    """Preview the intel briefing text without sending it."""
+    from intel_briefing import compose_intel_briefing
+    text = await asyncio.to_thread(compose_intel_briefing)
+    return {"preview": text, "length": len(text)}
+
+
+@app.post("/api/intel-briefing/send")
+async def trigger_intel_briefing():
+    """Manually trigger the intel briefing send via iMessage."""
+    from intel_briefing import send_intel_briefing
+    result = await asyncio.to_thread(send_intel_briefing)
+    return result
+
+
 @app.get("/")
 async def root():
     return {
@@ -1309,6 +1329,7 @@ async def root():
         "memory": "/memory/stats",
         "agent_bus": "/agents/messages",
         "jobs": "/jobs",
+        "intel_briefing": "/api/intel-briefing/preview",
     }
 
 

@@ -1062,3 +1062,28 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             "strategies": strategies_text,
             "gems": gems,
         }
+
+
+# ── Intel Briefing proxy ──────────────────────────────────────────────────────
+
+OPENCLAW_INTERNAL_URL = os.environ.get("OPENCLAW_URL", "http://openclaw:3000")
+
+
+def register_intel_briefing_routes(app: FastAPI) -> None:
+    """Register /api/intel-briefing proxy routes onto the Cortex FastAPI app."""
+
+    @app.get("/api/intel-briefing/preview", tags=["intel-briefing"])
+    async def proxy_intel_briefing_preview():
+        """Proxy: preview the daily intel briefing text without sending."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{OPENCLAW_INTERNAL_URL}/api/intel-briefing/preview")
+            resp.raise_for_status()
+            return resp.json()
+
+    @app.post("/api/intel-briefing/send", tags=["intel-briefing"])
+    async def proxy_intel_briefing_send():
+        """Proxy: manually trigger the daily intel briefing send via iMessage."""
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{OPENCLAW_INTERNAL_URL}/api/intel-briefing/send")
+            resp.raise_for_status()
+            return resp.json()
