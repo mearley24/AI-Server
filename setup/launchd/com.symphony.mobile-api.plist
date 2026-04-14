@@ -6,8 +6,8 @@
     <string>com.symphony.mobile-api</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/bob/AI-Server/.venv/bin/python3</string>
-        <string>/Users/bob/AI-Server/api/mobile_api.py</string>
+        <string>/usr/bin/python3</string>
+        <string>/Users/bob/AI-Server/api/gateway.py</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/bob/AI-Server</string>
