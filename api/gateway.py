@@ -164,4 +164,5 @@ app.include_router(ollama_router, prefix="/ai", tags=["AI"])
 app.include_router(tools_router, prefix="/host", tags=["Host Tools"])
 
 if __name__ == "__main__":
-    uvicorn.run("gateway:app", host="127.0.0.1", port=PORT, log_level="info")
+    bind_host = os.environ.get("MOBILE_API_BIND_HOST", "127.0.0.1")
+    uvicorn.run("gateway:app", host=bind_host, port=PORT, log_level="info")
