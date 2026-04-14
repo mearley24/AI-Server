@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Symphony Ops</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --card: #141414; --border: #222; --text: #e0e0e0;
+    --dim: #666; --accent: #5b8def; --green: #34d399; --red: #ef5b5b;
+    --amber: #f59e0b; --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, system-ui, 'SF Pro', sans-serif;
+    background: var(--bg); color: var(--text);
+    padding: env(safe-area-inset-top) 16px 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header */
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0 16px; position: sticky; top: 0;
+    background: var(--bg); z-index: 10;
+  }
+  .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+  .header .refresh {
+    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--card); color: var(--dim); display: flex; align-items: center;
+    justify-content: center; cursor: pointer; transition: all 0.2s;
+  }
+  .header .refresh:active { background: #1f1f1f; }
+  .header .refresh.spinning svg { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Status bar */
+  .status-bar {
+    display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 500;
+    background: var(--card); border: 1px solid var(--border);
+  }
+  .status-pill .dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .dot-green { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.4); }
+  .dot-red { background: var(--red); box-shadow: 0 0 6px rgba(239,91,91,0.4); }
+  .dot-amber { background: var(--amber); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+
+  /* Section */
+  .section { margin-bottom: 24px; }
+  .section-title {
+    font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--dim); margin-bottom: 10px;
+  }
+
+  /* Service grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .svc {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; display: flex; flex-direction: column; gap: 6px;
+    transition: border-color 0.2s;
+  }
+  .svc.healthy { border-left: 3px solid var(--green); }
+  .svc.down { border-left: 3px solid var(--red); }
+  .svc-name { font-size: 0.85rem; font-weight: 600; }
+  .svc-meta { font-size: 0.7rem; color: var(--dim); }
+  .svc-status { font-size: 0.7rem; font-weight: 500; }
+  .svc-status.healthy { color: var(--green); }
+  .svc-status.down { color: var(--red); }
+
+  /* Stat cards */
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; text-align: center;
+  }
+  .stat-value { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; }
+  .stat-label { font-size: 0.7rem; color: var(--dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.red { color: var(--red); }
+  .stat-value.amber { color: var(--amber); }
+  .stat-value.accent { color: var(--accent); }
+
+  /* Trading card */
+  .trading-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px;
+  }
+  .trading-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+  }
+  .trading-row:last-child { border-bottom: none; }
+  .trading-label { font-size: 0.8rem; color: var(--dim); }
+  .trading-value { font-size: 0.85rem; font-weight: 600; }
+
+  /* Memory list */
+  .mem-list { display: flex; flex-direction: column; gap: 6px; }
+  .mem-item {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; cursor: pointer; transition: border-color 0.2s;
+  }
+  .mem-item:active { border-color: var(--accent); }
+  .mem-cat {
+    font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--accent); margin-bottom: 4px;
+  }
+  .mem-text { font-size: 0.8rem; line-height: 1.4; color: var(--text); }
+  .mem-time { font-size: 0.65rem; color: var(--dim); margin-top: 6px; }
+
+  /* Quick actions */
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .action-btn {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; text-align: center; text-decoration: none; color: var(--text);
+    font-size: 0.8rem; font-weight: 500; transition: all 0.2s;
+  }
+  .action-btn:active { background: #1f1f1f; border-color: var(--accent); }
+  .action-icon { font-size: 1.3rem; margin-bottom: 4px; }
+
+  /* Timestamp */
+  .updated {
+    text-align: center; font-size: 0.7rem; color: var(--dim);
+    padding: 16px 0 32px;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    background: linear-gradient(90deg, var(--card) 25%, #1a1a1a 50%, var(--card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius);
+    height: 60px;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Symphony Ops</h1>
+  <div class="refresh" onclick="loadDashboard()" id="refreshBtn">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+  </div>
+</div>
+
+<div id="content">
+  <div class="section">
+    <div class="grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+  </div>
+</div>
+
+<script>
+const CATEGORY_MAP = {
+  cortex: "Core AI", openclaw: "Core AI", "cortex-autobuilder": "Core AI",
+  trading: "Trading", proposals: "Business", email: "Comms",
+  voice: "Comms", calendar: "Business", notifications: "Infra",
+  portal: "Business", "x-intake": "Intel", "intel-feeds": "Intel"
+};
+
+function relTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts), now = new Date(), diff = (now - d) / 1000;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return Math.floor(diff/60) + "m ago";
+  if (diff < 86400) return Math.floor(diff/3600) + "h ago";
+  return Math.floor(diff/86400) + "d ago";
+}
+
+function truncate(s, n) { return s && s.length > n ? s.slice(0, n) + "..." : s || ""; }
+
+async function loadDashboard() {
+  const btn = document.getElementById("refreshBtn");
+  btn.classList.add("spinning");
+
+  try {
+    const resp = await fetch("/api/dashboard-data");
+    if (!resp.ok) throw new Error("Failed");
+    const data = await resp.json();
+    render(data);
+  } catch (e) {
+    document.getElementById("content").innerHTML =
+      '<div class="stat" style="grid-column:1/-1;text-align:center;padding:40px">' +
+      '<div class="stat-value red">Offline</div>' +
+      '<div class="stat-label">Could not reach gateway API</div></div>';
+  } finally {
+    btn.classList.remove("spinning");
+  }
+}
+
+function render(data) {
+  const svc = data.services || {};
+  const cortex = data.cortex || {};
+  const trading = data.trading || {};
+  const memories = data.recent_memories || [];
+
+  const healthy = Object.values(svc).filter(s => s.status === "healthy").length;
+  const total = Object.keys(svc).length;
+  const allUp = healthy === total;
+
+  let html = "";
+
+  // -- Status pills --
+  html += '<div class="status-bar">';
+  html += '<div class="status-pill"><div class="dot ' + (allUp ? "dot-green" : "dot-red") + '"></div>' + healthy + '/' + total + ' services</div>';
+  if (trading.status && trading.status !== "offline") {
+    html += '<div class="status-pill"><div class="dot dot-green"></div>Trading active</div>';
+  }
+  html += '</div>';
+
+  // -- Stats --
+  html += '<div class="section"><div class="section-title">Overview</div><div class="stats">';
+  html += '<div class="stat"><div class="stat-value ' + (allUp ? "green" : "amber") + '">' + healthy + '/' + total + '</div><div class="stat-label">Services Up</div></div>';
+  html += '<div class="stat"><div class="stat-value accent">' + (cortex.memory_count || "—") + '</div><div class="stat-label">Cortex Memories</div></div>';
+  const uptime = cortex.uptime_hours ? Math.floor(cortex.uptime_hours) + "h" : "—";
+  html += '<div class="stat"><div class="stat-value">' + uptime + '</div><div class="stat-label">Cortex Uptime</div></div>';
+  const tradingPnl = trading.pnl != null ? (trading.pnl >= 0 ? "+" : "") + trading.pnl.toFixed(2) : "—";
+  const pnlColor = trading.pnl > 0 ? "green" : trading.pnl < 0 ? "red" : "";
+  html += '<div class="stat"><div class="stat-value ' + pnlColor + '">' + tradingPnl + '</div><div class="stat-label">Trading P&L</div></div>';
+  html += '</div></div>';
+
+  // -- Services grid --
+  html += '<div class="section"><div class="section-title">Services</div><div class="grid">';
+  for (const [name, info] of Object.entries(svc)) {
+    const st = info.status === "healthy" ? "healthy" : "down";
+    const cat = CATEGORY_MAP[name] || "Other";
+    html += '<div class="svc ' + st + '">';
+    html += '<div class="svc-name">' + name + '</div>';
+    html += '<div class="svc-meta">:' + info.port + ' &middot; ' + cat + '</div>';
+    html += '<div class="svc-status ' + st + '">' + (st === "healthy" ? "Healthy" : "Down") + '</div>';
+    html += '</div>';
+  }
+  html += '</div></div>';
+
+  // -- Trading details --
+  if (trading.status && trading.status !== "offline") {
+    html += '<div class="section"><div class="section-title">Trading</div><div class="trading-card">';
+    if (trading.active_positions != null) {
+      html += '<div class="trading-row"><span class="trading-label">Active Positions</span><span class="trading-value">' + trading.active_positions + '</span></div>';
+    }
+    if (trading.balance != null) {
+      html += '<div class="trading-row"><span class="trading-label">Balance</span><span class="trading-value">$' + trading.balance.toFixed(2) + '</span></div>';
+    }
+    if (trading.pnl != null) {
+      html += '<div class="trading-row"><span class="trading-label">P&L</span><span class="trading-value" style="color:' + (trading.pnl >= 0 ? "var(--green)" : "var(--red)") + '">' + tradingPnl + '</span></div>';
+    }
+    if (trading.last_trade) {
+      html += '<div class="trading-row"><span class="trading-label">Last Trade</span><span class="trading-value">' + relTime(trading.last_trade) + '</span></div>';
+    }
+    html += '</div></div>';
+  }
+
+  // -- Recent memories --
+  if (memories.length > 0) {
+    html += '<div class="section"><div class="section-title">Recent Memories</div><div class="mem-list">';
+    for (const m of memories.slice(0, 5)) {
+      html += '<div class="mem-item">';
+      if (m.category) html += '<div class="mem-cat">' + m.category + '</div>';
+      html += '<div class="mem-text">' + truncate(m.content || m.text || m.summary || "", 140) + '</div>';
+      if (m.created_at || m.timestamp) html += '<div class="mem-time">' + relTime(m.created_at || m.timestamp) + '</div>';
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  // -- Quick actions --
+  html += '<div class="section"><div class="section-title">Quick Actions</div><div class="actions">';
+  html += '<a class="action-btn" href="/proxy/cortex/memories?limit=50"><div class="action-icon">&#128024;</div>All Memories</a>';
+  html += '<a class="action-btn" href="/proxy/trading/health"><div class="action-icon">&#128200;</div>Trading Detail</a>';
+  html += '<a class="action-btn" href="/proxy/x-intake/health"><div class="action-icon">&#128225;</div>X-Intake</a>';
+  html += '<a class="action-btn" href="/docs"><div class="action-icon">&#128196;</div>API Docs</a>';
+  html += '</div></div>';
+
+  // -- Timestamp --
+  html += '<div class="updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
+
+  document.getElementById("content").innerHTML = html;
+}
+
+// Auto-refresh every 30s
+loadDashboard();
+setInterval(loadDashboard, 30000);
+</script>
+</body></html>

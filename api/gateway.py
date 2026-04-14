@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import secrets
 import time
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -191,8 +192,29 @@ async def health():
     return {"status": "ok", "port": PORT, "services": list(SERVICES.keys())}
 
 
+DASHBOARD_HTML = (Path(__file__).parent / "templates" / "dashboard.html").read_text()
+
+
 @app.get("/dashboard")
-async def dashboard():
+async def dashboard_ui(request: Request):
+    """Serve the HTML dashboard for browser requests, JSON for API clients."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return HTMLResponse(DASHBOARD_HTML)
+    # Fallback: JSON for API/curl
+    return await dashboard_json()
+
+
+async def _fetch_json(client: httpx.AsyncClient, url: str) -> dict:
+    """Fetch JSON from a URL, return empty dict on failure."""
+    try:
+        r = await client.get(url)
+        return r.json() if r.status_code == 200 else {}
+    except Exception:
+        return {}
+
+
+async def dashboard_json():
     """Aggregate health from all Docker services."""
     results = {}
     async with httpx.AsyncClient(timeout=3.0) as client:
@@ -203,6 +225,62 @@ async def dashboard():
             except Exception:
                 results[name] = {"status": "down", "port": url.split(":")[-1]}
     return {"services": results, "host": "ok"}
+
+
+@app.get("/api/dashboard-data")
+async def dashboard_data():
+    """Aggregated data endpoint for the dashboard UI."""
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        # Service health
+        services = {}
+        health_tasks = {}
+        for name, url in SERVICES.items():
+            health_tasks[name] = _fetch_json(client, f"{url}/health")
+        health_results = await asyncio.gather(*health_tasks.values())
+        for name, result in zip(health_tasks.keys(), health_results):
+            if result:
+                services[name] = {"status": "healthy", "port": SERVICES[name].split(":")[-1]}
+            else:
+                services[name] = {"status": "down", "port": SERVICES[name].split(":")[-1]}
+
+        # Cortex stats
+        cortex_health = await _fetch_json(client, f"{SERVICES['cortex']}/health")
+        cortex = {
+            "memory_count": cortex_health.get("memory_count", cortex_health.get("memories", None)),
+            "uptime_hours": cortex_health.get("uptime_hours", None),
+            "status": cortex_health.get("status", "unknown"),
+        }
+
+        # Recent memories
+        memories = []
+        try:
+            r = await client.get(f"{SERVICES['cortex']}/memories", params={"limit": 5})
+            if r.status_code == 200:
+                mem_data = r.json()
+                if isinstance(mem_data, list):
+                    memories = mem_data
+                elif isinstance(mem_data, dict) and "memories" in mem_data:
+                    memories = mem_data["memories"]
+        except Exception:
+            pass
+
+        # Trading status
+        trading_health = await _fetch_json(client, f"{SERVICES['trading']}/health")
+        trading = {
+            "status": trading_health.get("status", "offline"),
+            "active_positions": trading_health.get("active_positions", None),
+            "balance": trading_health.get("balance", None),
+            "pnl": trading_health.get("pnl", trading_health.get("total_pnl", None)),
+            "last_trade": trading_health.get("last_trade", None),
+        }
+
+    return {
+        "services": services,
+        "cortex": cortex,
+        "trading": trading,
+        "recent_memories": memories,
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 @app.api_route("/proxy/{service}/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
