@@ -5,10 +5,10 @@ Symphony Markup App Server
 Serves the iPad markup tool and handles export/import.
 
 Usage:
-    python3 server.py                              # Start on localhost:8091
-    python3 server.py --host 127.0.0.1 --port 8091  # Custom bind/port
+    python3 server.py                              # Start on localhost:8088
+    python3 server.py --host 127.0.0.1 --port 8088  # Custom bind/port
 
-For HTTPS (Share → Save to Files on iPad): tailscale serve 8091, set MARKUP_HTTPS_URL in .env
+For HTTPS (Share → Save to Files on iPad): tailscale serve 8088, set MARKUP_HTTPS_URL in .env
 """
 
 import argparse
@@ -1612,7 +1612,7 @@ def get_local_ip():
 
 def main():
     parser = argparse.ArgumentParser(description="Symphony Markup App Server")
-    parser.add_argument('--port', type=int, default=8091, help='Port number')
+    parser.add_argument('--port', type=int, default=8088, help='Port number')
     parser.add_argument('--host', default='127.0.0.1', help='Host/IP to bind (default: localhost)')
     args = parser.parse_args()
     

@@ -1062,6 +1062,99 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             "gems": gems,
         }
 
+    # ── Symphony Ops proxies ────────────────────────────────────────────────
+
+    PROPOSALS_URL = os.environ.get("PROPOSALS_URL", "http://proposals:8091")
+    CLIENT_PORTAL_URL = os.environ.get("CLIENT_PORTAL_URL", "http://client-portal:8096")
+    MARKUP_URL = os.environ.get("MARKUP_URL", "http://host.docker.internal:8088")
+
+    @app.get("/api/symphony/proposals/templates")
+    async def symphony_proposals_templates():
+        data = await _safe_get(f"{PROPOSALS_URL}/proposals/templates/list")
+        return data or {"templates": [], "error": "proposals service unavailable"}
+
+    @app.post("/api/symphony/proposals/generate")
+    async def symphony_proposals_generate(request: dict):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{PROPOSALS_URL}/proposals/generate", json=request)
+                return resp.json()
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    @app.get("/api/symphony/portal/health")
+    async def symphony_portal_health():
+        data = await _safe_get(f"{CLIENT_PORTAL_URL}/health")
+        return data or {"status": "offline"}
+
+    @app.post("/api/symphony/agreement/generate")
+    async def symphony_generate_agreement(request: dict):
+        """Run generate_agreement.py and return the .docx path."""
+        import subprocess
+        cmd = [
+            "python3", "/app/tools/generate_agreement.py",
+            "--client", request.get("client", ""),
+            "--project", request.get("project", ""),
+            "--items", request.get("items", ""),
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            return {"output": result.stdout.strip(), "error": result.stderr.strip() if result.returncode != 0 else None}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    @app.post("/api/symphony/tools/{tool_name}")
+    async def symphony_run_tool(tool_name: str, request: dict = {}):
+        """Run a Symphony business tool by name."""
+        tool_map = {
+            "room_mapper": "python3 /app/tools/bob_room_mapper.py",
+            "project_analyzer": "python3 /app/tools/bob_project_analyzer.py",
+            "proposal_to_dtools": "python3 /app/tools/bob_proposal_to_dtools.py",
+            "build_inventory": "python3 /app/tools/bob_build_inventory.py",
+            "fetch_manuals": "python3 /app/tools/bob_fetch_manuals.py",
+            "cortex_curator": "python3 /app/tools/cortex_curator.py --run --json",
+            "knowledge_graph": "python3 /app/tools/knowledge_graph.py --status",
+            "maintenance": "python3 /app/tools/bob_maintenance.py --dry",
+        }
+        cmd = tool_map.get(tool_name)
+        if not cmd:
+            return {"error": f"Unknown tool: {tool_name}"}
+
+        args = request.get("args", "")
+        if args:
+            cmd += f" {args}"
+
+        import subprocess
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=60,
+                cwd="/app"
+            )
+            return {
+                "tool": tool_name,
+                "stdout": result.stdout[-2000:] if result.stdout else "",
+                "stderr": result.stderr[-500:] if result.stderr else "",
+                "returncode": result.returncode,
+            }
+        except subprocess.TimeoutExpired:
+            return {"error": "Tool timed out (60s limit)"}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    @app.get("/api/symphony/cortex/stats")
+    async def symphony_cortex_stats():
+        """Get cortex memory/goal/rule stats for the Symphony Ops panel."""
+        eng = engine_ref()
+        if eng is None:
+            return {"total": 0, "active_goals": 0, "rules": 0}
+        stats = eng.memory.get_stats()
+        rules = eng.memory.get_rules(category="trading_rule", min_confidence=0.6)
+        return {
+            "total": stats.get("total", 0),
+            "active_goals": stats.get("active_goals", 0),
+            "rules": len(rules),
+        }
+
 
 # ── Intel Briefing proxy ──────────────────────────────────────────────────────
 

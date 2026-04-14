@@ -274,6 +274,11 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surfac
   gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; z-index: 15; }
 footer .stats { display: flex; gap: 18px; flex-wrap: wrap; }
 footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; margin-right: 3px; }
+
+/* ── Symphony Ops ────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  #panel-symphony > div { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
@@ -299,6 +304,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     <span class="tab-count hidden" id="nav-xi-count">0</span>
   </button>
   <button class="tab-btn" data-tab="transcripts" role="tab">Transcripts &amp; Gems</button>
+  <button class="tab-btn" data-tab="symphony" role="tab">Symphony Ops</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -459,6 +465,127 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
 </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB 4 — SYMPHONY OPS
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-symphony" class="tab-panel">
+<div id="panel-symphony" style="padding:16px 22px 80px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+    <!-- Full-width: Markup Tool -->
+    <div style="grid-column:1 / -1;">
+      <div class="card" style="padding:0; overflow:hidden;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--border);">
+          <h2 style="margin:0; padding:0; border:0;">Markup Tool</h2>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="small" id="markup-status">checking...</span>
+            <a href="http://192.168.1.199:8088" target="_blank" class="btn">Open Full &#8599;</a>
+          </div>
+        </div>
+        <iframe id="markup-frame" src="http://localhost:8088"
+          style="width:100%;height:600px;border:none;background:var(--surface);"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          loading="lazy"></iframe>
+        <div id="markup-offline" style="display:none; padding:30px; text-align:center;">
+          <p style="color:var(--muted);">Markup server offline</p>
+          <p class="small">Start it on Bob: <code style="color:var(--gold);">python3 ~/AI-Server/tools/markup_app/server.py --port 8088</code></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Left column -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <!-- Proposals -->
+      <div class="card">
+        <h2>Proposals</h2>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+          <div>
+            <div class="stat-label">Templates</div>
+            <div id="proposal-templates-count" class="stat-big">&#8212;</div>
+          </div>
+          <div>
+            <div class="stat-label">Service</div>
+            <div id="proposal-service-status" class="small">checking...</div>
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label class="small" style="display:block;margin-bottom:4px;">Quick Generate</label>
+          <select id="proposal-template" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 10px;width:100%;font-size:12px;">
+            <option value="">Select template...</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <input id="proposal-client" placeholder="Client name" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 10px;font-size:12px;" />
+          <input id="proposal-project" placeholder="Project name" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 10px;font-size:12px;" />
+        </div>
+        <button class="btn" onclick="generateProposal()" id="proposal-gen-btn">Generate Proposal</button>
+        <div id="proposal-result" style="margin-top:10px;display:none;" class="small"></div>
+      </div>
+
+      <!-- Agreement Generator -->
+      <div class="card">
+        <h2>Agreement Generator</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+          <input id="agree-client" placeholder="Client name" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 10px;font-size:12px;" />
+          <input id="agree-project" placeholder="Project name" style="background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 10px;font-size:12px;" />
+        </div>
+        <textarea id="agree-items" placeholder="Equipment items (comma-separated)" rows="2" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px 10px;font-size:12px;resize:vertical;box-sizing:border-box;"></textarea>
+        <div style="margin-top:8px;">
+          <button class="btn" onclick="generateAgreement()">Generate .docx</button>
+        </div>
+        <div id="agree-result" style="margin-top:8px;display:none;" class="small"></div>
+      </div>
+
+      <!-- Cortex Knowledge -->
+      <div class="card">
+        <h2>Cortex Knowledge</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+          <div><div class="stat-big" id="cortex-total">&#8212;</div><div class="stat-label">Total Memories</div></div>
+          <div><div class="stat-big" id="cortex-goals">&#8212;</div><div class="stat-label">Active Goals</div></div>
+          <div><div class="stat-big" id="cortex-rules">&#8212;</div><div class="stat-label">Trading Rules</div></div>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn" onclick="triggerImprovement()">Run Improvement Cycle</button>
+          <button class="btn" onclick="loadSymphonyDigest()">Today's Digest</button>
+        </div>
+        <div id="cortex-digest" style="margin-top:10px;display:none;max-height:300px;overflow-y:auto;padding:10px;background:var(--surface-2);border-radius:4px;font-size:12px;"></div>
+      </div>
+
+    </div><!-- end left column -->
+
+    <!-- Right column -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <!-- Client Portal -->
+      <div class="card">
+        <h2>Client Portal</h2>
+        <div id="portal-status" class="small" style="margin-bottom:8px;">checking...</div>
+        <div id="portal-submissions" class="small" style="color:var(--muted);">No recent submissions</div>
+      </div>
+
+      <!-- Quick Tools -->
+      <div class="card">
+        <h2>Quick Tools</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+          <button class="btn" onclick="runTool('room_mapper')" title="Analyze project room layouts">Room Mapper</button>
+          <button class="btn" onclick="runTool('project_analyzer')" title="Analyze project SKU coverage">Project Analyzer</button>
+          <button class="btn" onclick="runTool('proposal_to_dtools')" title="Export proposal to D-Tools CSV">Proposal &#8594; D-Tools</button>
+          <button class="btn" onclick="runTool('build_inventory')" title="Build inventory from D-Tools">Build Inventory</button>
+          <button class="btn" onclick="runTool('fetch_manuals')" title="Fetch product manuals">Fetch Manuals</button>
+          <button class="btn" onclick="runTool('cortex_curator')" title="Run Cortex knowledge curation">Cortex Curator</button>
+          <button class="btn" onclick="runTool('knowledge_graph')" title="View knowledge graph">Knowledge Graph</button>
+          <button class="btn" onclick="runTool('maintenance')" title="Run Bob maintenance (cleanup)">Maintenance</button>
+        </div>
+        <div id="tool-output" style="margin-top:10px;display:none;max-height:200px;overflow-y:auto;padding:8px;background:var(--surface-2);border-radius:4px;font-family:var(--mono);font-size:11px;white-space:pre-wrap;"></div>
+      </div>
+
+    </div><!-- end right column -->
+
+  </div>
+</div>
+</div>
+
 <!-- ═══ FOOTER ═════════════════════════════════════════════════════════════ -->
 <footer>
   <div class="stats" id="footer-stats"></div>
@@ -544,6 +671,8 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
 
   let _xiLoaded = false;
   let _trLoaded = false;
+  let _symLoaded = false;
+  let _markupCheckInterval = null;
 
   window.switchTab = function switchTab(name) {
     document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
@@ -555,13 +684,22 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     window.location.hash = name === 'overview' ? '' : name;
     if (name === 'xintake'     && !_xiLoaded) { _xiLoaded = true; loadXIntake(); }
     if (name === 'transcripts' && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
+    if (name === 'symphony') {
+      if (!_symLoaded) { _symLoaded = true; loadSymphonyOps(); }
+      checkMarkupHealth();
+      if (!_markupCheckInterval) {
+        _markupCheckInterval = setInterval(() => {
+          if ($('tab-symphony') && $('tab-symphony').classList.contains('active')) checkMarkupHealth();
+        }, 30000);
+      }
+    }
   };
 
   document.querySelectorAll('.tab-btn').forEach((b) =>
     b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
   const _hashTab = window.location.hash.replace('#', '');
-  if (['xintake', 'transcripts'].includes(_hashTab))
+  if (['xintake', 'transcripts', 'symphony'].includes(_hashTab))
     setTimeout(() => switchTab(_hashTab), 50);
 
   // ── Badge helpers ─────────────────────────────────────────────────────────
@@ -1210,6 +1348,168 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
   refresh();
   setInterval(refresh, REFRESH_MS);
   setInterval(tickClock, 1000);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  SYMPHONY OPS
+  // ══════════════════════════════════════════════════════════════════════════
+
+  async function loadSymphonyOps() {
+    loadProposalTemplates();
+    loadCortexStats();
+    checkPortalHealth();
+  }
+
+  async function checkMarkupHealth() {
+    try {
+      const r = await fetch('http://localhost:8088/health', {signal: AbortSignal.timeout(3000)});
+      if (r.ok) {
+        $('markup-frame').style.display = 'block';
+        $('markup-offline').style.display = 'none';
+        $('markup-status').textContent = 'online';
+        $('markup-status').style.color = 'var(--green)';
+      } else throw new Error();
+    } catch {
+      $('markup-frame').style.display = 'none';
+      $('markup-offline').style.display = 'block';
+      $('markup-status').textContent = 'offline';
+      $('markup-status').style.color = 'var(--red)';
+    }
+  }
+
+  async function loadProposalTemplates() {
+    try {
+      const r = await fetch('/api/symphony/proposals/templates');
+      if (!r.ok) throw new Error();
+      const data = await r.json();
+      const sel = $('proposal-template');
+      sel.innerHTML = '<option value="">Select template...</option>';
+      (data.templates || []).forEach(t => {
+        sel.innerHTML += `<option value="${esc(t)}">${esc(t.replace(/_/g,' '))}</option>`;
+      });
+      $('proposal-templates-count').textContent = (data.templates || []).length;
+      $('proposal-service-status').textContent = 'online';
+      $('proposal-service-status').style.color = 'var(--green)';
+    } catch {
+      $('proposal-service-status').textContent = 'offline';
+      $('proposal-service-status').style.color = 'var(--red)';
+    }
+  }
+
+  window.generateProposal = async function generateProposal() {
+    const template = $('proposal-template').value;
+    const client   = $('proposal-client').value.trim();
+    const project  = $('proposal-project').value.trim();
+    if (!template || !client) { alert('Select a template and enter client name'); return; }
+    $('proposal-gen-btn').disabled = true;
+    $('proposal-gen-btn').textContent = 'Generating...';
+    try {
+      const r = await fetch('/api/symphony/proposals/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({template, client_name: client, project_name: project || client + ' Project'})
+      });
+      const data = await r.json();
+      const resultEl = $('proposal-result');
+      resultEl.style.display = 'block';
+      if (data.proposal_id) {
+        resultEl.innerHTML = `<span style="color:var(--green)">Generated: ${esc(data.proposal_id)}</span>`;
+      } else {
+        resultEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(data.detail || data.error || 'unknown')}</span>`;
+      }
+    } catch {
+      $('proposal-result').style.display = 'block';
+      $('proposal-result').innerHTML = '<span style="color:var(--red)">Failed to connect</span>';
+    }
+    $('proposal-gen-btn').disabled = false;
+    $('proposal-gen-btn').textContent = 'Generate Proposal';
+  };
+
+  window.generateAgreement = async function generateAgreement() {
+    const client  = $('agree-client').value.trim();
+    const project = $('agree-project').value.trim();
+    const items   = $('agree-items').value.trim();
+    if (!client) { alert('Enter client name'); return; }
+    const resultEl = $('agree-result');
+    resultEl.style.display = 'block';
+    resultEl.textContent = 'Generating...';
+    try {
+      const r = await fetch('/api/symphony/agreement/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({client, project, items})
+      });
+      const data = await r.json();
+      if (data.error) {
+        resultEl.innerHTML = `<span style="color:var(--red)">Error: ${esc(data.error)}</span>`;
+      } else {
+        resultEl.innerHTML = `<span style="color:var(--green)">${esc(data.output || 'Done')}</span>`;
+      }
+    } catch {
+      resultEl.innerHTML = '<span style="color:var(--red)">Failed to connect</span>';
+    }
+  };
+
+  async function checkPortalHealth() {
+    const data = await fetchJson('/api/symphony/portal/health');
+    const statusEl = $('portal-status');
+    if (data && data.status === 'ok') {
+      statusEl.textContent = 'online';
+      statusEl.style.color = 'var(--green)';
+    } else {
+      statusEl.textContent = data ? ('status: ' + (data.status || 'unknown')) : 'offline';
+      statusEl.style.color = 'var(--muted)';
+    }
+  }
+
+  window.runTool = async function runTool(toolName) {
+    const outputEl = $('tool-output');
+    outputEl.style.display = 'block';
+    outputEl.textContent = 'Running ' + toolName + '...';
+    try {
+      const r = await fetch('/api/symphony/tools/' + toolName, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+      });
+      const data = await r.json();
+      if (data.error) {
+        outputEl.textContent = 'Error: ' + data.error;
+      } else {
+        outputEl.textContent = (data.stdout || '') + (data.stderr ? '\n[stderr] ' + data.stderr : '');
+      }
+    } catch(e) {
+      outputEl.textContent = 'Failed: ' + String(e);
+    }
+  };
+
+  async function loadCortexStats() {
+    const data = await fetchJson('/api/symphony/cortex/stats');
+    if (!data) return;
+    $('cortex-total').textContent = data.total        ?? '—';
+    $('cortex-goals').textContent = data.active_goals ?? '—';
+    $('cortex-rules').textContent = data.rules        ?? '—';
+  }
+
+  window.triggerImprovement = async function triggerImprovement() {
+    const digestEl = $('cortex-digest');
+    digestEl.style.display = 'block';
+    digestEl.textContent = 'Running improvement cycle...';
+    try {
+      const r = await fetch('/improve', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      const data = await r.json();
+      digestEl.textContent = data.result || data.message || JSON.stringify(data);
+    } catch(e) {
+      digestEl.textContent = 'Failed: ' + String(e);
+    }
+  };
+
+  window.loadSymphonyDigest = async function loadSymphonyDigest() {
+    const digestEl = $('cortex-digest');
+    digestEl.style.display = 'block';
+    digestEl.textContent = 'Loading digest...';
+    const data = await fetchJson('/digest/today');
+    if (!data) { digestEl.textContent = 'unavailable'; return; }
+    const s = data.summary || data.headline || data.digest || '';
+    digestEl.textContent = s || 'No digest available';
+  };
 
 })();
 </script>

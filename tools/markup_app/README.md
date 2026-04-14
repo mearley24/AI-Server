@@ -13,8 +13,8 @@ python3 /Users/bob/AI-Server/tools/markup_app/server.py
 ```
 
 **Access:**
-- iPad: `http://192.168.1.109:8091` (or your Mac's local IP)
-- **HTTPS (for Share → Save to Files):** Run `tailscale serve 8091`, set `MARKUP_HTTPS_URL` in `.env` — see `setup/markup/TAILSCALE_HTTPS.md`
+- iPad: `http://192.168.1.109:8088` (or your Mac's local IP)
+- **HTTPS (for Share → Save to Files):** Run `tailscale serve 8088`, set `MARKUP_HTTPS_URL` in `.env` — see `setup/markup/TAILSCALE_HTTPS.md`
 - Add to Home Screen for app-like experience
 
 ### Optional Secure Access (Trades)
