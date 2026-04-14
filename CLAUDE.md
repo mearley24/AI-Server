@@ -77,33 +77,29 @@ AI-Server/
 - Never commit .env files, API keys, or SQLite databases.
 - Git config: email `earleystream@gmail.com`, name `Matt Earley`.
 
-### Shell and Terminal
-- **All scripts must be zsh-compatible.** Matt runs directly in Cline/Claude Code terminal on macOS.
-- **NEVER use heredocs (`<<EOF`, `<<'EOF'`, `<< 'DELIM'`).** Cline's zsh terminal locks up on heredoc syntax, leaving the session stuck at `heredoc>` or `dquote>` prompts that require manual intervention. This is the single most common session-killer.
-- **NEVER use multi-line quoted strings in shell commands.** Any string with a newline inside quotes (`"line1\nline2"` via literal newline) triggers `dquote>` lock-up in zsh. Always use `printf` with `\n`, or write content to a file using `python3 -c` or `tee` with escaped newlines.
-- **To create multi-line files, use one of these patterns:**
-  ```zsh
-  # GOOD: python3 one-liner
-  python3 -c "open('file.txt','w').write('line1\nline2\nline3\n')"
+### Shell and Terminal (zsh — Cline/Claude Code on macOS)
 
-  # GOOD: printf with escaped newlines
-  printf 'line1\nline2\nline3\n' > file.txt
+**ABSOLUTE RULES — violating any of these locks the terminal and kills the session:**
+- No heredocs (`<<EOF`, `<<'EOF'`, `<< 'DELIM'`)
+- No multi-line quoted strings (triggers `dquote>` lock)
+- No inline interpreters (`python3 <<EOF`, `node -e 'multi\nline'`)
+- No interactive editors (vim, nano, `crontab -e`)
+- No long-running dev servers or watch modes (`--watch`, `npm run dev`, `tail -f`)
+- Use bounded commands only — every command must terminate on its own
 
-  # GOOD: multiple single-line appends
-  echo 'line1' > file.txt
-  echo 'line2' >> file.txt
+**Safe ways to create multi-line files:**
+```zsh
+python3 -c "open('file.txt','w').write('line1\nline2\nline3\n')"
+printf 'line1\nline2\nline3\n' > file.txt
+echo 'line1' > file.txt && echo 'line2' >> file.txt
+```
 
-  # BAD — locks terminal:
-  cat <<EOF > file.txt    # NEVER DO THIS
-  cat << 'EOF' > file.txt # NEVER DO THIS
-  echo "multi
-  line" > file.txt       # NEVER DO THIS
-  ```
-- **No interactive editors.** Never use vim, nano, or `crontab -e`. One-liner commands only.
-- **No inline JSON in curl commands.** Write JSON to a temp file first, then `curl -d @file`. Shell escaping breaks every time (lesson 19). Use `scripts/api-post.sh` for API calls.
-- **Full paths in launchd scripts.** Always use `/usr/local/bin/docker`, `/opt/homebrew/bin/python3`, etc. Launchd has minimal PATH (lesson 24).
-- **pip install needs `--break-system-packages`** on macOS Sonoma+ due to PEP 668, or use the venv at `~/AI-Server/.venv/` (lesson 25).
-- **Never use `echo "KEY=value" >> .env`** — first entry wins, duplicates are ignored (lesson 18). Use `scripts/set-env.sh KEY value` instead.
+**Other shell rules:**
+- All scripts must be zsh-compatible
+- No inline JSON in curl commands — write to temp file, then `curl -d @file` (lesson 19). Use `scripts/api-post.sh`.
+- Full paths in launchd scripts (`/usr/local/bin/docker`, `/opt/homebrew/bin/python3`)
+- `pip install` needs `--break-system-packages` on macOS Sonoma+ (PEP 668), or use `~/AI-Server/.venv/`
+- Never `echo "KEY=value" >> .env` — first entry wins, duplicates ignored. Use `scripts/set-env.sh KEY value`.
 
 ### Docker
 - OpenClaw code is bind-mounted (`./openclaw:/app`). Python-only edits just need `docker restart openclaw`.
