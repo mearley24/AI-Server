@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-04-15T13:09:34.318687+00:00",
+  "source": "export_notes.py (SQLite direct read)",
+  "summary": {
+    "total_notes": 2,
+    "by_category": {},
+    "by_action": {
+      "keep": 2
+    },
+    "notes_with_photos": 0,
+    "notes_with_codes": 0
+  },
+  "notes": [
+    {
+      "note_id": "sqlite_8463",
+      "title": "write a prompt for Perplexity Computer, telling it whats left to get…",
+      "body": "write a prompt for Perplexity Computer, telling it whats left to get done, what has/not been started yet, and anything that is still not working.\n\nlets do all the possibles also if they have uses that can help in the long run but write me a ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA! ;N? hA!",
+      "created_at": "2026-04-04T15:59:06.868075+00:00",
+      "modified_at": "2026-04-04T17:39:04.509926+00:00",
+      "folder": "Bob",
+      "attachment_count": 0,
+      "has_attachments": false,
+      "value_score": 50,
+      "action": "keep",
+      "category": "unknown",
+      "summary": "write a prompt for Perplexity Computer, telling it whats left to get done, what has/not been started yet, and anything that is still not working.  lets do all the possibles also if they have uses that"
+    },
+    {
+      "note_id": "sqlite_8459",
+      "title": "0xa791E3090312981A1E18ed93238e480a03E7C0d2",
+      "body": "*0xa791E3090312981A1E18ed93238e480a03E7C0d2 4{-AG \t*  EOD",
+      "created_at": "2026-03-27T02:43:46.289138+00:00",
+      "modified_at": "2026-03-27T02:43:49.185694+00:00",
+      "folder": "Recently Deleted",
+      "attachment_count": 0,
+      "has_attachments": false,
+      "value_score": 50,
+      "action": "keep",
+      "category": "unknown",
+      "summary": "*0xa791E3090312981A1E18ed93238e480a03E7C0d2 4{-AG \t*  EOD"
+    }
+  ]
+}
