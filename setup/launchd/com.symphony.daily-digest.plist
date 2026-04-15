@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.daily-digest</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/bob/AI-Server/integrations/telegram/daily_digest.py</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    
+    <key>StartCalendarInterval</key>
+    <array>
+        <!-- 6:00 AM -->
+        <dict>
+            <key>Hour</key>
+            <integer>6</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <!-- 8:00 PM -->
+        <dict>
+            <key>Hour</key>
+            <integer>20</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/daily-digest.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/daily-digest.err</string>
+</dict>
+</plist>

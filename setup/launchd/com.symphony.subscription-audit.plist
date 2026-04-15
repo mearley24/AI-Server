@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.subscription-audit</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/bob/AI-Server/.venv/bin/python3</string>
+        <string>/Users/bob/AI-Server/integrations/telegram/subscription_audit.py</string>
+    </array>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    
+    <!-- Run on the 20th of every month at 9:00 AM -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Day</key>
+        <integer>20</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/subscription_audit.log</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/subscription_audit.log</string>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

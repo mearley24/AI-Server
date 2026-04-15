@@ -124,10 +124,14 @@ services:
       - KRAKEN_API_KEY=${KRAKEN_API_KEY:-}
       - KRAKEN_SECRET=${KRAKEN_SECRET:-}
       - KRAKEN_TRADING_PAIR=${KRAKEN_TRADING_PAIR:-XRP/USD}
+      - KALSHI_API_KEY=${KALSHI_API_KEY:-}
+      - KALSHI_PRIVATE_KEY_PATH=${KALSHI_PRIVATE_KEY_PATH:-/data/kalshi_private_key.pem}
+      - KALSHI_ENV=${KALSHI_ENV:-production}
       - CORTEX_URL=http://cortex:8102
     volumes:
       - ./data/polymarket:/data
       - ./polymarket-bot/secrets:/app/secrets:ro
+      - ./data/kalshi_private_key.pem:/data/kalshi_private_key.pem:ro
     depends_on:
       vpn:
         condition: service_healthy
@@ -641,6 +645,47 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  x-intake-lab:
+    build: ./integrations/x_intake
+    container_name: x-intake-lab
+    restart: unless-stopped
+    command: ["python3", "lab_main.py"]
+    ports:
+      - "127.0.0.1:8103:8101"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CORTEX_URL=http://cortex:8102
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Denver
+      - LAB_MODE=true
+    volumes:
+      - ./data/transcripts:/data/transcripts
+      - ./data/bookmarks:/data/bookmarks
+      - x-intake-lab-data:/data/lab
+    networks:
+      - default
+    depends_on:
+      redis:
+        condition: service_healthy
+      cortex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8101/health', timeout=3)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 networks:
   default:
     ipam:
@@ -649,3 +694,4 @@ networks:
 
 volumes:
   redis_data:
+  x-intake-lab-data:

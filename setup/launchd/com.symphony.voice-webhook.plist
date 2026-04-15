@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.voice-webhook</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/bob/AI-Server/api/voice_webhook.py</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>VOICE_WEBHOOK_PORT</key>
+        <string>8088</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/voice-webhook.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/voice-webhook-error.log</string>
+</dict>
+</plist>

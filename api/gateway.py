@@ -53,6 +53,7 @@ SERVICES = {
     "portal":        "http://localhost:8096",
     "openclaw":      "http://localhost:8099",
     "x-intake":      "http://localhost:8101",
+    "x-intake-lab":  "http://localhost:8103",
     "trading":       "http://localhost:8430",
 }
 

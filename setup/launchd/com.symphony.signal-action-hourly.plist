@@ -3,33 +3,39 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.symphony.network-guard</string>
+    <string>com.symphony.signal-action-hourly</string>
+
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/bob/AI-Server/tools/network_guard_daemon.py</string>
-        <string>--once</string>
+        <string>/Users/bob/AI-Server/trading/signal_action_runner.py</string>
+        <string>--hours</string>
+        <string>24</string>
+        <string>--limit</string>
+        <string>25</string>
     </array>
+
     <key>WorkingDirectory</key>
     <string>/Users/bob/AI-Server</string>
+
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/bob</string>
-        <key>NETWORK_GUARD_CONSECUTIVE_BAD_REQUIRED</key>
-        <string>1</string>
     </dict>
+
     <key>StartInterval</key>
-    <integer>60</integer>
+    <integer>3600</integer>
+
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
-    <true/>
+
     <key>StandardOutPath</key>
-    <string>/Users/bob/AI-Server/logs/network-guard.log</string>
+    <string>/Users/bob/AI-Server/logs/signal-action-hourly.log</string>
+
     <key>StandardErrorPath</key>
-    <string>/Users/bob/AI-Server/logs/network-guard.err</string>
+    <string>/Users/bob/AI-Server/logs/signal-action-hourly.err</string>
 </dict>
 </plist>

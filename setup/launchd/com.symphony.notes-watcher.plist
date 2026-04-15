@@ -3,36 +3,29 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.symphony.business-hours-throttle</string>
-
+    <string>com.symphony.notes-watcher</string>
     <key>ProgramArguments</key>
     <array>
         <string>/opt/homebrew/bin/python3</string>
-        <string>/Users/bob/AI-Server/tools/business_hours_throttle.py</string>
+        <string>/Users/bob/AI-Server/tools/notes_watcher.py</string>
+        <string>--watch</string>
+        <string>--interval</string>
+        <string>120</string>
     </array>
-
     <key>WorkingDirectory</key>
     <string>/Users/bob/AI-Server</string>
-
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/notes-watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/notes-watcher.error.log</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StartInterval</key>
-    <integer>900</integer>
-
-    <key>StandardOutPath</key>
-    <string>/Users/bob/AI-Server/logs/business_hours_throttle.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>/Users/bob/AI-Server/logs/business_hours_throttle.error.log</string>
 </dict>
 </plist>

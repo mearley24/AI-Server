@@ -94,6 +94,7 @@ echo "Files changed in last commit:"
 git diff --stat HEAD~1 HEAD 2>/dev/null || echo "  (unable to diff)"
 echo ""
 echo "Pull complete."
+mkdir -p data/transcripts data/bookmarks
 
 # ── 11. --verify flag: run smoke test ────────────────────────────────────────
 if [ "${1:-}" = "--verify" ]; then

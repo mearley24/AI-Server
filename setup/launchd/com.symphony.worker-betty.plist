@@ -3,33 +3,39 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.symphony.network-guard</string>
+    <string>com.symphony.worker-betty</string>
+    
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/bob/AI-Server/tools/network_guard_daemon.py</string>
-        <string>--once</string>
+        <string>/Users/bob/AI-Server/orchestrator/autonomous_worker.py</string>
+        <string>--worker</string>
+        <string>betty</string>
+        <string>--interval</string>
+        <string>30</string>
     </array>
-    <key>WorkingDirectory</key>
-    <string>/Users/bob/AI-Server</string>
+    
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
         <string>/Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/bob</string>
-        <key>NETWORK_GUARD_CONSECUTIVE_BAD_REQUIRED</key>
-        <string>1</string>
     </dict>
-    <key>StartInterval</key>
-    <integer>60</integer>
+    
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    
     <key>RunAtLoad</key>
     <true/>
+    
     <key>KeepAlive</key>
     <true/>
+    
     <key>StandardOutPath</key>
-    <string>/Users/bob/AI-Server/logs/network-guard.log</string>
+    <string>/Users/bob/AI-Server/orchestrator/logs/betty_worker.log</string>
+    
     <key>StandardErrorPath</key>
-    <string>/Users/bob/AI-Server/logs/network-guard.err</string>
+    <string>/Users/bob/AI-Server/orchestrator/logs/betty_worker_error.log</string>
 </dict>
 </plist>

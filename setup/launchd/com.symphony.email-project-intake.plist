@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.email-project-intake</string>
+
+    <key>Comment</key>
+    <string>Scans configured mailbox(es) for project-forward emails every 5 minutes</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>-m</string>
+        <string>symphony.email.cli</string>
+        <string>projects</string>
+        <string>--days</string>
+        <string>14</string>
+        <string>--limit</string>
+        <string>120</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/bob</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/email-project-intake.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/email-project-intake.error.log</string>
+</dict>
+</plist>

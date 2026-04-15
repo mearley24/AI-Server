@@ -25,6 +25,8 @@
         <key>SYMPHONY_ROOT</key>
         <string>/Users/bob/AI-Server</string>
     </dict>
+    <key>KeepAlive</key>
+    <true/>
     <key>StandardOutPath</key>
     <string>/tmp/symphony-learning.log</string>
     <key>StandardErrorPath</key>

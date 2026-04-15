@@ -3,26 +3,27 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.symphony.backup-data</string>
+    <string>com.symphony.bob-maintenance</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/bob/AI-Server/scripts/backup-data.sh</string>
+        <string>/Users/bob/AI-Server/.venv/bin/python3</string>
+        <string>/Users/bob/AI-Server/tools/bob_maintenance.py</string>
+        <string>--run</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/bob/AI-Server</string>
     <key>StartCalendarInterval</key>
     <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
         <key>Hour</key>
-        <integer>4</integer>
+        <integer>3</integer>
         <key>Minute</key>
         <integer>0</integer>
     </dict>
-    <key>KeepAlive</key>
-    <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/symphony-backup-data.log</string>
+    <string>/Users/bob/AI-Server/logs/bob-maintenance.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/symphony-backup-data.err</string>
+    <string>/Users/bob/AI-Server/logs/bob-maintenance.err</string>
 </dict>
 </plist>

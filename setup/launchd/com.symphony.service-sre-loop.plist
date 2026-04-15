@@ -3,12 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.symphony.network-guard</string>
+    <string>com.symphony.service-sre-loop</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
-        <string>/Users/bob/AI-Server/tools/network_guard_daemon.py</string>
-        <string>--once</string>
+        <string>/Users/bob/AI-Server/trading/service_sre_loop.py</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/bob/AI-Server</string>
@@ -18,18 +17,14 @@
         <string>/Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/bob</string>
-        <key>NETWORK_GUARD_CONSECUTIVE_BAD_REQUIRED</key>
-        <string>1</string>
     </dict>
     <key>StartInterval</key>
-    <integer>60</integer>
+    <integer>900</integer>
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
-    <true/>
     <key>StandardOutPath</key>
-    <string>/Users/bob/AI-Server/logs/network-guard.log</string>
+    <string>/Users/bob/AI-Server/logs/service-sre-loop.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/bob/AI-Server/logs/network-guard.err</string>
+    <string>/Users/bob/AI-Server/logs/service-sre-loop.err</string>
 </dict>
 </plist>

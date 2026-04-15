@@ -18,6 +18,7 @@ Last updated: 2026-04-14
 | 8097 | ClawWork | clawwork | Side-hustle task engine | Business |
 | 8099 | OpenClaw | openclaw | Central LLM orchestration + routing | Core AI |
 | 8101 | X-Intake | x-intake | X/Twitter link analysis + bookmarks | Intelligence |
+| 8103 | X-Intake Lab | x-intake-lab | Experimental transcript/bookmark sandbox | Intelligence |
 | 8102 | Cortex | cortex | Brain, memory, dashboard (1582+ memories) | Core AI |
 | 8115 | Cortex Autobuilder | cortex-autobuilder | Bob/Betty research loop + topic scanning | Core AI |
 | 8430 | Polymarket Bot | polymarket-bot | Prediction market trading (via VPN) | Trading |
