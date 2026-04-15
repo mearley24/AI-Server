@@ -111,6 +111,17 @@ class PaperTrader:
 class CryptoClient(PlatformClient):
     """CCXT-based multi-exchange crypto client."""
 
+    @staticmethod
+    def _fix_base64_padding(secret: str) -> str:
+        """Ensure base64 string has correct padding for CCXT/Kraken."""
+        s = secret.strip()
+        if not s:
+            return s
+        missing = len(s) % 4
+        if missing:
+            s += "=" * (4 - missing)
+        return s
+
     def __init__(
         self,
         exchange_id: str = "kraken",
@@ -122,7 +133,7 @@ class CryptoClient(PlatformClient):
     ) -> None:
         self._exchange_id = exchange_id
         self._api_key = api_key
-        self._api_secret = api_secret
+        self._api_secret = self._fix_base64_padding(api_secret)
         self._dry_run = dry_run
         self._symbols = symbols or ["XRP/USD", "XCN/USD", "PI/USD"]
         self._exchange: Any = None
