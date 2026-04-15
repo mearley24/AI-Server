@@ -22,12 +22,10 @@
     background: var(--bg); color: var(--text);
     padding: env(safe-area-inset-top) 0 80px;
     -webkit-font-smoothing: antialiased;
-    min-height: 100vh;
-    overflow-x: hidden;
+    min-height: 100vh; overflow-x: hidden;
   }
   a { color: var(--teal); text-decoration: none; }
 
-  /* ── Header ── */
   .header {
     position: sticky; top: 0; z-index: 100;
     background: rgba(13,13,13,0.85);
@@ -44,77 +42,66 @@
   .header-right { display: flex; gap: 8px; align-items: center; }
   .pulse {
     width: 8px; height: 8px; border-radius: 50%; background: var(--green);
-    box-shadow: 0 0 6px var(--green);
-    animation: pulse-glow 2s ease-in-out infinite;
+    box-shadow: 0 0 6px var(--green); animation: pulse-glow 2s ease-in-out infinite;
   }
   .pulse.warn { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
   .pulse.dead { background: var(--red); box-shadow: 0 0 6px var(--red); animation: none; }
-  @keyframes pulse-glow {
-    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
-  }
+  @keyframes pulse-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .status-label { font-size: 0.7rem; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 
-  /* ── Tabs ── */
   .tabs {
-    display: flex; gap: 0; padding: 0 16px;
+    display: flex; gap: 0; padding: 0 8px;
     border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    position: sticky; top: 52px; z-index: 90;
+    background: var(--bg); position: sticky; top: 52px; z-index: 90;
+    overflow-x: auto; scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
   .tab {
-    flex: 1; padding: 12px 0; text-align: center;
-    font-size: 0.8rem; font-weight: 600; color: var(--dim);
+    flex: 0 0 auto; padding: 12px 10px; text-align: center;
+    font-size: 0.75rem; font-weight: 600; color: var(--dim);
     border: none; background: none; cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+    white-space: nowrap;
   }
   .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
   .tab .badge {
     display: inline-block; min-width: 18px; height: 18px;
     line-height: 18px; border-radius: 9px; font-size: 0.65rem;
-    font-weight: 700; text-align: center; margin-left: 4px;
-    padding: 0 5px;
+    font-weight: 700; text-align: center; margin-left: 4px; padding: 0 5px;
   }
   .tab .badge.pending { background: var(--amber); color: #000; }
   .tab .badge.count { background: var(--border); color: var(--dim); }
 
-  /* ── Tab panels ── */
   .panel { display: none; padding: 12px 16px; }
   .panel.active { display: block; }
 
-  /* ── KPI strip ── */
   .kpi-strip {
     display: flex; gap: 8px; padding: 12px 16px;
     overflow-x: auto; scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
   }
   .kpi-strip::-webkit-scrollbar { display: none; }
   .kpi {
     flex: 0 0 auto; min-width: 110px;
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 10px 12px;
-    scroll-snap-align: start;
+    border-radius: var(--radius-sm); padding: 10px 12px; scroll-snap-align: start;
   }
   .kpi-label { font-size: 0.65rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
   .kpi-value { font-size: 1.3rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
   .kpi-sub { font-size: 0.65rem; color: var(--faint); margin-top: 2px; }
 
-  /* ── Feed cards ── */
   .feed { display: flex; flex-direction: column; gap: 10px; }
   .card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 14px;
-    transition: transform 0.25s, opacity 0.25s;
-    position: relative; overflow: hidden;
+    transition: transform 0.25s, opacity 0.25s; position: relative; overflow: hidden;
   }
   .card.swiped { transform: translateX(100%); opacity: 0; pointer-events: none; }
   .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
   .card-meta { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
   .card-type {
     font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.06em; padding: 2px 6px; border-radius: 4px;
-    white-space: nowrap;
+    letter-spacing: 0.06em; padding: 2px 6px; border-radius: 4px; white-space: nowrap;
   }
   .type-build { background: var(--teal-dim); color: var(--teal); }
   .type-alpha { background: var(--green-dim); color: var(--green); }
@@ -139,10 +126,7 @@
     overflow: hidden; margin-bottom: 10px;
   }
   .card-summary.expanded { -webkit-line-clamp: unset; }
-  .card-action-label {
-    font-size: 0.7rem; color: var(--teal); font-weight: 600;
-    margin-bottom: 10px;
-  }
+  .card-action-label { font-size: 0.7rem; color: var(--teal); font-weight: 600; margin-bottom: 10px; }
   .card-actions { display: flex; gap: 8px; }
   .btn {
     flex: 1; padding: 10px 0; border-radius: var(--radius-sm);
@@ -160,7 +144,36 @@
     font-weight: 600; cursor: pointer; padding: 4px 0; margin-bottom: 6px;
   }
 
-  /* ── Memory cards ── */
+  /* Submit bar */
+  .submit-bar {
+    display: flex; gap: 8px; margin-bottom: 14px;
+    position: relative;
+  }
+  .submit-bar input {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    font-size: 0.82rem; color: var(--text); outline: none;
+    font-family: inherit;
+  }
+  .submit-bar input::placeholder { color: var(--faint); }
+  .submit-bar input:focus { border-color: var(--teal); }
+  .submit-bar button {
+    flex: 0 0 auto; background: var(--teal); color: #000;
+    border: none; border-radius: var(--radius-sm); padding: 10px 16px;
+    font-size: 0.8rem; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .submit-bar button:disabled { opacity: 0.4; cursor: default; }
+  .submit-bar .spinner {
+    display: none; position: absolute; right: 70px; top: 50%;
+    transform: translateY(-50%); width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--teal);
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+  }
+  .submit-bar .spinner.active { display: block; }
+  @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
+  /* Memory cards */
   .memory-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 12px 14px;
@@ -172,46 +185,57 @@
   .memory-text { font-size: 0.8rem; line-height: 1.4; color: var(--text); }
   .memory-time { font-size: 0.65rem; color: var(--faint); margin-top: 4px; }
 
-  /* ── Services grid ── */
+  /* Services grid */
   .svc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .svc {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 10px 12px;
     display: flex; align-items: center; gap: 8px;
   }
-  .svc-dot {
-    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-  }
+  .svc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .svc-dot.up { background: var(--green); }
   .svc-dot.down { background: var(--red); }
   .svc-name { font-size: 0.75rem; font-weight: 600; }
   .svc-port { font-size: 0.65rem; color: var(--faint); }
 
-  /* ── Empty state ── */
-  .empty {
-    text-align: center; padding: 48px 24px; color: var(--dim);
+  /* Ops links */
+  .ops-grid { display: flex; flex-direction: column; gap: 8px; }
+  .ops-link {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px;
+    text-decoration: none; color: var(--text);
+    transition: background 0.15s;
   }
+  .ops-link:hover, .ops-link:active { background: var(--surface2); }
+  .ops-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0;
+  }
+  .ops-icon.teal { background: var(--teal-dim); color: var(--teal); }
+  .ops-icon.green { background: var(--green-dim); color: var(--green); }
+  .ops-icon.amber { background: var(--amber-dim); color: var(--amber); }
+  .ops-icon.purple { background: var(--purple-dim); color: var(--purple); }
+  .ops-icon.red { background: var(--red-dim); color: var(--red); }
+  .ops-label { font-size: 0.82rem; font-weight: 600; }
+  .ops-desc { font-size: 0.7rem; color: var(--dim); margin-top: 1px; }
+  .ops-chevron { margin-left: auto; color: var(--faint); font-size: 0.9rem; }
+
+  .empty { text-align: center; padding: 48px 24px; color: var(--dim); }
   .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.3; }
   .empty-text { font-size: 0.85rem; line-height: 1.5; }
 
-  /* ── Toast ── */
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     background: var(--surface2); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 10px 20px;
     font-size: 0.8rem; font-weight: 600; color: var(--text);
-    opacity: 0; transition: opacity 0.3s; pointer-events: none;
-    z-index: 200;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 200;
   }
   .toast.show { opacity: 1; }
-
-  /* ── Refresh animation ── */
   .refreshing .kpi-value { animation: shimmer 1.2s infinite; }
-  @keyframes shimmer {
-    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
-  }
-
-  /* ── Section headers ── */
+  @keyframes shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .section-title {
     font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.06em; color: var(--dim); margin: 16px 0 8px;
@@ -219,7 +243,6 @@
 </style>
 </head><body>
 
-<!-- Header -->
 <div class="header">
   <h1>Symphony</h1>
   <div class="header-right">
@@ -228,7 +251,6 @@
   </div>
 </div>
 
-<!-- KPI Strip -->
 <div class="kpi-strip" id="kpiStrip">
   <div class="kpi"><div class="kpi-label">Memories</div><div class="kpi-value" id="kpiMemories">--</div><div class="kpi-sub">cortex total</div></div>
   <div class="kpi"><div class="kpi-label">Pending</div><div class="kpi-value" id="kpiPending" style="color:var(--amber)">--</div><div class="kpi-sub">needs review</div></div>
@@ -237,15 +259,20 @@
   <div class="kpi"><div class="kpi-label">Trading</div><div class="kpi-value" id="kpiTrading">--</div><div class="kpi-sub" id="kpiTradingLabel">status</div></div>
 </div>
 
-<!-- Tabs -->
 <div class="tabs">
   <button class="tab active" data-tab="review">Review <span class="badge pending" id="tabPendingBadge">0</span></button>
   <button class="tab" data-tab="memories">Memories <span class="badge count" id="tabMemBadge">0</span></button>
   <button class="tab" data-tab="system">System</button>
+  <button class="tab" data-tab="ops">Ops</button>
 </div>
 
 <!-- Review Panel -->
 <div class="panel active" id="panel-review">
+  <div class="submit-bar">
+    <input type="url" id="urlInput" placeholder="Paste any URL to analyze..." autocomplete="off" autocapitalize="off">
+    <div class="spinner" id="submitSpinner"></div>
+    <button id="submitBtn" onclick="submitUrl()">Analyze</button>
+  </div>
   <div class="feed" id="reviewFeed"></div>
 </div>
 
@@ -262,16 +289,108 @@
   <div id="queueStats"></div>
 </div>
 
-<!-- Toast -->
+<!-- Ops Panel -->
+<div class="panel" id="panel-ops">
+  <div class="section-title">Documentation</div>
+  <div class="ops-grid">
+    <a class="ops-link" href="/files/STATUS_REPORT.md">
+      <div class="ops-icon teal">&#9776;</div>
+      <div><div class="ops-label">Status Report</div><div class="ops-desc">Full system status, audit, and next items</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/files/CLAUDE.md">
+      <div class="ops-icon purple">&#9881;</div>
+      <div><div class="ops-label">CLAUDE.md</div><div class="ops-desc">Bob's operating instructions and context</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/files/docs/SYMPHONY_PROJECT_WORKFLOW.md">
+      <div class="ops-icon green">&#9655;</div>
+      <div><div class="ops-label">Project Workflow</div><div class="ops-desc">Symphony project pipeline and stages</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/files/docs/SYMPHONY_SUITE_ACCEPTANCE_CHECKLIST.md">
+      <div class="ops-icon amber">&#10003;</div>
+      <div><div class="ops-label">Acceptance Checklist</div><div class="ops-desc">Suite delivery acceptance criteria</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+  </div>
+
+  <div class="section-title" style="margin-top:20px">Service Endpoints</div>
+  <div class="ops-grid">
+    <a class="ops-link" href="/proxy/cortex/health" target="_blank">
+      <div class="ops-icon teal">&#9673;</div>
+      <div><div class="ops-label">Cortex</div><div class="ops-desc">:8102 - Memory engine health</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/cortex/memories?limit=50" target="_blank">
+      <div class="ops-icon teal">&#9673;</div>
+      <div><div class="ops-label">Cortex Memories</div><div class="ops-desc">Last 50 stored memories (JSON)</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/x-intake/queue/stats" target="_blank">
+      <div class="ops-icon amber">&#9878;</div>
+      <div><div class="ops-label">X-Intake Queue Stats</div><div class="ops-desc">:8101 - Approval queue breakdown</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/x-intake/queue?limit=100" target="_blank">
+      <div class="ops-icon amber">&#9878;</div>
+      <div><div class="ops-label">X-Intake Full Queue</div><div class="ops-desc">All queue items (JSON)</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/openclaw/health" target="_blank">
+      <div class="ops-icon green">&#9881;</div>
+      <div><div class="ops-label">OpenClaw</div><div class="ops-desc">:8099 - Decision engine health</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/trading/health" target="_blank">
+      <div class="ops-icon red">&#9733;</div>
+      <div><div class="ops-label">Trading Bot</div><div class="ops-desc">:8430 - Kraken market maker health</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/email/health" target="_blank">
+      <div class="ops-icon purple">&#9993;</div>
+      <div><div class="ops-label">Email Monitor</div><div class="ops-desc">:8092 - Zoho inbox watcher</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="/proxy/calendar/health" target="_blank">
+      <div class="ops-icon green">&#9636;</div>
+      <div><div class="ops-label">Calendar Agent</div><div class="ops-desc">:8094 - Schedule integration</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+  </div>
+
+  <div class="section-title" style="margin-top:20px">External Links</div>
+  <div class="ops-grid">
+    <a class="ops-link" href="https://github.com/mearley24/AI-Server" target="_blank">
+      <div class="ops-icon purple">&#9679;</div>
+      <div><div class="ops-label">GitHub Repo</div><div class="ops-desc">mearley24/AI-Server</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="https://github.com/mearley24/symphonysh" target="_blank">
+      <div class="ops-icon purple">&#9679;</div>
+      <div><div class="ops-label">symphonysh Repo</div><div class="ops-desc">mearley24/symphonysh</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="https://symphonysh.com" target="_blank">
+      <div class="ops-icon teal">&#9830;</div>
+      <div><div class="ops-label">symphonysh.com</div><div class="ops-desc">Live website on Cloudflare Pages</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+    <a class="ops-link" href="https://linear.app" target="_blank">
+      <div class="ops-icon amber">&#9632;</div>
+      <div><div class="ops-label">Linear</div><div class="ops-desc">Project management board</div></div>
+      <div class="ops-chevron">&#8250;</div>
+    </a>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 (function() {
   const BASE = '';
-  let allQueueItems = [];
-  let refreshTimer = null;
 
-  // ── Tabs ──
+  // Tabs
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -281,15 +400,12 @@
     });
   });
 
-  // ── Toast ──
   function toast(msg) {
     const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.classList.add('show');
+    el.textContent = msg; el.classList.add('show');
     setTimeout(() => el.classList.remove('show'), 2200);
   }
 
-  // ── Time formatting ──
   function timeAgo(ts) {
     if (!ts) return '';
     const sec = Math.floor(Date.now()/1000 - ts);
@@ -299,10 +415,8 @@
     return Math.floor(sec/86400) + 'd ago';
   }
 
-  // ── Type badge class ──
   function typeClass(t) {
-    const map = { build:'type-build', alpha:'type-alpha', tool:'type-tool', research:'type-research' };
-    return map[t] || 'type-info';
+    return { build:'type-build', alpha:'type-alpha', tool:'type-tool', research:'type-research' }[t] || 'type-info';
   }
   function relClass(r) {
     if (r >= 70) return 'rel-high';
@@ -310,15 +424,11 @@
     return 'rel-low';
   }
 
-  // ── Build review card ──
   function reviewCard(item) {
     const div = document.createElement('div');
-    div.className = 'card';
-    div.dataset.id = item.id;
-
+    div.className = 'card'; div.dataset.id = item.id;
     const summary = item.summary || 'No summary available';
     const isLong = summary.length > 180;
-
     div.innerHTML = `
       <div class="card-header">
         <div class="card-meta">
@@ -336,51 +446,73 @@
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:8px">
         <span class="card-time">${timeAgo(item.created_at)}</span>
-        ${item.url ? '<a href="'+item.url+'" target="_blank" style="font-size:0.7rem">View post</a>' : ''}
-      </div>
-    `;
+        ${item.url ? '<a href="'+item.url+'" target="_blank" style="font-size:0.7rem">View source</a>' : ''}
+      </div>`;
     return div;
   }
 
-  // ── Handle approve/dismiss ──
   window.handleAction = async function(id, action, btn) {
     const card = btn.closest('.card');
     try {
       const r = await fetch(BASE + '/proxy/x-intake/queue/' + id + '/' + action, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
       });
       if (r.ok) {
         card.classList.add('swiped');
         toast(action === 'approve' ? 'Approved \u2014 Bob will learn from this' : 'Dismissed');
         setTimeout(() => card.remove(), 300);
-        // Update badge
         const badge = document.getElementById('tabPendingBadge');
         const cur = parseInt(badge.textContent) || 0;
-        if (cur > 0) badge.textContent = cur - 1;
-        if (cur <= 1) badge.textContent = '0';
+        badge.textContent = Math.max(0, cur - 1);
+      } else { toast('Failed \u2014 try again'); }
+    } catch(e) { toast('Network error'); }
+  };
+
+  // Submit URL for analysis
+  window.submitUrl = async function() {
+    const input = document.getElementById('urlInput');
+    const btn = document.getElementById('submitBtn');
+    const spinner = document.getElementById('submitSpinner');
+    const url = input.value.trim();
+    if (!url) { toast('Paste a URL first'); return; }
+
+    btn.disabled = true; spinner.classList.add('active');
+    toast('Analyzing...');
+    try {
+      const r = await fetch(BASE + '/api/x-intake-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const data = await r.json();
+      if (data.error) {
+        toast('Error: ' + data.error.slice(0, 60));
       } else {
-        toast('Failed \u2014 try again');
+        toast('Analyzed \u2014 check the feed');
+        input.value = '';
+        setTimeout(fetchAll, 1500);
       }
     } catch(e) {
       toast('Network error');
     }
+    btn.disabled = false; spinner.classList.remove('active');
   };
 
-  // ── Build memory card ──
+  // Enter key submits
+  document.getElementById('urlInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); submitUrl(); }
+  });
+
   function memoryCard(mem) {
     const div = document.createElement('div');
     div.className = 'memory-card';
     div.innerHTML = `
       <div class="memory-cat">${mem.category || 'general'}</div>
       <div class="memory-text">${mem.content || mem.text || mem.summary || JSON.stringify(mem).slice(0,300)}</div>
-      <div class="memory-time">${mem.created_at ? timeAgo(mem.created_at) : ''}</div>
-    `;
+      <div class="memory-time">${mem.created_at ? timeAgo(mem.created_at) : ''}</div>`;
     return div;
   }
 
-  // ── Render services ──
   function renderServices(services) {
     const grid = document.getElementById('svcGrid');
     grid.innerHTML = '';
@@ -389,16 +521,11 @@
       svc.className = 'svc';
       svc.innerHTML = `
         <div class="svc-dot ${info.status === 'healthy' ? 'up' : 'down'}"></div>
-        <div>
-          <div class="svc-name">${name}</div>
-          <div class="svc-port">:${info.port}</div>
-        </div>
-      `;
+        <div><div class="svc-name">${name}</div><div class="svc-port">:${info.port}</div></div>`;
       grid.appendChild(svc);
     }
   }
 
-  // ── Render queue stats ──
   function renderQueueStats(stats) {
     const el = document.getElementById('queueStats');
     if (!stats) { el.innerHTML = '<div class="empty"><div class="empty-text">No queue data</div></div>'; return; }
@@ -410,15 +537,12 @@
         <div class="kpi"><div class="kpi-label">Rejected</div><div class="kpi-value" style="color:var(--red)">${stats.rejected||0}</div></div>
         <div class="kpi"><div class="kpi-label">Auto-rejected</div><div class="kpi-value" style="color:var(--faint)">${stats.auto_rejected||0}</div></div>
         <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">${stats.total||0}</div></div>
-      </div>
-    `;
+      </div>`;
   }
 
-  // ── Fetch everything ──
   async function fetchAll() {
     document.body.classList.add('refreshing');
     try {
-      // Parallel fetches
       const [dashRes, queueRes, queueStatsRes, memoriesRes] = await Promise.all([
         fetch(BASE + '/api/dashboard-data').then(r => r.ok ? r.json() : null).catch(() => null),
         fetch(BASE + '/proxy/x-intake/queue?status=pending&limit=50').then(r => r.ok ? r.json() : null).catch(() => null),
@@ -426,26 +550,17 @@
         fetch(BASE + '/proxy/cortex/memories?limit=20').then(r => r.ok ? r.json() : null).catch(() => null),
       ]);
 
-      // KPIs
       if (dashRes) {
         document.getElementById('kpiMemories').textContent = dashRes.cortex?.memory_count ?? '--';
         const svcCount = Object.keys(dashRes.services || {}).length;
         const healthyCount = Object.values(dashRes.services || {}).filter(s => s.status === 'healthy').length;
         document.getElementById('kpiServices').textContent = healthyCount + '/' + svcCount;
         document.getElementById('kpiServicesLabel').textContent = healthyCount === svcCount ? 'all healthy' : (svcCount - healthyCount) + ' down';
-
-        // Status pulse
         const pulse = document.getElementById('statusPulse');
         const label = document.getElementById('statusLabel');
-        if (healthyCount === svcCount) {
-          pulse.className = 'pulse'; label.textContent = 'all systems go';
-        } else if (healthyCount > svcCount * 0.7) {
-          pulse.className = 'pulse warn'; label.textContent = 'degraded';
-        } else {
-          pulse.className = 'pulse dead'; label.textContent = 'critical';
-        }
-
-        // Trading
+        if (healthyCount === svcCount) { pulse.className = 'pulse'; label.textContent = 'all systems go'; }
+        else if (healthyCount > svcCount * 0.7) { pulse.className = 'pulse warn'; label.textContent = 'degraded'; }
+        else { pulse.className = 'pulse dead'; label.textContent = 'critical'; }
         const t = dashRes.trading || {};
         if (t.status === 'offline' || !t.status || t.status === 'unknown') {
           document.getElementById('kpiTrading').textContent = 'OFF';
@@ -456,33 +571,28 @@
           document.getElementById('kpiTrading').style.color = 'var(--green)';
           document.getElementById('kpiTradingLabel').textContent = t.pnl ? 'P&L: $' + parseFloat(t.pnl).toFixed(2) : 'active';
         }
-
         renderServices(dashRes.services);
       }
 
-      // Queue stats
       if (queueStatsRes) {
         const pending = queueStatsRes.pending || 0;
         const approved = (queueStatsRes.approved || 0) + (queueStatsRes.auto_approved || 0);
         document.getElementById('kpiPending').textContent = pending;
         document.getElementById('kpiApproved').textContent = approved;
         document.getElementById('tabPendingBadge').textContent = pending;
-        if (pending === 0) document.getElementById('tabPendingBadge').className = 'badge count';
-        else document.getElementById('tabPendingBadge').className = 'badge pending';
+        document.getElementById('tabPendingBadge').className = pending === 0 ? 'badge count' : 'badge pending';
         renderQueueStats(queueStatsRes);
       }
 
-      // Review feed
       const feed = document.getElementById('reviewFeed');
       const items = (queueRes && queueRes.items) || [];
       if (items.length === 0) {
-        feed.innerHTML = '<div class="empty"><div class="empty-icon">&#10003;</div><div class="empty-text">Nothing to review right now.<br>Bob is scanning \u2014 items will appear here.</div></div>';
+        feed.innerHTML = '<div class="empty"><div class="empty-icon">&#10003;</div><div class="empty-text">Nothing to review right now.<br>Paste a URL above to test intake, or wait for scanners.</div></div>';
       } else {
         feed.innerHTML = '';
         items.forEach(item => feed.appendChild(reviewCard(item)));
       }
 
-      // Memories feed
       const memFeed = document.getElementById('memoriesFeed');
       const mems = Array.isArray(memoriesRes) ? memoriesRes : (memoriesRes?.memories || []);
       document.getElementById('tabMemBadge').textContent = mems.length;
@@ -492,26 +602,18 @@
         memFeed.innerHTML = '';
         mems.forEach(m => memFeed.appendChild(memoryCard(m)));
       }
-
-    } catch(e) {
-      console.error('fetch error', e);
-    }
+    } catch(e) { console.error('fetch error', e); }
     document.body.classList.remove('refreshing');
   }
 
-  // ── Pull-to-refresh (basic) ──
   let touchStartY = 0;
   document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; });
   document.addEventListener('touchend', e => {
-    if (window.scrollY === 0 && e.changedTouches[0].clientY - touchStartY > 80) {
-      toast('Refreshing...');
-      fetchAll();
-    }
+    if (window.scrollY === 0 && e.changedTouches[0].clientY - touchStartY > 80) { toast('Refreshing...'); fetchAll(); }
   });
 
-  // ── Init ──
   fetchAll();
-  refreshTimer = setInterval(fetchAll, 30000);
+  setInterval(fetchAll, 30000);
 })();
 </script>
 </body></html>

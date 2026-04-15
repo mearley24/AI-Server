@@ -375,6 +375,62 @@ async def trading_status():
             return {"status": "offline"}
 
 
+# ── Markdown file viewer ──────────────────────────────────────────────────────
+
+ALLOWED_FILES = {
+    "STATUS_REPORT.md",
+    "CLAUDE.md",
+    "docs/SYMPHONY_PROJECT_WORKFLOW.md",
+    "docs/SYMPHONY_SUITE_ACCEPTANCE_CHECKLIST.md",
+    "polymarket-bot/README.md",
+}
+
+
+@app.get("/files/{path:path}")
+async def serve_file(path: str, request: Request):
+    """Serve allowed markdown files as rendered HTML."""
+    if path not in ALLOWED_FILES:
+        return HTMLResponse("<h1>Not found</h1>", status_code=404)
+    fpath = BASE_DIR / path
+    if not fpath.exists():
+        return HTMLResponse("<h1>File not found on disk</h1>", status_code=404)
+    raw = fpath.read_text(errors="replace")
+    # Simple markdown-ish rendering for mobile
+    import html as _html
+    escaped = _html.escape(raw)
+    html_body = f"""<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; background: #0d0d0d; color: #cdccca;
+         padding: 16px; font-size: 14px; line-height: 1.6; max-width: 100vw; overflow-wrap: break-word; }}
+  pre {{ background: #161616; padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; }}
+  h1,h2,h3 {{ color: #4f98a3; }}
+  a {{ color: #4f98a3; }}
+  .back {{ display: inline-block; margin-bottom: 16px; color: #4f98a3; text-decoration: none; font-weight: 600; }}
+</style></head><body>
+<a class="back" href="/dashboard">&larr; Dashboard</a>
+<pre>{escaped}</pre>
+</body></html>"""
+    return HTMLResponse(html_body)
+
+
+# ── X-Intake test submit ──────────────────────────────────────────────────────
+
+@app.post("/api/x-intake-test")
+async def x_intake_test(request: Request):
+    """Submit a URL to x-intake for analysis (test from dashboard)."""
+    body = await request.json()
+    url = body.get("url", "").strip()
+    if not url:
+        return {"error": "url required"}
+    async with httpx.AsyncClient(timeout=120.0) as c:
+        try:
+            r = await c.post(f"{SERVICES['x-intake']}/analyze", json={"url": url, "source": "dashboard-test"})
+            return r.json()
+        except Exception as exc:
+            return {"error": str(exc)[:200]}
+
+
 app.include_router(imessage_router, prefix="/imessages", tags=["iMessage"])
 app.include_router(network_router, prefix="/network", tags=["Network"])
 app.include_router(ollama_router, prefix="/ai", tags=["AI"])
