@@ -35,6 +35,11 @@ try:
 except ImportError:
     _db_enqueue = _db_get_queue = _db_update_status = _db_get_stats = None  # type: ignore[assignment]
 
+try:
+    import action_queue
+except ImportError:
+    action_queue = None  # type: ignore[assignment]
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = structlog.get_logger(__name__)
 
@@ -199,6 +204,74 @@ def _analyze_keyword_fallback(text: str, author: str) -> dict:
     }
 
 
+async def _analyze_with_ollama(text: str, author: str, has_video: bool, transcript: str = "") -> dict:
+    """Try Ollama first (free), fall back to OpenAI."""
+    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+    model = os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
+
+    content_parts = [f"Post by @{author}:\n{text}"]
+    if transcript:
+        content_parts.append(f"\nVideo transcript:\n{transcript[:8000]}")
+
+    prompt = (
+        MATT_PROFILE
+        + "\n\nAnalyze this post:\n"
+        + "\n".join(content_parts)
+        + '\n\nRespond in JSON: {"summary": "2-3 sentence summary", "type": "build|alpha|stat|tool|warn|info",'
+        ' "relevance": 0-100, "action": "concrete action or none", "flags": []}'
+    )
+
+    flag_map = {
+        "build": "\U0001f528", "alpha": "\U0001f4a1",
+        "stat": "\U0001f4ca", "tool": "\U0001f527",
+        "warn": "\u26a0\ufe0f", "info": "\u2139\ufe0f",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{ollama_host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "format": "json",
+                    "stream": False,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data.get("message", {}).get("content", "")
+                parsed = json.loads(content)
+                logger.info("ollama_analysis_ok", model=model)
+
+                relevance = int(parsed.get("relevance", 0))
+                post_type = str(parsed.get("type", "info")).lower()
+                summary_text = str(parsed.get("summary", text[:200]))
+                action = str(parsed.get("action", "none"))
+                emoji = flag_map.get(post_type, "\u2139\ufe0f")
+
+                imessage_lines = [f"{emoji} @{author}"]
+                if has_video:
+                    imessage_lines.append("\U0001f3ac Video transcribed")
+                imessage_lines.extend(["", summary_text])
+                if action and action.lower() != "none":
+                    imessage_lines.extend(["", f"Action: {action}"])
+                imessage_lines.extend(["", f"Relevance: {relevance}%"])
+
+                return {
+                    "summary": "\n".join(imessage_lines),
+                    "relevance": relevance,
+                    "type": post_type,
+                    "action": action,
+                    "has_transcript": bool(transcript),
+                }
+    except Exception as exc:
+        logger.warning("ollama_analysis_failed", error=str(exc)[:200])
+
+    # Fallback to OpenAI
+    return _analyze_with_llm(text, author, has_video, transcript)
+
+
 async def _analyze_url(url: str) -> dict:
     """Full pipeline: fetch post → check for video → transcribe → analyze with LLM."""
     logger.info("pipeline_start", url=url)
@@ -268,7 +341,7 @@ async def _analyze_url(url: str) -> dict:
     # Image-only path: vision analysis already produced a summary; return directly
     if not has_video and isinstance(result, dict) and result.get("mode") == "image_vision" and result.get("summary"):
         image_summary = result["summary"]
-        llm = _analyze_with_llm(post_text, author, False, "")
+        llm = await _analyze_with_ollama(post_text, author, False, "")
         if llm.get("action", "none").lower() != "none":
             image_summary += f"\n\nAction: {llm['action']}"
         image_summary += f"\nRelevance: {llm.get('relevance', 0)}%"
@@ -283,7 +356,7 @@ async def _analyze_url(url: str) -> dict:
         }
 
     if has_video and result.get("summary"):
-        analysis = _analyze_with_llm(post_text, author, has_video, transcript)
+        analysis = await _analyze_with_ollama(post_text, author, has_video, transcript)
         video_summary = result.get("summary", "")
         combined = video_summary
         if analysis.get("action", "none").lower() != "none":
@@ -300,7 +373,7 @@ async def _analyze_url(url: str) -> dict:
             "transcript_path": result.get("transcript_path", "") if isinstance(result, dict) else "",
         }
 
-    analysis = _analyze_with_llm(post_text, author, has_video, transcript)
+    analysis = await _analyze_with_ollama(post_text, author, has_video, transcript)
     return {
         "url": url,
         "author": author,
@@ -414,6 +487,96 @@ Rules:
     except Exception as e:
         logger.warning("polymarket_signal_extraction_failed", error=str(e)[:200])
         return {"signals": [], "strategies": [], "market_keywords": []}
+
+
+async def _extract_polymarket_signals_with_ollama(text: str, author: str, transcript: str = "") -> dict:
+    """Extract Polymarket signals — try Ollama first (free), OpenAI fallback."""
+    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+    model = os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
+
+    post_content = f"Post by @{author}:\n{text}"
+    if transcript:
+        post_content += f"\n\nVideo transcript:\n{transcript[:6000]}"
+
+    poly_prompt = (
+        "Extract Polymarket trading signals from this X post.\n\n"
+        + post_content
+        + "\n\nReturn JSON with keys: signals (array of {market_keyword, direction, confidence, reasoning}),"
+        " strategies (array of {name, description}), market_keywords (string array),"
+        " risk_warnings (string array), alpha_insights (string array)."
+        " If no Polymarket relevance, return empty arrays."
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{ollama_host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": poly_prompt}],
+                    "format": "json",
+                    "stream": False,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw = data.get("message", {}).get("content", "")
+                parsed = json.loads(raw)
+                logger.info("ollama_poly_signals_ok", model=model)
+                return parsed
+    except Exception as exc:
+        logger.warning("ollama_poly_signals_failed", error=str(exc)[:200])
+
+    # Fallback to OpenAI via thread
+    return await asyncio.to_thread(_extract_polymarket_signals, text, author, transcript)
+
+
+async def _save_to_cortex(url: str, author: str, analysis: dict, poly_signals: dict) -> None:
+    """Save analyzed X post to Cortex for long-term memory and action tracking."""
+    try:
+        relevance = analysis.get("relevance", 0)
+        action = analysis.get("action", "none")
+        post_type = analysis.get("type", "info")
+        summary = analysis.get("summary", "")[:1000]
+
+        category = "x_intel"
+        if post_type == "build":
+            category = "x_intel_actionable"
+        elif post_type == "alpha":
+            category = "x_intel_alpha"
+        elif post_type == "tool":
+            category = "x_intel_tools"
+
+        memory_text = f"X post from @{author} (relevance {relevance}%): {summary}"
+        if action and action.lower() != "none":
+            memory_text += f"\nAction: {action}"
+        if poly_signals.get("strategies"):
+            for s in poly_signals["strategies"]:
+                if isinstance(s, dict):
+                    memory_text += f"\nStrategy: {s.get('name', '')}: {s.get('description', '')}"
+        if poly_signals.get("alpha_insights"):
+            memory_text += "\nAlpha: " + "; ".join(poly_signals["alpha_insights"])
+        memory_text += f"\nSource: {url}"
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{CORTEX_URL}/remember",
+                json={
+                    "text": memory_text,
+                    "category": category,
+                    "source": "x_intake",
+                    "metadata": {
+                        "author": author,
+                        "url": url,
+                        "relevance": relevance,
+                        "type": post_type,
+                        "action": action,
+                    },
+                },
+            )
+            logger.info("saved_to_cortex", author=author, category=category)
+    except Exception as exc:
+        logger.warning("cortex_save_failed", error=str(exc)[:200])
 
 
 async def _publish_to_bot(url: str, author: str, analysis: dict, poly_signals: dict) -> None:
@@ -534,11 +697,9 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
             if isinstance(analysis, dict):
                 summary = analysis.get("summary", "")
 
-            # Extract Polymarket-specific signals
+            # Extract Polymarket-specific signals (Ollama-first, OpenAI fallback)
             post_text = summary
-            poly_signals = await asyncio.to_thread(
-                _extract_polymarket_signals, post_text, author, transcript
-            )
+            poly_signals = await _extract_polymarket_signals_with_ollama(post_text, author, transcript)
 
             # Use structured relevance from result; fall back to text parse
             relevance = result.get("relevance", 0)
@@ -584,6 +745,40 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
 
         if summary:
             await _send_reply(f"X Analysis:\n{summary}")
+            # Save ALL posts to Cortex for long-term memory (Phase 4A)
+            await _save_to_cortex(url, author, {
+                "relevance": relevance,
+                "action": result.get("action", "none") if isinstance(result, dict) else "none",
+                "type": result.get("post_type", "info") if isinstance(result, dict) else "info",
+                "summary": summary,
+            }, poly_signals)
+            # Enqueue high-relevance actionable posts (Phase 4C)
+            _action = result.get("action", "none") if isinstance(result, dict) else "none"
+            if action_queue is not None and relevance >= 60 and _action.lower() != "none":
+                try:
+                    action_queue.enqueue(
+                        url=url,
+                        author=author,
+                        action_type=result.get("post_type", "info") if isinstance(result, dict) else "info",
+                        description=f"@{author}: {_action}\n\n{summary[:500]}",
+                        relevance=relevance,
+                    )
+                    logger.info("action_queued", author=author, action=_action, relevance=relevance)
+                except Exception as _aqexc:
+                    logger.warning("action_queue_enqueue_failed", error=str(_aqexc)[:100])
+            if action_queue is not None:
+                for strat in poly_signals.get("strategies", []):
+                    if isinstance(strat, dict):
+                        try:
+                            action_queue.enqueue(
+                                url=url,
+                                author=author,
+                                action_type="build",
+                                description=f"Strategy from @{author}: {strat.get('name', '')} — {strat.get('description', '')}",
+                                relevance=relevance,
+                            )
+                        except Exception as _aqexc:
+                            logger.warning("strategy_queue_failed", error=str(_aqexc)[:100])
         elif isinstance(result, dict) and result.get("error"):
             logger.warning("analysis_error", url=url, error=result["error"])
     except Exception as exc:
@@ -766,6 +961,61 @@ async def organize_bookmarks(request: dict):
     result = await organizer.ingest_to_cortex(categorized)
     result["ok"] = True
     return result
+
+
+# ── Action Queue API ─────────────────────────────────────────────────────────
+
+@app.get("/actions")
+async def list_actions(status: str = "pending", limit: int = 20):
+    """List queued actions."""
+    if action_queue is None:
+        return {"actions": [], "error": "action_queue not available"}
+    from action_queue import get_pending, get_by_status
+    if status == "pending":
+        return {"actions": get_pending(limit)}
+    return {"actions": get_by_status(status, limit)}
+
+
+@app.get("/actions/stats")
+async def action_stats():
+    """Action queue statistics."""
+    if action_queue is None:
+        return {"error": "action_queue not available"}
+    from action_queue import get_stats
+    return get_stats()
+
+
+@app.post("/actions/{action_id}/dismiss")
+async def dismiss_action(action_id: int):
+    """Dismiss an action."""
+    if action_queue is None:
+        return {"ok": False, "error": "action_queue not available"}
+    from action_queue import update_status
+    update_status(action_id, "dismissed")
+    return {"ok": True}
+
+
+@app.post("/actions/{action_id}/done")
+async def complete_action(action_id: int, result: str = ""):
+    """Mark an action complete."""
+    if action_queue is None:
+        return {"ok": False, "error": "action_queue not available"}
+    from action_queue import update_status
+    update_status(action_id, "done", result)
+    return {"ok": True}
+
+
+@app.post("/actions/digest")
+async def send_action_digest():
+    """Send daily action digest via iMessage."""
+    if action_queue is None:
+        return {"ok": False, "error": "action_queue not available"}
+    from action_queue import get_daily_digest
+    digest = get_daily_digest()
+    if digest:
+        await _send_reply(digest)
+        return {"ok": True, "sent": True}
+    return {"ok": True, "sent": False, "reason": "no pending actions"}
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────

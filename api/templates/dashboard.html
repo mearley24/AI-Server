@@ -113,6 +113,32 @@
   .mem-text { font-size: 0.8rem; line-height: 1.4; color: var(--text); }
   .mem-time { font-size: 0.65rem; color: var(--dim); margin-top: 6px; }
 
+  /* Action queue cards */
+  .aq-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; margin-bottom: 8px;
+  }
+  .aq-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .aq-badge {
+    font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .aq-badge-build { background: rgba(91,141,239,0.2); color: #5b8def; }
+  .aq-badge-alpha { background: rgba(52,211,153,0.2); color: #34d399; }
+  .aq-badge-tool  { background: rgba(167,139,250,0.2); color: #a78bfa; }
+  .aq-badge-info  { background: rgba(102,102,102,0.2); color: #888; }
+  .aq-score { font-size: 0.7rem; color: var(--dim); margin-left: auto; }
+  .aq-desc { font-size: 0.78rem; line-height: 1.4; color: var(--text); margin-bottom: 8px;
+             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .aq-btns { display: flex; gap: 6px; }
+  .aq-btn {
+    flex: 1; padding: 5px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--card); color: var(--dim); font-size: 0.72rem; cursor: pointer;
+    text-align: center;
+  }
+  .aq-btn-done { border-color: var(--green); color: var(--green); }
+  .aq-btn-dismiss { border-color: var(--dim); }
+
   /* Quick actions */
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .action-btn {
@@ -179,10 +205,18 @@ async function loadDashboard() {
   btn.classList.add("spinning");
 
   try {
-    const resp = await fetch("/api/dashboard-data");
+    const [resp, actResp] = await Promise.all([
+      fetch("/api/dashboard-data"),
+      fetch("/proxy/x-intake/actions?status=pending&limit=5").catch(() => null),
+    ]);
     if (!resp.ok) throw new Error("Failed");
     const data = await resp.json();
-    render(data);
+    let actions = [];
+    if (actResp && actResp.ok) {
+      const actData = await actResp.json();
+      actions = actData.actions || [];
+    }
+    render(data, actions);
   } catch (e) {
     document.getElementById("content").innerHTML =
       '<div class="stat" style="grid-column:1/-1;text-align:center;padding:40px">' +
@@ -193,7 +227,15 @@ async function loadDashboard() {
   }
 }
 
-function render(data) {
+async function aqAction(id, endpoint) {
+  try {
+    await fetch("/proxy/x-intake/actions/" + id + "/" + endpoint, {method: "POST"});
+    loadDashboard();
+  } catch(e) {}
+}
+
+function render(data, actions) {
+  actions = actions || [];
   const svc = data.services || {};
   const cortex = data.cortex || {};
   const trading = data.trading || {};
@@ -210,6 +252,9 @@ function render(data) {
   html += '<div class="status-pill"><div class="dot ' + (allUp ? "dot-green" : "dot-red") + '"></div>' + healthy + '/' + total + ' services</div>';
   if (trading.status && trading.status !== "offline") {
     html += '<div class="status-pill"><div class="dot dot-green"></div>Trading active</div>';
+  }
+  if (actions.length > 0) {
+    html += '<div class="status-pill"><div class="dot dot-amber"></div>' + actions.length + ' pending actions</div>';
   }
   html += '</div>';
 
@@ -253,6 +298,28 @@ function render(data) {
       html += '<div class="trading-row"><span class="trading-label">Last Trade</span><span class="trading-value">' + relTime(trading.last_trade) + '</span></div>';
     }
     html += '</div></div>';
+  }
+
+  // -- X-Intel Action Queue --
+  if (actions.length > 0) {
+    html += '<div class="section"><div class="section-title">X-Intel Actions</div>';
+    for (const a of actions) {
+      const typeClass = ["build","alpha","tool"].includes(a.action_type) ? a.action_type : "info";
+      html += '<div class="aq-card">';
+      html += '<div class="aq-header">';
+      html += '<span class="aq-badge aq-badge-' + typeClass + '">' + (a.action_type || "info") + '</span>';
+      if (a.author) html += '<span style="font-size:0.75rem;color:var(--dim)">@' + a.author + '</span>';
+      html += '<span class="aq-score">' + (a.relevance || 0) + '% relevance</span>';
+      html += '</div>';
+      html += '<div class="aq-desc">' + truncate(a.description || "", 180) + '</div>';
+      html += '<div class="aq-btns">';
+      if (a.url) html += '<a class="aq-btn" href="' + a.url + '" target="_blank" style="text-decoration:none">&#128279; Source</a>';
+      html += '<button class="aq-btn aq-btn-done" onclick="aqAction(' + a.id + ',\'done\')">&#10003; Done</button>';
+      html += '<button class="aq-btn aq-btn-dismiss" onclick="aqAction(' + a.id + ',\'dismiss\')">&#10005; Dismiss</button>';
+      html += '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
   }
 
   // -- Recent memories --
