@@ -20,7 +20,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-PERPLEXITY_API_URL = "https://api.openrouter.ai/api/v1/chat/completions"
+PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 COINGECKO_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price"
 FINANCIAL_DATASETS_BASE_URL = "https://api.financialdatasets.ai"
 
@@ -238,7 +238,7 @@ class MarketIntel:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "perplexity/sonar",
+                    "model": "sonar",
                     "messages": [
                         {
                             "role": "system",

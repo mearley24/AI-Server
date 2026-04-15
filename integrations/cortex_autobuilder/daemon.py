@@ -186,21 +186,21 @@ async def _topic_scanner_loop() -> None:
     from integrations.cortex_autobuilder.scan_topics import SCAN_TOPICS, SCAN_PROCESS_PROMPT
 
     async def _query_perplexity(query: str) -> str:
-        """Query OpenRouter for a Perplexity search result."""
-        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        """Query Perplexity API directly for a search result."""
+        api_key = os.getenv("PERPLEXITY_API_KEY", "")
         if not api_key:
-            logger.warning("scanner_no_openrouter_key query=%s", query[:60])
+            logger.warning("scanner_no_perplexity_key query=%s", query[:60])
             return ""
         try:
             async with _httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
+                    "https://api.perplexity.ai/chat/completions",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": "perplexity/llama-3.1-sonar-small-128k-online",
+                        "model": "sonar",
                         "messages": [{"role": "user", "content": query}],
                         "max_tokens": 1024,
                     },
@@ -279,7 +279,7 @@ async def _topic_scanner_loop() -> None:
 
                 logger.info("scanner_querying topic=%s", topic["query"][:60])
 
-                # 1. Fetch raw search results via Perplexity / OpenRouter
+                # 1. Fetch raw search results via Perplexity
                 raw = await _query_perplexity(topic["query"])
                 if not raw:
                     logger.warning("scanner_empty_raw topic=%s", topic["query"][:60])

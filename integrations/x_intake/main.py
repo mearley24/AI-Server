@@ -683,6 +683,32 @@ async def _send_reply(text: str) -> None:
         logger.warning("imessage_send_failed", error=str(exc)[:200])
 
 
+async def _deep_research(topic: str, url: str) -> str:
+    """Use Perplexity to research a topic identified from an X post."""
+    api_key = os.getenv("PERPLEXITY_API_KEY", "")
+    if not api_key:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "sonar",
+                    "messages": [{"role": "user", "content": f"Research this topic for practical implementation: {topic}. Focus on: how to build it, what tools are needed, costs, and whether anyone has done it successfully."}],
+                    "max_tokens": 1024,
+                },
+            )
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"]["content"]
+    except Exception as exc:
+        logger.warning("deep_research_failed", error=str(exc)[:200])
+        return ""
+
+
 async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
     """Analyze a tweet URL, queue for review, publish signals, send iMessage reply."""
     try:
@@ -752,6 +778,20 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                 "type": result.get("post_type", "info") if isinstance(result, dict) else "info",
                 "summary": summary,
             }, poly_signals)
+            # Deep research for high-relevance actionable posts via Perplexity
+            _post_type = result.get("post_type", "info") if isinstance(result, dict) else "info"
+            if relevance >= 70 and _post_type in ("build", "alpha", "tool"):
+                _topic = (result.get("action", "") if isinstance(result, dict) else "") or summary[:200]
+                research = await _deep_research(_topic, url)
+                if research:
+                    await _save_to_cortex(url, author, {
+                        "relevance": relevance,
+                        "action": result.get("action", "none") if isinstance(result, dict) else "none",
+                        "type": "research",
+                        "summary": f"DEEP RESEARCH: {research[:2000]}",
+                    }, poly_signals)
+                    research_msg = f"Deep dive on @{author}'s post:\n\n{research[:1500]}\n\nSource: {url}"
+                    await _send_reply(research_msg)
             # Enqueue high-relevance actionable posts (Phase 4C)
             _action = result.get("action", "none") if isinstance(result, dict) else "none"
             if action_queue is not None and relevance >= 60 and _action.lower() != "none":

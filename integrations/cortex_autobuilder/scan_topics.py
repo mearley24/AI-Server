@@ -41,6 +41,42 @@ SCAN_TOPICS = [
         "category": "iot",
         "frequency_hours": 12,
     },
+    # Additional topics — use the $98 budget more aggressively
+    {
+        "query": "Kalshi prediction market new contracts opportunities edges 2026",
+        "category": "trading",
+        "frequency_hours": 2,
+    },
+    {
+        "query": "latest Ollama Gemma LLM local AI models benchmarks releases",
+        "category": "ai_tools",
+        "frequency_hours": 4,
+    },
+    {
+        "query": "Mac Mini server homelab self-hosting automation Docker 2026",
+        "category": "ai_tools",
+        "frequency_hours": 8,
+    },
+    {
+        "query": "prediction market arbitrage strategies Polymarket Kalshi spread",
+        "category": "trading",
+        "frequency_hours": 2,
+    },
+    {
+        "query": "weather prediction market strategies NOAA forecast edge Kalshi",
+        "category": "trading",
+        "frequency_hours": 4,
+    },
+    {
+        "query": "autonomous AI agent business automation revenue generation 2026",
+        "category": "business",
+        "frequency_hours": 6,
+    },
+    {
+        "query": "D-Tools Cloud API automation smart home proposals integrations",
+        "category": "smart_home",
+        "frequency_hours": 12,
+    },
 ]
 
 SCAN_PROCESS_PROMPT = """You are a knowledge extraction assistant. Given raw search results, extract actionable insights.
