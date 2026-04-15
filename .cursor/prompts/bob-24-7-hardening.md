@@ -215,9 +215,266 @@ mkdir -p data/transcripts data/bookmarks
 
 ---
 
-## Phase 4: Cleanup
+## Phase 4: X-Intake Action Loop (close the dead end)
 
-### 4A. Remove dead Docker containers from Bob
+Currently x-intake analyzes X links and replies with a summary, but nobody
+acts on the intelligence. High-relevance posts with actionable flags need to
+create real tasks that Bob picks up and executes.
+
+### 4A. Add Cortex memory storage to every analyzed post
+
+In `integrations/x_intake/main.py`, find `_process_url_and_reply()`. After
+the iMessage reply is sent, add a Cortex POST:
+
+```python
+async def _save_to_cortex(url: str, author: str, analysis: dict, poly_signals: dict) -> None:
+    """Save analyzed X post to Cortex for long-term memory and action tracking."""
+    try:
+        import httpx
+        relevance = analysis.get("relevance", 0)
+        action = analysis.get("action", "none")
+        post_type = analysis.get("type", "info")
+        summary = analysis.get("summary", "")[:1000]
+
+        category = "x_intel"
+        if post_type == "build":
+            category = "x_intel_actionable"
+        elif post_type == "alpha":
+            category = "x_intel_alpha"
+        elif post_type == "tool":
+            category = "x_intel_tools"
+
+        memory_text = f"X post from @{author} (relevance {relevance}%): {summary}"
+        if action and action.lower() != "none":
+            memory_text += f"\nAction: {action}"
+        if poly_signals.get("strategies"):
+            for s in poly_signals["strategies"]:
+                if isinstance(s, dict):
+                    memory_text += f"\nStrategy: {s.get('name', '')}: {s.get('description', '')}"
+        if poly_signals.get("alpha_insights"):
+            memory_text += "\nAlpha: " + "; ".join(poly_signals["alpha_insights"])
+        memory_text += f"\nSource: {url}"
+
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"{CORTEX_URL}/remember",
+                json={
+                    "text": memory_text,
+                    "category": category,
+                    "source": "x_intake",
+                    "metadata": {
+                        "author": author,
+                        "url": url,
+                        "relevance": relevance,
+                        "type": post_type,
+                        "action": action,
+                    }
+                }
+            )
+            logger.info("saved_to_cortex", author=author, category=category)
+    except Exception as exc:
+        logger.warning("cortex_save_failed", error=str(exc)[:200])
+```
+
+Call `_save_to_cortex()` from `_process_url_and_reply()` after the iMessage
+reply, for ALL posts (not just high relevance). Cortex should see everything.
+
+### 4B. Add action queue for high-relevance posts
+
+Create `integrations/x_intake/action_queue.py`:
+
+This module maintains a SQLite DB at `/data/x_intake/action_queue.db` with:
+
+```sql
+CREATE TABLE IF NOT EXISTS actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL,
+    author TEXT,
+    action_type TEXT NOT NULL,  -- build, investigate, deploy, test, evaluate
+    description TEXT NOT NULL,
+    relevance INTEGER,
+    status TEXT DEFAULT 'pending',  -- pending, in_progress, done, dismissed
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    result TEXT
+);
+```
+
+Provide functions:
+- `enqueue(url, author, action_type, description, relevance)` — add new action
+- `get_pending(limit=10)` — get pending actions ordered by relevance desc
+- `update_status(action_id, status, result=None)` — mark done/dismissed
+- `get_stats()` — counts by status
+
+### 4C. Wire action queue into the pipeline
+
+In `_process_url_and_reply()`, after saving to Cortex, check if the post
+should create an action:
+
+```python
+if relevance >= 60 and action.lower() != "none":
+    action_queue.enqueue(
+        url=url,
+        author=author,
+        action_type=analysis.get("type", "info"),
+        description=f"@{author}: {action}\n\n{summary[:500]}",
+        relevance=relevance,
+    )
+    logger.info("action_queued", author=author, action=action, relevance=relevance)
+```
+
+Also for strategy suggestions from poly_signals:
+```python
+for strat in poly_signals.get("strategies", []):
+    if isinstance(strat, dict):
+        action_queue.enqueue(
+            url=url,
+            author=author,
+            action_type="build",
+            description=f"Strategy from @{author}: {strat.get('name', '')} — {strat.get('description', '')}",
+            relevance=relevance,
+        )
+```
+
+### 4D. Add API endpoints for the action queue
+
+Add these routes to the x-intake FastAPI app in `main.py`:
+
+```python
+@app.get("/actions")
+async def list_actions(status: str = "pending", limit: int = 20):
+    """List queued actions."""
+    from action_queue import get_pending, get_by_status
+    if status == "pending":
+        return {"actions": get_pending(limit)}
+    return {"actions": get_by_status(status, limit)}
+
+@app.get("/actions/stats")
+async def action_stats():
+    """Action queue statistics."""
+    from action_queue import get_stats
+    return get_stats()
+
+@app.post("/actions/{action_id}/dismiss")
+async def dismiss_action(action_id: int):
+    """Dismiss an action."""
+    from action_queue import update_status
+    update_status(action_id, "dismissed")
+    return {"ok": True}
+
+@app.post("/actions/{action_id}/done")
+async def complete_action(action_id: int, result: str = ""):
+    """Mark an action complete."""
+    from action_queue import update_status
+    update_status(action_id, "done", result)
+    return {"ok": True}
+```
+
+### 4E. Add action queue to the mobile dashboard
+
+Update `api/templates/dashboard.html` to show the action queue.
+
+Add a new section after the trading section that:
+1. Fetches `/proxy/x-intake/actions?status=pending&limit=5`
+2. Shows each pending action as a card with:
+   - Author and action type (color-coded: build=blue, alpha=green, tool=purple)
+   - Description (truncated to 2 lines)
+   - Relevance score
+   - Source link
+   - Dismiss button (POST to `/proxy/x-intake/actions/{id}/dismiss`)
+   - Done button (POST to `/proxy/x-intake/actions/{id}/done`)
+3. Shows a count badge: "3 pending actions" in the status pills at top
+
+### 4F. Daily action digest
+
+Create a function in `action_queue.py`:
+
+```python
+def get_daily_digest() -> str:
+    """Build a daily digest of pending actions for iMessage."""
+    pending = get_pending(limit=10)
+    if not pending:
+        return ""
+    lines = [f"\U0001f4cb {len(pending)} pending X-intel actions:\n"]
+    for i, a in enumerate(pending, 1):
+        emoji = {"build": "\U0001f528", "alpha": "\U0001f4b0", "tool": "\U0001f527", "investigate": "\U0001f50d"}.get(a["action_type"], "\U00002753")
+        lines.append(f"{i}. {emoji} [{a['relevance']}%] {a['description'][:100]}")
+    lines.append("\nReview: http://100.89.1.51:8420/proxy/x-intake/actions")
+    return "\n".join(lines)
+```
+
+Add an endpoint:
+```python
+@app.post("/actions/digest")
+async def send_action_digest():
+    from action_queue import get_daily_digest
+    digest = get_daily_digest()
+    if digest:
+        await _send_imessage(digest)
+        return {"ok": True, "sent": True}
+    return {"ok": True, "sent": False, "reason": "no pending actions"}
+```
+
+This can be triggered by the daily-digest launchd job or a cron inside the container.
+
+### 4G. Replace OpenAI with Ollama for x-intake analysis
+
+The x-intake analysis currently uses OpenAI GPT-4o-mini. Switch to Ollama first,
+OpenAI as fallback:
+
+1. In `main.py`, find `_analyze_with_llm()`. Refactor it to try Ollama first:
+
+```python
+async def _analyze_with_ollama(text: str, author: str, has_video: bool, transcript: str = "") -> dict:
+    """Try Ollama first (free), fall back to OpenAI."""
+    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+    model = os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
+
+    content_parts = [f"Post by @{author}:\n{text}"]
+    if transcript:
+        content_parts.append(f"\nVideo transcript:\n{transcript[:8000]}")
+
+    prompt = MATT_PROFILE + "\n\nAnalyze this post:\n" + "\n".join(content_parts)
+    prompt += "\n\nRespond in JSON: {summary, type, relevance (0-100), action, flags}"
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{ollama_host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "format": "json",
+                    "stream": False,
+                },
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data.get("message", {}).get("content", "")
+                parsed = json.loads(content)
+                logger.info("ollama_analysis_ok", model=model)
+                return parsed
+    except Exception as exc:
+        logger.warning("ollama_analysis_failed", error=str(exc)[:200])
+
+    # Fallback to OpenAI
+    return _analyze_with_llm(text, author, has_video, transcript)
+```
+
+2. Replace all calls to `_analyze_with_llm()` with `_analyze_with_ollama()`
+   (but keep the old function as the fallback inside the new one).
+
+3. Do the same for the Polymarket signal extraction (`_extract_polymarket_signals`):
+   try Ollama first, OpenAI fallback.
+
+This cuts the OpenAI cost for x-intake to near zero while keeping it as a
+safety net.
+
+---
+
+## Phase 5: Cleanup
+
+### 5A. Remove dead Docker containers from Bob
 
 These were removed from docker-compose.yml but containers persist:
 
@@ -226,7 +483,7 @@ docker stop knowledge-scanner remediator context-preprocessor 2>/dev/null
 docker rm knowledge-scanner remediator context-preprocessor 2>/dev/null
 ```
 
-### 4B. Remove Supabase references
+### 5B. Remove Supabase references
 
 Check `.env` for any SUPABASE variables and remove them:
 ```
@@ -234,7 +491,7 @@ grep -i supabase .env
 ```
 Delete any lines found (SUPABASE_URL, SUPABASE_KEY, SUPABASE_ANON_KEY, etc.)
 
-### 4C. Update PORTS.md
+### 5C. Update PORTS.md
 
 Add x-intake-lab on port 8103 to PORTS.md.
 
@@ -250,13 +507,18 @@ docker compose config --quiet && echo "Compose valid"
 
 Then commit and push with message:
 ```
-feat: 24/7 hardening — launchd auto-restart, trading activation, x-intake-lab
+feat: 24/7 hardening — launchd, trading, x-intake action loop
 
 - All launchd plists committed to repo with KeepAlive/scheduling
 - Master restart script for launchd services
 - Kraken + Kalshi env vars wired into compose
 - Polymarket switched from paper to live trading config
 - x-intake-lab sandbox container for transcript/bookmark experiments
+- X-intake now saves ALL posts to Cortex memory
+- Action queue with SQLite DB for high-relevance posts (>= 60%)
+- Action queue API endpoints + mobile dashboard integration
+- Daily action digest via iMessage
+- Ollama-first analysis (free) with OpenAI fallback
 - Dead containers and Supabase references cleaned up
 ```
 
