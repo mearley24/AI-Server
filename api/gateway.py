@@ -11,6 +11,7 @@ Everything else proxies to Docker services.
 import os
 import asyncio
 import hashlib
+import json
 import secrets
 import time
 from datetime import datetime
@@ -62,8 +63,32 @@ AUTH_EXEMPT = {"/", "/health", "/docs", "/openapi.json", "/login", "/auth"}
 SESSION_COOKIE = "symphony_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 30  # 30 days
 
-# In-memory session store (survives until process restarts, then re-login)
+# Persistent session store — survives gateway restarts
+_SESSION_FILE = Path(os.environ.get("SESSION_FILE", "/tmp/symphony_sessions.json"))
 _sessions: dict[str, float] = {}  # token -> expiry timestamp
+
+
+def _load_sessions() -> None:
+    """Load sessions from disk."""
+    global _sessions
+    try:
+        if _SESSION_FILE.exists():
+            data = json.loads(_SESSION_FILE.read_text())
+            now = time.time()
+            _sessions = {k: v for k, v in data.items() if v > now}
+    except Exception:
+        _sessions = {}
+
+
+def _save_sessions() -> None:
+    """Persist sessions to disk."""
+    try:
+        _SESSION_FILE.write_text(json.dumps(_sessions))
+    except Exception:
+        pass
+
+
+_load_sessions()
 
 
 def _valid_session(cookie: str) -> bool:
@@ -75,6 +100,7 @@ def _valid_session(cookie: str) -> bool:
         return False
     if time.time() > expiry:
         _sessions.pop(cookie, None)
+        _save_sessions()
         return False
     return True
 
@@ -83,6 +109,7 @@ def _create_session() -> str:
     """Create a new session token."""
     token = secrets.token_urlsafe(32)
     _sessions[token] = time.time() + SESSION_MAX_AGE
+    _save_sessions()
     return token
 
 
