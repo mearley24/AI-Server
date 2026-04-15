@@ -46,7 +46,7 @@ logger = logging.getLogger("notes_indexer")
 DATA_DIR = Path(os.environ.get("AI_SERVER_DATA", REPO_ROOT / "data")).resolve()
 DEFAULT_OUTPUT = DATA_DIR / "notes_index.json"
 OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434").rstrip("/")
-OLLAMA_MODEL = os.environ.get("NOTES_INDEXER_OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_MODEL = os.environ.get("NOTES_INDEXER_OLLAMA_MODEL", "llama3.2:3b")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 
 CATEGORY_RULES: dict[str, list[str]] = {

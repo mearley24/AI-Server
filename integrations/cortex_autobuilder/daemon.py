@@ -27,6 +27,8 @@ MAX_QUESTIONS_PER_HOUR = int(os.getenv("MAX_QUESTIONS_PER_HOUR", "30"))
 GENERATION_INTERVAL_MINUTES = int(os.getenv("GENERATION_INTERVAL_MINUTES", "60"))
 SCANNER_ENABLED = os.getenv("SCANNER_ENABLED", "true").lower() not in ("false", "0", "no")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 BACKOFF_BASE_S = 60
 BACKOFF_MAX_S = 900
@@ -216,20 +218,21 @@ async def _topic_scanner_loop() -> None:
         """Process text through local Ollama — free, always preferred.
         Falls back to OpenAI if Ollama is unreachable."""
         try:
-            async with _httpx.AsyncClient(timeout=60.0) as client:
+            async with _httpx.AsyncClient(timeout=float(OLLAMA_TIMEOUT)) as client:
                 r = await client.post(
                     f"{OLLAMA_HOST.rstrip('/')}/api/generate",
                     json={
-                        "model": "qwen3:8b",
+                        "model": OLLAMA_MODEL,
                         "prompt": prompt,
                         "stream": False,
-                        "options": {"temperature": 0.1, "num_predict": 1024},
+                        "options": {"temperature": 0.1, "num_predict": 512},
+                        "think": False,
                     },
                 )
                 r.raise_for_status()
                 return (r.json().get("response") or "").strip()
         except Exception as exc:
-            logger.warning("scanner_ollama_error error=%s — trying OpenAI fallback", str(exc)[:100])
+            logger.warning("scanner_ollama_error model=%s error=%s -- trying OpenAI fallback", OLLAMA_MODEL, str(exc)[:100])
             return await _call_openai_fallback(prompt)
 
     async def _call_openai_fallback(prompt: str) -> str:

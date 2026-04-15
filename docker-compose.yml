@@ -630,6 +630,8 @@ services:
       - AUTOBUILDER_PORT=8115
       - MAX_QUESTIONS_PER_HOUR=30
       - GENERATION_INTERVAL_MINUTES=60
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
     depends_on:
       cortex:
         condition: service_healthy
