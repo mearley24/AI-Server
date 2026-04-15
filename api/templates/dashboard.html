@@ -4,353 +4,514 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Symphony Ops</title>
+<title>Symphony</title>
 <style>
   :root {
-    --bg: #0a0a0a; --card: #141414; --border: #222; --text: #e0e0e0;
-    --dim: #666; --accent: #5b8def; --green: #34d399; --red: #ef5b5b;
-    --amber: #f59e0b; --radius: 10px;
+    --bg: #0d0d0d; --surface: #161616; --surface2: #1c1c1c;
+    --border: #262626; --text: #cdccca; --dim: #797876; --faint: #5a5957;
+    --teal: #4f98a3; --teal-dim: rgba(79,152,163,0.12);
+    --green: #6daa45; --green-dim: rgba(109,170,69,0.12);
+    --red: #dd6974; --red-dim: rgba(221,105,116,0.12);
+    --amber: #bb653b; --amber-dim: rgba(187,101,59,0.12);
+    --purple: #a86fdf; --purple-dim: rgba(168,111,223,0.12);
+    --radius: 12px; --radius-sm: 8px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, system-ui, 'SF Pro', sans-serif;
+    font-family: -apple-system, system-ui, 'SF Pro Text', sans-serif;
     background: var(--bg); color: var(--text);
-    padding: env(safe-area-inset-top) 16px 24px;
+    padding: env(safe-area-inset-top) 0 80px;
     -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    overflow-x: hidden;
   }
+  a { color: var(--teal); text-decoration: none; }
 
-  /* Header */
+  /* ── Header ── */
   .header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(13,13,13,0.85);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    padding: env(safe-area-inset-top) 16px 12px;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 0 16px; position: sticky; top: 0;
-    background: var(--bg); z-index: 10;
   }
-  .header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
-  .header .refresh {
-    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
-    background: var(--card); color: var(--dim); display: flex; align-items: center;
-    justify-content: center; cursor: pointer; transition: all 0.2s;
+  .header h1 {
+    font-size: 1.25rem; font-weight: 700; letter-spacing: -0.03em;
+    background: linear-gradient(135deg, var(--teal), #7cc4d0);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
-  .header .refresh:active { background: #1f1f1f; }
-  .header .refresh.spinning svg { animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .header-right { display: flex; gap: 8px; align-items: center; }
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  .pulse.warn { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .pulse.dead { background: var(--red); box-shadow: 0 0 6px var(--red); animation: none; }
+  @keyframes pulse-glow {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+  .status-label { font-size: 0.7rem; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 
-  /* Status bar */
-  .status-bar {
-    display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;
+  /* ── Tabs ── */
+  .tabs {
+    display: flex; gap: 0; padding: 0 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky; top: 52px; z-index: 90;
   }
-  .status-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 500;
-    background: var(--card); border: 1px solid var(--border);
+  .tab {
+    flex: 1; padding: 12px 0; text-align: center;
+    font-size: 0.8rem; font-weight: 600; color: var(--dim);
+    border: none; background: none; cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
   }
-  .status-pill .dot {
+  .tab.active { color: var(--teal); border-bottom-color: var(--teal); }
+  .tab .badge {
+    display: inline-block; min-width: 18px; height: 18px;
+    line-height: 18px; border-radius: 9px; font-size: 0.65rem;
+    font-weight: 700; text-align: center; margin-left: 4px;
+    padding: 0 5px;
+  }
+  .tab .badge.pending { background: var(--amber); color: #000; }
+  .tab .badge.count { background: var(--border); color: var(--dim); }
+
+  /* ── Tab panels ── */
+  .panel { display: none; padding: 12px 16px; }
+  .panel.active { display: block; }
+
+  /* ── KPI strip ── */
+  .kpi-strip {
+    display: flex; gap: 8px; padding: 12px 16px;
+    overflow-x: auto; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .kpi-strip::-webkit-scrollbar { display: none; }
+  .kpi {
+    flex: 0 0 auto; min-width: 110px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    scroll-snap-align: start;
+  }
+  .kpi-label { font-size: 0.65rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .kpi-value { font-size: 1.3rem; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .kpi-sub { font-size: 0.65rem; color: var(--faint); margin-top: 2px; }
+
+  /* ── Feed cards ── */
+  .feed { display: flex; flex-direction: column; gap: 10px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px;
+    transition: transform 0.25s, opacity 0.25s;
+    position: relative; overflow: hidden;
+  }
+  .card.swiped { transform: translateX(100%); opacity: 0; pointer-events: none; }
+  .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .card-meta { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .card-type {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 2px 6px; border-radius: 4px;
+    white-space: nowrap;
+  }
+  .type-build { background: var(--teal-dim); color: var(--teal); }
+  .type-alpha { background: var(--green-dim); color: var(--green); }
+  .type-tool { background: var(--purple-dim); color: var(--purple); }
+  .type-info { background: var(--border); color: var(--dim); }
+  .type-research { background: var(--amber-dim); color: var(--amber); }
+  .card-author {
+    font-size: 0.75rem; font-weight: 600; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .card-time { font-size: 0.65rem; color: var(--faint); white-space: nowrap; }
+  .card-relevance {
+    font-size: 0.7rem; font-weight: 700; padding: 2px 7px;
+    border-radius: 4px; font-variant-numeric: tabular-nums;
+  }
+  .rel-high { background: var(--green-dim); color: var(--green); }
+  .rel-mid { background: var(--amber-dim); color: var(--amber); }
+  .rel-low { background: var(--red-dim); color: var(--red); }
+  .card-summary {
+    font-size: 0.82rem; line-height: 1.45; color: var(--text);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; margin-bottom: 10px;
+  }
+  .card-summary.expanded { -webkit-line-clamp: unset; }
+  .card-action-label {
+    font-size: 0.7rem; color: var(--teal); font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .card-actions { display: flex; gap: 8px; }
+  .btn {
+    flex: 1; padding: 10px 0; border-radius: var(--radius-sm);
+    font-size: 0.8rem; font-weight: 700; border: none; cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-approve { background: var(--green); color: #000; }
+  .btn-approve:hover { background: #7dba55; }
+  .btn-dismiss { background: var(--surface2); color: var(--dim); border: 1px solid var(--border); }
+  .btn-dismiss:hover { background: var(--border); }
+  .btn-expand {
+    background: none; border: none; color: var(--teal); font-size: 0.75rem;
+    font-weight: 600; cursor: pointer; padding: 4px 0; margin-bottom: 6px;
+  }
+
+  /* ── Memory cards ── */
+  .memory-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px;
+  }
+  .memory-cat {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--teal); margin-bottom: 4px;
+  }
+  .memory-text { font-size: 0.8rem; line-height: 1.4; color: var(--text); }
+  .memory-time { font-size: 0.65rem; color: var(--faint); margin-top: 4px; }
+
+  /* ── Services grid ── */
+  .svc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .svc {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .svc-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
   }
-  .dot-green { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.4); }
-  .dot-red { background: var(--red); box-shadow: 0 0 6px rgba(239,91,91,0.4); }
-  .dot-amber { background: var(--amber); box-shadow: 0 0 6px rgba(245,158,11,0.4); }
+  .svc-dot.up { background: var(--green); }
+  .svc-dot.down { background: var(--red); }
+  .svc-name { font-size: 0.75rem; font-weight: 600; }
+  .svc-port { font-size: 0.65rem; color: var(--faint); }
 
-  /* Section */
-  .section { margin-bottom: 24px; }
+  /* ── Empty state ── */
+  .empty {
+    text-align: center; padding: 48px 24px; color: var(--dim);
+  }
+  .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.3; }
+  .empty-text { font-size: 0.85rem; line-height: 1.5; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 20px;
+    font-size: 0.8rem; font-weight: 600; color: var(--text);
+    opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    z-index: 200;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── Refresh animation ── */
+  .refreshing .kpi-value { animation: shimmer 1.2s infinite; }
+  @keyframes shimmer {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+
+  /* ── Section headers ── */
   .section-title {
-    font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.06em; color: var(--dim); margin-bottom: 10px;
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--dim); margin: 16px 0 8px;
   }
-
-  /* Service grid */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .svc {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 14px; display: flex; flex-direction: column; gap: 6px;
-    transition: border-color 0.2s;
-  }
-  .svc.healthy { border-left: 3px solid var(--green); }
-  .svc.down { border-left: 3px solid var(--red); }
-  .svc-name { font-size: 0.85rem; font-weight: 600; }
-  .svc-meta { font-size: 0.7rem; color: var(--dim); }
-  .svc-status { font-size: 0.7rem; font-weight: 500; }
-  .svc-status.healthy { color: var(--green); }
-  .svc-status.down { color: var(--red); }
-
-  /* Stat cards */
-  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .stat {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 16px; text-align: center;
-  }
-  .stat-value { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em; }
-  .stat-label { font-size: 0.7rem; color: var(--dim); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .stat-value.green { color: var(--green); }
-  .stat-value.red { color: var(--red); }
-  .stat-value.amber { color: var(--amber); }
-  .stat-value.accent { color: var(--accent); }
-
-  /* Trading card */
-  .trading-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 16px;
-  }
-  .trading-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 0; border-bottom: 1px solid var(--border);
-  }
-  .trading-row:last-child { border-bottom: none; }
-  .trading-label { font-size: 0.8rem; color: var(--dim); }
-  .trading-value { font-size: 0.85rem; font-weight: 600; }
-
-  /* Memory list */
-  .mem-list { display: flex; flex-direction: column; gap: 6px; }
-  .mem-item {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 12px; cursor: pointer; transition: border-color 0.2s;
-  }
-  .mem-item:active { border-color: var(--accent); }
-  .mem-cat {
-    font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.05em; color: var(--accent); margin-bottom: 4px;
-  }
-  .mem-text { font-size: 0.8rem; line-height: 1.4; color: var(--text); }
-  .mem-time { font-size: 0.65rem; color: var(--dim); margin-top: 6px; }
-
-  /* Action queue cards */
-  .aq-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 12px; margin-bottom: 8px;
-  }
-  .aq-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .aq-badge {
-    font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 10px;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .aq-badge-build { background: rgba(91,141,239,0.2); color: #5b8def; }
-  .aq-badge-alpha { background: rgba(52,211,153,0.2); color: #34d399; }
-  .aq-badge-tool  { background: rgba(167,139,250,0.2); color: #a78bfa; }
-  .aq-badge-info  { background: rgba(102,102,102,0.2); color: #888; }
-  .aq-score { font-size: 0.7rem; color: var(--dim); margin-left: auto; }
-  .aq-desc { font-size: 0.78rem; line-height: 1.4; color: var(--text); margin-bottom: 8px;
-             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .aq-btns { display: flex; gap: 6px; }
-  .aq-btn {
-    flex: 1; padding: 5px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--card); color: var(--dim); font-size: 0.72rem; cursor: pointer;
-    text-align: center;
-  }
-  .aq-btn-done { border-color: var(--green); color: var(--green); }
-  .aq-btn-dismiss { border-color: var(--dim); }
-
-  /* Quick actions */
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .action-btn {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 14px; text-align: center; text-decoration: none; color: var(--text);
-    font-size: 0.8rem; font-weight: 500; transition: all 0.2s;
-  }
-  .action-btn:active { background: #1f1f1f; border-color: var(--accent); }
-  .action-icon { font-size: 1.3rem; margin-bottom: 4px; }
-
-  /* Timestamp */
-  .updated {
-    text-align: center; font-size: 0.7rem; color: var(--dim);
-    padding: 16px 0 32px;
-  }
-
-  /* Loading skeleton */
-  .skeleton {
-    background: linear-gradient(90deg, var(--card) 25%, #1a1a1a 50%, var(--card) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: var(--radius);
-    height: 60px;
-  }
-  @keyframes shimmer { to { background-position: -200% 0; } }
 </style>
-</head>
-<body>
+</head><body>
 
+<!-- Header -->
 <div class="header">
-  <h1>Symphony Ops</h1>
-  <div class="refresh" onclick="loadDashboard()" id="refreshBtn">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+  <h1>Symphony</h1>
+  <div class="header-right">
+    <span class="status-label" id="statusLabel">loading</span>
+    <div class="pulse" id="statusPulse"></div>
   </div>
 </div>
 
-<div id="content">
-  <div class="section">
-    <div class="grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
-  </div>
+<!-- KPI Strip -->
+<div class="kpi-strip" id="kpiStrip">
+  <div class="kpi"><div class="kpi-label">Memories</div><div class="kpi-value" id="kpiMemories">--</div><div class="kpi-sub">cortex total</div></div>
+  <div class="kpi"><div class="kpi-label">Pending</div><div class="kpi-value" id="kpiPending" style="color:var(--amber)">--</div><div class="kpi-sub">needs review</div></div>
+  <div class="kpi"><div class="kpi-label">Approved</div><div class="kpi-value" id="kpiApproved" style="color:var(--green)">--</div><div class="kpi-sub">human + auto</div></div>
+  <div class="kpi"><div class="kpi-label">Services</div><div class="kpi-value" id="kpiServices">--</div><div class="kpi-sub" id="kpiServicesLabel">containers</div></div>
+  <div class="kpi"><div class="kpi-label">Trading</div><div class="kpi-value" id="kpiTrading">--</div><div class="kpi-sub" id="kpiTradingLabel">status</div></div>
 </div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" data-tab="review">Review <span class="badge pending" id="tabPendingBadge">0</span></button>
+  <button class="tab" data-tab="memories">Memories <span class="badge count" id="tabMemBadge">0</span></button>
+  <button class="tab" data-tab="system">System</button>
+</div>
+
+<!-- Review Panel -->
+<div class="panel active" id="panel-review">
+  <div class="feed" id="reviewFeed"></div>
+</div>
+
+<!-- Memories Panel -->
+<div class="panel" id="panel-memories">
+  <div class="feed" id="memoriesFeed"></div>
+</div>
+
+<!-- System Panel -->
+<div class="panel" id="panel-system">
+  <div class="section-title">Services</div>
+  <div class="svc-grid" id="svcGrid"></div>
+  <div class="section-title" style="margin-top:20px">Queue Stats</div>
+  <div id="queueStats"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
 
 <script>
-const CATEGORY_MAP = {
-  cortex: "Core AI", openclaw: "Core AI", "cortex-autobuilder": "Core AI",
-  trading: "Trading", proposals: "Business", email: "Comms",
-  voice: "Comms", calendar: "Business", notifications: "Infra",
-  portal: "Business", "x-intake": "Intel", "intel-feeds": "Intel"
-};
+(function() {
+  const BASE = '';
+  let allQueueItems = [];
+  let refreshTimer = null;
 
-function relTime(ts) {
-  if (!ts) return "";
-  const d = new Date(ts), now = new Date(), diff = (now - d) / 1000;
-  if (diff < 60) return "just now";
-  if (diff < 3600) return Math.floor(diff/60) + "m ago";
-  if (diff < 86400) return Math.floor(diff/3600) + "h ago";
-  return Math.floor(diff/86400) + "d ago";
-}
+  // ── Tabs ──
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+    });
+  });
 
-function truncate(s, n) { return s && s.length > n ? s.slice(0, n) + "..." : s || ""; }
-
-async function loadDashboard() {
-  const btn = document.getElementById("refreshBtn");
-  btn.classList.add("spinning");
-
-  try {
-    const [resp, actResp] = await Promise.all([
-      fetch("/api/dashboard-data"),
-      fetch("/proxy/x-intake/actions?status=pending&limit=5").catch(() => null),
-    ]);
-    if (!resp.ok) throw new Error("Failed");
-    const data = await resp.json();
-    let actions = [];
-    if (actResp && actResp.ok) {
-      const actData = await actResp.json();
-      actions = actData.actions || [];
-    }
-    render(data, actions);
-  } catch (e) {
-    document.getElementById("content").innerHTML =
-      '<div class="stat" style="grid-column:1/-1;text-align:center;padding:40px">' +
-      '<div class="stat-value red">Offline</div>' +
-      '<div class="stat-label">Could not reach gateway API</div></div>';
-  } finally {
-    btn.classList.remove("spinning");
-  }
-}
-
-async function aqAction(id, endpoint) {
-  try {
-    await fetch("/proxy/x-intake/actions/" + id + "/" + endpoint, {method: "POST"});
-    loadDashboard();
-  } catch(e) {}
-}
-
-function render(data, actions) {
-  actions = actions || [];
-  const svc = data.services || {};
-  const cortex = data.cortex || {};
-  const trading = data.trading || {};
-  const memories = data.recent_memories || [];
-
-  const healthy = Object.values(svc).filter(s => s.status === "healthy").length;
-  const total = Object.keys(svc).length;
-  const allUp = healthy === total;
-
-  let html = "";
-
-  // -- Status pills --
-  html += '<div class="status-bar">';
-  html += '<div class="status-pill"><div class="dot ' + (allUp ? "dot-green" : "dot-red") + '"></div>' + healthy + '/' + total + ' services</div>';
-  if (trading.status && trading.status !== "offline") {
-    html += '<div class="status-pill"><div class="dot dot-green"></div>Trading active</div>';
-  }
-  if (actions.length > 0) {
-    html += '<div class="status-pill"><div class="dot dot-amber"></div>' + actions.length + ' pending actions</div>';
-  }
-  html += '</div>';
-
-  // -- Stats --
-  html += '<div class="section"><div class="section-title">Overview</div><div class="stats">';
-  html += '<div class="stat"><div class="stat-value ' + (allUp ? "green" : "amber") + '">' + healthy + '/' + total + '</div><div class="stat-label">Services Up</div></div>';
-  html += '<div class="stat"><div class="stat-value accent">' + (cortex.memory_count || "—") + '</div><div class="stat-label">Cortex Memories</div></div>';
-  const uptime = cortex.uptime_hours ? Math.floor(cortex.uptime_hours) + "h" : "—";
-  html += '<div class="stat"><div class="stat-value">' + uptime + '</div><div class="stat-label">Cortex Uptime</div></div>';
-  const tradingPnl = trading.pnl != null ? (trading.pnl >= 0 ? "+" : "") + trading.pnl.toFixed(2) : "—";
-  const pnlColor = trading.pnl > 0 ? "green" : trading.pnl < 0 ? "red" : "";
-  html += '<div class="stat"><div class="stat-value ' + pnlColor + '">' + tradingPnl + '</div><div class="stat-label">Trading P&L</div></div>';
-  html += '</div></div>';
-
-  // -- Services grid --
-  html += '<div class="section"><div class="section-title">Services</div><div class="grid">';
-  for (const [name, info] of Object.entries(svc)) {
-    const st = info.status === "healthy" ? "healthy" : "down";
-    const cat = CATEGORY_MAP[name] || "Other";
-    html += '<div class="svc ' + st + '">';
-    html += '<div class="svc-name">' + name + '</div>';
-    html += '<div class="svc-meta">:' + info.port + ' &middot; ' + cat + '</div>';
-    html += '<div class="svc-status ' + st + '">' + (st === "healthy" ? "Healthy" : "Down") + '</div>';
-    html += '</div>';
-  }
-  html += '</div></div>';
-
-  // -- Trading details --
-  if (trading.status && trading.status !== "offline") {
-    html += '<div class="section"><div class="section-title">Trading</div><div class="trading-card">';
-    if (trading.active_positions != null) {
-      html += '<div class="trading-row"><span class="trading-label">Active Positions</span><span class="trading-value">' + trading.active_positions + '</span></div>';
-    }
-    if (trading.balance != null) {
-      html += '<div class="trading-row"><span class="trading-label">Balance</span><span class="trading-value">$' + trading.balance.toFixed(2) + '</span></div>';
-    }
-    if (trading.pnl != null) {
-      html += '<div class="trading-row"><span class="trading-label">P&L</span><span class="trading-value" style="color:' + (trading.pnl >= 0 ? "var(--green)" : "var(--red)") + '">' + tradingPnl + '</span></div>';
-    }
-    if (trading.last_trade) {
-      html += '<div class="trading-row"><span class="trading-label">Last Trade</span><span class="trading-value">' + relTime(trading.last_trade) + '</span></div>';
-    }
-    html += '</div></div>';
+  // ── Toast ──
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2200);
   }
 
-  // -- X-Intel Action Queue --
-  if (actions.length > 0) {
-    html += '<div class="section"><div class="section-title">X-Intel Actions</div>';
-    for (const a of actions) {
-      const typeClass = ["build","alpha","tool"].includes(a.action_type) ? a.action_type : "info";
-      html += '<div class="aq-card">';
-      html += '<div class="aq-header">';
-      html += '<span class="aq-badge aq-badge-' + typeClass + '">' + (a.action_type || "info") + '</span>';
-      if (a.author) html += '<span style="font-size:0.75rem;color:var(--dim)">@' + a.author + '</span>';
-      html += '<span class="aq-score">' + (a.relevance || 0) + '% relevance</span>';
-      html += '</div>';
-      html += '<div class="aq-desc">' + truncate(a.description || "", 180) + '</div>';
-      html += '<div class="aq-btns">';
-      if (a.url) html += '<a class="aq-btn" href="' + a.url + '" target="_blank" style="text-decoration:none">&#128279; Source</a>';
-      html += '<button class="aq-btn aq-btn-done" onclick="aqAction(' + a.id + ',\'done\')">&#10003; Done</button>';
-      html += '<button class="aq-btn aq-btn-dismiss" onclick="aqAction(' + a.id + ',\'dismiss\')">&#10005; Dismiss</button>';
-      html += '</div>';
-      html += '</div>';
-    }
-    html += '</div>';
+  // ── Time formatting ──
+  function timeAgo(ts) {
+    if (!ts) return '';
+    const sec = Math.floor(Date.now()/1000 - ts);
+    if (sec < 60) return 'just now';
+    if (sec < 3600) return Math.floor(sec/60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
+    return Math.floor(sec/86400) + 'd ago';
   }
 
-  // -- Recent memories --
-  if (memories.length > 0) {
-    html += '<div class="section"><div class="section-title">Recent Memories</div><div class="mem-list">';
-    for (const m of memories.slice(0, 5)) {
-      html += '<div class="mem-item">';
-      if (m.category) html += '<div class="mem-cat">' + m.category + '</div>';
-      html += '<div class="mem-text">' + truncate(m.content || m.text || m.summary || "", 140) + '</div>';
-      if (m.created_at || m.timestamp) html += '<div class="mem-time">' + relTime(m.created_at || m.timestamp) + '</div>';
-      html += '</div>';
-    }
-    html += '</div></div>';
+  // ── Type badge class ──
+  function typeClass(t) {
+    const map = { build:'type-build', alpha:'type-alpha', tool:'type-tool', research:'type-research' };
+    return map[t] || 'type-info';
+  }
+  function relClass(r) {
+    if (r >= 70) return 'rel-high';
+    if (r >= 40) return 'rel-mid';
+    return 'rel-low';
   }
 
-  // -- Quick actions --
-  html += '<div class="section"><div class="section-title">Quick Actions</div><div class="actions">';
-  html += '<a class="action-btn" href="/proxy/cortex/memories?limit=50"><div class="action-icon">&#128024;</div>All Memories</a>';
-  html += '<a class="action-btn" href="/proxy/trading/health"><div class="action-icon">&#128200;</div>Trading Detail</a>';
-  html += '<a class="action-btn" href="/proxy/x-intake/health"><div class="action-icon">&#128225;</div>X-Intake</a>';
-  html += '<a class="action-btn" href="/docs"><div class="action-icon">&#128196;</div>API Docs</a>';
-  html += '</div></div>';
+  // ── Build review card ──
+  function reviewCard(item) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.dataset.id = item.id;
 
-  // -- Timestamp --
-  html += '<div class="updated">Updated ' + new Date().toLocaleTimeString() + '</div>';
+    const summary = item.summary || 'No summary available';
+    const isLong = summary.length > 180;
 
-  document.getElementById("content").innerHTML = html;
-}
+    div.innerHTML = `
+      <div class="card-header">
+        <div class="card-meta">
+          <span class="card-type ${typeClass(item.post_type)}">${item.post_type || 'info'}</span>
+          <span class="card-author">${item.author ? '@' + item.author : 'unknown'}</span>
+        </div>
+        <span class="card-relevance ${relClass(item.relevance)}">${item.relevance}</span>
+      </div>
+      <div class="card-summary${isLong ? '' : ' expanded'}">${summary}</div>
+      ${isLong ? '<button class="btn-expand" onclick="this.previousElementSibling.classList.toggle(\'expanded\'); this.textContent = this.textContent === \'Show more\' ? \'Show less\' : \'Show more\'">Show more</button>' : ''}
+      ${item.action && item.action !== 'none' ? '<div class="card-action-label">Suggested: ' + item.action + '</div>' : ''}
+      <div class="card-actions">
+        <button class="btn btn-approve" onclick="handleAction(${item.id}, 'approve', this)">Approve</button>
+        <button class="btn btn-dismiss" onclick="handleAction(${item.id}, 'reject', this)">Dismiss</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <span class="card-time">${timeAgo(item.created_at)}</span>
+        ${item.url ? '<a href="'+item.url+'" target="_blank" style="font-size:0.7rem">View post</a>' : ''}
+      </div>
+    `;
+    return div;
+  }
 
-// Auto-refresh every 30s
-loadDashboard();
-setInterval(loadDashboard, 30000);
+  // ── Handle approve/dismiss ──
+  window.handleAction = async function(id, action, btn) {
+    const card = btn.closest('.card');
+    try {
+      const r = await fetch(BASE + '/proxy/x-intake/queue/' + id + '/' + action, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (r.ok) {
+        card.classList.add('swiped');
+        toast(action === 'approve' ? 'Approved \u2014 Bob will learn from this' : 'Dismissed');
+        setTimeout(() => card.remove(), 300);
+        // Update badge
+        const badge = document.getElementById('tabPendingBadge');
+        const cur = parseInt(badge.textContent) || 0;
+        if (cur > 0) badge.textContent = cur - 1;
+        if (cur <= 1) badge.textContent = '0';
+      } else {
+        toast('Failed \u2014 try again');
+      }
+    } catch(e) {
+      toast('Network error');
+    }
+  };
+
+  // ── Build memory card ──
+  function memoryCard(mem) {
+    const div = document.createElement('div');
+    div.className = 'memory-card';
+    div.innerHTML = `
+      <div class="memory-cat">${mem.category || 'general'}</div>
+      <div class="memory-text">${mem.content || mem.text || mem.summary || JSON.stringify(mem).slice(0,300)}</div>
+      <div class="memory-time">${mem.created_at ? timeAgo(mem.created_at) : ''}</div>
+    `;
+    return div;
+  }
+
+  // ── Render services ──
+  function renderServices(services) {
+    const grid = document.getElementById('svcGrid');
+    grid.innerHTML = '';
+    for (const [name, info] of Object.entries(services || {})) {
+      const svc = document.createElement('div');
+      svc.className = 'svc';
+      svc.innerHTML = `
+        <div class="svc-dot ${info.status === 'healthy' ? 'up' : 'down'}"></div>
+        <div>
+          <div class="svc-name">${name}</div>
+          <div class="svc-port">:${info.port}</div>
+        </div>
+      `;
+      grid.appendChild(svc);
+    }
+  }
+
+  // ── Render queue stats ──
+  function renderQueueStats(stats) {
+    const el = document.getElementById('queueStats');
+    if (!stats) { el.innerHTML = '<div class="empty"><div class="empty-text">No queue data</div></div>'; return; }
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="kpi"><div class="kpi-label">Pending</div><div class="kpi-value" style="color:var(--amber)">${stats.pending||0}</div></div>
+        <div class="kpi"><div class="kpi-label">Auto-approved</div><div class="kpi-value" style="color:var(--green)">${stats.auto_approved||0}</div></div>
+        <div class="kpi"><div class="kpi-label">Approved</div><div class="kpi-value" style="color:var(--green)">${stats.approved||0}</div></div>
+        <div class="kpi"><div class="kpi-label">Rejected</div><div class="kpi-value" style="color:var(--red)">${stats.rejected||0}</div></div>
+        <div class="kpi"><div class="kpi-label">Auto-rejected</div><div class="kpi-value" style="color:var(--faint)">${stats.auto_rejected||0}</div></div>
+        <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">${stats.total||0}</div></div>
+      </div>
+    `;
+  }
+
+  // ── Fetch everything ──
+  async function fetchAll() {
+    document.body.classList.add('refreshing');
+    try {
+      // Parallel fetches
+      const [dashRes, queueRes, queueStatsRes, memoriesRes] = await Promise.all([
+        fetch(BASE + '/api/dashboard-data').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(BASE + '/proxy/x-intake/queue?status=pending&limit=50').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(BASE + '/proxy/x-intake/queue/stats').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(BASE + '/proxy/cortex/memories?limit=20').then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+
+      // KPIs
+      if (dashRes) {
+        document.getElementById('kpiMemories').textContent = dashRes.cortex?.memory_count ?? '--';
+        const svcCount = Object.keys(dashRes.services || {}).length;
+        const healthyCount = Object.values(dashRes.services || {}).filter(s => s.status === 'healthy').length;
+        document.getElementById('kpiServices').textContent = healthyCount + '/' + svcCount;
+        document.getElementById('kpiServicesLabel').textContent = healthyCount === svcCount ? 'all healthy' : (svcCount - healthyCount) + ' down';
+
+        // Status pulse
+        const pulse = document.getElementById('statusPulse');
+        const label = document.getElementById('statusLabel');
+        if (healthyCount === svcCount) {
+          pulse.className = 'pulse'; label.textContent = 'all systems go';
+        } else if (healthyCount > svcCount * 0.7) {
+          pulse.className = 'pulse warn'; label.textContent = 'degraded';
+        } else {
+          pulse.className = 'pulse dead'; label.textContent = 'critical';
+        }
+
+        // Trading
+        const t = dashRes.trading || {};
+        if (t.status === 'offline' || !t.status || t.status === 'unknown') {
+          document.getElementById('kpiTrading').textContent = 'OFF';
+          document.getElementById('kpiTrading').style.color = 'var(--red)';
+          document.getElementById('kpiTradingLabel').textContent = 'offline';
+        } else {
+          document.getElementById('kpiTrading').textContent = t.balance ? '$' + parseFloat(t.balance).toFixed(0) : 'ON';
+          document.getElementById('kpiTrading').style.color = 'var(--green)';
+          document.getElementById('kpiTradingLabel').textContent = t.pnl ? 'P&L: $' + parseFloat(t.pnl).toFixed(2) : 'active';
+        }
+
+        renderServices(dashRes.services);
+      }
+
+      // Queue stats
+      if (queueStatsRes) {
+        const pending = queueStatsRes.pending || 0;
+        const approved = (queueStatsRes.approved || 0) + (queueStatsRes.auto_approved || 0);
+        document.getElementById('kpiPending').textContent = pending;
+        document.getElementById('kpiApproved').textContent = approved;
+        document.getElementById('tabPendingBadge').textContent = pending;
+        if (pending === 0) document.getElementById('tabPendingBadge').className = 'badge count';
+        else document.getElementById('tabPendingBadge').className = 'badge pending';
+        renderQueueStats(queueStatsRes);
+      }
+
+      // Review feed
+      const feed = document.getElementById('reviewFeed');
+      const items = (queueRes && queueRes.items) || [];
+      if (items.length === 0) {
+        feed.innerHTML = '<div class="empty"><div class="empty-icon">&#10003;</div><div class="empty-text">Nothing to review right now.<br>Bob is scanning \u2014 items will appear here.</div></div>';
+      } else {
+        feed.innerHTML = '';
+        items.forEach(item => feed.appendChild(reviewCard(item)));
+      }
+
+      // Memories feed
+      const memFeed = document.getElementById('memoriesFeed');
+      const mems = Array.isArray(memoriesRes) ? memoriesRes : (memoriesRes?.memories || []);
+      document.getElementById('tabMemBadge').textContent = mems.length;
+      if (mems.length === 0) {
+        memFeed.innerHTML = '<div class="empty"><div class="empty-icon">&#9673;</div><div class="empty-text">No memories yet.<br>Cortex stores knowledge as scanners find it.</div></div>';
+      } else {
+        memFeed.innerHTML = '';
+        mems.forEach(m => memFeed.appendChild(memoryCard(m)));
+      }
+
+    } catch(e) {
+      console.error('fetch error', e);
+    }
+    document.body.classList.remove('refreshing');
+  }
+
+  // ── Pull-to-refresh (basic) ──
+  let touchStartY = 0;
+  document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; });
+  document.addEventListener('touchend', e => {
+    if (window.scrollY === 0 && e.changedTouches[0].clientY - touchStartY > 80) {
+      toast('Refreshing...');
+      fetchAll();
+    }
+  });
+
+  // ── Init ──
+  fetchAll();
+  refreshTimer = setInterval(fetchAll, 30000);
+})();
 </script>
 </body></html>
