@@ -165,6 +165,8 @@ class PresolutionScalpStrategy(BaseStrategy):
                 continue
             try:
                 end_dt = datetime.fromisoformat(str(end_iso).replace("Z", "+00:00"))
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
             except Exception:
                 continue
             minutes = (end_dt - now).total_seconds() / 60.0
@@ -252,6 +254,8 @@ class PresolutionScalpStrategy(BaseStrategy):
         end_iso = market.get("endDateIso") or market.get("end_date_iso") or ""
         try:
             res_dt = datetime.fromisoformat(str(end_iso).replace("Z", "+00:00"))
+            if res_dt.tzinfo is None:
+                res_dt = res_dt.replace(tzinfo=timezone.utc)
         except Exception:
             res_dt = datetime.now(timezone.utc)
         cid = str(market.get("conditionId") or "")
