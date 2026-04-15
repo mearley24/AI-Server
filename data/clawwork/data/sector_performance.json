@@ -1,6 +1,6 @@
 {
   "Finance and Insurance": {
-    "tasks": 206,
+    "tasks": 214,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -8,7 +8,7 @@
     "avg_net_profit": 0.0
   },
   "Professional, Scientific, and Technical Services": {
-    "tasks": 318,
+    "tasks": 329,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -16,7 +16,7 @@
     "avg_net_profit": 0.0
   },
   "Real Estate and Rental and Leasing": {
-    "tasks": 11,
+    "tasks": 12,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
@@ -24,7 +24,7 @@
     "avg_net_profit": 0.0
   },
   "Information": {
-    "tasks": 9,
+    "tasks": 10,
     "total_quality": 0.0,
     "total_payment": 0.0,
     "total_cost": 0.0,
