@@ -50,7 +50,8 @@ def _parse_structured_response(content: str) -> dict[str, Any]:
 
     for line in content.split("\n"):
         stripped = line.strip()
-        match = re.match(r"^[-*]?\s*(SUMMARY|DETAILS|ACTIONABLE|CONFIDENCE|RELATED)\s*:\s*(.*)", stripped, re.IGNORECASE)
+        # Handle plain "- SUMMARY:", markdown bold "**SUMMARY:**", and heading "### SUMMARY:"
+        match = re.match(r"^[#\-*\s]*\*{0,2}(SUMMARY|DETAILS|ACTIONABLE|CONFIDENCE|RELATED)\*{0,2}\s*:\s*(.*)", stripped, re.IGNORECASE)
         if match:
             if current_key:
                 sections[current_key] = "\n".join(current_lines).strip()
@@ -204,10 +205,11 @@ class BettyResearcher:
             return {"error": str(exc), "question": question}
 
         raw_response = (result.get("content") or "").strip()
-        # Clean the raw LLM response before storing — removes ANSI, normalizes whitespace
+        # Strip ANSI only — do NOT run full clean_context pipeline (that wraps in
+        # prompt template which destroys SUMMARY/DETAILS/ACTIONABLE structure).
         try:
-            from openclaw.context_cleaner import clean_context
-            content = clean_context(raw_response)
+            from openclaw.context_cleaner import strip_ansi, normalize_whitespace
+            content = normalize_whitespace(strip_ansi(raw_response))
         except Exception:
             content = raw_response
 

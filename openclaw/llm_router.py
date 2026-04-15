@@ -137,11 +137,15 @@ async def _call_ollama(
     base_url: str,
     timeout: float = 30.0,
 ) -> dict[str, Any]:
+    options: dict[str, Any] = {"temperature": 0.1, "num_predict": 512}
+    # qwen3 thinking mode eats all tokens → response is empty; disable it
+    if "qwen3" in model.lower():
+        options["think"] = False
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 512},
+        "options": options,
     }
     base = base_url.rstrip("/")
     async with httpx.AsyncClient(timeout=timeout) as client:
