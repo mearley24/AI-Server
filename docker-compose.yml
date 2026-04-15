@@ -444,7 +444,8 @@ services:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102
       - TZ=America/Denver
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - POLYMARKET_BOT_URL=http://vpn:8430
       - EMAIL_MONITOR_URL=http://email-monitor:8092
       - CALENDAR_AGENT_URL=http://calendar-agent:8094
@@ -620,6 +621,11 @@ services:
     environment:
       - CORTEX_URL=http://cortex:8102
       - REDIS_URL=${REDIS_URL}
+<<<<<<< HEAD
+=======
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+>>>>>>> 36094f3854c529a0ffb70c78225c0c242a5848e7
       - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
       - LLM_ROUTER_MODE=local_first
       - AUTOBUILDER_PORT=8115

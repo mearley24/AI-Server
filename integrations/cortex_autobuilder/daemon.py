@@ -213,7 +213,8 @@ async def _topic_scanner_loop() -> None:
             return ""
 
     async def _call_ollama_local(prompt: str) -> str:
-        """Process text through local Ollama — free, always preferred."""
+        """Process text through local Ollama — free, always preferred.
+        Falls back to OpenAI if Ollama is unreachable."""
         try:
             async with _httpx.AsyncClient(timeout=60.0) as client:
                 r = await client.post(
@@ -228,7 +229,34 @@ async def _topic_scanner_loop() -> None:
                 r.raise_for_status()
                 return (r.json().get("response") or "").strip()
         except Exception as exc:
-            logger.warning("scanner_ollama_error error=%s", str(exc)[:100])
+            logger.warning("scanner_ollama_error error=%s — trying OpenAI fallback", str(exc)[:100])
+            return await _call_openai_fallback(prompt)
+
+    async def _call_openai_fallback(prompt: str) -> str:
+        """Fallback to OpenAI gpt-4o-mini when Ollama is down."""
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        if not api_key:
+            logger.warning("scanner_no_openai_key — both Ollama and OpenAI unavailable")
+            return ""
+        try:
+            async with _httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 1024,
+                        "temperature": 0.1,
+                    },
+                )
+                r.raise_for_status()
+                return (r.json()["choices"][0]["message"]["content"] or "").strip()
+        except Exception as exc:
+            logger.warning("scanner_openai_fallback_error error=%s", str(exc)[:100])
             return ""
 
     async def _store_to_cortex(payload: dict) -> bool:
