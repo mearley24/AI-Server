@@ -263,10 +263,14 @@ Push to main when done.
 
 ---
 
-## POST-BUILD: Matt Action Items
-After this prompt is executed, Matt needs to:
-1. Set X API credentials in `.env` (if not already): `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`
-2. Run `pip install tweepy` on Bob (or in the relevant venv)
-3. Run `scripts/install-x-autoposter.sh` to enable the launchd auto-poster
-4. Test with: `python3 tools/social_content.py --tip --queue` then `python3 tools/x_poster.py --queue`
-5. Post a test: `python3 tools/x_poster.py --auto`
+## 6. POST-BUILD STEPS (DO THESE BEFORE COMMITTING)
+
+These are part of the prompt — execute all of them:
+
+1. **Install tweepy:** Run `pip install tweepy` (or `pip3 install tweepy`) on Bob. If a venv is in use, install there.
+2. **Create data directory:** `mkdir -p data/x_posts`
+3. **Check .env for X credentials:** Read the `.env` file and verify `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` are set (not placeholder values). If they are still `your_api_key_here` or missing, print a clear warning to the terminal: "WARNING: X API credentials not set in .env — see .env.example section 12. Auto-posting will not work until these are configured."
+4. **Install the launchd scheduler:** Run `bash scripts/install-x-autoposter.sh` to copy the plist and load it.
+5. **Test content generation:** Run `python3 tools/social_content.py --tip --queue` and verify it outputs a generated tip and confirms it was queued.
+6. **Test queue display:** Run `python3 tools/x_poster.py --queue` and verify it shows the pending post.
+7. **If X credentials are set**, run `python3 tools/x_poster.py --auto` to post the first test tweet. If credentials are not set, skip this step and print the warning again.
