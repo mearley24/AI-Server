@@ -1,72 +1,77 @@
-# Cline Prompt: Bob as Sole Team Member + M2 MacBook Pro as Worker
+# Cline Prompt: Bob as Sole Primary Node + Retire Maestro + Prep M2 Worker
 
 ## IMPORTANT — Read First
 Read `STATUS_REPORT.md` and `CLAUDE.md` completely before making any changes. Do NOT assume any service is unused.
 
-## Overview
-Bob (Mac Mini M4, 16GB) becomes the single primary node that handles everything — Docker services, Ollama, orchestration. Maestro (2019 iMac) is being retired. The M2 MacBook Pro (16GB) will be prepped as a future worker node.
+## Context — What's Already Done
+The previous prompt (`cline-prompt-ollama-on-bob-cleanup.md`) already completed:
+- Ollama installed on Bob (46.8 tok/s on M4 Metal)
+- All OLLAMA_HOST references updated to Bob (192.168.1.189:11434)
+- Memory limits added to all Docker services
+- llama3.2:3b pulled and working
 
-Three tasks:
-1. **Install Ollama on Bob** and point all services to localhost
-2. **Remove Maestro references** — clean out all hardcoded Maestro IPs and configs
-3. **Conservative cleanup** — remove confirmed dead services, add memory limits, update node registry
-4. **Prep M2 worker config** — add M2 to the node registry as a future Ollama worker
+**x-intake-lab was incorrectly removed** — it needs to be restored. It runs transcript analysis and bookmark organization feeding into Cortex. Not a throwaway experiment.
 
-## Task 1: Install and Configure Ollama on Bob
+## Task 1: Restore x-intake-lab to docker-compose.yml
 
-### 1.1 Install Ollama
-On Bob:
+Add this service back to `docker-compose.yml` (it was incorrectly removed):
+
+```yaml
+  x-intake-lab:
+    build: ./integrations/x_intake
+    container_name: x-intake-lab
+    restart: unless-stopped
+    command: ["python3", "lab_main.py"]
+    ports:
+      - "127.0.0.1:8103:8101"
+    mem_limit: 512m
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CORTEX_URL=http://cortex:8102
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-llama3.2:3b}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Denver
+      - LAB_MODE=true
+    volumes:
+      - ./data/transcripts:/data/transcripts
+      - ./data/bookmarks:/data/bookmarks
+      - x-intake-lab-data:/data/lab
+    networks:
+      - default
+    depends_on:
+      redis:
+        condition: service_healthy
+      cortex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8101/health', timeout=3)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
-curl -fsSL https://ollama.com/install.sh | sh
+
+Also restore the `x-intake-lab-data` volume at the bottom of docker-compose.yml if it was removed:
+```yaml
+volumes:
+  x-intake-lab-data:
 ```
 
-### 1.2 Pull the required model
-```
-ollama pull llama3.2:3b
-```
+Note the updates from the old version:
+- `OLLAMA_HOST` now points to Bob (192.168.1.189) not Maestro
+- `OLLAMA_ANALYSIS_MODEL` updated to `llama3.2:3b` (was `qwen3:8b`)
+- `mem_limit: 512m` added to match the other services
 
-### 1.3 Configure Ollama to listen on all interfaces
-So the M2 (and future workers) can also reach Bob's Ollama if needed:
-```
-launchctl setenv OLLAMA_HOST "0.0.0.0"
-```
-Restart Ollama and verify:
-```
-curl http://127.0.0.1:11434/api/tags
-```
-
-### 1.4 Update OLLAMA_HOST in docker-compose.yml
-Change ALL `OLLAMA_HOST` defaults from `http://192.168.1.199:11434` to `http://host.docker.internal:11434`.
-
-This applies to these services (7 total):
-- polymarket-bot
-- calendar-agent
-- openclaw
-- cortex
-- x-intake
-- cortex-autobuilder
-- x-intake-lab (will be removed in Task 3, but update before removing so the diff is clean)
-
-Use `host.docker.internal` because Ollama runs on the host (not in Docker), and Docker containers need this special hostname to reach host services.
-
-### 1.5 Update all Python files referencing Maestro IP
-Search the entire repo for `192.168.1.199` and replace with `host.docker.internal` (for code that runs in containers) or `127.0.0.1` (for code that runs on the host).
-
-Key files to grep and update:
-- Any `.py` file with `192.168.1.199`
-- `scripts/verify-readonly.sh` (line 139)
-- `start_symphony.sh` (line 370 — the Ollama status display)
-
-For Python files in Docker services, use `http://host.docker.internal:11434`.
-For Python files that run on the host (tools/, scripts/), use `http://127.0.0.1:11434`.
-
-### 1.6 Update .env file
-If `.env` has an `OLLAMA_HOST` variable, update it to `http://host.docker.internal:11434`.
+Run `docker compose up -d --build x-intake-lab` to bring it back up.
 
 ## Task 2: Remove Maestro/Betty References
 
-### 2.1 Clean up setup files
-These files are Maestro-specific and no longer needed. Delete them:
+Maestro (2019 iMac) is being retired. Bob handles everything now.
+
+### 2.1 Delete Maestro-specific files
 - `scripts/setup-ollama-maestro.sh`
 - `setup/launchd/com.symphony.worker-betty.plist`
 - `setup/launchd/com.symphony.employee-betty-bot.plist`
@@ -74,67 +79,35 @@ These files are Maestro-specific and no longer needed. Delete them:
 ### 2.2 Update node registry
 Edit `setup/nodes/nodes_registry.json`:
 - Change Maestro's `"status"` from `"active"` to `"retired"`
-- Add a `"retired_date": "2026-04-16"` field
-- Update Bob's `"notes"` to: `"HQ node. Runs all Docker services, Ollama (llama3.2:3b), OpenClaw conductor. Primary for all inference."`
-- Update Bob's `"network"` → `"ip"` to `"192.168.1.189"` (actual current IP)
+- Add `"retired_date": "2026-04-16"` to the Maestro entry
+- Update Bob's `"notes"` to: `"HQ node. Runs all Docker services, Ollama (llama3.2:3b), OpenClaw conductor. Primary for all inference. 46.8 tok/s on M4 Metal."`
+- Update Bob's `"network"` -> `"ip"` to `"192.168.1.189"` (actual current IP)
 
 ### 2.3 Update openclaw_workers.json
 Edit `setup/nodes/openclaw_workers.json`:
-- Change all `"maestro_ollama"` references to `"bob_ollama"`
-- Change all `"maestro_harpa"` references to `"bob_harpa"` (or remove if HARPA is not running on Bob)
-- Update node_id from `"maestro"` to `"bob"` for those workers
-- Remove or comment out Maestro-specific worker entries that no longer apply
+- Change all `"maestro_ollama"` worker references to `"bob_ollama"` with `"node_id": "bob"`
+- Change all `"maestro_harpa"` references — remove these entries entirely (HARPA is not on Bob)
+- Update endpoints from Maestro IP to `http://192.168.1.189:11434`
 
 ### 2.4 Update business_hours_throttle.py
-Edit `tools/business_hours_throttle.py`:
-- Remove the Betty-specific plist names from the throttle list:
-  - `com.symphony.betty-learner`
-  - `com.symphony.employee-betty-bot`
-  - `com.symphony.worker-betty`
+Edit `tools/business_hours_throttle.py` — remove these Betty-specific plist names:
+- `com.symphony.betty-learner`
+- `com.symphony.employee-betty-bot`
+- `com.symphony.worker-betty`
 
-### 2.5 Clean up setup_ui references
-The setup UI (`setup/setup_ui/server.py` and `setup/setup_ui/README.md`) heavily references Betty. Update these to reference the M2 MacBook Pro instead of Betty, or mark as deprecated if the setup UI is no longer used.
+### 2.5 Update setup_ui
+Edit `setup/setup_ui/server.py` and `setup/setup_ui/README.md`:
+- Replace Betty references with M2 MacBook Pro where applicable
+- Update the verify section to check M2 instead of Betty
+- Update default IP placeholder
 
-## Task 3: Conservative Cleanup
+### 2.6 Grep for any remaining Maestro references
+Run: `grep -rn "192.168.1.199\|192.168.1.132\|maestro\.local" --include="*.py" --include="*.sh" --include="*.json" --include="*.yml" .`
+Fix anything that still points to Maestro. The docker-compose.yml and Python service files were already updated in the previous prompt — this is for anything that was missed.
 
-### 3.1 Remove ONLY confirmed dead containers
-Remove from `docker-compose.yml`:
-- **x-intake-lab** — experimental duplicate of x-intake, confirmed unused
+## Task 3: Prep M2 MacBook Pro as Future Worker
 
-**DO NOT remove any other service.** Everything else is wired into the pipeline.
-
-### 3.2 Add memory limits to all Docker services
-Add `mem_limit` to each service in `docker-compose.yml`:
-
-| Service | Memory Limit | Rationale |
-|---------|-------------|-----------|
-| cortex | 2GB | Brain — heaviest service |
-| polymarket-bot | 1GB | Trading — needs headroom |
-| openclaw | 1GB | Orchestrator |
-| voice-receptionist | 512MB | Node.js Twilio |
-| proposals | 512MB | PDF generation |
-| client-portal | 512MB | E-signature pages |
-| email-monitor | 512MB | IMAP polling |
-| notification-hub | 512MB | Message routing |
-| clawwork | 512MB | Background workflows |
-| calendar-agent | 256MB | Calendar sync |
-| dtools-bridge | 256MB | API bridge |
-| x-intake | 512MB | X/Twitter analysis |
-| x-alpha-collector | 256MB | RSS monitoring |
-| intel-feeds | 256MB | Intel aggregation |
-| cortex-autobuilder | 512MB | Research loop |
-| rsshub | 256MB | Node.js RSS proxy |
-| redis | 256MB | Cache/pubsub |
-| vpn | 128MB | WireGuard tunnel |
-
-Total: ~9GB max, leaving ~7GB for Ollama + macOS. In practice containers will use much less than their limits.
-
-### 3.3 DO NOT touch the markup tool
-The markup tool (`tools/markup_app/server.py`) runs on port 8088 via launchd plist `com.symphony.markup-app` with KeepAlive. It is NOT a Docker container. Leave it completely alone.
-
-## Task 4: Prep M2 MacBook Pro as Future Worker
-
-### 4.1 Add M2 to node registry
+### 3.1 Add M2 to node registry
 Add a new entry to `setup/nodes/nodes_registry.json`:
 
 ```json
@@ -171,9 +144,8 @@ Add a new entry to `setup/nodes/nodes_registry.json`:
 }
 ```
 
-### 4.2 Update openclaw_workers.json
-Add an M2 Ollama worker entry (status: planned) so the routing config is ready when the M2 comes online:
-
+### 3.2 Add M2 worker to openclaw_workers.json
+Add a planned worker entry:
 ```json
 {
   "worker_id": "m2_ollama",
@@ -189,7 +161,7 @@ Add an M2 Ollama worker entry (status: planned) so the routing config is ready w
 }
 ```
 
-### 4.3 Create M2 setup script
+### 3.3 Create M2 setup script
 Create `scripts/setup-ollama-m2.sh`:
 
 ```
@@ -224,21 +196,24 @@ printf '\n'
 
 Make it executable: `chmod +x scripts/setup-ollama-m2.sh`
 
+## Task 4: DO NOT TOUCH These
+
+- **Markup tool** (`tools/markup_app/server.py`) on port 8088 via launchd — leave completely alone
+- **Client portal** (`client-portal/main.py`) — internal Docker container on port 8096, leave alone
+- **All other Docker services** — everything is wired into the pipeline, do not remove anything
+- **Memory limits** — already added in previous prompt, do not change
+
 ## Verification Checklist
-- [ ] Ollama installed and running on Bob (127.0.0.1:11434)
-- [ ] `llama3.2:3b` model pulled on Bob
-- [ ] All `OLLAMA_HOST` in docker-compose.yml point to `host.docker.internal:11434`
-- [ ] No remaining references to `192.168.1.199` in any `.py`, `.sh`, `.yml`, or `.json` file
-- [ ] `x-intake-lab` removed from docker-compose.yml
-- [ ] Memory limits added to all Docker services
-- [ ] Maestro marked as retired in nodes_registry.json
+- [ ] x-intake-lab restored in docker-compose.yml and running (`docker compose ps x-intake-lab`)
+- [ ] x-intake-lab health endpoint responding on port 8103
+- [ ] No remaining references to `192.168.1.199` or `192.168.1.132` anywhere in the repo
+- [ ] Maestro marked `"retired"` in nodes_registry.json
+- [ ] Betty plist files and setup-ollama-maestro.sh deleted
 - [ ] M2 MacBook Pro added to nodes_registry.json (status: planned)
 - [ ] M2 setup script created and executable
-- [ ] Markup tool on port 8088 untouched
-- [ ] Client portal unchanged (internal, port 8096)
 - [ ] `docker compose config` validates without errors
-- [ ] At least one Ollama-dependent service tested and working against localhost
+- [ ] All existing services still running (`docker compose ps`)
 
 ## Commit
-Commit all changes with message: `feat: Bob as primary node, retire Maestro, prep M2 worker, add memory limits`
+Commit all changes with message: `feat: restore x-intake-lab, retire Maestro, prep M2 worker node`
 Push to main.
