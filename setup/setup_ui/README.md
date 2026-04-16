@@ -1,16 +1,18 @@
 # Symphony Setup UI
 
-One-click setup for Betty (64GB iMac) and verification from Bob (Mac Mini).
+One-click setup for M2 MacBook Pro (LLM worker) and verification from Bob (Mac Mini HQ).
 
-## Run on Betty (first-time setup)
+Maestro (Intel iMac) was retired 2026-04-16. Bob (M4 Mac Mini) is now the sole primary node.
 
-If Betty doesn't have the repo yet, copy this folder from Bob:
+## Run on M2 MacBook Pro (first-time setup)
+
+If the M2 doesn't have the repo yet, copy this folder from Bob:
 
 ```bash
-scp -r ~/AI-Server/setup/setup_ui betty@maestro.local:~/
+scp -r ~/AI-Server/setup/setup_ui m2user@m2.local:~/
 ```
 
-Then on Betty:
+Then on M2:
 
 ```bash
 cd ~/setup_ui
@@ -32,10 +34,20 @@ Open http://localhost:8888.
 
 | Button | Run on | What it does |
 |--------|--------|--------------|
-| 1. Clone AI-Server | Betty | `git clone` into ~/AI-Server |
-| 2. Run HARPA setup | Betty | setup_imac_harpa.sh |
-| 3. Run Ollama setup | Betty | setup_ollama_worker.sh |
-| Verify Ollama | Bob | curl Betty:11434 |
-| Verify HARPA bridge | Bob | curl Betty:9090 |
+| 1. Clone AI-Server | M2 | `git clone` into ~/AI-Server |
+| 2. Run HARPA setup | M2 | setup_imac_harpa.sh |
+| 3. Run Ollama setup | M2 | setup_ollama_worker.sh |
+| Verify Ollama | Bob | curl M2:11434 |
+| Verify HARPA bridge | Bob | curl M2:9090 |
 
-Set Betty's IP in the input field before running verify steps.
+Set the M2's IP in the input field before running verify steps.
+
+## M2 Ollama Setup (standalone)
+
+For a quick Ollama-only setup on the M2, run directly on the M2:
+
+```bash
+bash ~/AI-Server/scripts/setup-ollama-m2.sh
+```
+
+Then update `setup/nodes/nodes_registry.json` on Bob with the M2's actual IP address.

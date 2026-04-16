@@ -29,7 +29,6 @@ NONCRITICAL_LABELS = [
     "com.symphony.polymarket-scan",
     "com.symphony.x-drip",
     "com.symphony.x-mention-replier",
-    "com.symphony.betty-learner",
 ]
 
 CRITICAL_LABELS = [
@@ -38,9 +37,7 @@ CRITICAL_LABELS = [
     "com.symphony.markup-app",
     "com.symphony.notes-watcher",
     "com.symphony.incoming-tasks",
-    "com.symphony.employee-betty-bot",
     "com.symphony.employee-beatrice-bot",
-    "com.symphony.worker-betty",
 ]
 
 

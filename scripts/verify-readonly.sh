@@ -136,7 +136,7 @@ BARE_BODY=$(docker exec email-monitor sh -c 'grep -R "BODY\[" /app --include="*.
 # ── 7. Ollama LAN ──
 echo ""
 echo "--- Ollama LAN ---"
-curl -sf http://192.168.1.199:11434/api/tags >/dev/null 2>&1 \
+curl -sf http://192.168.1.189:11434/api/tags >/dev/null 2>&1 \
     && check "Ollama reachable from host" "PASS" || check "Ollama NOT reachable from host" "WARN"
 
 # ── 8. Secrets Scan ──

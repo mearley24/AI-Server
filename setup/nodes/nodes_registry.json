@@ -3,7 +3,7 @@
     "description": "Symphony Smart Homes AI Network - Node Registry",
     "version": "1.0.0",
     "managed_by": "Bob (HQ node)",
-    "last_updated": "2025-02-01",
+    "last_updated": "2026-04-16",
     "notes": "Update 'ip' fields with real IPs after provisioning. Use provision_node.sh to add new nodes."
   },
   "nodes": [
@@ -19,7 +19,7 @@
         "architecture": "arm64"
       },
       "network": {
-        "ip": "192.168.1.10",
+        "ip": "192.168.1.189",
         "hostname": "bob.local",
         "mac_address": ""
       },
@@ -38,7 +38,7 @@
         "nomic-embed-text"
       ],
       "status": "active",
-      "notes": "HQ node. Runs OpenClaw conductor, node registry API, health monitor. Low-power routing model only (3B). Heavy inference delegated to Maestro.",
+      "notes": "HQ node. Runs all Docker services, Ollama (llama3.2:3b), OpenClaw conductor. Primary for all inference. 46.8 tok/s on M4 Metal.",
       "added_date": "2025-02-01"
     },
     {
@@ -59,22 +59,18 @@
         "mac_address": ""
       },
       "services": {
-        "ollama": true,
+        "ollama": false,
         "ollama_port": 11434,
         "ollama_host": "0.0.0.0",
         "docker": false,
         "registry_api": false,
-        "harpa": true,
+        "harpa": false,
         "openclaw": false
       },
-      "models_loaded": [
-        "llama3.1:8b",
-        "llama3.1:70b",
-        "mistral:7b",
-        "nomic-embed-text"
-      ],
-      "status": "active",
-      "notes": "64GB Intel iMac. CPU-only inference (no Metal). Slow for interactive tasks (~8 tok/s on 8B) but can load 70B due to large RAM. Priority 40 in routing (lower than Apple Silicon). Good for batch/overnight tasks.",
+      "models_loaded": [],
+      "status": "retired",
+      "retired_date": "2026-04-16",
+      "notes": "64GB Intel iMac. Retired — Bob (M4) now handles all inference. CPU-only (no Metal). Was used for heavy batch tasks.",
       "added_date": "2025-02-01"
     },
     {
@@ -105,6 +101,37 @@
       "status": "active",
       "notes": "Browser automation only. HARPA AI Chrome extension for D-Tools Cloud and browser-based tasks. No LLM capability.",
       "added_date": "2025-02-01"
+    },
+    {
+      "node_id": "m2",
+      "display_name": "M2 MacBook Pro",
+      "role": "llm_worker",
+      "hardware": {
+        "model": "MacBook Pro M2",
+        "cpu": "Apple M2",
+        "ram_gb": 16,
+        "storage_gb": 512,
+        "architecture": "arm64",
+        "notes": "Apple Silicon with Metal GPU acceleration. Good for 3B-8B models."
+      },
+      "network": {
+        "ip": "TBD",
+        "hostname": "m2.local",
+        "mac_address": ""
+      },
+      "services": {
+        "ollama": true,
+        "ollama_port": 11434,
+        "ollama_host": "0.0.0.0",
+        "docker": false,
+        "registry_api": false,
+        "harpa": false,
+        "openclaw": false
+      },
+      "models_loaded": [],
+      "status": "planned",
+      "notes": "Future Ollama worker. Apple Silicon Metal acceleration. Can offload inference from Bob when available on the network. Not always-on (laptop).",
+      "added_date": "2026-04-16"
     },
     {
       "node_id": "_template_new_node",

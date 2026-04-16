@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup UI Server — One-click setup for Betty (iMac) and Bob (Mac Mini).
+Setup UI Server — One-click setup for M2 MacBook Pro (worker) and Bob (Mac Mini HQ).
 Run from any machine:  python3 server.py
 Then open http://localhost:8888
 """
@@ -73,7 +73,7 @@ class SetupHandler(BaseHTTPRequestHandler):
             return
 
         action = data.get("action", "")
-        betty_ip = data.get("betty_ip", "").strip() or os.getenv("BETTY_IP", "192.168.1.132")
+        betty_ip = data.get("betty_ip", "").strip() or os.getenv("M2_IP", "")
 
         if action == "clone":
             if AI_SERVER.exists():
@@ -237,17 +237,17 @@ HTML = """<!DOCTYPE html>
   <p class="subtitle">Run these steps on the right machine. Output appears below.</p>
 
   <section>
-    <h2>Betty (64GB iMac) — run these on Betty</h2>
+    <h2>M2 MacBook Pro (worker) — run these on the M2</h2>
     <button class="btn" data-action="clone">1. Clone AI-Server</button>
     <button class="btn" data-action="harpa">2. Run HARPA setup</button>
     <button class="btn" data-action="ollama">3. Run Ollama setup</button>
   </section>
 
   <section>
-    <h2>Bob (Mac Mini) — verify Betty from Bob</h2>
+    <h2>Bob (Mac Mini HQ) — verify M2 from Bob</h2>
     <div class="input-row">
-      <label>Betty's IP address</label>
-      <input type="text" id="bettyIp" value="192.168.1.132" placeholder="192.168.1.132">
+      <label>M2 MacBook Pro IP address</label>
+      <input type="text" id="bettyIp" value="" placeholder="e.g. 192.168.1.XXX">
     </div>
     <button class="btn secondary" data-action="verify_ollama">Verify Ollama</button>
     <button class="btn secondary" data-action="verify_harpa">Verify HARPA bridge</button>
