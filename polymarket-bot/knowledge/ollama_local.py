@@ -11,7 +11,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434").strip()
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434").strip()
 OLLAMA_MODEL = os.getenv(
     "OLLAMA_KNOWLEDGE_MODEL",
     os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b"),

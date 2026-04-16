@@ -36,7 +36,7 @@ MIN_VALID_AUDIO_BYTES = 10 * 1024
 
 
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434")
 OLLAMA_ANALYSIS_MODEL = os.environ.get("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
 
 

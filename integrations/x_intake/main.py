@@ -206,7 +206,7 @@ def _analyze_keyword_fallback(text: str, author: str) -> dict:
 
 async def _analyze_with_ollama(text: str, author: str, has_video: bool, transcript: str = "") -> dict:
     """Try Ollama first (free), fall back to OpenAI."""
-    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434")
     model = os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
 
     content_parts = [f"Post by @{author}:\n{text}"]
@@ -491,7 +491,7 @@ Rules:
 
 async def _extract_polymarket_signals_with_ollama(text: str, author: str, transcript: str = "") -> dict:
     """Extract Polymarket signals — try Ollama first (free), OpenAI fallback."""
-    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+    ollama_host = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434")
     model = os.getenv("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
 
     post_content = f"Post by @{author}:\n{text}"

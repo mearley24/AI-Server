@@ -77,7 +77,7 @@ def _load_repo_env():
 
 _load_repo_env()
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434")
 
 
 def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:

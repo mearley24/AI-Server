@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434")
 
 
 @router.get("/status")

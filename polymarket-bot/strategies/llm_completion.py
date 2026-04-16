@@ -43,7 +43,7 @@ async def completion(
     import os
     import httpx
 
-    ollama_host = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434").rstrip("/")
+    ollama_host = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434").rstrip("/")
     model = "qwen3:8b"
     combined = f"{system_prompt.strip()}\n\n{prompt.strip()}" if system_prompt else prompt
 

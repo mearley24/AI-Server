@@ -20,7 +20,7 @@ from strategies.llm_completion import completion as llm_complete
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434").strip()
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434").strip()
 OLLAMA_VALIDATE_MODEL = os.getenv("OLLAMA_VALIDATE_MODEL", os.getenv("OLLAMA_KNOWLEDGE_MODEL", "qwen3:8b"))
 
 

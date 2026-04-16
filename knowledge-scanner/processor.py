@@ -14,7 +14,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434")
 
 try:
     from openclaw.llm_router import completion as _router_completion

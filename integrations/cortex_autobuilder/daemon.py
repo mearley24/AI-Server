@@ -26,7 +26,7 @@ PORT = int(os.getenv("AUTOBUILDER_PORT", "8115"))
 MAX_QUESTIONS_PER_HOUR = int(os.getenv("MAX_QUESTIONS_PER_HOUR", "30"))
 GENERATION_INTERVAL_MINUTES = int(os.getenv("GENERATION_INTERVAL_MINUTES", "60"))
 SCANNER_ENABLED = os.getenv("SCANNER_ENABLED", "true").lower() not in ("false", "0", "no")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 

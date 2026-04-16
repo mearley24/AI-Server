@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 TRANSCRIPT_DIR = Path(os.environ.get("TRANSCRIPT_DIR", "/data/transcripts"))
 CORTEX_URL = os.environ.get("CORTEX_URL", "http://cortex:8102")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434")
 OLLAMA_ANALYSIS_MODEL = os.environ.get("OLLAMA_ANALYSIS_MODEL", "qwen3:8b")
 
 _ANALYSIS_DB_PATH = Path(os.environ.get("X_INTAKE_DB", "/data/x_intake/queue.db"))

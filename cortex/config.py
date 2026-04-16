@@ -22,7 +22,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 
 # ── Ollama ────────────────────────────────────────────────────────────────────
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 
 # ── API ───────────────────────────────────────────────────────────────────────

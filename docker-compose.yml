@@ -26,6 +26,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -57,6 +58,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -85,7 +87,7 @@ services:
       - POLY_SAFE_ADDRESS=${POLY_SAFE_ADDRESS:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
       - OLLAMA_KNOWLEDGE_MODEL=${OLLAMA_KNOWLEDGE_MODEL:-qwen3:8b}
       - OLLAMA_VALIDATE_MODEL=${OLLAMA_VALIDATE_MODEL:-qwen3:8b}
       - OLLAMA_DEBATE_MODEL=${OLLAMA_DEBATE_MODEL:-qwen3:32b}
@@ -140,8 +142,8 @@ services:
         condition: service_healthy
       notification-hub:
         condition: service_healthy
-    mem_limit: 2g
-    mem_reservation: 512m
+    mem_limit: 1g
+    mem_reservation: 256m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8430/health"]
       interval: 30s
@@ -174,6 +176,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 512m
     logging:
       driver: "json-file"
       options:
@@ -209,6 +212,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -241,6 +245,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 512m
     logging:
       driver: "json-file"
       options:
@@ -258,7 +263,7 @@ services:
       - ZOHO_REFRESH_TOKEN=${ZOHO_REFRESH_TOKEN}
       - ZOHO_CALENDAR_UID=${ZOHO_CALENDAR_UID}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
       - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - REDIS_URL=${REDIS_URL}
       - TZ=America/Denver
@@ -273,6 +278,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -311,6 +317,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -339,6 +346,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    mem_limit: 256m
     logging:
       driver: "json-file"
       options:
@@ -369,6 +377,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    mem_limit: 512m
     logging:
       driver: "json-file"
       options:
@@ -385,7 +394,7 @@ services:
       - LOG_LEVEL=info
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
       - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - CONDUCTOR_MODEL=${CONDUCTOR_MODEL:-claude-sonnet-4-5}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
@@ -422,6 +431,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    mem_limit: 512m
     logging:
       driver: "json-file"
       options:
@@ -445,7 +455,7 @@ services:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102
       - TZ=America/Denver
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - POLYMARKET_BOT_URL=http://vpn:8430
       - EMAIL_MONITOR_URL=http://email-monitor:8092
@@ -460,6 +470,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 2g
     logging:
       driver: "json-file"
       options:
@@ -487,6 +498,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    mem_limit: 512m
     logging:
       driver: "json-file"
       options:
@@ -507,7 +519,7 @@ services:
       - REDIS_URL=${REDIS_URL}
       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
       - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
       - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - TRANSCRIPT_DIR=/data/transcripts
@@ -522,6 +534,7 @@ services:
       timeout: 120s
       retries: 5
       start_period: 15s
+    mem_limit: 256m
     networks:
       - default
     logging:
@@ -546,6 +559,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    mem_limit: 256m
     networks:
       - default
     logging:
@@ -559,6 +573,7 @@ services:
       context: ./integrations/x_alpha_collector
     container_name: x-alpha-collector
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       - RSSHUB_URL=http://rsshub:1200
       - X_INTAKE_URL=http://x-intake:8101
@@ -601,6 +616,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    mem_limit: 512m
     networks:
       - default
     logging:
@@ -625,11 +641,13 @@ services:
       - REDIS_URL=${REDIS_URL}
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
       - LLM_ROUTER_MODE=local_first
       - AUTOBUILDER_PORT=8115
       - MAX_QUESTIONS_PER_HOUR=30
       - GENERATION_INTERVAL_MINUTES=60
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
     depends_on:
       cortex:
         condition: service_healthy
@@ -642,49 +660,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    mem_limit: 256m
     networks:
       - default
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  x-intake-lab:
-    build: ./integrations/x_intake
-    container_name: x-intake-lab
-    restart: unless-stopped
-    command: ["python3", "lab_main.py"]
-    ports:
-      - "127.0.0.1:8103:8101"
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - CORTEX_URL=http://cortex:8102
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
-      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PYTHONUNBUFFERED=1
-      - TZ=America/Denver
-      - LAB_MODE=true
-    volumes:
-      - ./data/transcripts:/data/transcripts
-      - ./data/bookmarks:/data/bookmarks
-      - x-intake-lab-data:/data/lab
-    networks:
-      - default
-    depends_on:
-      redis:
-        condition: service_healthy
-      cortex:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8101/health', timeout=3)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
     logging:
       driver: "json-file"
       options:
@@ -699,4 +677,3 @@ networks:
 
 volumes:
   redis_data:
-  x-intake-lab-data:

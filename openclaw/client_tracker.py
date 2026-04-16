@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("openclaw.client_tracker")
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434")
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 

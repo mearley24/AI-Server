@@ -13,7 +13,7 @@ from calendar_client import ZohoCalendarClient
 from scheduler import find_free_slots
 
 logger = logging.getLogger(__name__)
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.199:11434")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://192.168.1.189:11434")
 
 
 async def _ollama_meeting_prep(prompt: str) -> str | None:
