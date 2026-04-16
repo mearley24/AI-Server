@@ -335,7 +335,130 @@ From M2:
 If both return model lists, the tunnel is working.
 ```
 
-## Task 4: DO NOT TOUCH These
+## Task 4: Benchmark Ollama on Bob (and prep M2 benchmark)
+
+We need actual numbers to know what models each machine can handle. Run benchmarks on Bob now. The M2 benchmark will be run after `setup-m2-worker.sh` is executed on the M2.
+
+### 4.1 Create the benchmark script
+Create `scripts/ollama-benchmark.sh`:
+
+```
+#!/bin/zsh
+set -euo pipefail
+
+HOST="${1:-http://127.0.0.1:11434}"
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+HOSTNAME_SHORT=$(hostname -s)
+OUTFILE="data/benchmarks/ollama_${HOSTNAME_SHORT}_${TIMESTAMP}.md"
+mkdir -p data/benchmarks
+
+printf '## Ollama Benchmark: %s\n' "$HOSTNAME_SHORT" > "$OUTFILE"
+printf 'Date: %s\n' "$(date)" >> "$OUTFILE"
+printf 'Host: %s\n\n' "$HOST" >> "$OUTFILE"
+
+printf '| Model | Size | Eval Rate (tok/s) | Prompt Rate (tok/s) | Status |\n' >> "$OUTFILE"
+printf '|-------|------|-------------------|---------------------|--------|\n' >> "$OUTFILE"
+
+TEST_PROMPT="Explain the concept of supply and demand in economics in exactly three sentences."
+
+benchmark_model() {
+  local model="$1"
+  printf 'Benchmarking %s...\n' "$model"
+  
+  ollama pull "$model" 2>/dev/null
+  
+  local result
+  result=$(curl -s -X POST "${HOST}/api/generate" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\": \"${model}\", \"prompt\": \"${TEST_PROMPT}\", \"stream\": false, \"options\": {\"temperature\": 0}}" \
+    --max-time 120 2>/dev/null || echo "TIMEOUT")
+  
+  if [ "$result" = "TIMEOUT" ]; then
+    printf '| %s | - | TIMEOUT | TIMEOUT | FAIL |\n' "$model" >> "$OUTFILE"
+    printf '  %s: TIMEOUT\n' "$model"
+    return
+  fi
+  
+  local eval_count eval_duration prompt_count prompt_duration
+  eval_count=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('eval_count',0))" 2>/dev/null || echo "0")
+  eval_duration=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('eval_duration',1))" 2>/dev/null || echo "1")
+  prompt_count=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('prompt_eval_count',0))" 2>/dev/null || echo "0")
+  prompt_duration=$(echo "$result" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('prompt_eval_duration',1))" 2>/dev/null || echo "1")
+  
+  local eval_rate prompt_rate model_size
+  eval_rate=$(python3 -c "print(f'{${eval_count}/(${eval_duration}/1e9):.1f}')" 2>/dev/null || echo "0")
+  prompt_rate=$(python3 -c "print(f'{${prompt_count}/(${prompt_duration}/1e9):.1f}')" 2>/dev/null || echo "0")
+  model_size=$(ollama list | grep "$model" | awk '{print $3 $4}' || echo "?")
+  
+  printf '| %s | %s | %s | %s | OK |\n' "$model" "$model_size" "$eval_rate" "$prompt_rate" >> "$OUTFILE"
+  printf '  %s: %s tok/s eval, %s tok/s prompt\n' "$model" "$eval_rate" "$prompt_rate"
+}
+
+printf '\nStarting benchmarks against %s...\n\n' "$HOST"
+
+benchmark_model "llama3.2:3b"
+benchmark_model "llama3.2:1b"
+benchmark_model "gemma3:4b"
+benchmark_model "phi4-mini:3.8b"
+benchmark_model "qwen3:4b"
+benchmark_model "llama3.1:8b"
+benchmark_model "gemma3:12b"
+
+printf '\n### Memory After Benchmarks\n\n' >> "$OUTFILE"
+printf '```\n' >> "$OUTFILE"
+ollama ps >> "$OUTFILE" 2>/dev/null || printf 'ollama ps unavailable\n' >> "$OUTFILE"
+printf '```\n' >> "$OUTFILE"
+
+printf '\n### System Info\n\n' >> "$OUTFILE"
+printf '```\n' >> "$OUTFILE"
+system_profiler SPHardwareDataType 2>/dev/null | grep -E "Chip|Memory|Cores" >> "$OUTFILE" || printf 'system_profiler unavailable\n' >> "$OUTFILE"
+printf '```\n' >> "$OUTFILE"
+
+printf '\nBenchmark complete. Results saved to %s\n' "$OUTFILE"
+cat "$OUTFILE"
+```
+
+Make it executable: `chmod +x scripts/ollama-benchmark.sh`
+
+### 4.2 Run the benchmark on Bob
+Execute on Bob:
+```
+bash scripts/ollama-benchmark.sh http://127.0.0.1:11434
+```
+
+This will:
+- Pull and test 7 models ranging from 1B to 12B parameters
+- Record eval tok/s (generation speed) and prompt tok/s (input processing speed)
+- Save results to `data/benchmarks/ollama_bob_<timestamp>.md`
+- Show which models are usable vs too slow vs OOM on 16GB
+
+Models being tested:
+- `llama3.2:1b` — tiny, baseline speed reference
+- `llama3.2:3b` — current production model
+- `gemma3:4b` — Google's latest small model
+- `phi4-mini:3.8b` — Microsoft's efficient small model
+- `qwen3:4b` — Alibaba's latest 4B
+- `llama3.1:8b` — the big question: can 16GB handle 8B?
+- `gemma3:12b` — stress test: will it even load on 16GB?
+
+### 4.3 Commit benchmark results
+Add `data/benchmarks/` to git and commit the results:
+```
+git add data/benchmarks/ scripts/ollama-benchmark.sh
+git commit -m "feat: add Ollama benchmark script + Bob M4 results"
+```
+
+### 4.4 M2 benchmark (after M2 setup)
+After running `setup-m2-worker.sh` on the M2, run the same benchmark:
+```
+bash scripts/ollama-benchmark.sh http://127.0.0.1:11434
+```
+Then copy `data/benchmarks/ollama_m2_*.md` to Bob's repo and commit. This gives us a side-by-side comparison to decide:
+- Which models each machine should serve
+- Whether to run different models on each (e.g., Bob handles 8B, M2 handles 3B overflow)
+- Maximum model size each can handle without swapping
+
+## Task 5: DO NOT TOUCH These
 
 - **Markup tool** (`tools/markup_app/server.py`) on port 8088 via launchd — leave completely alone
 - **Client portal** (`client-portal/main.py`) — internal Docker container on port 8096, leave alone
@@ -351,10 +474,12 @@ If both return model lists, the tunnel is working.
 - [ ] M2 MacBook Pro added to nodes_registry.json (status: active)
 - [ ] M2 worker added to openclaw_workers.json
 - [ ] `scripts/setup-m2-worker.sh` created and executable
+- [ ] `scripts/ollama-benchmark.sh` created and executable
 - [ ] `setup/nodes/glinet_travel_router_setup.md` created
+- [ ] Bob benchmark ran successfully — results in `data/benchmarks/`
 - [ ] `docker compose config` validates without errors
 - [ ] All existing services still running (`docker compose ps`)
 
 ## Commit
-Commit all changes with message: `feat: restore x-intake-lab, retire Maestro, add M2 always-on worker + travel router guide`
+Commit all changes with message: `feat: restore x-intake-lab, retire Maestro, M2 worker + travel router + benchmarks`
 Push to main.
