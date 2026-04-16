@@ -161,15 +161,41 @@ Add an active worker entry:
   "capabilities": ["text_generation", "summarization", "classification"],
   "models": ["llama3.2:3b"],
   "status": "active",
-  "notes": "Always-on worker. Reachable via Tailscale IP when traveling. Endpoint should use Tailscale IP for reliability.",
+  "notes": "Always-on active worker. Handles heavier inference (transcript analysis, research loops, batch processing). Reachable via Tailscale IP when traveling. Bob's Ollama handles speed-critical requests (trading, orchestrator).",
   "health_check": "http://TBD:11434/api/tags",
   "fallback_endpoint": "http://TBD:11434"
 }
 ```
 
-Note: Priority 50 (lower than Bob at default) so Bob handles requests first, M2 picks up overflow. Update the TBD IPs once Tailscale is configured on the M2.
+Note: Priority 50 means the M2 is an active equal worker, not just overflow. Once the benchmark results come in, we'll route specific services to the M2 based on performance. Update the TBD IPs once Tailscale is configured on the M2.
 
-### 3.3 Create M2 setup script
+### 3.3 Update llm_router.py for dual-node routing
+The LLM router (`openclaw/llm_router.py`) needs to know about the M2 as an active inference endpoint. After the M2 is set up and benchmarked, the routing logic should:
+- Send lightweight/fast requests (classification, short summaries) to Bob's local Ollama (lowest latency, no network hop)
+- Send heavier requests (transcript analysis, research loops, long-form generation) to the M2's Ollama (dedicated resources, no Docker competition)
+- Fall back to the other node if one is unreachable (M2 traveling, Bob under load)
+
+For now, add a config entry in `.env` for the M2 Ollama endpoint:
+```
+M2_OLLAMA_HOST=http://TBD:11434
+```
+
+The specific routing split will be decided after benchmark results.
+
+Services that are good candidates to route to the M2:
+- `cortex-autobuilder` (research loop, runs every 60 min, heavy inference)
+- `x-intake-lab` (transcript analysis, batch processing)
+- `x-intake` (X/Twitter analysis)
+- `intel-feeds` (intel aggregation)
+- `x-alpha-collector` (when it needs LLM analysis)
+
+Services that should stay on Bob's local Ollama (speed-critical, low latency):
+- `openclaw` (orchestrator, needs fast responses)
+- `cortex` (brain, real-time queries)
+- `polymarket-bot` (trading, time-sensitive)
+- `calendar-agent` (quick classification)
+
+### 3.4 Create M2 setup script
 Create `scripts/setup-m2-worker.sh`:
 
 ```
