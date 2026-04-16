@@ -73,7 +73,7 @@ class SetupHandler(BaseHTTPRequestHandler):
             return
 
         action = data.get("action", "")
-        betty_ip = data.get("betty_ip", "").strip() or os.getenv("M2_IP", "")
+        m2_ip = data.get("m2_ip", "").strip() or os.getenv("M2_IP", "")
 
         if action == "clone":
             if AI_SERVER.exists():
@@ -115,7 +115,7 @@ class SetupHandler(BaseHTTPRequestHandler):
 
         if action == "verify_ollama":
             out, err, code = self._run(
-                f"curl -s --max-time 5 http://{betty_ip}:11434/api/tags",
+                f"curl -s --max-time 5 http://{m2_ip}:11434/api/tags",
                 timeout=10,
             )
             ok = code == 0 and "models" in (out + err)
@@ -124,7 +124,7 @@ class SetupHandler(BaseHTTPRequestHandler):
 
         if action == "verify_harpa":
             out, err, code = self._run(
-                f"curl -s --max-time 5 http://{betty_ip}:9090/health",
+                f"curl -s --max-time 5 http://{m2_ip}:9090/health",
                 timeout=10,
             )
             ok = code == 0 and "ok" in (out + err)
@@ -247,7 +247,7 @@ HTML = """<!DOCTYPE html>
     <h2>Bob (Mac Mini HQ) — verify M2 from Bob</h2>
     <div class="input-row">
       <label>M2 MacBook Pro IP address</label>
-      <input type="text" id="bettyIp" value="" placeholder="e.g. 192.168.1.XXX">
+      <input type="text" id="m2Ip" value="" placeholder="e.g. Tailscale IP or 192.168.1.XXX">
     </div>
     <button class="btn secondary" data-action="verify_ollama">Verify Ollama</button>
     <button class="btn secondary" data-action="verify_harpa">Verify HARPA bridge</button>
@@ -257,7 +257,7 @@ HTML = """<!DOCTYPE html>
 
   <script>
     const logEl = document.getElementById('log');
-    const bettyIp = document.getElementById('bettyIp');
+    const m2Ip = document.getElementById('m2Ip');
 
     function log(msg, klass) {
       const p = document.createElement('div');
@@ -284,7 +284,7 @@ HTML = """<!DOCTYPE html>
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action,
-              betty_ip: bettyIp.value.trim(),
+              m2_ip: m2Ip.value.trim(),
             }),
           });
           const data = await res.json();

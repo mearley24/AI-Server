@@ -58,12 +58,13 @@
       "node_id": "m2",
       "type": "ollama",
       "endpoint": "http://TBD:11434",
-      "priority": 60,
+      "priority": 50,
       "capabilities": ["text_generation", "summarization", "classification"],
       "models": ["llama3.2:3b"],
-      "status": "planned",
-      "enabled": false,
-      "notes": "Available when laptop is on the network. Not always-on. Update endpoint when IP is known."
+      "status": "active",
+      "notes": "Always-on worker. Reachable via Tailscale IP when traveling. Endpoint should use Tailscale IP for reliability.",
+      "health_check": "http://TBD:11434/api/tags",
+      "fallback_endpoint": "http://TBD:11434"
     },
     {
       "worker_id": "cloud_api",

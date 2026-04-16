@@ -115,9 +115,11 @@
         "notes": "Apple Silicon with Metal GPU acceleration. Good for 3B-8B models."
       },
       "network": {
-        "ip": "TBD",
+        "lan_ip": "TBD",
+        "tailscale_ip": "TBD",
         "hostname": "m2.local",
-        "mac_address": ""
+        "mac_address": "",
+        "notes": "LAN IP when home. Tailscale IP when traveling via GL.iNet travel router. Services should prefer Tailscale IP for reliability across both modes."
       },
       "services": {
         "ollama": true,
@@ -129,8 +131,8 @@
         "openclaw": false
       },
       "models_loaded": [],
-      "status": "planned",
-      "notes": "Future Ollama worker. Apple Silicon Metal acceleration. Can offload inference from Bob when available on the network. Not always-on (laptop).",
+      "status": "active",
+      "notes": "Always-on Ollama worker. Apple Silicon Metal acceleration. On home LAN 24/7 normally. When traveling, connects back to Bob via Tailscale VPN through GL.iNet WiFi 7 travel router — remains reachable at its Tailscale IP from anywhere with internet.",
       "added_date": "2026-04-16"
     },
     {
