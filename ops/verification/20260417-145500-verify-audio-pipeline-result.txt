@@ -1,0 +1,60 @@
+### task 20260417-145500-verify-audio-pipeline type=verify_dump signer=perplexity-computer
+### started 2026-04-17T08:55:47-06:00
+
+=== verify_dump audio-pipeline @ 2026-04-17T08:55:47-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/audio-pipeline.sh']
+=== 0. banner ===
+2026-04-17 08:55:47 -0600
+Bobs-Mac-mini.local
+bob
+
+=== 1. audio_intake tree counts ===
+incoming: 18 files
+processing: 0 files
+processed: 0 files
+failed: 0 files
+
+=== 2. newest incoming files ===
+total 0
+drwxr-xr-x  10 bob  staff   320B Apr 17 08:55 ..
+drwx------   6 bob  staff   192B Aug 15  2024 20240815
+drwx------   4 bob  staff   128B Aug 14  2024 20240814
+drwx------   8 bob  staff   256B Jul 29  2024 20240729
+drwx------   6 bob  staff   192B Jul 27  2024 20240727
+drwx------   6 bob  staff   192B Jul 26  2024 20240726
+drwx------   6 bob  staff   192B Jul 25  2024 20240725
+drwx------   4 bob  staff   128B Jul 23  2024 20240723
+drwx------   4 bob  staff   128B Jul 22  2024 20240722
+drwx------   8 bob  staff   256B Jul 20  2024 20240720
+drwx------   8 bob  staff   256B Jul 19  2024 20240719
+drwx------   6 bob  staff   192B Jul 18  2024 20240718
+drwx------   6 bob  staff   192B Jul 17  2024 20240717
+drwx------  10 bob  staff   320B Jul 16  2024 20240716
+
+=== 3. worker log tail ===
+2026-04-17 07:55:15,647 [INFO] pending/stuck rows: 0
+2026-04-17 07:55:38,166 [INFO] pending/stuck rows: 0
+2026-04-17 08:05:38,299 [INFO] pending/stuck rows: 0
+2026-04-17 08:15:38,404 [INFO] pending/stuck rows: 0
+2026-04-17 08:19:59,920 [INFO] pending/stuck rows: 0
+2026-04-17 08:25:38,502 [INFO] pending/stuck rows: 0
+2026-04-17 08:35:38,614 [INFO] pending/stuck rows: 0
+2026-04-17 08:45:38,717 [INFO] pending/stuck rows: 0
+2026-04-17 08:55:38,839 [INFO] pending/stuck rows: 0
+
+=== 4. launchd audio-intake status ===
+-	0	com.symphony.audio-intake
+
+=== 5. queue.db row counts ===
+audio_intake_queue
+
+=== 6. disk pressure ===
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s5   228Gi   138Gi    65Gi    68%    578k  684M    0%   /System/Volumes/Data
+
+=== 7. task-runner heartbeat ===
+last-heartbeat: 2026-04-17T08:49:44-06:00
+
+exit=0
+
+### finished 2026-04-17T08:55:47-06:00 exit=0
