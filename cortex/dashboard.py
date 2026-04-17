@@ -52,6 +52,12 @@ X_INTAKE_DB_CANDIDATES = [
     Path("data/x_intake/queue.db"),
 ]
 
+AUDIO_INTAKE_DB_CANDIDATES = [
+    Path("/app/data/audio_intake/queue.db"),
+    Path("/data/audio_intake/queue.db"),
+    Path("data/audio_intake/queue.db"),
+]
+
 TRANSCRIPT_DIR_CANDIDATES = [
     Path("/app/data/transcripts"),
     Path("/data/transcripts"),
@@ -1056,6 +1062,47 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             "strategies": strategies_text,
             "gems": gems,
         }
+
+    # ── Meeting Audio Intake ────────────────────────────────────────────
+    @app.get("/api/meetings/recent")
+    async def api_meetings_recent(limit: int = Query(20, ge=1, le=100)):
+        """Return recent meeting-audio queue rows from audio_intake/queue.db.
+
+        Mounted read-only into the Cortex container at /data/audio_intake.
+        Returns an empty list (not an error) when the DB is not present yet,
+        so the dashboard tile degrades gracefully.
+        """
+        db_path = _find_db(AUDIO_INTAKE_DB_CANDIDATES)
+        if db_path is None:
+            return []
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT id, original_name, source_date, status, summary, "
+                "participants, clients, projects, action_items, "
+                "cortex_memory_id, transcript_path, created_at, completed_at "
+                "FROM audio_intake_queue ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            conn.close()
+            out: list[dict] = []
+            for r in rows:
+                row = dict(r)
+                for fld in ("participants", "clients", "projects", "action_items"):
+                    v = row.get(fld)
+                    if isinstance(v, str) and v:
+                        try:
+                            row[fld] = json.loads(v)
+                        except Exception:
+                            row[fld] = [v]
+                    elif v is None:
+                        row[fld] = []
+                out.append(row)
+            return out
+        except Exception as exc:
+            logger.debug("meetings_recent_fail error=%s", exc)
+            return []
 
     # ── Symphony Ops proxies ────────────────────────────────────────────────
 

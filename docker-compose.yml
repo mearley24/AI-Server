@@ -456,6 +456,7 @@ services:
       - ./data/openclaw:/app/data/openclaw:ro
       - ./polymarket-bot/knowledge:/app/knowledge:ro
       - ./data/x_intake:/data/x_intake:ro
+      - ./data/audio_intake:/data/audio_intake:ro
       - ./tools:/app/tools:ro
     environment:
       - REDIS_URL=${REDIS_URL}

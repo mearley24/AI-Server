@@ -375,6 +375,10 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       <h2>X Intake <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— <a href="#xintake" onclick="switchTab('xintake');return false;" style="color:var(--gold-dim)">full view →</a></span></h2>
       <div id="xintake"><div class="unavailable">loading</div></div>
     </div>
+    <div class="card" id="meetings-card">
+      <h2>Meetings <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— audio intake</span></h2>
+      <div id="meetings"><div class="unavailable">loading</div></div>
+    </div>
     <div class="card">
       <h2>Daily Digest</h2>
       <div id="digest"><div class="unavailable">loading</div></div>
@@ -949,6 +953,45 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       : `<div class="small">no digest yet</div>`;
   }
 
+  function renderMeetings(data) {
+    // data: array from GET /api/meetings/recent ; [] means "pipeline idle or db not mounted"
+    const host = $('meetings'), card = $('meetings-card');
+    if (!Array.isArray(data) || !data.length) {
+      host.innerHTML = `<div class="small" style="color:var(--muted)">drop audio into <code style="font-size:10px">data/audio_intake/incoming/</code></div>`;
+      if (card) card.classList.remove('alert');
+      return;
+    }
+    const today = new Date().toISOString().slice(0,10);
+    const doneToday = data.filter((r) => r.status === 'done' && r.source_date === today).length;
+    const processing = data.filter((r) => r.status === 'transcribing' || r.status === 'analyzing' || r.status === 'pending').length;
+    const failed = data.filter((r) => r.status === 'failed').length;
+    if (card) { if (failed > 0) card.classList.add('alert'); else card.classList.remove('alert'); }
+
+    const recent = data.slice(0, 3);
+    const rows = recent.map((r) => {
+      const clients = Array.isArray(r.clients) ? r.clients.slice(0,2).join(', ') : '';
+      const sm = (r.summary || '').slice(0, 70);
+      const dotCls = r.status === 'done' ? 'healthy' : r.status === 'failed' ? 'down' : 'degraded';
+      return `<li style="padding:5px 0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="dot ${dotCls}"></span>
+          <span class="small mono" style="color:var(--muted)">${esc(r.source_date||'')}</span>
+          <span class="small" style="margin-left:auto;color:var(--muted)">${esc(r.status||'')}</span>
+        </div>
+        <div class="small" style="margin-top:2px;color:var(--text)">${esc(sm || r.original_name || '—')}</div>
+        ${clients ? `<div class="small" style="color:var(--gold-dim)">clients: ${esc(clients)}</div>` : ''}
+      </li>`;
+    }).join('');
+
+    host.innerHTML = `
+      <div class="stat-row">
+        <div><div class="stat-big" style="color:var(--green)">${doneToday}</div><div class="stat-label">done today</div></div>
+        <div><div class="stat-big" style="color:${processing>0?'var(--yellow)':'var(--muted)'}">${processing}</div><div class="stat-label">in queue</div></div>
+      </div>
+      ${failed ? `<div class="small" style="color:var(--red);margin-top:4px">${failed} failed</div>` : ''}
+      <ul style="margin-top:8px">${rows}</ul>`;
+  }
+
   function renderFooter(stats, wallet, emails, system) {
     const chunks = [];
     if (stats)  chunks.push(`<span><strong>${stats.total??0}</strong> memories</span>`);
@@ -1319,7 +1362,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       services, wallet, positions, pnlSummary, activity,
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
-      xiStats, xiQueue,
+      xiStats, xiQueue, meetings,
     ] = await Promise.all([
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
@@ -1338,6 +1381,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       fetchJson('/api/redeemer'),
       fetchJson('/api/x-intake/stats'),
       fetchJson('/api/x-intake/queue?status=pending&limit=5'),
+      fetchJson('/api/meetings/recent?limit=20'),
     ]);
 
     renderServices(services);
@@ -1353,6 +1397,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     renderGoals(goals);
     renderDecisions(decisions);
     renderXIntakeWidget(xiStats, xiQueue);
+    renderMeetings(meetings);
     renderDigest(digest);
     renderFooter(health && health.memories, wallet, emails, system);
 
