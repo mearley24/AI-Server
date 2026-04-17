@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T15:10:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "audio-pipeline"
+  },
+  "signature": "kIFgXyQze8VrVMrJjbMbtsyX8Qi7D1mqNNdc7wRCZf4tEdAJpejOvsvz3CWA92DkArcs36Xw1Y9iPAwQPS23Aw==",
+  "task_id": "20260417-151002-verify-audio-after-kick",
+  "task_type": "verify_dump"
+}

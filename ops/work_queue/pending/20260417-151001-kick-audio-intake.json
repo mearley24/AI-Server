@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T15:10:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "script": "kick-audio-intake"
+  },
+  "signature": "QWlccXhhA0xqW2FAUkkjR+Xmo4nune+0Ch0E+rXYjo19+ZuderqX8bmgl6HS+TXMveqFuu73hloAbmA50S1BAw==",
+  "task_id": "20260417-151001-kick-audio-intake",
+  "task_type": "run_script"
+}
