@@ -36,7 +36,7 @@ _Important but not blocking; no credentials required._
 
 - ~~**Fix CLAUDE.md service table**~~ ✅ **Done 2026-04-14** — Removed knowledge-scanner, context-preprocessor, remediator, openwebui rows; added cortex-autobuilder, x-alpha-collector, rsshub; updated container count to 18; synced .clinerules.
 
-- **jobs.db consolidation** — `follow_up_log` in `jobs.db` has 0 rows while `follow_ups.db` has 58. Pick one canonical home and retire the duplicate to avoid confusion as the orchestrator backfill runs. See §7 item 7.
+- ~~**jobs.db consolidation**~~ ✅ **Done 2026-04-17** — Forensics uncovered three follow_ups.db files (not two): openclaw's 61-row misplaced DB at `data/openclaw/follow_ups.db`, an empty 0-byte canonical stub at `data/email-monitor/follow_ups.db`, and a 38-row double-nested typo at `data/email-monitor/email-monitor/follow_ups.db` (path-stacking bug). Merged with openclaw-wins-on-conflict into canonical `data/email-monitor/follow_ups.db` (61 rows final; doublenest's 38 were older duplicates, 0 unique added). Stray DBs retired with `.retired-20260417-074319` suffix. Backups: `backups/follow_ups_merge_20260417-074319/`. Both containers verified seeing merged DB.
 
 ---
 
@@ -134,12 +134,12 @@ _Row counts from 2026-04-12 audit._
 
 | DB | Table | Rows | Status |
 |---|---|---|---|
-| `data/openclaw/jobs.db` | jobs | 40 | flowing |
+| `data/openclaw/jobs.db` | jobs | 41 | flowing |
 | | client_preferences | **0** | Empty — backfill started at audit time; unverified |
-| | follow_up_log | **0** | Empty — data lives in `follow_ups.db` instead |
+| | follow_up_log | **0** | Empty — lives in canonical `follow_ups.db` (see below) |
 | `data/openclaw/decision_journal.db` | decisions | 4642 | flowing |
 | | pending_approvals | **0 pending** (103 expired, 63 skipped) | ✅ Drained 2026-04-13 by Prompt T — see §T |
-| `data/openclaw/follow_ups.db` | follow_ups | 58 | flowing — canonical home TBD (see Next) |
+| `data/email-monitor/follow_ups.db` | follow_ups | 61 | ✅ **canonical 2026-04-17** — openclaw + doublenest DBs retired, backups in `backups/follow_ups_merge_20260417-074319/` |
 | `data/email-monitor/emails.db` | emails | 452 | flowing; `read=1` bug fixed 2026-04-13 (438 rows reset to `read=0`) |
 
 Redis `events:log`: 1000 entries (capped), real traffic flowing across all subscribed channels.
@@ -626,7 +626,7 @@ _Evidence-based pass. All findings from live commands, file inspection, and cont
 | What is "good enough for now" | Note |
 |---|---|
 | ~~All 435 emails marked `read=1`~~ | ✅ Fixed 2026-04-13 — `notifier.py` no longer sets `read=1`; 438 rows reset via migration script; `read=1` now requires Sent-folder In-Reply-To match |
-| follow_ups.db canonical | 58 rows; `follow_up_log` in `jobs.db` still 0 — dual-home not yet resolved |
+| ~~follow_ups.db canonical~~ | ✅ Resolved 2026-04-17 — 61 rows at `data/email-monitor/follow_ups.db` (canonical), strays retired |
 | Calendar timezone | Stripped + treated as local Denver time; acceptable but technically imprecise |
 
 | What needs another pass | Evidence |
