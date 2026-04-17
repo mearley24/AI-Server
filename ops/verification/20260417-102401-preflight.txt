@@ -1,0 +1,47 @@
+=== task-runner preflight ===
+started_at: 2026-04-17T10:23:59-06:00
+finished_at: 2026-04-17T10:24:01-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-17.md
+  - knowledge/markup_exports/.session_tracking.json
+
+unsafe conflicts: 0
+
+commit: 57938872c1a7e6ba6763eaa51eed17a3ce792dc8 pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M integrations/autoresearch
+?? ops/verification/20260417-102156-preflight.txt
+?? ops/verification/20260417-102205-preflight.txt
+?? ops/verification/20260417-102216-preflight.txt
+?? ops/verification/20260417-102227-preflight.txt
+?? ops/verification/20260417-102238-preflight.txt
+?? ops/verification/20260417-102248-preflight.txt
+?? ops/verification/20260417-102351-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "57938872c1a7e6ba6763eaa51eed17a3ce792dc8",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-17.md",
+    "knowledge/markup_exports/.session_tracking.json"
+  ],
+  "finished_at": "2026-04-17T10:24:01-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-17T10:23:59-06:00",
+  "unsafe_conflicts": []
+}
