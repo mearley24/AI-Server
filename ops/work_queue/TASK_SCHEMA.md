@@ -82,9 +82,36 @@ what actually authenticates the task.
 | `run_script` | `{"script": "<name>", "args": [scalar, ...]}` | Executes `ops/task_runner/scripts/<name>.sh` with `args` as positional arguments. Only scalars allowed. |
 | `ssh_and_run` | `{"host": "user@host", "script_name": "<name>", "script_args": [scalar, ...]}` | scp's `ops/task_runner/remote_scripts/<name>.sh` to `/tmp/<task_id>-<name>.sh` on `host`, then runs it via `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes`. The script must exist in the repo. `script_args` are `shlex.quote`'d before being embedded in the remote command. |
 | `verify_dump` | `{"name": "<topic>", "args": [scalar, ...]}` | Runs `ops/task_runner/verifications/<name>.sh` on Bob, tees output into `ops/verification/<task_id>-result.txt`, commits + pushes. |
+| `run_cline_prompt` | `{"prompt_file": "<repo-relative .md>", "dry_run": false, "timeout": 1800}` | Invokes `ops/cline-run-prompt.sh` against a committed prompt file. See "Cline prompt tasks" below for details. |
+| `run_cline_campaign` | `{"prompt_files": ["<path>", ...], "dry_run": false, "stop_on_fail": false, "timeout": 1800}` | Invokes `ops/cline-run-campaign.sh` to run a sequence of Cline prompts via the same launcher. |
 
 Any other `task_type` is **rejected** (moved to `rejected/`, reason written to
 `ops/verification/<stamp>-rejections.txt`).
+
+### Cline prompt tasks (`run_cline_prompt` / `run_cline_campaign`)
+
+Both tasks take repo-relative paths (typically under `.cursor/prompts/`),
+*not* raw prompt text. That keeps the queue auditable and the prompt under
+version control. The launcher:
+
+1. Verifies the prompt file exists and is non-empty.
+2. Detects the Cline CLI (`$CLINE_CLI` override, else `cline` in PATH).
+3. Invokes the CLI with the prompt file and tees all output to
+   `ops/verification/YYYYMMDD-HHMMSS-cline-run-<basename>.log`.
+
+Exit codes from the launcher are interpreted by the runner:
+
+- `0` → task completed
+- `3` (missing prompt) / `4` (missing CLI) → task goes to `failed/`; the
+  launcher log is a "blocker report" explaining what's needed
+- other non-zero → task goes to `failed/`
+
+`dry_run: true` validates the prompt + CLI without actually invoking the
+CLI — use this for smoke-tests and for verifying that a new prompt file
+exists before scheduling a real run.
+
+For how to create a prompt and queue a task, see "How to queue a
+run_cline_prompt task" below.
 
 ### Security notes
 
