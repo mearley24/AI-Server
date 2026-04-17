@@ -1179,3 +1179,42 @@ docker logs x-intake --tail 50 | grep -c "Traceback"
 - **x-alpha-collector source not tagged** — pre-existing, low priority.
 
 _Pass 2 run by Cline on 2026-04-16. Evidence: live `docker inspect`, `sqlite3`, `curl`, container log grep._
+
+---
+
+## Reference: Meeting Audio Intake Pipeline (2026-04-17)
+
+### What was built
+
+- **`scripts/audio_intake_worker.py`** — host-side Python worker that scans `~/AI-Server/data/audio_intake/incoming/` for `.wav`/`.m4a`/`.mp3`/`.flac`/`.aac`, transcribes via `whisper-cli` (Metal-accelerated on the M4), runs a meeting-focused LLM analysis (Ollama qwen3:8b → GPT-4o-mini fallback), and writes a single `meeting_intel` memory per meeting to Cortex via `POST /remember`. Lock-file guarded so overlapping launchd runs don't double-process.
+- **`~/AI-Server/data/audio_intake/{incoming,processing,processed,failed}/`** + `queue.db` (table `audio_intake_queue` with status, transcript path, summary, participants, clients, projects, action items, dollar amounts, cortex memory id, error msg, timestamps).
+- **`~/AI-Server/data/transcripts/meetings/<YYYY-MM-DD>__<slug>.md`** — durable markdown artifact per meeting (Summary / Participants / Clients / Projects / Decisions / Action Items / Dollar Amounts / Topics / full transcript).
+- **whisper.cpp** — installed via `brew install whisper-cpp` (1.8.4, Metal + BLAS backends). Model: `ggml-large-v3.bin` (2.9 GB) at `~/AI-Server/models/whisper/`.
+- **launchd job `com.symphony.audio-intake`** — loaded from `scripts/launchd/com.symphony.audio-intake.plist`, runs every 600s (10 min), `RunAtLoad=true`. Stdout/stderr at `data/audio_intake/launchd.{out,err}.log`.
+- **Cortex dashboard** — new `GET /api/meetings/recent` endpoint (reads queue DB via read-only bind mount) + "Meetings" tile in column 3 of the Overview tab, between X Intake and Daily Digest. Shows done-today count, in-queue count, and the 3 most recent meetings with status dots. Card turns red when any row is `failed`.
+- **`docker-compose.yml`** — added `./data/audio_intake:/data/audio_intake:ro` to the cortex service so the dashboard can read the queue without touching the host-side worker.
+- **`MEETING_INGEST_STEPS.md`** — one-paste Bert seed-run block covering rsync + worker trigger + polling + final per-file report, bounded at 90 min wall-clock. Safe to re-run; rsync and worker both idempotent.
+
+### How to use
+
+Drop any `.wav` / `.m4a` / `.mp3` / `.flac` / `.aac` into `~/AI-Server/data/audio_intake/incoming/`. Within 10 minutes (or instantly if you run `python3 ~/AI-Server/scripts/audio_intake_worker.py` manually), the file will be transcribed, analyzed, written to `data/transcripts/meetings/`, ingested into Cortex as a `meeting_intel` memory, and moved to `processed/`. Failures land in `failed/` and are visible in the queue DB + the dashboard "Meetings" tile.
+
+Search from Cortex:
+
+```bash
+curl "http://127.0.0.1:8102/memories?category=meeting_intel" | python3 -m json.tool
+curl "http://127.0.0.1:8102/api/meetings/recent" | python3 -m json.tool
+```
+
+### Signature note — `transcript_analyst` not reused directly
+
+`integrations/x_intake/transcript_analyst.analyze_transcript_file(md_path)` was designed for the X-video pipeline: it expects a `.md` with specific sections (Summary/Flags/Strategies/Key Quotes/Full Transcript) and writes its own `x_intel` / `strategy_idea` / `external_research` Cortex memories. It does **not** return the `{participants, clients, projects, action_items, dollar_amounts}` shape the meeting pipeline needs. Per Guardrail §6 ("do not rewrite the analyst"), the worker ships a parallel meeting-focused analyzer that reuses the same Ollama-first-then-OpenAI pattern and the same Cortex `/remember` contract but emits a single `meeting_intel` memory with the fields Matt asked for.
+
+### Known limits
+
+- Whisper model is `large-v3` (picked because Bob had 82 GB free at install time). Worker's `pick_model()` falls back to `medium`/`small` if large-v3 is ever removed.
+- Language is forced to English (`-l en`). Multilingual runs would need a flag flip.
+- Ollama at `192.168.1.189:11434` is usually reachable from Bob's host network but not from the cortex container — not a problem here because the worker is host-side. If Ollama is down, the worker falls through to OpenAI automatically.
+- Worker timeout on whisper is 2 hours per file. Multi-hour recordings may need splitting upstream.
+
+_Built by Cline on 2026-04-17 per `.cursor/prompts/cline-prompt-meeting-audio-intake.md` (AUTO_APPROVE=true). Acceptance criteria all green at commit time: whisper-cli installed; `ggml-large-v3.bin` 2.9G on disk; all 4 intake dirs created; queue schema applied; launchd job loaded; empty-queue worker run completes in <0.1s; `/api/meetings/recent` returns `[]`._
