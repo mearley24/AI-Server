@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T17:05:00.000000+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "watchdog-install-verify"
+  },
+  "signature": "GWhIaHVd+0u1HKlsMTcBd8w+B9sHbbpsnJQ080guymQ2bKPVRuyJwtdeT4272twIbyQ2q/XroqcYleLHQguTDw==",
+  "task_id": "20260417-170500-install-watchdog",
+  "task_type": "verify_dump"
+}
