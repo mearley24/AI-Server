@@ -31,9 +31,11 @@ try:
         get_queue as _db_get_queue,
         update_status as _db_update_status,
         get_stats as _db_get_stats,
+        set_analyzed as _db_set_analyzed,
     )
 except ImportError:
     _db_enqueue = _db_get_queue = _db_update_status = _db_get_stats = None  # type: ignore[assignment]
+    _db_set_analyzed = None  # type: ignore[assignment]
 
 try:
     import action_queue
@@ -739,9 +741,10 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
 
             # Persist to review queue for dashboard visibility
             transcript_path = result.get("transcript_path", "")
+            _has_transcript = bool(result.get("has_transcript"))
             if _db_enqueue is not None:
                 try:
-                    _db_enqueue(
+                    _queue_row_id = _db_enqueue(
                         url=url,
                         author=author,
                         post_type=result.get("post_type", "info"),
@@ -750,11 +753,15 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                         action=result.get("action", "none"),
                         source=source,
                         poly_signals=poly_signals,
-                        has_transcript=bool(result.get("has_transcript")),
+                        has_transcript=_has_transcript,
                         transcript_path=transcript_path,
                     )
+                    # For text-only posts (no transcript), mark analyzed=1 immediately
+                    # since transcript_analyst won't be called for them.
+                    if _db_set_analyzed is not None and _queue_row_id and not _has_transcript:
+                        _db_set_analyzed(_queue_row_id, 1)
                 except Exception as _qexc:
-                    logger.warning("queue_enqueue_failed", error=str(_qexc)[:100])
+                    logger.exception("queue_enqueue_failed", error=str(_qexc)[:100])
 
             # Kick off deep transcript analysis in the background
             if transcript_path:
@@ -824,9 +831,7 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
         elif isinstance(result, dict) and result.get("error"):
             logger.warning("analysis_error", url=url, error=result["error"])
     except Exception as exc:
-        logger.warning("url_analysis_failed", url=url, error=str(exc)[:200])
-        tb = traceback.format_exc()
-        logger.debug("url_analysis_traceback", traceback=tb[:500])
+        logger.exception("url_analysis_failed", url=url, error=str(exc)[:200])
 
 
 async def _redis_listener() -> None:
@@ -1064,8 +1069,8 @@ async def send_action_digest():
 
 @app.on_event("startup")
 async def startup():
-    # Start the listener watchdog — restarts _redis_listener if it dies (§Z14 fix).
-    asyncio.create_task(_listener_watchdog())
+    # Store watchdog task on app.state so it is never GC'd while the loop runs.
+    app.state.watchdog_task = asyncio.create_task(_listener_watchdog())
     logger.info("x_intake_started", port=PORT, openai_key_set=bool(OPENAI_API_KEY))
 
 

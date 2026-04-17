@@ -50,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_xi_transcript ON x_intake_queue(has_transcript, a
 _MIGRATE_COLUMNS = [
     "ALTER TABLE x_intake_queue ADD COLUMN transcript_path TEXT DEFAULT ''",
     "ALTER TABLE x_intake_queue ADD COLUMN analyzed INTEGER DEFAULT 0",
+    "ALTER TABLE x_intake_queue ADD COLUMN error_msg TEXT DEFAULT ''",
 ]
 
 _PRUNE_DAYS = 30
@@ -187,6 +188,27 @@ def update_status(item_id: int, status: str, note: str = "") -> bool:
         return changed
     except Exception:
         return False
+
+
+def set_analyzed(row_id: int, value: int, error_msg: str = "") -> None:
+    """Set analyzed=value (1=success, 2=failed) and optional error_msg on a queue row.
+
+    Used by main.py to mark text-only posts as analyzed=1 immediately after the
+    LLM analysis completes (transcript posts are marked by transcript_analyst).
+    Never raises — caller must not be crashed by a DB write failure.
+    """
+    if not row_id:
+        return
+    try:
+        conn = _conn()
+        conn.execute(
+            "UPDATE x_intake_queue SET analyzed = ?, error_msg = ? WHERE id = ?",
+            (value, (error_msg or "")[:500], row_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
 
 
 def get_stats() -> dict:
