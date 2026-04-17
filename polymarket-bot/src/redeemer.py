@@ -125,9 +125,12 @@ NEG_RISK_ADAPTER_ABI = [
 
 # Polygon RPC endpoints (fallback list)
 POLYGON_RPCS = [
+    # Probed 2026-04-17 — all four respond <1.5s with valid block numbers.
+    # Dropped polygon-rpc.com (HTTPError, rate-limited) and ankr.com/polygon (paywalled as of 2026).
     "https://polygon-bor-rpc.publicnode.com",
-    "https://polygon-rpc.com",
-    "https://rpc.ankr.com/polygon",
+    "https://polygon.drpc.org",
+    "https://polygon.gateway.tenderly.co",
+    "https://1rpc.io/matic",
 ]
 
 # Gas settings
