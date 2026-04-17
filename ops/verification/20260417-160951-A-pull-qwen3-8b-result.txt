@@ -1,0 +1,5 @@
+### task 20260417-160951-A-pull-qwen3-8b type=run_script signer=perplexity-computer
+### started 2026-04-17T10:13:03-06:00
+
+=== run_script pull-qwen3-8b @ 2026-04-17T10:13:03-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/pull-qwen3-8b.sh']
