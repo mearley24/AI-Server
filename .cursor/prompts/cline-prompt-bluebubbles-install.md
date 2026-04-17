@@ -4,6 +4,9 @@ Execute on Bob (`/Users/bob/AI-Server`). Run commands in order. On first failure
 
 **Off-limits:** `scripts/imessage-server.py`, `markup-tool`, `client-portal`, `polymarket-bot`, `email-monitor`. Do not edit or restart any of them.
 
+> **Port note:** BlueBubbles uses **Tailscale serve on :8443** (not :443). Port 443 is already serving the Markup Tool via Tailscale serve; we leave it alone. Client URLs must include `:8443` (mobile apps and desktop clients handle non-443 fine).
+
+
 ---
 
 ## Phase 0 — Audit (detect partial state, resume safely)
@@ -16,7 +19,7 @@ echo "=== audit ==="
 ls -la /Applications/BlueBubbles.app 2>/dev/null && echo "BB_APP=installed" || echo "BB_APP=missing"
 [ -f ~/.config/bluebubbles/credentials ] && echo "CREDS=present" || echo "CREDS=missing"
 [ -f ~/Library/Application\ Support/BlueBubbles/config.json ] && echo "CONFIG=present" || echo "CONFIG=missing"
-sudo tailscale serve status 2>&1 | grep -q "localhost:1234" && echo "TSERVE=configured" || echo "TSERVE=missing"
+sudo tailscale serve status 2>&1 | grep -E "8443.*localhost:1234|:8443 .*localhost:1234" >/dev/null && echo "TSERVE=configured" || echo "TSERVE=missing"
 launchctl list | grep -q com.symphony.bluebubbles-watchdog && echo "WATCHDOG=loaded" || echo "WATCHDOG=missing"
 grep -q '^BLUEBUBBLES_API_PASSWORD=' .env && echo "ENV=set" || echo "ENV=missing"
 curl -sf http://127.0.0.1:8199/health >/dev/null && echo "IMSG_BRIDGE=up" || echo "IMSG_BRIDGE=down"
@@ -68,7 +71,7 @@ cfg["use_ngrok"] = False
 cfg["use_cloudflare"] = False
 cfg["use_local_tunnel"] = False
 cfg["proxy_service"] = "Dynamic DNS"
-cfg["server_address"] = f"https://{os.environ['BOB_TAILNET']}"
+cfg["server_address"] = f"https://{os.environ['BOB_TAILNET']}:8443"
 tmp = p.with_suffix(".json.tmp")
 tmp.write_text(json.dumps(cfg, indent=2))
 shutil.move(tmp, p)
@@ -78,19 +81,19 @@ PY
 osascript -e 'tell application "BlueBubbles" to quit' 2>/dev/null; sleep 2; open -a BlueBubbles; sleep 5
 
 # 1e. Tailscale serve — HTTPS on tailnet (NOT Funnel)
-if ! sudo tailscale serve status 2>&1 | grep -q "localhost:1234"; then
-  sudo tailscale serve --bg --https=443 http://localhost:1234
+if ! sudo tailscale serve status 2>&1 | grep -E "8443.*localhost:1234" >/dev/null; then
+  sudo tailscale serve --bg --https=8443 http://localhost:1234
 fi
 sudo tailscale serve status | grep -qi funnel=true && { echo "Funnel is ON — STOP (tailnet-only required)"; exit 1; }
 
 # 1f. End-to-end API check
-curl -sf --max-time 10 "https://$BOB_TAILNET/api/v1/server/info" -H "password: $BB_PASS" \
+curl -sf --max-time 10 "https://$BOB_TAILNET:8443/api/v1/server/info" -H "password: $BB_PASS" \
   | python3 -m json.tool | head -15 \
   || { echo "API verify failed — STOP"; exit 1; }
 
 # 1g. Mirror into .env (not committed — .env is gitignored)
 if ! grep -q '^BLUEBUBBLES_API_PASSWORD=' .env 2>/dev/null; then
-  printf '\n# BlueBubbles\nBLUEBUBBLES_API_PASSWORD=%s\nBLUEBUBBLES_SERVER_URL=https://%s\n' "$BB_PASS" "$BOB_TAILNET" >> .env
+  printf '\n# BlueBubbles\nBLUEBUBBLES_API_PASSWORD=%s\nBLUEBUBBLES_SERVER_URL=https://%s:8443\n' "$BB_PASS" "$BOB_TAILNET" >> .env
 fi
 grep -q '^\.env$' .gitignore || echo ".env" >> .gitignore
 
@@ -146,7 +149,7 @@ echo "When the toggle reads 'Installed', reply to this task with the single word
 
 ```bash
 # Verify Private API
-curl -sf --max-time 10 "https://$BOB_TAILNET/api/v1/server/info" -H "password: $BB_PASS" \
+curl -sf --max-time 10 "https://$BOB_TAILNET:8443/api/v1/server/info" -H "password: $BB_PASS" \
   | python3 -c 'import sys,json; d=json.load(sys.stdin); pa=d.get("data",{}).get("private_api",False); print(f"private_api={pa}"); sys.exit(0 if pa else 1)' \
   || { echo "Private API not detected — STOP"; exit 1; }
 ```
@@ -289,7 +292,7 @@ ssh "$BERT_TAILNET" 'chmod 600 ~/.config/bluebubbles/credentials && brew install
 echo ""
 echo "ACTION REQUIRED (Bert):"
 echo "  BlueBubbles Desktop → Manual Entry"
-echo "    Server URL: https://$BOB_TAILNET"
+echo "    Server URL: https://$BOB_TAILNET:8443"
 echo "    Password:   cat ~/.config/bluebubbles/credentials (on Bert)"
 echo "  Send a test iMessage to your own number, reply from phone, verify round-trip."
 echo ""
@@ -343,6 +346,7 @@ One message, ≤ 30 lines:
 ## Hard rules (non-negotiable)
 
 - No Tailscale Funnel. Ever. Tailnet-only.
+- Do not touch Tailscale serve on :443 (that's Markup Tool). BlueBubbles goes on :8443.
 - Do not touch `scripts/imessage-server.py`, `markup-tool`, `client-portal`, `polymarket-bot`, `email-monitor`.
 - Never commit `.env` or `~/.config/bluebubbles/credentials`.
 - No ngrok. No Cloudflare Tunnel. No third-party relays.
