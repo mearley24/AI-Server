@@ -1,0 +1,30 @@
+### task 20260417-151001-kick-audio-intake type=run_script signer=perplexity-computer
+### started 2026-04-17T09:09:58-06:00
+
+=== run_script kick-audio-intake @ 2026-04-17T09:09:58-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/kick-audio-intake.sh']
+kicking gui/501/com.symphony.audio-intake
+99562
+
+launchctl print (status line):
+	state = xpcproxy
+	pid = 99562
+		state = active
+		state = active
+
+last 20 worker log lines:
+2026-04-17 07:55:15,647 [INFO] pending/stuck rows: 0
+2026-04-17 07:55:38,166 [INFO] pending/stuck rows: 0
+2026-04-17 08:05:38,299 [INFO] pending/stuck rows: 0
+2026-04-17 08:15:38,404 [INFO] pending/stuck rows: 0
+2026-04-17 08:19:59,920 [INFO] pending/stuck rows: 0
+2026-04-17 08:25:38,502 [INFO] pending/stuck rows: 0
+2026-04-17 08:35:38,614 [INFO] pending/stuck rows: 0
+2026-04-17 08:45:38,717 [INFO] pending/stuck rows: 0
+2026-04-17 08:55:38,839 [INFO] pending/stuck rows: 0
+2026-04-17 09:05:38,974 [INFO] pending/stuck rows: 40
+2026-04-17 09:05:38,975 [INFO] transcribing 20240716__1721136047.WAV with ggml-large-v3.bin
+
+exit=0
+
+### finished 2026-04-17T09:10:28-06:00 exit=0

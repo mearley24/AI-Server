@@ -1,0 +1,27 @@
+### task 20260417-151000-install-audio-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:09:58-06:00
+
+=== run_script install-audio-plist @ 2026-04-17T09:09:58-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-audio-plist.sh']
+copying plist: /Users/bob/AI-Server/scripts/launchd/com.symphony.audio-intake.plist -> /Users/bob/Library/LaunchAgents/com.symphony.audio-intake.plist
+
+bootout (ignore not-loaded error):
+
+bootstrap:
+
+verify:
+	path = /Users/bob/Library/LaunchAgents/com.symphony.audio-intake.plist
+	state = xpcproxy
+	stdout path = /Users/bob/AI-Server/data/audio_intake/launchd.out.log
+	stderr path = /Users/bob/AI-Server/data/audio_intake/launchd.err.log
+		com.apple.launchd.WatchPaths => {
+				"WatchPaths" => [
+		state = active
+		state = active
+
+plist now installed. WatchPaths fires worker on any change under
+data/audio_intake/incoming/. ThrottleInterval=30 prevents burst re-runs.
+
+exit=0
+
+### finished 2026-04-17T09:09:58-06:00 exit=0
