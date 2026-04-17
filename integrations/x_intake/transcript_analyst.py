@@ -160,7 +160,9 @@ def _build_prompt(data: dict) -> str:
         parts.append("[NOTE: Full transcript text not available — analyze from summary and flags only]")
 
     body = "\n\n".join(parts)
-    return _DEEP_PROMPT.format(author=author, body=body)
+    # Use replace() instead of .format() — _DEEP_PROMPT contains literal JSON
+    # example braces that .format() would misinterpret as format placeholders.
+    return _DEEP_PROMPT.replace("{author}", author).replace("{body}", body)
 
 
 # ── LLM callers ───────────────────────────────────────────────────────────────
