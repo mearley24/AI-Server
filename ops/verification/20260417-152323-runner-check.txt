@@ -75,3 +75,18 @@ last-heartbeat: 2026-04-17T09:10:28-06:00
 cryptography 46.0.5
 
 --- manual task_runner.py --help (does it even import?) ---
+[2026-04-17T09:23:23-06:00] pull ok: Already up to date.
+[2026-04-17T09:23:23-06:00] COMPLETED 20260417-151200-install-task-runner-plist -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151200-install-task-runner-plist.json
+[2026-04-17T09:23:33-06:00] COMPLETED 20260417-151201-kick-task-runner -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151201-kick-task-runner.json
+[2026-04-17T09:23:35-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     c721501..54a2b9a  main -> main
+
+--- manual single-tick smoke test (blocks up to 60s) ---
+ops/task_runner/scripts/runner-check.sh: line 35: timeout: command not found
+exit=127
+
+--- heartbeat after manual tick ---
+last-heartbeat: 2026-04-17T09:23:33-06:00
+
+--- done ---
