@@ -1,0 +1,214 @@
+==============================================================================
+CATEGORY 7 AUDIT: Messaging and Communications
+==============================================================================
+Generated: 2026-04-17 10:09 MDT
+Scope: iMessage flows, outbound/inbound communication automations,
+       message-related memory wiring, approval controls for external
+       communications.
+
+Preflight at start: ok=True resolved=0 staged=0 unsafe=0.
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- notification-hub service (port 8095, healthy)
+  - main.py, hermes.py, Dockerfile, requirements.txt
+  - live: {"status":"healthy","service":"notification-hub","channel":"imessage"}
+- scripts/imessage-server.py (host-side iMessage bridge on port 8199)
+- scripts/com.symphony.imessage-bridge.plist (launchd)
+- scripts/install-imessage-launchagent.sh + install-imessage-deps.sh
+- BlueBubbles server on Bob (Tailscale 8443 → localhost:1234)
+- telegram-bob-remote/ (main.py bot, docker-compose.yml)
+- telegram-interface/ (Node.js bridge, index.js + package.json)
+- email-monitor/notifier.py (email + ops:email_action publish)
+- email-monitor/bid_triage.py (BuildingConnected → iMessage)
+- Redis `events:imessage` channel (consumer: x-intake)
+- Multiple employee Telegram bots (com.symphony.employee-beatrice-bot,
+  -betty-bot per ~/Library/LaunchAgents list)
+- Approval UX: iMessage YES/NO, dashboard approve/reject, task-runner
+  queue
+- Dashboard Symphony Ops tile surfaces BlueBubbles health
+  (api/symphony/bluebubbles/health)
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. notification-hub                                     STATUS: active
+   - Container healthy on port 8095.
+   - Dispatches iMessage + Telegram + email per CLAUDE.md.
+   - Single point of control for outbound messaging.
+
+B. scripts/imessage-server.py                           STATUS: active
+   - Host-side bridge on port 8199.
+   - Listens on Redis `events:imessage` (and scripts/imessage-server
+     was the primary surface before BlueBubbles).
+   - Still running per BlueBubbles notes in STATUS_REPORT
+     ("Existing imessage-server.py on :8199 untouched").
+
+C. BlueBubbles (2026-04-17 live)                        STATUS: active
+   - Tailscale-only exposure (no Funnel, no Cloudflare).
+   - Credentials in ~/.config/bluebubbles/credentials + .env.
+   - Watchdog plist com.symphony.bluebubbles-watchdog loaded
+     (60s relaunch).
+   - Private API disabled (SIP stays on for Bob's main Mac role).
+   - Ship mode: send/receive/groups/read receipts OK;
+     reactions/tapbacks unavailable.
+
+D. Telegram bots                                        STATUS: active
+   - Primary: @SymphonyBobBot.
+   - Employee bots per AGENTS.md: @SymphonyBettyBot,
+     @SymphonyBeatriceBot (launchd plists present).
+   - telegram-bob-remote/ provides docker-compose.telegram.yml
+     profile. Separate from main compose.
+   - telegram-interface/ is a JS bridge (may be secondary).
+   - Bot tokens in .env (`TELEGRAM_BOT_TOKEN`, per-employee).
+
+E. Redis events:imessage pipeline                       STATUS: active
+   - x-intake subscribes and analyzes iMessage-delivered URLs.
+   - Listener watchdog `_listener_watchdog` protects against
+     garbage-collection of the pubsub task (§Z14 fix).
+
+F. email-monitor/notifier.py                            STATUS: active
+   - Dispatches high-priority email notifications (iMessage).
+   - STATUS_REPORT §N says ops:email_action Redis publish was
+     added after urgent classification on 2026-04-13. Earlier
+     audits noted zero references — partially-contradicted signal.
+     Not re-verified in this pass; treat as "claimed-done, verify
+     on next incident".
+
+G. email-monitor/bid_triage.py                          STATUS: active
+   - BuildingConnected bid invites → iMessage BID/PASS/REVIEW.
+
+H. Approval UX                                          STATUS: active
+   - Dashboard tile + iMessage YES/NO + decision_journal.
+   - Task-runner approval flow (Category 2) covers agent queue.
+   - CLAUDE.md standing-approval risk tiers apply.
+
+I. Dashboard ↔ messaging                                STATUS: active
+   - Dashboard polls BlueBubbles health endpoint
+     (`/api/symphony/bluebubbles/health`).
+   - Symphony Ops tile shows message status + approve/reject
+     for x-intake items.
+
+J. iOS Shortcut (voice → Bob)                           STATUS: active
+   - AGENTS.md describes dictate → POST
+     http://100.89.1.51:8088/ask → speak reply.
+   - api/voice_webhook.py host Flask server on 8088.
+
+K. Message-related memory wiring                        STATUS: active
+   - email-monitor → Cortex (POST /remember) for classified emails
+     (wired 2026-04-13; see STATUS_REPORT Reference: Cortex Wire-Up).
+   - notification-hub posts high-priority sends to Cortex.
+   - follow_up_tracker + daily_briefing also post.
+
+L. Approval controls for external comms                 STATUS: active
+   - Customer-visible outbound (email send, iMessage to client,
+     public social post) explicitly HIGH RISK per CLAUDE.md —
+     requires Matt approval.
+   - Internal iMessage alerts (Matt-only) require no approval.
+   - No scripted auto-send of client emails yet (follow_up_engine
+     is the closest; partial — not fired).
+
+M. Voice receptionist (Twilio)                          STATUS: active
+   - voice-receptionist container healthy. Port 8093 → Twilio.
+   - Tool-calling into openclaw + cortex for caller context.
+
+N. Outbound alert channel coverage                      STATUS: partial
+   - iMessage (primary, active).
+   - Telegram (primary, active).
+   - Email (active for inbound; outbound send is MEDIUM risk and
+     not automatic except within approved workflows).
+   - Voice (Twilio, inbound primarily).
+   - Push (mobile apps): unknown / partial.
+   - No ack/retry queue — if an iMessage send fails we log but
+     don't retry.
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- Multi-channel dispatch is centralized in notification-hub.
+- BlueBubbles gave the stack a proper programmable iMessage
+  endpoint over Tailscale, not hacks.
+- Approval flow has three valid entry points (dashboard, iMessage
+  YES/NO, task-runner queue) — redundant but converges on the
+  decision_journal.
+- Message events flow into Cortex memory for later analysis.
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses
+------------------------------------------------------------------------------
+- No retry queue for failed sends. If notification-hub or
+  imessage-server fails to deliver, the message is lost.
+- No "test mode" for Telegram bots. Flipping a bot into dry-run
+  requires env changes.
+- No alerting when task_runner_health FAILS, email-monitor
+  connection drops, or polymarket-bot loses VPN. These silent
+  failures rely on Matt or an agent reading dashboards / logs.
+  Hooking into notification-hub for DEGRADED-state alerts is the
+  biggest leverage in this category.
+- telegram-interface/ has unclear role vs telegram-bob-remote/ —
+  second Telegram surface with no DECOMMISSIONED marker.
+- ops:email_action publish claim needs verification (STATUS_REPORT
+  + April 13 audit disagree).
+- No outbound-comm audit log distinct from decision_journal — a
+  per-message ledger would help on legal / compliance questions.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- BlueBubbles is the right shape. No swap.
+- Twilio for voice — no swap.
+- Telegram Bot API — no swap.
+- notification-hub is already the right pattern. Add a simple
+  retry queue (SQLite-backed) if delivery failures become
+  measurable.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) Add scripts/notify-hub-post.sh — thin bash helper that POSTs
+   a short message to notification-hub's dispatch endpoint using
+   `scripts/api-post.sh` + a JSON temp file (per zsh rule). Useful
+   for launchd alert wiring without rewriting every plist.
+2) Add ops/MESSAGING_ALERTS.md — documents which failure modes
+   SHOULD alert Matt (and how) vs which are silent-by-design.
+   This is the "wiring plan" for Category 1's deferred action
+   (task_runner_health FAIL → iMessage).
+3) Add telegram-interface/README.md — clarifies relationship
+   between telegram-interface/ (Node.js) and telegram-bob-remote/
+   (Python) and which is the canonical surface.
+
+All three are LOW risk (docs + helper script; no auto-send).
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- Alert wiring remains manual. MESSAGING_ALERTS.md lists what
+  SHOULD alert; actual plumbing is future work.
+- No retry queue on failed sends.
+- ops:email_action publish claim not re-verified.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Implement the alert wiring in MESSAGING_ALERTS.md — hook
+  task_runner_health FAIL, verify-deploy FAIL, and polymarket-bot
+  VPN-drop into notification-hub.
+- Add a sent-messages log under data/notification-hub/sent.db so
+  failed deliveries can be replayed.
+- Verify ops:email_action publish in a live email event; update
+  STATUS_REPORT if discrepancy persists.
+- Clarify telegram-interface vs telegram-bob-remote ownership
+  (either retire one or document the role split).
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     scripts/notify-hub-post.sh
+- ADDED     ops/MESSAGING_ALERTS.md
+- ADDED     telegram-interface/README.md
+- ADDED     ops/verification/20260417-100940-messaging-communications-audit.txt
+- ADDED     ops/verification/<stamp>-messaging-communications-final.txt
+
+END OF AUDIT — Category 7

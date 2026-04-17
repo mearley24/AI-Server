@@ -80,6 +80,12 @@ PROGRESS LOG (appended per category)
                  openclaw/DAILY_BRIEFING_V2_STATUS.md (new),
                  scripts/dropbox-link-validate.sh (new, tested; Lesson #4)
          risk:   LOW (docs + read-only lint)
-[pending] 7. messaging-communications
+[DONE   ] 7. messaging-communications
+         audit:  ops/verification/20260417-100940-messaging-communications-audit.txt
+         final:  ops/verification/20260417-101200-messaging-communications-final.txt
+         files:  scripts/notify-hub-post.sh (new),
+                 ops/MESSAGING_ALERTS.md (new),
+                 telegram-interface/README.md (new)
+         risk:   LOW (docs + JSON-safe helper)
 [pending] 8. trading-market-automation
 

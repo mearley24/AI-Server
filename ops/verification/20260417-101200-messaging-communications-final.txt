@@ -1,0 +1,107 @@
+==============================================================================
+CATEGORY 7 FINAL: Messaging and Communications
+==============================================================================
+Generated: 2026-04-17 10:12 MDT
+Companion audit: 20260417-100940-messaging-communications-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+notification-hub container, scripts/imessage-server.py, BlueBubbles
+server + watchdog, telegram-bob-remote/ + telegram-interface/,
+email-monitor/notifier.py + bid_triage.py, Redis events:imessage,
+dashboard Symphony Ops tile, api/voice_webhook.py, voice-receptionist,
+approval UX, message-related Cortex memory wiring.
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- notification-hub (port 8095) ............................................. active (healthy)
+- scripts/imessage-server.py (port 8199) ................................... active
+- BlueBubbles server + watchdog ............................................ active
+- telegram-bob-remote (Python) ............................................. active (primary)
+- telegram-interface (Node.js) ............................................. stale/unknown → README added
+- email-monitor/notifier.py ................................................ active
+- email-monitor/bid_triage.py .............................................. active
+- Redis events:imessage (x-intake listener) ................................ active
+- Approval UX (dashboard + iMessage + task-runner) ......................... active
+- Message → Cortex wiring .................................................. active
+- iOS Shortcut + voice_webhook (port 8088) ................................. active
+- Alert wiring to notification-hub on ops events ........................... missing → plan added
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Multi-channel dispatch centralized in notification-hub.
+- BlueBubbles is the correct iMessage solution; running over
+  Tailscale (no Funnel/Cloudflare).
+- Three approval entry points converge on one decision_journal.
+- Messages flow into Cortex memory.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- Alert plumbing is absent; failures are silent. FIXED (plan) this
+  pass via ops/MESSAGING_ALERTS.md.
+- No retry queue on failed sends.
+- telegram-interface/ role unclear — FIXED (README) this pass.
+- ops:email_action publish claim unverified.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- BlueBubbles + Twilio + Telegram Bot API: correct stack. No swaps.
+- Add a SQLite-backed retry queue inside notification-hub when
+  failed-delivery data justifies it.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) scripts/notify-hub-post.sh (NEW) — tiny bash helper to POST a
+   JSON body to notification-hub/dispatch without inlining JSON in
+   curl (zsh rule). Uses a temp file + scripts/api-post.sh.
+   RISK: LOW (it only constructs and forwards a JSON body; the hub
+   itself enforces what gets sent).
+
+2) ops/MESSAGING_ALERTS.md (NEW) — single source of truth for which
+   failure modes SHOULD alert Matt, via which channel, with what
+   priority. 16-row matrix + silent-by-design list + wiring
+   patterns + 15-minute throttle policy.
+   RISK: LOW (docs only).
+
+3) telegram-interface/README.md (NEW) — clarifies that
+   telegram-bob-remote/ is canonical; documents the retirement
+   checklist for this directory.
+   RISK: LOW (docs only).
+
+All three are LOW risk.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- MESSAGING_ALERTS.md lists the plan; most rows are TODO.
+- No retry queue on notification-hub.
+- ops:email_action publish claim still not verified against live
+  traffic.
+- telegram-interface/ still on disk; retirement gated.
+
+------------------------------------------------------------------------------
+Next actions (deferred)
+------------------------------------------------------------------------------
+- Hook task_runner_health FAIL → notify-hub-post.sh warn/imessage
+  via a wrapper plist.
+- Hook bob-watchdog critical alerts (Redis, Tailscale, polymarket
+  VPN) to notification-hub.
+- Verify ops:email_action publish with a tailed Redis monitor.
+- Retire telegram-interface/ if no caller is found.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     scripts/notify-hub-post.sh
+- ADDED     ops/MESSAGING_ALERTS.md
+- ADDED     telegram-interface/README.md
+- ADDED     ops/verification/20260417-100940-messaging-communications-audit.txt
+- ADDED     ops/verification/20260417-101200-messaging-communications-final.txt
+
+END OF FINAL REPORT — Category 7
