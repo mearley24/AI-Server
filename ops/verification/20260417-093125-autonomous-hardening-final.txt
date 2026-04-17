@@ -1,0 +1,237 @@
+=== Autonomous Execution Hardening — Final Report ===
+generated:   2026-04-17T09:31:25-06:00
+agent:       Cline (cline-bob)
+repo:        /Users/bob/AI-Server
+branch:      main
+head commit: 68f50d375a0b72900bdbecd0c411ed64324d634a
+source prompt: .cursor/prompts/cline-prompt-task-runner.md (autonomous hardening addendum)
+
+---------------------------------------------------------------------
+1. FILES CHANGED
+---------------------------------------------------------------------
+
+Policy
+  M  CLAUDE.md
+       + new section "Standing Approval and Risk Tiers"
+  M  ops/AGENT_VERIFICATION_PROTOCOL.md
+       + new section "Autonomous Execution Policy" (repo-first verification,
+         preflight sanity, auto-follow-up verification, risk-tier model,
+         interactive-prompt hazards addendum, blocker-report pattern,
+         tooling inventory)
+
+Runtime / code
+  A  ops/task_runner_preflight.py
+       preflight self-heal: whitelist-driven auto-resolve of generated
+       /state-file conflicts, ensure .gitattributes merge=ours rules,
+       commit+push its own safe changes, write timestamped report, never
+       swallow non-whitelisted conflicts
+  A  ops/task_runner_health.py
+       launchd label, heartbeat age, pending-queue-not-stuck, recent
+       verification activity, preflight-seen checks — writes timestamped
+       report, exits non-zero when unhealthy
+  A  ops/task_audit.py
+       CLI: takes task id or substring; lists matching files in
+       ops/verification/ + all queue states, renders compact summary
+       with head/tail of newest verification file; supports --json,
+       --out, --list
+  A  ops/launchd/com.symphony.task-runner-health.plist
+       15-min periodic health check (900s StartInterval); writes
+       timestamped report to ops/verification/ every tick; committed
+       in-repo but not yet loaded into launchd (see "remaining
+       limitations" below)
+  M  scripts/task_runner.py
+       wires ops/task_runner_preflight.run_preflight() into run_once()
+       ahead of pull_latest(); if preflight reports unsafe conflicts,
+       task dispatch is skipped for the tick but heartbeat continues
+
+Note .gitattributes already contained the two required merge=ours rules
+(knowledge/markup_exports/.session_tracking.json and
+data/cortex/digests/** merge=ours) — the preflight additionally enforces
+them, so if the file is ever truncated or edited, the next tick will
+re-append the missing lines.
+
+---------------------------------------------------------------------
+2. AUTONOMOUS BEHAVIORS ADDED
+---------------------------------------------------------------------
+
+A. Standing approval model (CLAUDE.md)
+   - Low-risk work (diagnostics, verification, repo hygiene, health
+     checks, queue inspection, logging, prompt updates, tooling,
+     internal automation) is pre-authorized — agents just do it and
+     log the result to ops/verification/.
+   - Medium-risk work (service restarts, non-secret env changes,
+     launchd installs, non-financial migrations) proceeds without
+     synchronous approval but MUST leave a verification trail.
+   - High-risk work (data deletion, secrets rotation, money moves,
+     trading, customer-visible comms, destructive infra) still
+     requires explicit approval before execution.
+
+B. Preflight self-heal (ops/task_runner_preflight.py)
+   - Runs before every task-runner tick (wired into scripts/task_runner.py).
+   - Heals whitelisted state-file conflicts automatically (currently
+     knowledge/markup_exports/.session_tracking.json and
+     data/cortex/digests/**).
+   - Ensures .gitattributes merge=ours rules are present; appends
+     missing ones and commits the change.
+   - Commits + pushes its own safe changes; never touches user code.
+   - Writes a timestamped ops/verification/<stamp>-preflight.txt
+     report every time it runs meaningful work.
+   - Non-whitelisted conflicts are reported in detail and cause the
+     runner to SKIP task dispatch (but the heartbeat still ticks).
+
+C. Auto-follow-up verification
+   - task_runner_preflight.py writes its own report.
+   - task_runner_health.py writes its own report.
+   - task_audit.py --out persists an audit report.
+   - Every task the runner executes already writes
+     ops/verification/<task_id>-result.txt.
+
+D. Health + audit tooling
+   - task_runner_health.py: five named checks (launchd, heartbeat,
+     queue, verification, preflight). Exit 0 healthy / 1 unhealthy.
+   - task_audit.py: one-shot forensics for any task id or substring.
+
+E. Interactive-prompt hazard pre-emption
+   - Agent Verification Protocol now explicitly states: ssh_and_run
+     tasks must pin host keys before running; no TTY editors; bounded
+     scripts only.
+
+F. Blocker-report pattern
+   - Agents write ops/verification/<stamp>-blocker-<topic>.txt instead
+     of asking Matt to paste anything. Four required fields documented.
+
+---------------------------------------------------------------------
+3. REMAINING LIMITATIONS
+---------------------------------------------------------------------
+
+- The task-runner-health launchd plist is committed at
+  ops/launchd/com.symphony.task-runner-health.plist but NOT yet copied
+  into ~/Library/LaunchAgents/ and loaded. This was intentional: the
+  existing 120s task-runner loop now runs preflight every tick, which
+  already provides health visibility via ops/verification/ artifacts.
+  To enable the dedicated 15-min health check daemon:
+      cp ops/launchd/com.symphony.task-runner-health.plist \
+         ~/Library/LaunchAgents/com.symphony.task-runner-health.plist
+      launchctl load ~/Library/LaunchAgents/com.symphony.task-runner-health.plist
+  Loading can be done via a signed run_script task or by a human.
+
+- preflight.run_preflight() commits + pushes on every invocation when
+  it finds whitelisted dirty state — this is the intended behavior but
+  it produces one extra commit per tick while state files change.
+  Acceptable for now; can be throttled later if commit noise becomes
+  an issue.
+
+- task_audit.py is a local-read tool; it does not follow the queue
+  across ssh_and_run remote hosts. Remote task trails are captured via
+  the existing ssh_and_run tee-to-file pattern.
+
+- task_runner_preflight.py uses `git checkout --ours` which requires
+  the file to be a real conflict entry or locally modified. If it ever
+  needs to accept-ours on a deleted-by-them conflict, an explicit case
+  would need to be added.
+
+---------------------------------------------------------------------
+4. EXACT COMMANDS USED FOR VERIFICATION
+---------------------------------------------------------------------
+
+Syntax check:
+    /opt/homebrew/bin/python3 -m py_compile \
+        ops/task_runner_preflight.py \
+        ops/task_runner_health.py \
+        ops/task_audit.py \
+        scripts/task_runner.py
+  Result: ALL_OK
+
+Preflight live-run evidence (already produced by the running launchd
+task-runner after the new module was saved to disk):
+    ops/verification/20260417-092927-preflight.txt
+    ops/verification/20260417-092935-preflight.txt
+    ops/verification/20260417-092946-preflight.txt
+    ops/verification/20260417-093048-preflight.txt
+  All reports show ok=true, two whitelisted dirty paths staged
+  (data/cortex/digests/2026-04-17.md and
+   knowledge/markup_exports/.session_tracking.json), commit pushed to
+  origin/main.
+
+Health check:
+    /opt/homebrew/bin/python3 ops/task_runner_health.py
+  Result:
+    task-runner: healthy (report=ops/verification/20260417-093100-task-runner-health.txt)
+    OK  launchd.loaded:   launchctl list: -  0  com.symphony.task-runner
+    OK  heartbeat.fresh:  heartbeat age=446s
+    OK  queue.not_stuck:  pending=0
+    OK  verification.recent: newest=20260417-093048-preflight.txt age=11s
+    OK  preflight.seen:    newest preflight=20260417-093048-preflight.txt age=11s
+
+Audit utility (targeted at prompt's named artifact
+20260417-143719-verify-task-runner):
+    /opt/homebrew/bin/python3 ops/task_audit.py "verify-task-runner" \
+        --out ops/verification/20260417-093106-task-audit-smoke.txt --limit 10
+  Result (abridged):
+    verification matches (1):
+      ops/verification/20260417-143719-verify-task-runner-result.txt
+    queue matches (1):
+      ops/work_queue/completed/20260417-143719-verify-task-runner.json
+    summary.queue_counts: {'pending': 0, 'completed': 1, 'failed': 0, 'rejected': 0}
+    newest peek head: "### task 20260417-143719-verify-task-runner type=verify_dump signer=cline-bob"
+    newest peek tail: "### finished 2026-04-17T08:39:09-06:00 exit=0"
+
+Commit + push:
+    git add CLAUDE.md ops/AGENT_VERIFICATION_PROTOCOL.md \
+            ops/task_runner_preflight.py ops/task_runner_health.py \
+            ops/task_audit.py ops/launchd/com.symphony.task-runner-health.plist \
+            scripts/task_runner.py ops/verification/
+    git -c user.email="earleystream@gmail.com" -c user.name="Matt Earley" \
+        commit -m "ops: autonomous hardening — ..."
+    git push origin main
+  Result:
+    [main e11a21e] ops: autonomous hardening — standing approval policy,
+                   preflight self-heal, health check, audit utility
+    13 files changed, 1487 insertions(+), 1 deletion(-)
+  Then the live task-runner pushed its own preflight tick as 68f50d3;
+  HEAD and origin/main both at 68f50d375a0b72900bdbecd0c411ed64324d634a.
+
+---------------------------------------------------------------------
+5. ARE HEALTH CHECKS ON A SCHEDULE YET?
+---------------------------------------------------------------------
+
+Partial.
+
+- The task-runner itself (com.symphony.task-runner, already loaded)
+  runs every 120s and now invokes preflight before every tick. The
+  preflight writes timestamped reports to ops/verification/ whenever
+  it does meaningful work; this is the de facto "live" health stream
+  (see 5+ preflight-*.txt artifacts written in the last 10 min).
+
+- The dedicated 15-min health daemon
+  (com.symphony.task-runner-health) is defined at
+  ops/launchd/com.symphony.task-runner-health.plist but has NOT yet
+  been loaded into launchd. One-liner to enable:
+      cp ops/launchd/com.symphony.task-runner-health.plist \
+         ~/Library/LaunchAgents/com.symphony.task-runner-health.plist && \
+      launchctl load \
+         ~/Library/LaunchAgents/com.symphony.task-runner-health.plist
+  Deferring that to a follow-up signed task avoids a chicken-and-egg
+  problem: installing a new launchd job inside a task-runner tick that
+  is itself managed by launchd can cause a brief overlap if the new
+  agent fires while the runner is still holding its lock. The
+  task-runner's own heartbeat makes this non-urgent.
+
+---------------------------------------------------------------------
+6. AGENT NOTES FOR FUTURE SESSIONS
+---------------------------------------------------------------------
+
+- The preflight auto-heal is opt-in via the whitelist — to add a new
+  safe path, append to SAFE_PATTERNS and REQUIRED_GITATTRIBUTES in
+  ops/task_runner_preflight.py, and add the matching line to
+  .gitattributes.
+- Quick audit commands once the code is pulled:
+      python3 ops/task_audit.py --list
+      python3 ops/task_audit.py <task-id-or-substring>
+      python3 ops/task_runner_health.py --quiet ; echo $?
+- The standing-approval policy is the answer to "do I need to ask?":
+  read the Risk Tiers section in CLAUDE.md. Default to autonomous for
+  low-risk work; write a blocker report for anything you'd otherwise
+  ask Matt about.
+
+=== end of report ===
