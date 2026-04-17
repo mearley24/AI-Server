@@ -451,6 +451,7 @@ services:
       - ./data/cortex:/data/cortex
       - ./data/openclaw:/app/data/openclaw:ro
       - ./polymarket-bot/knowledge:/app/knowledge:ro
+      - ./data/x_intake:/data/x_intake:ro
     environment:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102
