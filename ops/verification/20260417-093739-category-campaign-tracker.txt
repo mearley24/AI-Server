@@ -47,7 +47,17 @@ PROGRESS LOG (appended per category)
                  scripts/task-queue-stats.sh (new),
                  ops/task_runner/scripts/replay-last-failed.sh (new, gated)
          risk:   LOW for .gitignore + stats; MEDIUM-gated for replay helper
-[pending] 3. core-stack-infrastructure
+[DONE   ] 3. core-stack-infrastructure
+         audit:  ops/verification/20260417-094700-core-stack-infrastructure-audit.txt
+         final:  ops/verification/20260417-095400-core-stack-infrastructure-final.txt
+         files:  ops/REPO_LAYOUT.md (new),
+                 scripts/compose-drift-check.sh (new),
+                 mission_control/DECOMMISSIONED.md (new),
+                 context-preprocessor/DECOMMISSIONED.md (new),
+                 knowledge-scanner/DECOMMISSIONED.md (new),
+                 remediator/DECOMMISSIONED.md (new),
+                 CLAUDE.md + .clinerules (18 -> 19 containers)
+         risk:   LOW (docs + markers + read-only check)
 [pending] 4. memory-state-knowledge
 [pending] 5. web-automation-integrations
 [pending] 6. coordination-business-ops

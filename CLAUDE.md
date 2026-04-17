@@ -46,7 +46,7 @@ AI-Server/
 │   ├── set-env.sh         # Safe .env key setter
 │   ├── api-post.sh        # JSON POST helper (no inline JSON)
 │   └── bob-watchdog.sh    # Service watchdog
-├── docker-compose.yml     # 18 containers (3 dead services removed in security cleanup)
+├── docker-compose.yml     # 19 containers (3 dead services removed in security cleanup)
 ├── .clinerules            # Cline context (kept for compatibility)
 ├── CLAUDE.md              # THIS FILE — Claude Code reads this first
 └── .cursor/prompts/       # Task prompts (A through P, plus operational)
@@ -58,7 +58,7 @@ AI-Server/
 
 | Layer | Technology |
 |---|---|
-| Runtime | Docker Compose, 18 containers on Mac Mini M4 ("Bob") |
+| Runtime | Docker Compose, 19 containers on Mac Mini M4 ("Bob") |
 | Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
 | AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
 | Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db) |

@@ -1,0 +1,147 @@
+==============================================================================
+CATEGORY 3 FINAL: Core stack and infrastructure
+==============================================================================
+Generated: 2026-04-17 09:54 MDT
+Companion audit: 20260417-094700-core-stack-infrastructure-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+docker-compose.yml (19 services), live docker compose ps, scripts/pull.sh,
+scripts/symphony-ship.sh, CLAUDE.md service table, STATUS_REPORT.md Stack
+Health snapshot, top-level directory inventory, Mac Mini Bob runtime
+assumptions, Redis + VPN topology, repo layout conventions.
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- docker-compose.yml (19 services, 18/19 healthy) ........................... active
+- Docker compose patterns (static Redis IP, bind mounts) .................... active
+- Service boundaries (HTTP-only per lesson #15) ............................. active
+- Orphaned service dirs (mission_control, context-preprocessor,
+  knowledge-scanner, remediator) ............................................ stale → marked
+- Deploy/pull workflow (pull.sh, symphony-ship.sh, verify-deploy.sh) ........ active
+- Redis topology (static 172.18.0.100, auth required, events:log 1000-cap) .. active
+- VPN (WireGuard) fronting polymarket-bot ................................... active
+- Docs drift (CLAUDE.md said 18 containers, actual 19) ..................... fixed this pass
+- STATUS_REPORT Stack Health snapshot ....................................... stale (deferred)
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Compose topology is small, single-responsibility, readable.
+- 18/19 healthy by default. x-alpha-collector has no healthcheck
+  by design (no HTTP surface).
+- Well-known redis static IP + HTTP-only-between-services +
+  VPN-wrapped trading = clean blast radius.
+- Bind mounts for openclaw and cortex keep the edit→restart loop
+  fast.
+- pull.sh + symphony-ship.sh + verify-deploy.sh give a consistent
+  deploy path.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- CLAUDE.md + .clinerules said 18 containers; actual 19 since
+  x-intake-lab was added. FIXED this pass.
+- Four stale service dirs with no DECOMMISSIONED marker — any new
+  agent reading the repo had no way to know which were current.
+  FIXED: four markers added.
+- Drift check was manual. FIXED: scripts/compose-drift-check.sh
+  added; can be scheduled or wired into pull.sh.
+- STATUS_REPORT.md Stack Health table is from 2026-04-12 and lists
+  openwebui/remediator/context-preprocessor/knowledge-scanner as
+  Up — known stale, full refresh deferred.
+- No per-service resource limits (RAM/CPU) in compose. Not
+  breaking anything now but worth adding when someone has cycles.
+- orchestrator/ vs openclaw/ naming is mildly confusing.
+- services/ top-level dir still has unclear purpose; flagged.
+- drift-check also flags 4 expected "no-compose" top-level dirs
+  (operations, telegram-bob-remote, telegram-interface,
+  voice_receptionist). These are NOT stale — voice_receptionist
+  maps to compose name `voice-receptionist`; the other three are
+  external or secondary compose. The check should ideally know
+  this, but a short allowlist is sufficient future work.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Docker Compose is the right shape for a single-host topology.
+  Do NOT migrate to k8s / Nomad / bare launchd.
+- hadolint + dockerfilelint as pre-commit Dockerfile linters — low
+  priority.
+- docker-compose.override.yml for dev layering — not needed today.
+
+Net: keep compose, fix the drift.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) ops/REPO_LAYOUT.md (NEW) — canonical map of every top-level
+   directory: service / tooling / external / stale / ignored. The
+   "Services" table cleanly matches docker compose reality (19
+   entries). The "Stale" table references the DECOMMISSIONED.md
+   markers. Agents can grep this file first for orientation.
+   RISK: LOW. Docs.
+
+2) scripts/compose-drift-check.sh (NEW) — read-only drift detector.
+   Compares top-level dirs to `docker compose config --services`,
+   checks stale-dir markers, warns on "18 containers" phrase.
+   Tested: correctly OK'd all 4 decommissioned markers, flagged
+   the 4 Dockerfile-bearing dirs without compose entries, reported
+   19 services. Exits 0.
+   RISK: LOW. Read-only.
+
+3) Four DECOMMISSIONED.md markers (NEW) in
+   mission_control/, context-preprocessor/, knowledge-scanner/,
+   remediator/. Each explains replacement, references STATUS_REPORT
+   and Prompt S, and notes that deletion is gated as MEDIUM-risk
+   future work.
+   RISK: LOW. New markdown files only; no source changes.
+
+4) CLAUDE.md + .clinerules: "18 containers" → "19 containers" in
+   three locations (Tech Stack tables + ASCII diagram comment in
+   CLAUDE.md). Verified via grep.
+   RISK: LOW. Docs.
+
+All four changes respect the standing approval policy (LOW risk).
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- STATUS_REPORT.md Stack Health table remains stale; rewriting
+  belongs in a focused docs-refresh pass, not a side-effect of
+  this one. Called out elsewhere.
+- services/, core/ top-level dirs: unclear purpose; not touched.
+- Per-service compose resource limits still absent.
+- compose-drift-check flags 4 Dockerfile-bearing dirs that aren't
+  stale (operations, telegram-bob-remote, telegram-interface,
+  voice_receptionist). Acceptable noise; easy to allowlist later.
+
+------------------------------------------------------------------------------
+Next actions (deferred)
+------------------------------------------------------------------------------
+- Rewrite STATUS_REPORT Stack Health table from live docker compose ps.
+- Add compose-drift-check to pull.sh as a non-fatal post-step.
+- Add an allowlist to compose-drift-check for known-not-stale
+  external/tooling dirs.
+- Plan MEDIUM-risk cleanup pass: delete stale dirs after markers
+  have been in place ≥ one week (schedule: 2026-04-24).
+- Add per-service `deploy.resources.limits` in docker-compose.yml
+  for at least the big memory hogs (voice, cortex, polymarket-bot).
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     ops/REPO_LAYOUT.md
+- ADDED     scripts/compose-drift-check.sh
+- ADDED     mission_control/DECOMMISSIONED.md
+- ADDED     context-preprocessor/DECOMMISSIONED.md
+- ADDED     knowledge-scanner/DECOMMISSIONED.md
+- ADDED     remediator/DECOMMISSIONED.md
+- MODIFIED  CLAUDE.md (18 → 19 containers, both locations)
+- MODIFIED  .clinerules (18 → 19 containers)
+- ADDED     ops/verification/20260417-094700-core-stack-infrastructure-audit.txt
+- ADDED     ops/verification/20260417-095400-core-stack-infrastructure-final.txt
+
+END OF FINAL REPORT — Category 3

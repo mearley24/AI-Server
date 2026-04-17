@@ -19,7 +19,7 @@ AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration
 ### Tech Stack
 | Layer | Technology |
 |---|---|
-| Runtime | Docker Compose, 18 containers on Mac Mini M4 ("Bob") |
+| Runtime | Docker Compose, 19 containers on Mac Mini M4 ("Bob") |
 | Voice | Node.js, Twilio Media Streams, OpenAI Realtime API |
 | AI/LLM | OpenAI API (GPT-4o, Whisper), Ollama (qwen3:8b local) |
 | Database | SQLite (decision_journal.db, jobs.db, follow_ups.db, emails.db, brain.db) |
