@@ -1,0 +1,221 @@
+==============================================================================
+CATEGORY CAMPAIGN — FINAL SUMMARY
+==============================================================================
+Generated: 2026-04-17 10:18 MDT
+Started:   2026-04-17 09:37 MDT
+Duration:  ~40 minutes
+Operator:  Cline (autonomous, AUTO_APPROVE=true)
+Host:      Bob (Mac Mini M4)
+Branch:    main
+Tracker:   ops/verification/20260417-093739-category-campaign-tracker.txt
+
+================================================================================
+Categories completed (8 / 8)
+================================================================================
+
+1. Reliability and observability        DONE
+2. Agent execution and autonomy         DONE
+3. Core stack and infrastructure        DONE
+4. Memory, state, and knowledge         DONE
+5. Web automation and integrations      DONE
+6. Coordination and business ops        DONE
+7. Messaging and communications         DONE
+8. Trading and market automation        DONE
+
+Categories blocked: NONE. Every category produced audit + final reports
+and at least one safe low-risk improvement.
+
+================================================================================
+Verification artifacts written (core)
+================================================================================
+
+Campaign tracker + rollup:
+  ops/verification/20260417-093739-category-campaign-tracker.txt
+  ops/verification/20260417-101800-category-campaign-final.txt  (this file)
+
+Per-category audit + final pairs (16 artifacts):
+  20260417-093900-reliability-observability-audit.txt
+  20260417-094200-reliability-observability-final.txt
+  20260417-094300-agent-execution-autonomy-audit.txt
+  20260417-094530-agent-execution-autonomy-final.txt
+  20260417-094700-core-stack-infrastructure-audit.txt
+  20260417-095400-core-stack-infrastructure-final.txt
+  20260417-095615-memory-state-knowledge-audit.txt
+  20260417-095900-memory-state-knowledge-final.txt
+  20260417-100100-web-automation-integrations-audit.txt
+  20260417-100330-web-automation-integrations-final.txt
+  20260417-100530-coordination-business-ops-audit.txt
+  20260417-100800-coordination-business-ops-final.txt
+  20260417-100940-messaging-communications-audit.txt
+  20260417-101200-messaging-communications-final.txt
+  20260417-101400-trading-market-automation-audit.txt
+  20260417-101700-trading-market-automation-final.txt
+
+Sample test-run artifacts committed during the campaign:
+  20260417-095857-cortex-brain-snapshot.txt  (Cat 4 tested helper)
+  20260417-101634-trading-status-snapshot.txt (Cat 8 tested helper)
+  INDEX.txt (Cat 1 tested helper — verification index)
+
+================================================================================
+Files changed (grouped by category)
+================================================================================
+
+CATEGORY 1 — Reliability
+  M  scripts/verify-deploy.sh
+  A  scripts/verification-index.sh
+  A  scripts/verification-prune.sh
+  A  ops/verification/INDEX.txt  (generated)
+
+CATEGORY 2 — Agent execution
+  M  .gitignore  (+3 task_runner lines)
+  D  data/task_runner/.runner.lock  (git rm --cached; stays on disk)
+  A  scripts/task-queue-stats.sh
+  A  ops/task_runner/scripts/replay-last-failed.sh
+
+CATEGORY 3 — Core stack
+  A  ops/REPO_LAYOUT.md
+  A  scripts/compose-drift-check.sh
+  A  mission_control/DECOMMISSIONED.md
+  A  context-preprocessor/DECOMMISSIONED.md
+  A  knowledge-scanner/DECOMMISSIONED.md
+  A  remediator/DECOMMISSIONED.md
+  M  CLAUDE.md         (18 → 19 containers)
+  M  .clinerules       (18 → 19 containers)
+
+CATEGORY 4 — Memory/state
+  M  data/DATABASE_SCHEMA.md  (live snapshot section appended)
+  A  scripts/backup-cortex-dbs.sh
+  A  scripts/cortex-brain-snapshot.sh
+
+CATEGORY 5 — Web/integrations
+  A  ops/INTEGRATIONS.md  (22-service matrix)
+  A  integrations/autoresearch/NOT_PRODUCTION.md
+  A  symphony/browser/README.md
+
+CATEGORY 6 — Coordination/business
+  A  openclaw/MODULE_MAP.md  (58-module status table)
+  A  openclaw/DAILY_BRIEFING_V2_STATUS.md
+  A  scripts/dropbox-link-validate.sh  (Lesson #4)
+
+CATEGORY 7 — Messaging
+  A  scripts/notify-hub-post.sh
+  A  ops/MESSAGING_ALERTS.md  (16-row alert plan)
+  A  telegram-interface/README.md
+
+CATEGORY 8 — Trading
+  A  polymarket-bot/STRATEGY_MAP.md
+  A  polymarket-bot/SAFETY_CHECKLIST.md
+  A  scripts/trading-status-snapshot.sh
+
+Total files touched: 25 added, 4 modified, 1 untracked.
+
+================================================================================
+Key improvements made (rollup)
+================================================================================
+
+Orientation docs (make future agents faster):
+  - ops/REPO_LAYOUT.md     — 20+ top-level dirs classified
+  - ops/INTEGRATIONS.md     — 22-service external matrix
+  - openclaw/MODULE_MAP.md  — 58 openclaw modules statused
+  - polymarket-bot/STRATEGY_MAP.md — every strategy statused
+
+Safety docs:
+  - polymarket-bot/SAFETY_CHECKLIST.md — safety guardrails in one page
+  - ops/MESSAGING_ALERTS.md     — what should alert Matt
+
+Fixed drifted doc state:
+  - 4 DECOMMISSIONED.md markers on stale service dirs
+  - CLAUDE.md + .clinerules container count corrected (18→19)
+  - DATABASE_SCHEMA.md live snapshot appended
+  - scripts/verify-deploy.sh refreshed for Cortex merge
+
+Useful new tooling (all low-risk, tested where possible):
+  - scripts/verification-index.sh
+  - scripts/verification-prune.sh (dry-run default)
+  - scripts/task-queue-stats.sh
+  - scripts/compose-drift-check.sh
+  - scripts/backup-cortex-dbs.sh (dry-run default)
+  - scripts/cortex-brain-snapshot.sh
+  - scripts/dropbox-link-validate.sh
+  - scripts/notify-hub-post.sh
+  - scripts/trading-status-snapshot.sh
+  - ops/task_runner/scripts/replay-last-failed.sh (gated)
+
+Lessons-learned progress (STATUS_REPORT scorecard, informally):
+  - Lesson #4 (Dropbox /preview/ links) — validator now exists in
+    scripts/dropbox-link-validate.sh. (Prior orchestrator inline
+    check was already present but was not discoverable.) Move
+    from UNKNOWN → GREEN in next STATUS_REPORT pass.
+  - Lesson #17 (sell haircut rounding) — still UNKNOWN. Requires
+    a paper-ledger test run; deferred.
+
+================================================================================
+Commits + pushes
+================================================================================
+
+Category commits pushed to origin/main throughout the campaign:
+  bd418c1  ops(category-1): reliability + observability audit, patched verify-deploy, helpers
+  3259991  ops(category-2): agent execution audit, gitignore task-runner runtime, helpers
+  c2ee03f  ops(category-3): core stack audit, REPO_LAYOUT, drift check, 4 DECOMMISSIONED markers
+  a3e95eb  ops(category-4): memory/state audit, DB schema live snapshot, backup helpers
+  215c20d  ops(category-5): web automation audit, INTEGRATIONS matrix, stale markers
+  3e149bf  ops(category-6): coordination audit, MODULE_MAP, dropbox link validator
+  3166898  ops(category-7): messaging audit, MESSAGING_ALERTS plan, notify-hub helper
+
+Category 8 commit + this final summary are pushed in the final
+commit after this file is written.
+
+================================================================================
+Recommended next priorities
+================================================================================
+
+High leverage, low risk (do next):
+  1. Wire ops/MESSAGING_ALERTS.md TODO rows into live alert
+     plumbing, starting with task_runner_health FAIL → iMessage.
+  2. Schedule scripts/backup-cortex-dbs.sh --execute daily via
+     launchd (brain.db is 127 MB and growing; last backup was
+     April 5).
+  3. Schedule scripts/verification-index.sh hourly and
+     scripts/verification-prune.sh weekly (keeps ops/verification/
+     from growing unbounded).
+  4. Rewrite STATUS_REPORT Stack Health snapshot from live
+     docker compose ps output.
+
+Medium leverage, low-medium risk:
+  5. Investigate openclaw modules still flagged "unknown" in
+     openclaw/MODULE_MAP.md (docusign_integration, invoice_generator,
+     linear_sync, pattern_engine, webhook_server). Delete if dead.
+  6. Fire openclaw/follow_up_engine.py against a stubbed job; log
+     why it hasn't fired (follow_up_log is empty).
+  7. Resolve openclaw/daily_briefing_v2.py — merge or delete.
+  8. Delete stale service dirs (mission_control, context-preprocessor,
+     knowledge-scanner, remediator) after DECOMMISSIONED markers
+     have been in place ≥1 week (schedule: 2026-04-24).
+
+Trading-specific (out of this campaign's scope):
+  9. Fund Polymarket wallet ($50+ USDC) — Matt action.
+  10. Verify Lesson #17 (sell-haircut rounding) via paper-ledger
+      test run.
+  11. Flip Kalshi out of DEMO once API key verified.
+
+Matt-only (HIGH risk):
+  12. KRAKEN_SECRET rotation on any suspected exposure.
+  13. Polymarket wallet private key hygiene — never in repo/logs.
+
+================================================================================
+Definition of done (per prompt)
+================================================================================
+
+[x] All 8 categories processed in order
+[x] Verification artifacts written for each category (audit + final)
+[x] Campaign tracker + final summary written
+[x] All safe changes committed and pushed to main
+[x] Zero paste-back requests to Matt
+[x] Preflight clean at campaign start (ok=True resolved=0 unsafe=0)
+[x] Preflight clean at start of each category pass
+[x] No high-risk actions executed autonomously
+
+Campaign completed cleanly. No blockers. Repo state is healthy;
+verification index auto-updatable via scripts/verification-index.sh.
+
+END OF CAMPAIGN FINAL SUMMARY

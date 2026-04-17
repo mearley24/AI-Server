@@ -87,5 +87,15 @@ PROGRESS LOG (appended per category)
                  ops/MESSAGING_ALERTS.md (new),
                  telegram-interface/README.md (new)
          risk:   LOW (docs + JSON-safe helper)
-[pending] 8. trading-market-automation
+[DONE   ] 8. trading-market-automation
+         audit:  ops/verification/20260417-101400-trading-market-automation-audit.txt
+         final:  ops/verification/20260417-101700-trading-market-automation-final.txt
+         files:  polymarket-bot/STRATEGY_MAP.md (new),
+                 polymarket-bot/SAFETY_CHECKLIST.md (new),
+                 scripts/trading-status-snapshot.sh (new, tested),
+                 ops/verification/20260417-101634-trading-status-snapshot.txt (test run)
+         risk:   LOW (docs + read-only snapshot)
+
+--- CAMPAIGN COMPLETE — all 8 categories processed ---
+See 20260417-*-category-campaign-final.txt for rollup.
 

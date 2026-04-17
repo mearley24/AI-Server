@@ -1,0 +1,109 @@
+==============================================================================
+CATEGORY 8 FINAL: Trading and Market Automation
+==============================================================================
+Generated: 2026-04-17 10:17 MDT
+Companion audit: 20260417-101400-trading-market-automation-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+polymarket-bot/ container (VPN-fronted), 22 src/ files, 27 strategies/
+files, polymarket-bot/config.yaml, redeemer.py + redeemer_summary.json,
+paper ledger, exit_engine, bankroll logic, X intel processor, whale
+scanner, kraken-mm, kalshi DEMO mode, /status endpoint, STATUS_REPORT
+Trading State.
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- polymarket-bot container (LIVE mode, running) ........................... active
+- 10+ strategies ticking (copytrade, stink_bid, flash_crash, etc.) ........ active
+- whale_scanner (56 active, 545 ever) ..................................... active
+- redeemer.py (297 all-time, gas 62.85 POL, 180s) ......................... active
+- exit_engine.py ........................................................... active
+- Bankroll gate ($4.56 USDC, below $50 threshold) ......................... active (blocked)
+- Safety guards (daily-loss, correlation cap, halted) ..................... active
+- paper_ledger (parallel live) ............................................. active
+- Kalshi (DEMO) ............................................................ partial
+- Kraken MM (authentic now; bankroll limits) .............................. active
+- X intel → polymarket ..................................................... active
+- cortex_client (trade events → brain.db) ................................. active
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Full stack live. 11 strategies registered and ticking.
+- Multiple independent safety guards (dry_run, paper_ledger,
+  daily-loss, correlation cap, halted flag, bankroll gate).
+- Redeemer fully functional (297 conditions redeemed all-time).
+- Observability via /status is extensive.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- No consolidated strategy map. FIXED (STRATEGY_MAP.md).
+- Safety controls scattered across files. FIXED (SAFETY_CHECKLIST.md).
+- No "kill all trading" one-line runbook. FIXED inside
+  SAFETY_CHECKLIST.md.
+- Lesson #17 (sell-haircut rounding) still UNKNOWN.
+- No trading alert wiring — plan in MESSAGING_ALERTS.md (Cat 7).
+- No cheap way to capture a timestamped /status dump. FIXED
+  (scripts/trading-status-snapshot.sh, tested).
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- None. Keep the custom stack.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) polymarket-bot/STRATEGY_MAP.md (NEW) — status table for every
+   strategy file: tick counts, params summary, safety interactions.
+   RISK: LOW.
+
+2) polymarket-bot/SAFETY_CHECKLIST.md (NEW) — single-page guide to
+   all safety controls: global (dry_run, paper_ledger, bankroll,
+   VPN) + per-strategy (daily-loss, max_position, spread_floor,
+   halted). Includes a "kill all trading, fast" section with three
+   escalation levels.
+   RISK: LOW.
+
+3) scripts/trading-status-snapshot.sh (NEW) — tested against live
+   /status and /redeem/status endpoints; wrote
+   20260417-101634-trading-status-snapshot.txt. Safe to schedule
+   periodically.
+   RISK: LOW.
+
+All three are LOW risk.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- Lesson #17 still UNKNOWN. Needs a paper-ledger test run.
+- Bankroll blocker (Matt funding task).
+- Kalshi still DEMO.
+- No trading-specific alert wiring yet.
+
+------------------------------------------------------------------------------
+Next actions (deferred)
+------------------------------------------------------------------------------
+- Verify Lesson #17 via a targeted paper-ledger sell on a rounded
+  share price; confirm no infinite loop.
+- Schedule trading-status-snapshot.sh daily via launchd (for
+  end-of-day archive in ops/verification/).
+- Wire trading failure alerts per ops/MESSAGING_ALERTS.md (bankroll
+  low, redeemer fail streak, whale_scanner stalled).
+- Surface paper_ledger score on the dashboard.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     polymarket-bot/STRATEGY_MAP.md
+- ADDED     polymarket-bot/SAFETY_CHECKLIST.md
+- ADDED     scripts/trading-status-snapshot.sh
+- ADDED     ops/verification/20260417-101400-trading-market-automation-audit.txt
+- ADDED     ops/verification/20260417-101634-trading-status-snapshot.txt (test run)
+- ADDED     ops/verification/20260417-101700-trading-market-automation-final.txt
+
+END OF FINAL REPORT — Category 8

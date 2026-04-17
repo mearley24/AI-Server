@@ -1,6 +1,6 @@
 # ops/verification/ INDEX
-# Generated: 2026-04-17 09:41:15 MDT
-# Artifact count: 55
+# Generated: 2026-04-17 10:18:43 MDT
+# Artifact count: 178
 
 ## Newest artifact per topic
 20260417-080652-audio-pipeline.txt
@@ -13,7 +13,25 @@
 20260417-093125-autonomous-hardening-final.txt
 20260417-093739-category-campaign-tracker.txt
 20260417-093900-reliability-observability-audit.txt
-20260417-094103-preflight.txt
+20260417-094200-reliability-observability-final.txt
+20260417-094300-agent-execution-autonomy-audit.txt
+20260417-094530-agent-execution-autonomy-final.txt
+20260417-094700-core-stack-infrastructure-audit.txt
+20260417-095400-core-stack-infrastructure-final.txt
+20260417-095615-memory-state-knowledge-audit.txt
+20260417-095857-cortex-brain-snapshot.txt
+20260417-095900-memory-state-knowledge-final.txt
+20260417-100100-web-automation-integrations-audit.txt
+20260417-100330-web-automation-integrations-final.txt
+20260417-100530-coordination-business-ops-audit.txt
+20260417-100800-coordination-business-ops-final.txt
+20260417-100940-messaging-communications-audit.txt
+20260417-101200-messaging-communications-final.txt
+20260417-101400-trading-market-automation-audit.txt
+20260417-101634-trading-status-snapshot.txt
+20260417-101700-trading-market-automation-final.txt
+20260417-101800-category-campaign-final.txt
+20260417-101839-preflight.txt
 20260417-143625-smoke-git-pull-result.txt
 20260417-143719-verify-task-runner-result.txt
 20260417-144500-bert-hostkey-pin-result.txt
@@ -30,35 +48,39 @@
 20260417-151812-runner-unstick.txt
 20260417-152323-runner-check.txt
 20260417-152400-watchpaths-latency-test-result.txt
+20260417-155223-ollama-openai-probe-result.txt
+20260417-160951-A-pull-qwen3-8b-result.txt
+20260417-160953-B-install-audio-plist-result.txt
+20260417-160955-C-audio-env-verify-result.txt
 
 ## Last 30 artifacts (newest first)
 INDEX.txt
-20260417-094103-preflight.txt
-20260417-093900-reliability-observability-audit.txt
-20260417-094001-preflight.txt
-20260417-093859-preflight.txt
-20260417-093847-preflight.txt
-20260417-093838-preflight.txt
+20260417-101839-preflight.txt
+20260417-101800-category-campaign-final.txt
+20260417-101828-preflight.txt
+20260417-101818-preflight.txt
+20260417-101807-preflight.txt
+20260417-101758-preflight.txt
 20260417-093739-category-campaign-tracker.txt
-20260417-093739-preflight.txt
-20260417-093736-preflight.txt
-20260417-093726-preflight.txt
-20260417-093717-preflight.txt
-20260417-093615-preflight.txt
-20260417-093604-preflight.txt
-20260417-093556-preflight.txt
-20260417-093454-preflight.txt
-20260417-093351-preflight.txt
-20260417-093249-preflight.txt
-20260417-093125-autonomous-hardening-final.txt
-20260417-093238-preflight.txt
-20260417-093227-preflight.txt
-20260417-093217-preflight.txt
-20260417-093206-preflight.txt
-20260417-093157-preflight.txt
-20260417-093145-preflight.txt
-20260417-093134-preflight.txt
-20260417-093123-preflight.txt
-20260417-093114-preflight.txt
-20260417-093106-task-audit-smoke.txt
-20260417-093100-task-runner-health.txt
+20260417-101700-trading-market-automation-final.txt
+20260417-101655-preflight.txt
+20260417-101634-trading-status-snapshot.txt
+20260417-101552-preflight.txt
+20260417-101400-trading-market-automation-audit.txt
+20260417-160955-C-audio-env-verify-result.txt
+20260417-160953-B-install-audio-plist-result.txt
+20260417-160951-A-pull-qwen3-8b-result.txt
+20260417-101250-preflight.txt
+20260417-101239-preflight.txt
+20260417-101229-preflight.txt
+20260417-101200-messaging-communications-final.txt
+20260417-101128-preflight.txt
+20260417-101119-preflight.txt
+20260417-101017-preflight.txt
+20260417-100940-messaging-communications-audit.txt
+20260417-100925-preflight.txt
+20260417-100916-preflight.txt
+20260417-101303-preflight.txt
+20260417-100906-preflight.txt
+20260417-100856-preflight.txt
+20260417-100844-preflight.txt
