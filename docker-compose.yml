@@ -463,6 +463,8 @@ services:
       - EMAIL_MONITOR_URL=http://email-monitor:8092
       - CALENDAR_AGENT_URL=http://calendar-agent:8094
       - OPENCLAW_URL=http://openclaw:3000
+      - BLUEBUBBLES_SERVER_URL=${BLUEBUBBLES_SERVER_URL:-}
+      - BLUEBUBBLES_API_PASSWORD=${BLUEBUBBLES_API_PASSWORD:-}
     depends_on:
       redis:
         condition: service_healthy

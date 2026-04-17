@@ -493,6 +493,19 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       </div>
     </div>
 
+    <!-- Full-width: BlueBubbles -->
+    <div style="grid-column:1 / -1;">
+      <div class="card">
+        <h2>BlueBubbles</h2>
+        <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+          <div><div class="small muted">STATUS</div><div><span id="bb-status">checking…</span></div></div>
+          <div><div class="small muted">PRIVATE API</div><div><span id="bb-private-api">—</span></div></div>
+          <div><div class="small muted">VERSION</div><div><span id="bb-version">—</span></div></div>
+        </div>
+        <div class="small" style="margin-top:8px;"><span id="bb-url" class="muted"></span></div>
+      </div>
+    </div>
+
     <!-- Left column -->
     <div style="display:flex;flex-direction:column;gap:14px;">
 
@@ -687,9 +700,10 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     if (name === 'symphony') {
       if (!_symLoaded) { _symLoaded = true; loadSymphonyOps(); }
       checkMarkupHealth();
+      checkBlueBubblesHealth();
       if (!_markupCheckInterval) {
         _markupCheckInterval = setInterval(() => {
-          if ($('tab-symphony') && $('tab-symphony').classList.contains('active')) checkMarkupHealth();
+          if ($('tab-symphony') && $('tab-symphony').classList.contains('active')) { checkMarkupHealth(); checkBlueBubblesHealth(); }
         }, 30000);
       }
     }
@@ -1373,6 +1387,31 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       $('markup-offline').style.display = 'block';
       $('markup-status').textContent = 'offline';
       $('markup-status').style.color = 'var(--red)';
+    }
+  }
+
+  async function checkBlueBubblesHealth() {
+    try {
+      const r = await fetch('/api/symphony/bluebubbles/health', {signal: AbortSignal.timeout(6000)});
+      const d = await r.json();
+      const el = document.getElementById('bb-status');
+      if (d.status === 'online') {
+        el.textContent = 'online'; el.style.color = 'var(--green)';
+        const pa = document.getElementById('bb-private-api');
+        pa.textContent = d.private_api ? '✓ installed' : '✗ missing';
+        pa.style.color = d.private_api ? 'var(--green)' : 'var(--red)';
+        document.getElementById('bb-version').textContent = d.server_version || '—';
+        const urlEl = document.getElementById('bb-url');
+        urlEl.innerHTML = d.server_url ? `<a href="${d.server_url}" target="_blank" rel="noopener">${d.server_url}</a>` : '';
+      } else {
+        el.textContent = 'offline'; el.style.color = 'var(--red)';
+        document.getElementById('bb-private-api').textContent = '—';
+        document.getElementById('bb-version').textContent = '—';
+        document.getElementById('bb-url').textContent = d.error || '';
+      }
+    } catch {
+      const el = document.getElementById('bb-status');
+      if (el) { el.textContent = 'offline'; el.style.color = 'var(--red)'; }
     }
   }
 

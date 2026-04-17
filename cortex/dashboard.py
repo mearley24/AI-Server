@@ -1062,6 +1062,30 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
     PROPOSALS_URL = os.environ.get("PROPOSALS_URL", "http://proposals:8091")
     CLIENT_PORTAL_URL = os.environ.get("CLIENT_PORTAL_URL", "http://client-portal:8096")
     MARKUP_URL = os.environ.get("MARKUP_URL", "http://host.docker.internal:8088")
+    BLUEBUBBLES_URL = os.environ.get("BLUEBUBBLES_SERVER_URL", "")
+    BLUEBUBBLES_PASSWORD = os.environ.get("BLUEBUBBLES_API_PASSWORD", "")
+
+    @app.get("/api/symphony/bluebubbles/health")
+    async def symphony_bluebubbles_health():
+        if not BLUEBUBBLES_URL or not BLUEBUBBLES_PASSWORD:
+            return {"status": "offline", "error": "not configured"}
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                r = await client.get(
+                    f"{BLUEBUBBLES_URL}/api/v1/server/info",
+                    params={"password": BLUEBUBBLES_PASSWORD},
+                )
+            if r.status_code != 200:
+                return {"status": "offline", "http_status": r.status_code}
+            data = r.json().get("data", {})
+            return {
+                "status": "online",
+                "server_url": BLUEBUBBLES_URL,
+                "private_api": bool(data.get("private_api")),
+                "server_version": data.get("server_version"),
+            }
+        except Exception as exc:
+            return {"status": "offline", "error": str(exc)}
 
     @app.get("/api/symphony/proposals/templates")
     async def symphony_proposals_templates():
