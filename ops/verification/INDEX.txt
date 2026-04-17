@@ -1,0 +1,64 @@
+# ops/verification/ INDEX
+# Generated: 2026-04-17 09:41:15 MDT
+# Artifact count: 55
+
+## Newest artifact per topic
+20260417-080652-audio-pipeline.txt
+20260417-083639-rejections.txt
+20260417-083804-context-snapshot
+20260417-083909-task-runner-bootstrap.txt
+20260417-084103-fix-unmerged-state-files.txt
+20260417-093100-task-runner-health.txt
+20260417-093106-task-audit-smoke.txt
+20260417-093125-autonomous-hardening-final.txt
+20260417-093739-category-campaign-tracker.txt
+20260417-093900-reliability-observability-audit.txt
+20260417-094103-preflight.txt
+20260417-143625-smoke-git-pull-result.txt
+20260417-143719-verify-task-runner-result.txt
+20260417-144500-bert-hostkey-pin-result.txt
+20260417-144900-audio-seed-rsync-result.txt
+20260417-145500-verify-audio-pipeline-result.txt
+20260417-145800-flatten-audio-incoming-result.txt
+20260417-150200-verify-audio-post-flatten-result.txt
+20260417-150700-verify-audio-after-worker-tick-result.txt
+20260417-151000-install-audio-plist-result.txt
+20260417-151001-kick-audio-intake-result.txt
+20260417-151002-verify-audio-after-kick-result.txt
+20260417-151200-install-task-runner-plist-result.txt
+20260417-151201-kick-task-runner-result.txt
+20260417-151812-runner-unstick.txt
+20260417-152323-runner-check.txt
+20260417-152400-watchpaths-latency-test-result.txt
+
+## Last 30 artifacts (newest first)
+INDEX.txt
+20260417-094103-preflight.txt
+20260417-093900-reliability-observability-audit.txt
+20260417-094001-preflight.txt
+20260417-093859-preflight.txt
+20260417-093847-preflight.txt
+20260417-093838-preflight.txt
+20260417-093739-category-campaign-tracker.txt
+20260417-093739-preflight.txt
+20260417-093736-preflight.txt
+20260417-093726-preflight.txt
+20260417-093717-preflight.txt
+20260417-093615-preflight.txt
+20260417-093604-preflight.txt
+20260417-093556-preflight.txt
+20260417-093454-preflight.txt
+20260417-093351-preflight.txt
+20260417-093249-preflight.txt
+20260417-093125-autonomous-hardening-final.txt
+20260417-093238-preflight.txt
+20260417-093227-preflight.txt
+20260417-093217-preflight.txt
+20260417-093206-preflight.txt
+20260417-093157-preflight.txt
+20260417-093145-preflight.txt
+20260417-093134-preflight.txt
+20260417-093123-preflight.txt
+20260417-093114-preflight.txt
+20260417-093106-task-audit-smoke.txt
+20260417-093100-task-runner-health.txt

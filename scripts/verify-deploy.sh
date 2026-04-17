@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
+# scripts/verify-deploy.sh — post-deploy smoke test.
+# Replaces the dissolved mission-control probe with cortex (8102) and adds
+# coverage for email-monitor, notification-hub, proposals, calendar-agent.
+# See CLAUDE.md + STATUS_REPORT.md (Cortex merged mission-control 2026-04-12).
 set -euo pipefail
 ROOT="${SYMPHONY_ROOT:-$HOME/AI-Server}"
 cd "$ROOT"
 FAIL=0
+
 echo "=== Manifest: expected files ==="
+# Manifest covers the canonical orchestrator + brain + compose surface.
+# mission_control/main.py removed — dissolved into cortex (Prompt S).
 MANIFEST=(
   "openclaw/main.py"
   "openclaw/orchestrator.py"
   "openclaw/doc_staleness.py"
   "openclaw/doc_generator.py"
   "openclaw/zoho_auth.py"
-  "mission_control/main.py"
+  "cortex/engine.py"
+  "cortex/dashboard.py"
+  "cortex/memory.py"
   "docker-compose.yml"
 )
 for f in "${MANIFEST[@]}"; do
@@ -19,6 +28,7 @@ for f in "${MANIFEST[@]}"; do
     FAIL=1
   fi
 done
+
 echo ""
 echo "=== Redis PING (container) ==="
 if docker exec redis redis-cli PING 2>/dev/null | grep -q PONG; then
@@ -39,16 +49,28 @@ fi
 
 echo ""
 echo "=== HTTP health ==="
-for pair in "http://127.0.0.1:8098/health mission-control" "http://127.0.0.1:8099/health openclaw"; do
+# Canonical service port map (see .clinerules / CLAUDE.md).
+# openclaw 8099, cortex 8102, email-monitor 8092, notification-hub 8095,
+# proposals 8091, calendar-agent 8094. Client-portal intentionally internal.
+HTTP_TARGETS=(
+  "http://127.0.0.1:8099/health openclaw"
+  "http://127.0.0.1:8102/health cortex"
+  "http://127.0.0.1:8092/health email-monitor"
+  "http://127.0.0.1:8095/health notification-hub"
+  "http://127.0.0.1:8091/health proposals"
+  "http://127.0.0.1:8094/health calendar-agent"
+)
+for pair in "${HTTP_TARGETS[@]}"; do
   url="${pair%% *}"
   name="${pair##* }"
   if curl -sfS --connect-timeout 3 "$url" >/dev/null; then
     echo "OK $name"
   else
-    echo "FAIL $name"
+    echo "FAIL $name ($url)"
     FAIL=1
   fi
 done
+
 echo ""
 echo "=== Redis events:log (sample) ==="
 if docker exec redis redis-cli LRANGE events:log 0 0 >/dev/null 2>&1; then
@@ -56,8 +78,9 @@ if docker exec redis redis-cli LRANGE events:log 0 0 >/dev/null 2>&1; then
 else
   echo "(redis not reachable)"
 fi
+
 echo ""
-echo "=== polymarket-bot redeemer (optional) ==="
+echo "=== polymarket-bot redeemer (optional, routes via VPN) ==="
 if curl -sfS --connect-timeout 3 "http://127.0.0.1:8430/redeem/status" 2>/dev/null | head -c 400; then
   echo ""
   echo "OK /redeem/status reachable"
@@ -67,9 +90,15 @@ fi
 
 echo ""
 echo "=== SQLite DBs ==="
-for db in "data/openclaw/jobs.db" "data/email-monitor/emails.db"; do
+for db in \
+  "data/openclaw/jobs.db" \
+  "data/openclaw/decision_journal.db" \
+  "data/email-monitor/emails.db" \
+  "data/email-monitor/follow_ups.db" \
+  "data/cortex/brain.db"; do
   if [ -f "$db" ]; then echo "OK exists $db"; else echo "WARN missing $db"; fi
 done
+
 echo ""
 if [ "$FAIL" -ne 0 ]; then echo "verify-deploy: FAILED"; exit 1; fi
 echo "verify-deploy: OK"

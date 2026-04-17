@@ -1,0 +1,251 @@
+==============================================================================
+CATEGORY 1 AUDIT: Reliability and Observability
+==============================================================================
+Generated: 2026-04-17 09:39 MDT
+Scope: ops/verification/, health checks, task audit tooling, watchdog
+       patterns, pull.sh protections, status snapshots, logging,
+       self-healing mechanisms.
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- scripts/pull.sh (108 lines, zsh)
+- scripts/smoke-test.sh (~40+ lines, end-to-end smoke)
+- scripts/verify-deploy.sh (~80 lines, manifest + redis + http health)
+- scripts/bob-watchdog.sh (6265 bytes, self-healing launchd watchdog)
+- scripts/verify-cursor.sh (post-edit file presence check)
+- scripts/service-audit.sh, scripts/healthcheck.sh
+- scripts/untrack-runtime-json.sh
+- ops/task_runner_health.py (363 lines — runner health checker)
+- ops/task_runner_preflight.py (self-heal whitelist + reporting)
+- ops/task_audit.py (~200 lines — task forensic utility)
+- ops/verification/ (48 timestamped artifacts as of this pass)
+- ops/launchd/com.symphony.task-runner-health.plist
+- ~/Library/LaunchAgents/com.symphony.* (47+ launchd jobs)
+- .gitattributes (merge=ours whitelist)
+- .gitignore (runtime state exclusions)
+- Redis events:log (1000-capped rotating)
+- STATUS_REPORT.md snapshot
+- Docker compose healthchecks (per-service)
+- Cortex dashboard service health matrix (16 services polled)
+
+------------------------------------------------------------------------------
+2. Items found and status
+------------------------------------------------------------------------------
+
+A. ops/verification/ directory                        STATUS: active
+   - 48 artifacts as of 2026-04-17 09:38
+   - Recent entries show preflight, task-runner-health, audit, context-snapshot,
+     autonomous-hardening-final, and per-task result dumps.
+   - Pattern is followed by preflight + task_runner jobs consistently.
+
+B. ops/AGENT_VERIFICATION_PROTOCOL.md                 STATUS: active
+   - Authoritative rule doc. 179 lines. Clear tee-to-file + commit + push
+     pattern. Explicit zsh hazard table. Risk tiers aligned with CLAUDE.md.
+
+C. scripts/pull.sh                                    STATUS: active
+   - 108 lines, zsh, `set -euo pipefail`.
+   - Stashes local changes, resets the known-conflicting
+     data/network_watch/dropout_watch_status.json file, pulls with rebase,
+     scans for merge markers (resets to origin/main if found), py_compile
+     validates 6 service dirs, auto-restarts openclaw+cortex, auto-rebuilds
+     services whose dir changed in the last commit, `--verify` triggers
+     smoke-test.sh.
+   - Already 108 lines (STATUS_REPORT Later item said "target ~90"; surpassed).
+
+D. scripts/smoke-test.sh                              STATUS: active
+   - End-to-end smoke covering orchestrator tick, Redis events, DB row counts,
+     service health. Optional SMOKE_REBUILD flag. launchd: weekly Sundays.
+
+E. scripts/verify-deploy.sh                           STATUS: partial
+   - Checks Redis PING, Redis static IP, http://8098/health (mission-control)
+     and http://8099/health (openclaw). DB existence checks.
+   - Stale: still probes mission-control at 8098 — mission-control was
+     dissolved into cortex at 8102 per Prompt S / CLAUDE.md. The FAIL when
+     that endpoint goes away is a false alarm.
+   - Missing: cortex health at 8102, email-monitor 8092, notification-hub
+     8095, proposals 8091, calendar-agent 8094.
+   - Expected manifest still lists `mission_control/main.py` which was
+     removed.
+
+F. scripts/verify-cursor.sh                           STATUS: active
+   - Post-edit existence + nonempty check. Used by AGENTS.md lesson #12/#20.
+
+G. scripts/bob-watchdog.sh                            STATUS: active
+   - 6 KB, self-healing loop: Tailscale, DNS, Docker, Redis auth, openclaw,
+     disk pressure. Cooldowns to avoid thrash. Logs to
+     /usr/local/var/log/bob-watchdog.log.
+
+H. ops/task_runner_preflight.py                       STATUS: active
+   - Whitelist-based auto-heal of generated/state files via checkout --ours
+     + .gitattributes enforcement + timestamped report.
+   - Dry-run at campaign start: ok=True resolved=0 staged=0 unsafe=0.
+
+I. ops/task_runner_health.py                          STATUS: active
+   - 5 checks: launchd, heartbeat freshness, stuck pending queue, recent
+     verification activity, preflight presence. JSON result + human txt.
+   - Live run at campaign start: healthy, all 5 OK. Heartbeat age 266s,
+     pending=0, newest artifact age 19s, preflight age 38s.
+   - Installed plist at ops/launchd/com.symphony.task-runner-health.plist.
+
+J. ops/task_audit.py                                  STATUS: active
+   - Given a substring, finds matching verification + queue files, dumps
+     first/last lines and structured JSON. Fast forensics tool.
+
+K. Redis events:log (1000 capped)                     STATUS: active
+   - Real traffic. Used by dashboard `events` widget. Policy said
+     notifier.py should publish `ops:email_action` after urgent classify —
+     STATUS_REPORT claims Done 2026-04-13 (§N), but §8 of April 13 audit
+     said "Zero matches for `ops:email_action` in notifier.py". Mixed
+     signals; re-check needed in Category 7.
+
+L. .gitattributes merge=ours whitelist                STATUS: active
+   - Two lines: `knowledge/markup_exports/.session_tracking.json` and
+     `data/cortex/digests/**`. Matches preflight whitelist.
+   - Minor gap: preflight code comment says "Any other path explicitly
+     listed as merge=ours in .gitattributes" is auto-resolved, but the
+     whitelist is small. For runtime JSON that still causes pull pain
+     (see STATUS_REPORT Later pull.sh hardening), an additional
+     `data/network_watch/**` entry could be whitelisted — though pull.sh
+     already uses `git checkout --` + gitignore for that case.
+
+M. Docker healthchecks                                STATUS: partial
+   - Every new service required to have GET /health per .clinerules.
+   - Known gap: client-portal still unhealthy (no /health route) — see
+     STATUS_REPORT Later. markup-tool uses root `/` since it has no
+     /health. Not fixed here (tier-low, but outside scope of this category).
+
+N. LaunchAgents suite                                 STATUS: active, sprawling
+   - 47+ com.symphony.* plists installed. Some overlap: com.symphony.core-
+     ops-health-hourly, com.symphony.service-sre-loop, com.symphony.focus-
+     ops-monitor, com.symphony.smoke-test, com.symphony.failure-replay-
+     queue. No single index documenting what each one does.
+   - Risk: silent drift when a plist references a script that moves or
+     renames. CLAUDE.md lesson #23 policy (`[ -f script ] && load`) is
+     policy-level but not enforced by a sweeper.
+
+O. Cortex dashboard service health tile               STATUS: active
+   - 16 services polled. Covered by dashboard.py.
+
+P. Status snapshots / STATUS_REPORT.md                STATUS: stale-fresh mix
+   - Lives at repo root; last updated 2026-04-17. Internally consistent
+     for completed items, but still references some April 12 snapshot
+     counts that are not being auto-refreshed.
+
+Q. Self-healing mechanisms                            STATUS: active
+   - bob-watchdog.sh (system-level), remediator container (Docker-level),
+     task_runner_preflight (repo-level), x-intake _listener_watchdog
+     (service-level), dropbox-organizer LaunchAgent (integration-level).
+
+R. Lessons-learned loop                               STATUS: active
+   - STATUS_REPORT records 19/25 green lessons as of §Z7 pass. The
+     remaining 6 (doc staleness, dropbox link validator, sell-haircut
+     rounding) are tracked in Later.
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- Extremely strong verification culture. Every tick writes a timestamped
+  artifact; 48 files since ~09:00 this morning.
+- Preflight + whitelist self-heal prevents pull conflicts without human
+  intervention.
+- Task-runner health check is a proper machine-readable JSON+human txt
+  artifact with exit codes — wireable into launchd alerting.
+- bob-watchdog.sh is multi-layer, self-bounded, cooldown-protected.
+- .gitattributes + pull.sh combine to make `bash scripts/pull.sh` the
+  safe, idempotent git entrypoint.
+- Multiple redundant self-healing layers (system, Docker, repo, service).
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses / missing pieces
+------------------------------------------------------------------------------
+- scripts/verify-deploy.sh still probes mission-control 8098 (removed).
+  Every run emits a FAIL for a service that no longer exists. This is
+  actively misleading any agent reading the artifact.
+- scripts/verify-deploy.sh does not probe cortex (8102), email-monitor,
+  notification-hub, proposals, calendar-agent, polymarket-bot, x-intake.
+  Its coverage is narrower than reality.
+- No single launchd inventory doc: 47 plists, no map. When one silently
+  fails its target script is missing, there is no sweeper to catch it.
+- No `ops/verification/` retention policy — grows unbounded. With ~50
+  artifacts/day it will reach 5–10k within ~6 months. Eventually `ls`
+  gets slow and dashboard widgets that enumerate recent artifacts bog.
+- No aggregated "last N verification artifacts" summary — agents and
+  dashboards must list the dir and sort. A rotating `ops/verification/
+  INDEX.txt` that names the newest per topic would be cheap.
+- Heartbeat staleness threshold (900s) is generous. A silent runner
+  failure won't alarm for 15 min. Acceptable for v1 but no alerting
+  route when `ok=False` beyond exit code.
+- No `scripts/doctor.sh` style aggregator. An operator must run
+  verify-deploy, smoke-test, task_runner_health, and bob-watchdog status
+  separately. Each produces a different artifact format.
+- CLAUDE.md lesson #17 (sell haircut rounding) still UNKNOWN.
+- Dropbox link validator (lesson #4) still absent.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Supervisor-style health: replacing stdout/JSON aggregates with a
+  lightweight Prometheus `node_exporter` + textfile-collector would give
+  a time series. Not worth the complexity yet — Redis events:log
+  already covers recency. Skip.
+- structlog (pypi) for Python services — unified JSON structured log
+  output. Would reduce the ad-hoc logger.info lines. Low priority.
+- healthchecks.io external ping for bob-watchdog + task-runner. Adds a
+  remote dead-man switch without moving infra. Optional.
+- None of the above worth the churn today. Current stack is
+  sufficient — fix the stale probes and add a retention+index layer
+  instead.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+- Patch scripts/verify-deploy.sh to remove obsolete mission-control
+  probe and mission_control/main.py from the manifest, and add cortex
+  (8102), email-monitor (8092), notification-hub (8095), proposals
+  (8091), calendar-agent (8094).
+- Add scripts/verification-index.sh — regenerates
+  ops/verification/INDEX.txt listing the newest artifact per topic and
+  a tail of the last 30 artifacts, to make forensics faster.
+- Add scripts/verification-prune.sh — dry-run by default, prunes
+  ops/verification/ artifacts older than N days (default 90),
+  preserving anything matching `*-final.txt`, `*-campaign-*.txt`,
+  `*-blocker-*.txt`. Not run automatically here; exists for future
+  scheduling.
+
+(All three are LOW risk by the standing approval policy: repo hygiene,
+internal automation improvements, diagnostics.)
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- No automated alert when task_runner_health.py exits 1. The plist
+  runs every 2 min and writes a file but the health=FAIL condition
+  is only visible by reading the file. Adding iMessage/notify-hub
+  alerting would cross into Category 7 (messaging) and is left for
+  that pass.
+- Launchd sprawl (47 plists, no index). A misfire is silent until the
+  dependent path breaks.
+- ops/verification/ retention unbounded.
+- mission-control probe still in smoke-test.sh PATH grep (docker logs
+  step only mentions openclaw); no cleanup needed there but should be
+  revisited.
+
+------------------------------------------------------------------------------
+8. Next actions (recommended, not executed this pass)
+------------------------------------------------------------------------------
+- HIGH leverage, LOW risk (do next pass):
+    * Hook task_runner_health.py FAIL exit into notification-hub so a
+      one-shot iMessage ping goes out on degraded state.
+    * Schedule scripts/verification-prune.sh weekly (Sunday) via launchd.
+    * Write ops/AGENTS_LAUNCHD_INDEX.md enumerating each installed
+      com.symphony.* plist with purpose, frequency, script target, and
+      last verified date. Add a checker that warns on missing target.
+- MEDIUM leverage, MEDIUM risk:
+    * Replace scripts/smoke-test.sh port probes with a matrix read from
+      docker-compose.yml healthcheck definitions so drift is impossible.
+- Lesson #4 Dropbox link validator + Lesson #17 sell haircut rounding:
+  Category-specific follow-ups (web integrations / trading).
+
+END OF AUDIT — see 20260417-*-reliability-observability-final.txt for
+the summary of what was changed this pass.

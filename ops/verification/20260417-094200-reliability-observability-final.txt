@@ -1,0 +1,142 @@
+==============================================================================
+CATEGORY 1 FINAL: Reliability and Observability
+==============================================================================
+Generated: 2026-04-17 09:42 MDT
+Companion audit: 20260417-093900-reliability-observability-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+ops/verification/, ops/task_runner_preflight.py, ops/task_runner_health.py,
+ops/task_audit.py, scripts/pull.sh, scripts/smoke-test.sh,
+scripts/verify-deploy.sh, scripts/verify-cursor.sh, scripts/bob-watchdog.sh,
+.gitattributes, .gitignore, Redis events:log, launchd plist inventory,
+Cortex dashboard service health matrix, self-healing mechanisms.
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- ops/verification/ artifact dir (48 → 55 files during this pass) ............ active
+- ops/AGENT_VERIFICATION_PROTOCOL.md ........................................ active
+- scripts/pull.sh (108 lines, conflict-safe) ................................ active
+- scripts/smoke-test.sh ..................................................... active
+- scripts/verify-deploy.sh .................................................. partial→active (patched)
+- scripts/verify-cursor.sh .................................................. active
+- scripts/bob-watchdog.sh ................................................... active
+- ops/task_runner_preflight.py .............................................. active
+- ops/task_runner_health.py ................................................. active (dry-run healthy)
+- ops/task_audit.py ......................................................... active
+- Redis events:log (1000 capped) ............................................ active
+- .gitattributes merge=ours whitelist ....................................... active (small but correct)
+- Docker per-service healthchecks ........................................... partial (client-portal gap)
+- LaunchAgents suite (47+ plists) ........................................... active, no inventory doc
+- Cortex dashboard health tile .............................................. active
+- STATUS_REPORT.md status snapshots ......................................... fresh + some stale counts
+- Self-healing (watchdog / preflight / remediator / x-intake) ............... active
+- Lessons learned scorecard (19/25 green) ................................... active
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Strong verify-to-file culture; every tick writes an artifact that another
+  agent can read without asking a human.
+- Preflight whitelist auto-heal gives safe unattended git pulls.
+- task_runner_health.py produces machine-readable JSON + human summary,
+  with exit codes suitable for launchd alert wiring.
+- Multiple independent self-healing layers (system, Docker, repo, service).
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- verify-deploy.sh was probing the dissolved mission-control service and
+  missing cortex + four other current services — FIXED this pass.
+- No index of artifacts; forensic queries require `ls` + manual sort —
+  ADDED verification-index.sh this pass.
+- No retention policy for ops/verification/ — ADDED verification-prune.sh
+  this pass (dry-run by default, preserves -final / -campaign- / -blocker-
+  artifacts; not scheduled yet).
+- Launchd sprawl (47 plists, no single map) — deferred.
+- No automatic alert when task_runner_health fails — deferred until
+  Category 7 (messaging) so the wiring reuses notification-hub.
+- CLAUDE.md lesson #17 (sell haircut rounding) + lesson #4 (Dropbox link
+  validator) — handled in Category 5 (web/integrations) and Category 8
+  (trading).
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- structlog for unified Python JSON logs — low priority.
+- Prometheus node_exporter + textfile — overkill; Redis events:log
+  already covers recency needs.
+- healthchecks.io external dead-man pings — optional remote backup.
+
+Net: current stack is sufficient. Hardening the existing tools beats
+swapping them.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) scripts/verify-deploy.sh updated:
+   - Removed mission_control/main.py from the manifest.
+   - Removed 8098 mission-control health probe.
+   - Added probes for cortex (8102), email-monitor (8092),
+     notification-hub (8095), proposals (8091), calendar-agent (8094).
+   - Expanded SQLite DB existence list to include decision_journal.db,
+     follow_ups.db (canonical after 2026-04-17 consolidation), and
+     brain.db.
+   - Added cortex/engine.py, cortex/dashboard.py, cortex/memory.py to
+     the manifest.
+   RISK: LOW. No destructive operations; all checks are read-only.
+
+2) scripts/verification-index.sh added:
+   - Produces ops/verification/INDEX.txt with "newest per topic" and
+     the last 30 artifacts. Bounded, idempotent, no network.
+   - Test run: wrote 64-line INDEX.txt listing 55 artifacts.
+   RISK: LOW. Write-only to a single index file. No deletions.
+
+3) scripts/verification-prune.sh added:
+   - Dry-run by default. Prunes files older than --days (default 90).
+   - Preserves -final, -campaign-, and -blocker- artifacts.
+   - Test run: "nothing older than 90 days. Exit." (expected — repo
+     is young).
+   RISK: LOW when dry-run (default). MEDIUM only when --execute is
+   passed. No launchd scheduling added in this pass.
+
+All three changes respect the standing approval policy (low-risk,
+repo-safe operational improvements inside AI-Server).
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- verify-deploy.sh may now surface FAIL for email-monitor / notification-
+  hub / proposals / calendar-agent if any of those services is actually
+  down. This is intentional — the tool is supposed to alert on real
+  failures, not ignore them. Operator should run it after the next
+  deploy to baseline which services are currently healthy.
+- task_runner_health alerting still not wired to an output channel.
+- Launchd plist sprawl remains; no sweeper.
+
+------------------------------------------------------------------------------
+Next actions (deferred to later passes)
+------------------------------------------------------------------------------
+- Schedule verification-index.sh via launchd (hourly) so dashboards can
+  just read INDEX.txt.
+- Schedule verification-prune.sh --execute weekly (Sunday 03:30).
+- Wire task_runner_health FAIL → notification-hub iMessage (Category 7).
+- Write ops/AGENTS_LAUNCHD_INDEX.md cataloguing all com.symphony.*
+  plists and add a missing-target checker.
+- Replace hardcoded port lists in smoke-test.sh and verify-deploy.sh
+  with a single source of truth read from docker-compose.yml.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  scripts/verify-deploy.sh  (refreshed for Cortex merge +
+                                       current service roster)
+- ADDED     scripts/verification-index.sh
+- ADDED     scripts/verification-prune.sh
+- ADDED     ops/verification/20260417-093900-reliability-observability-audit.txt
+- ADDED     ops/verification/20260417-094200-reliability-observability-final.txt
+- ADDED     ops/verification/INDEX.txt  (generated by new helper)
+
+END OF FINAL REPORT — Category 1
