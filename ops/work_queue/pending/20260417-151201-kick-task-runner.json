@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T15:12:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "script": "kick-task-runner"
+  },
+  "signature": "H/Tqn3rulbMWsRHETw2VfUBnAFmjf0MoG8gMJQ0M2QjDYTTRpdkzPMnw9O/103prKKgngSwMOqGS+wPapgi2BA==",
+  "task_id": "20260417-151201-kick-task-runner",
+  "task_type": "run_script"
+}

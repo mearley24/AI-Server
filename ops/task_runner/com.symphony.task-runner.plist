@@ -15,7 +15,23 @@
     <key>AI_SERVER_ROOT</key><string>/Users/bob/AI-Server</string>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
-  <key>StartInterval</key><integer>120</integer>
+  <!-- Fire on ANY change in pending/ or when origin/main moves (git pull updates -->
+  <!-- refs/heads/main via FETCH_HEAD). Event-driven: no waiting for interval. -->
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/bob/AI-Server/ops/work_queue/pending</string>
+    <string>/Users/bob/AI-Server/.git/refs/heads/main</string>
+    <string>/Users/bob/AI-Server/.git/FETCH_HEAD</string>
+  </array>
+  <key>QueueDirectories</key>
+  <array>
+    <string>/Users/bob/AI-Server/ops/work_queue/pending</string>
+  </array>
+  <!-- Safety net: still tick on an interval in case no fs event fires (e.g.  -->
+  <!-- when a remote commit lands but the local checkout isn't pulled yet).   -->
+  <key>StartInterval</key><integer>60</integer>
+  <!-- Coalesce burst events from multi-file commits. 10s debounce. -->
+  <key>ThrottleInterval</key><integer>10</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>/Users/bob/AI-Server/data/task_runner/launchd.out.log</string>
   <key>StandardErrorPath</key><string>/Users/bob/AI-Server/data/task_runner/launchd.err.log</string>

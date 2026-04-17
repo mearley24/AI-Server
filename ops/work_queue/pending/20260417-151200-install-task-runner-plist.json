@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T15:12:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "script": "install-task-runner-plist"
+  },
+  "signature": "Pio/sGQdkpx6OlXQm+XBtdIEe8UH0m6Xj3Qt+2CXHNe6hkbYLPTQt+rQLC9nTveUnpVdL99WfdKcPFIkTfC0AA==",
+  "task_id": "20260417-151200-install-task-runner-plist",
+  "task_type": "run_script"
+}
