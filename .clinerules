@@ -74,6 +74,12 @@ AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration
 - `printf 'line1\nline2\nline3\n' > file.txt`
 - `echo 'line1' > f && echo 'line2' >> f`
 
+### Agent Verification Protocol (REQUIRED READING)
+
+**See `ops/AGENT_VERIFICATION_PROTOCOL.md` — authoritative.**
+
+Any diagnostic / verification / seed-run / deployment bash block you hand Matt MUST end with tee-to-file + git commit + git push to `ops/verification/YYYYMMDD-HHMMSS-<topic>.txt`. Never ask Matt to paste terminal output back into chat. One paste in, one commit out, another agent reads the file directly. No exceptions. This rule is non-negotiable per Matt: "anything you ever need from me should be added to the code at the end and saved to the file so you can access it without me pasting a bunch of credit wasting slop."
+
 ### Git Rules
 - ALWAYS use `bash scripts/pull.sh` instead of bare `git pull`
 - Commit messages: imperative mood, 72 chars max subject

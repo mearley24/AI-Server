@@ -34,8 +34,12 @@ Paste this whole block into Bert's Terminal. It:
 If it gets interrupted (laptop lid closed, WiFi drop), just paste it again — rsync picks up where it left off and the worker holds a single-instance lock.
 
 ```bash
-set -euo pipefail
 BOB="bob@bobs-mac-mini.tailbcf3fe.ts.net"
+STAMP="$(date '+%Y%m%d-%H%M%S')"
+LOG="/tmp/audio-seed-run-${STAMP}.log"
+
+{
+set -euo pipefail
 
 echo "=== 0. Tailscale check (Bert side) ==="
 tailscale status | grep -E "bobs-mac-mini|100\.89\.1\.51" || { echo "Bob not in tailnet — abort"; exit 1; }
@@ -77,9 +81,26 @@ done
 echo "=== 7. Final per-file report ==="
 ssh "$BOB" "sqlite3 -header -column /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT id, original_name, status, source_date, substr(error_msg,1,40) AS err FROM audio_intake_queue ORDER BY id\""
 
-echo "=== 8. Done — if every row is 'done', originals on Bert are safe to delete: ==="
+echo "=== 8. Transcripts written ==="
+ssh "$BOB" "ls -1 /Users/bob/AI-Server/data/transcripts/meetings/ 2>/dev/null | head -30"
+
+echo "=== 9. Cortex meeting_intel sample (first 2KB) ==="
+ssh "$BOB" "curl -s http://127.0.0.1:8102/api/meetings/recent | head -c 2000"
+echo ""
+
+echo "=== 10. Delete hint (NOT auto-executed — review above first) ==="
 echo "    rm -rf ~/Documents/Audio\\ Recordings/RECORD/2024*"
 echo "    rm -rf ~/Documents/Audio\\ Recordings/MEETING/2024*"
+} 2>&1 | tee "$LOG"
+
+echo ""
+echo "=== 11. Push log to Bob's repo for agent review (per ops/AGENT_VERIFICATION_PROTOCOL.md) ==="
+REMOTE_PATH="/Users/bob/AI-Server/ops/verification/${STAMP}-audio-seed-run.txt"
+ssh "$BOB" "mkdir -p /Users/bob/AI-Server/ops/verification"
+scp "$LOG" "${BOB}:${REMOTE_PATH}"
+ssh "$BOB" "cd /Users/bob/AI-Server && git -c user.email='earleystream@gmail.com' -c user.name='Perplexity Computer' add ops/verification/${STAMP}-audio-seed-run.txt && git -c user.email='earleystream@gmail.com' -c user.name='Perplexity Computer' commit -m 'ops: audio seed-run log ${STAMP}' && git push origin main 2>&1 | tail -3"
+echo ""
+echo "DONE. Seed-run log committed. Reply to the agent: 'seed run pushed'."
 ```
 
 ---
