@@ -1,0 +1,2 @@
+bad-type.json: unknown task_type: 'rm_rf_home'
+bad-unsigned.json: signature check failed: no signature field
