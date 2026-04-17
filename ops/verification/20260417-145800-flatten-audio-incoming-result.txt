@@ -1,0 +1,54 @@
+### task 20260417-145800-flatten-audio-incoming type=run_script signer=perplexity-computer
+### started 2026-04-17T08:59:50-06:00
+
+=== run_script flatten-audio-incoming @ 2026-04-17T08:59:50-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/flatten-audio-incoming.sh']
+moved: 40
+collisions: 0
+incoming contents after flatten:
+total 26929680
+drwx------  60 bob  staff       1920 Apr 17 08:59 .
+drwxr-xr-x  10 bob  staff        320 Apr 17 08:55 ..
+drwx------   3 bob  staff         96 Apr 17 08:59 20240706
+-rwx------   1 bob  staff  110984192 Jul  6  2024 20240706__1720277040.WAV
+drwx------   4 bob  staff        128 Apr 17 08:59 20240711
+-rwx------   1 bob  staff  574081152 Jul 11  2024 20240711__1720713490.WAV
+-rwx------   1 bob  staff  270344192 Jul 11  2024 20240711__1720731432.WAV
+drwx------   5 bob  staff        160 Apr 17 08:59 20240712
+-rwx------   1 bob  staff  574081152 Jul 12  2024 20240712__1720791149.WAV
+-rwx------   1 bob  staff  574081152 Jul 12  2024 20240712__1720809091.WAV
+-rwx------   1 bob  staff   16128512 Jul 12  2024 20240712__1720827031.WAV
+drwx------   5 bob  staff        160 Apr 17 08:59 20240714
+-rwx------   1 bob  staff  559383552 Jul 14  2024 20240714__1720959326.WAV
+-rwx------   1 bob  staff  574081152 Jul 14  2024 20240714__1720976932.WAV
+-rwx------   1 bob  staff  119251712 Jul 14  2024 20240714__1720994874.WAV
+drwx------   5 bob  staff        160 Apr 17 08:59 20240715
+-rwx------   1 bob  staff  574081152 Jul 15  2024 20240715__1721053950.WAV
+-rwx------   1 bob  staff  574081152 Jul 15  2024 20240715__1721071892.WAV
+-rwx------   1 bob  staff   29067392 Jul 15  2024 20240715__1721089832.WAV
+drwx------   6 bob  staff        192 Apr 17 08:59 20240716
+-rwx------   1 bob  staff  149676032 Jul 16  2024 20240716__1721136047.WAV
+-rwx------   1 bob  staff  574081152 Jul 16  2024 20240716__1721142099.WAV
+-rwx------   1 bob  staff   44104832 Jul 16  2024 20240716__1721160041.WAV
+-rwx------   1 bob  staff     120192 Jul 16  2024 20240716__1721161421.WAV
+drwx------   4 bob  staff        128 Apr 17 08:59 20240717
+-rwx------   1 bob  staff  574081152 Jul 17  2024 20240717__1721222719.WAV
+-rwx------   1 bob  staff  496275072 Jul 17  2024 20240717__1721240661.WAV
+drwx------   4 bob  staff        128 Apr 17 08:59 20240718
+-rwx------   1 bob  staff  574081152 Jul 18  2024 20240718__1721311969.WAV
+-rwx------   1 bob  staff  276139392 Jul 18  2024 20240718__1721329911.WAV
+drwx------   5 bob  staff        160 Apr 17 08:59 20240719
+-rwx------   1 bob  staff  574081152 Jul 19  2024 20240719__1721396808.WAV
+-rwx------   1 bob  staff  574081152 Jul 19  2024 20240719__1721414750.WAV
+-rwx------   1 bob  staff   36547712 Jul 19  2024 20240719__1721432691.WAV
+drwx------   5 bob  staff        160 Apr 17 08:59 20240720
+-rwx------   1 bob  staff  574081152 Jul 20  2024 20240720__1721478859.WAV
+-rwx------   1 bob  staff  574081152 Jul 20  2024 20240720__1721496801.WAV
+-rwx------   1 bob  staff  229955712 Jul 20  2024 20240720__1721514742.WAV
+drwx------   3 bob  staff         96 Apr 17 08:59 20240722
+audio file count at root of incoming:
+40
+
+exit=0
+
+### finished 2026-04-17T08:59:50-06:00 exit=0
