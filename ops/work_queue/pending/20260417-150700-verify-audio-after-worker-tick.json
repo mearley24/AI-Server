@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T15:07:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "audio-pipeline"
+  },
+  "signature": "DWbx+mXIuRk1tCEyN1caAG8Gd82EkexK9VDjKxwNhW2h7+M7TUgy4CyrJB+woTkh9m8ItxrkVHPVnfmbUDeDCg==",
+  "task_id": "20260417-150700-verify-audio-after-worker-tick",
+  "task_type": "verify_dump"
+}
