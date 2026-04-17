@@ -1,0 +1,25 @@
+=== task_audit query='verify-task-runner' ===
+generated: 20260417-093106
+
+verification matches (1):
+  [        verification] 2026-04-17T08:39:09      2518B  ops/verification/20260417-143719-verify-task-runner-result.txt
+
+queue matches (1):
+  [     queue:completed] 2026-04-17T08:37:19       311B  ops/work_queue/completed/20260417-143719-verify-task-runner.json
+
+summary:
+  verification_count: 1
+  queue_counts: {'pending': 0, 'completed': 1, 'failed': 0, 'rejected': 0}
+  newest_verification: ops/verification/20260417-143719-verify-task-runner-result.txt
+  newest_verification_peek.total_lines: 72
+  head:
+    | ### task 20260417-143719-verify-task-runner type=verify_dump signer=cline-bob
+    | ### started 2026-04-17T08:39:09-06:00
+    | 
+  tail:
+    | 92ba301 auto: local changes before pull
+    | 
+    | exit=0
+    | 
+    | ### finished 2026-04-17T08:39:09-06:00 exit=0
+

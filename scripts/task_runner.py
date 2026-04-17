@@ -51,8 +51,16 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import task_signer  # noqa: E402  (path tweak above is required)
 
-
+# The preflight self-heal lives at <repo>/ops/task_runner_preflight.py.
 REPO_ROOT = SCRIPT_DIR.parent
+sys.path.insert(0, str(REPO_ROOT / "ops"))
+try:
+    import task_runner_preflight  # noqa: E402
+except Exception:  # noqa: BLE001
+    # Preflight is best-effort; never crash the runner if the module is
+    # missing or broken — fall back to the legacy behaviour.
+    task_runner_preflight = None  # type: ignore[assignment]
+
 WORK_QUEUE = REPO_ROOT / "ops" / "work_queue"
 TASK_RUNNER_DIR = REPO_ROOT / "ops" / "task_runner"
 VERIFICATION_DIR = REPO_ROOT / "ops" / "verification"
@@ -453,6 +461,36 @@ def pull_latest() -> None:
         log(f"pull ok: {tail[0]}")
 
 
+def run_preflight_self_heal() -> bool:
+    """Call the preflight self-heal module. Returns True if safe to proceed.
+
+    The preflight auto-resolves whitelisted generated/state file conflicts
+    (see ops/task_runner_preflight.py) and writes a report to
+    ops/verification/<stamp>-preflight.txt. Non-whitelisted conflicts cause
+    it to return False — the runner should skip task processing this tick
+    and let a human (or follow-up agent) resolve the situation.
+    """
+    if task_runner_preflight is None:
+        log("preflight module unavailable; skipping self-heal")
+        return True
+    try:
+        result = task_runner_preflight.run_preflight(commit_and_push=True)
+    except Exception as exc:  # noqa: BLE001
+        log(f"preflight crashed (continuing without self-heal): {exc}")
+        return True
+    log(
+        "preflight ok=%s resolved=%d staged=%d unsafe=%d report=%s"
+        % (
+            result.ok,
+            len(result.conflicts_resolved),
+            len(result.dirty_whitelisted_staged),
+            len(result.unsafe_conflicts),
+            result.report_path,
+        )
+    )
+    return result.ok
+
+
 def run_once() -> int:
     ensure_dirs()
     try:
@@ -462,7 +500,18 @@ def run_once() -> int:
         log("another runner holds the lock; exiting")
         return 0
     try:
+        # Preflight first — heal whitelisted state-file conflicts before
+        # attempting to pull or dispatch tasks. If preflight flags unsafe
+        # conflicts, skip task processing this tick (the heartbeat still
+        # updates so we know the runner is alive).
+        preflight_ok = run_preflight_self_heal()
         pull_latest()
+        if not preflight_ok:
+            log("preflight reported unsafe conflicts; skipping task dispatch")
+            did_heartbeat = maybe_update_heartbeat()
+            if did_heartbeat:
+                commit_and_push("preflight-blocked heartbeat")
+            return 0
         tasks = sorted(PENDING.glob("*.json"))
         completed = failed = rejected = 0
         for path in tasks:

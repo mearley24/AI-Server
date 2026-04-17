@@ -209,6 +209,60 @@ echo 'line1' > file.txt && echo 'line2' >> file.txt
 
 ---
 
+## Standing Approval and Risk Tiers
+
+**Default operating mode for agents working inside AI-Server is autonomous, not synchronous.** Matt's time and chat credits are expensive. Use the Symphony Task Runner (`scripts/task_runner.py`) and repo-based verification (`ops/verification/`) instead of asking him to copy, paste, or relay output. The one-paste rule in `ops/AGENT_VERIFICATION_PROTOCOL.md` is authoritative.
+
+### Standing approval (LOW risk — just do it)
+
+Standing approval is granted for low-risk, repo-safe operational work inside `/Users/bob/AI-Server`. An agent does not need to stop and ask before doing any of the following:
+
+- **Diagnostics** — reading logs, querying SQLite, `docker compose ps`, health probes
+- **Verification** — writing timestamped reports to `ops/verification/` and committing them
+- **Repo hygiene** — resolving conflicts in whitelisted generated/state files (see preflight below), linting, formatting
+- **Safe state-file conflict resolution** — `knowledge/markup_exports/.session_tracking.json`, `data/cortex/digests/**`, and any file covered by `merge=ours` in `.gitattributes`
+- **Health checks** — running `ops/task_runner_health.py`, smoke tests, service probes
+- **Queue inspection** — listing/reading `ops/work_queue/`, `ops/verification/`, launchd state
+- **Logging improvements** — adding structured log lines, new events to `events:log`
+- **Prompt updates** — editing `.cursor/prompts/`, `AGENTS.md`, `CLAUDE.md`, `.clinerules` for clarity
+- **Productivity tooling** — helper scripts under `scripts/`, `ops/`, and `tools/` that don't touch production data
+- **Internal automation improvements** — task runner, preflight, audit, health utilities
+
+### Medium risk (verify and log — don't necessarily ask)
+
+Medium-risk work proceeds without synchronous approval, but MUST log clearly to `ops/verification/` and leave a verifiable trail:
+
+- Docker service restarts (`docker compose restart <svc>`)
+- Rebuilds of bind-mounted services
+- New launchd plists (install + kickstart, with a verification report)
+- Non-secret env changes via `scripts/set-env.sh`
+- Schema migrations on non-financial SQLite DBs
+- New endpoints on existing services
+
+### High risk (explicit approval required before execution)
+
+These actions require explicit approval from Matt before running. Do not shortcut these:
+
+- Deleting production data (databases, transcripts, memory stores, Dropbox content)
+- Changing secrets or credentials (`.env` keys like `KRAKEN_SECRET`, `REDIS_PASSWORD`, OAuth tokens)
+- Spending money (paid API calls with material cost, funding wallets)
+- Trading or financial actions (Polymarket orders, Kraken trades, ACH transfers)
+- Customer-visible outbound communication (email send, iMessage to client, public social post)
+- Destructive infrastructure changes (dropping containers outside AI-Server, routing/DNS changes, VPN config)
+- Actions outside AI-Server's current operational boundary (modifying another machine's filesystem beyond `ssh_and_run` allowlisted scripts, touching unrelated repos)
+
+### Default behavior
+
+When in doubt:
+
+1. Write a timestamped report to `ops/verification/YYYYMMDD-HHMMSS-<topic>.txt`, commit, push
+2. Use `scripts/task_runner.py` or a task JSON under `ops/work_queue/pending/` for operations that need to happen later
+3. If blocked, write a blocker report to `ops/verification/` naming exactly what is needed — do not ask Matt to paste terminal output back
+
+**Never ask Matt to manually relay command output.** The verification-to-file-then-commit pattern is the only supported way to share results between agents.
+
+---
+
 ## Prompts Directory
 
 All task prompts live in `.cursor/prompts/`. Key series:
