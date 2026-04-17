@@ -46,6 +46,25 @@ If the block runs on Bert (or any non-repo host), it must `scp` the log to Bob a
 
 ---
 
+## Interactive-prompt hazards (MUST pre-empt)
+
+A block that stops to ask Matt a question is as bad as asking him to paste output — both break the one-paste rule. Every command that can prompt MUST be pre-empted inside the block:
+
+| Hazard | Pre-empt |
+|---|---|
+| `ssh` first-connect → "Are you sure you want to continue connecting (yes/no/[fingerprint])?" | Pin the host key non-interactively with `ssh-keyscan -t ed25519 <host> >> ~/.ssh/known_hosts` (guarded by `ssh-keygen -F`), then use `-o BatchMode=yes -o StrictHostKeyChecking=yes`. Never use `StrictHostKeyChecking=no` — it silently accepts MITM swaps. Only `BatchMode=yes` is OK — it fails loudly instead of prompting. |
+| `sudo` password prompt | Passwordless sudo rule in `/etc/sudoers.d/` OR avoid sudo entirely (prefer user-scoped paths). |
+| `git push` with no cached credentials | Use SSH remotes with pinned host key (github.com host key is stable, add to `known_hosts` once). HTTPS + token works only if the token is already in the keychain — never echo tokens inline. |
+| `rm -i`, `cp -i`, `mv -i` aliases | Call binaries directly: `command rm ...` or `\rm ...`. |
+| Python REPL / node REPL / interactive menus | Always pass scripts via file or `-c`, never drop into a shell. |
+| `apt-get install` prompts | `apt-get install -y`. On macOS, `brew install` is non-interactive by default but `brew upgrade` can prompt for confirmations — pass `--force` or `HOMEBREW_NO_AUTO_UPDATE=1` as needed. |
+| `ssh-copy-id` on first run | Same as ssh — pin known_hosts first. |
+| `gh auth login` / `vault login` / any OAuth device flow | Never embed in a verification block — those require browser handoff. Do the auth in a separate, explicitly-user-driven step. |
+
+**Rule of thumb:** if there's *any* command in your block that might have asked the user a question the first time *you* ran it in a fresh environment, pre-empt it. Test mentally: "If Matt pastes this on a clean machine, does it ever stop and wait for input?" If yes, patch the block.
+
+---
+
 ## What goes in the log
 
 Whatever the receiving agent needs to verify the task. Default sections:

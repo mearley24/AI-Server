@@ -44,8 +44,29 @@ set -euo pipefail
 echo "=== 0. Tailscale check (Bert side) ==="
 tailscale status | grep -E "bobs-mac-mini|100\.89\.1\.51" || { echo "Bob not in tailnet — abort"; exit 1; }
 
+echo "=== 0b. Pin Bob's SSH host key non-interactively (idempotent) ==="
+# Bert may know Bob by old LAN IPs (192.168.x) but not by tailnet FQDN/IP.
+# Without this block, the first SSH call prompts 'yes/no/[fingerprint]?'
+# which violates the no-interactive-prompts protocol. ssh-keyscan harvests
+# the key once, then we pin it to both the FQDN and the tailnet IP so
+# StrictHostKeyChecking=yes (the default) passes silently on every call.
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+touch ~/.ssh/known_hosts && chmod 600 ~/.ssh/known_hosts
+BOB_FQDN="bobs-mac-mini.tailbcf3fe.ts.net"
+BOB_IP="100.89.1.51"
+if ! ssh-keygen -F "$BOB_FQDN" >/dev/null 2>&1; then
+  ssh-keyscan -T 5 -t ed25519 "$BOB_FQDN" 2>/dev/null >> ~/.ssh/known_hosts
+fi
+if ! ssh-keygen -F "$BOB_IP" >/dev/null 2>&1; then
+  ssh-keyscan -T 5 -t ed25519 "$BOB_IP" 2>/dev/null >> ~/.ssh/known_hosts
+fi
+awk '!seen[$1" "$2" "$3]++' ~/.ssh/known_hosts > ~/.ssh/known_hosts.dedup && mv ~/.ssh/known_hosts.dedup ~/.ssh/known_hosts
+chmod 600 ~/.ssh/known_hosts
+echo "known_hosts entries for Bob:"
+ssh-keygen -lf ~/.ssh/known_hosts 2>/dev/null | grep -E "bobs-mac-mini|100\.89\.1\.51" || echo "(warn: no Bob keys found — ssh-keyscan may have failed)"
+
 echo "=== 1. SSH handshake to Bob ==="
-ssh -o BatchMode=yes -o ConnectTimeout=5 "$BOB" "echo bob-reachable"
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=5 "$BOB" "echo bob-reachable"
 
 echo "=== 2. Ensure incoming dir exists on Bob ==="
 ssh "$BOB" "mkdir -p /Users/bob/AI-Server/data/audio_intake/incoming"
@@ -96,9 +117,9 @@ echo "    rm -rf ~/Documents/Audio\\ Recordings/MEETING/2024*"
 echo ""
 echo "=== 11. Push log to Bob's repo for agent review (per ops/AGENT_VERIFICATION_PROTOCOL.md) ==="
 REMOTE_PATH="/Users/bob/AI-Server/ops/verification/${STAMP}-audio-seed-run.txt"
-ssh "$BOB" "mkdir -p /Users/bob/AI-Server/ops/verification"
-scp "$LOG" "${BOB}:${REMOTE_PATH}"
-ssh "$BOB" "cd /Users/bob/AI-Server && git -c user.email='earleystream@gmail.com' -c user.name='Perplexity Computer' add ops/verification/${STAMP}-audio-seed-run.txt && git -c user.email='earleystream@gmail.com' -c user.name='Perplexity Computer' commit -m 'ops: audio seed-run log ${STAMP}' && git push origin main 2>&1 | tail -3"
+ssh -o BatchMode=yes "$BOB" "mkdir -p /Users/bob/AI-Server/ops/verification"
+scp -o BatchMode=yes "$LOG" "${BOB}:${REMOTE_PATH}"
+ssh -o BatchMode=yes "$BOB" "cd /Users/bob/AI-Server && git -c user.email='earleystream@gmail.com' -c user.name='Perplexity Computer' add ops/verification/${STAMP}-audio-seed-run.txt && git -c user.email='earleystream@gmail.com' -c user.name='Perplexity Computer' commit -m 'ops: audio seed-run log ${STAMP}' && git push origin main 2>&1 | tail -3"
 echo ""
 echo "DONE. Seed-run log committed. Reply to the agent: 'seed run pushed'."
 ```
