@@ -1,0 +1,70 @@
+=== task-runner preflight ===
+started_at: 2026-04-17T16:52:34-06:00
+finished_at: 2026-04-17T16:52:34-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+unsafe conflicts: 0
+
+commit: none (nothing to commit or push deferred)
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M integrations/autoresearch
+?? ops/verification/20260417-164350-preflight.txt
+?? ops/verification/20260417-164401-preflight.txt
+?? ops/verification/20260417-164411-preflight.txt
+?? ops/verification/20260417-164422-preflight.txt
+?? ops/verification/20260417-164433-preflight.txt
+?? ops/verification/20260417-164443-preflight.txt
+?? ops/verification/20260417-164544-preflight.txt
+?? ops/verification/20260417-164555-preflight.txt
+?? ops/verification/20260417-164604-preflight.txt
+?? ops/verification/20260417-164615-preflight.txt
+?? ops/verification/20260417-164626-preflight.txt
+?? ops/verification/20260417-164637-preflight.txt
+?? ops/verification/20260417-164647-preflight.txt
+?? ops/verification/20260417-164748-preflight.txt
+?? ops/verification/20260417-164758-preflight.txt
+?? ops/verification/20260417-164809-preflight.txt
+?? ops/verification/20260417-164821-preflight.txt
+?? ops/verification/20260417-164830-preflight.txt
+?? ops/verification/20260417-164841-preflight.txt
+?? ops/verification/20260417-164852-preflight.txt
+?? ops/verification/20260417-164903-preflight.txt
+?? ops/verification/20260417-164914-preflight.txt
+?? ops/verification/20260417-164925-preflight.txt
+?? ops/verification/20260417-164936-preflight.txt
+?? ops/verification/20260417-164947-preflight.txt
+?? ops/verification/20260417-164957-preflight.txt
+?? ops/verification/20260417-165008-preflight.txt
+?? ops/verification/20260417-165019-preflight.txt
+?? ops/verification/20260417-165029-preflight.txt
+?? ops/verification/20260417-165130-preflight.txt
+?? ops/verification/20260417-165140-preflight.txt
+?? ops/verification/20260417-165151-preflight.txt
+?? ops/verification/20260417-165202-preflight.txt
+?? ops/verification/20260417-165212-preflight.txt
+?? ops/verification/20260417-165223-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-17T16:52:34-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-17T16:52:34-06:00",
+  "unsafe_conflicts": []
+}
