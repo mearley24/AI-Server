@@ -1,0 +1,5 @@
+### task 20260417-143719-verify-task-runner type=verify_dump signer=cline-bob
+### started 2026-04-17T08:39:09-06:00
+
+=== verify_dump task-runner @ 2026-04-17T08:39:09-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/task-runner.sh']
