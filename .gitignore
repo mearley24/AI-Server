@@ -74,3 +74,11 @@ polymarket-bot/vpn/
 data/backups*.tar.gz
 # Local venv for iMessage bridge (scripts/install-imessage-deps.sh)
 .venv-imessage/
+models/
+data/audio_intake/worker.log
+data/audio_intake/launchd.*.log
+data/audio_intake/processing/
+data/audio_intake/processed/
+data/audio_intake/failed/
+data/audio_intake/incoming/
+data/audio_intake/.worker.lock
