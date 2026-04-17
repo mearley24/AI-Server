@@ -1,0 +1,21 @@
+### task 20260417-144500-bert-hostkey-pin type=ssh_and_run signer=perplexity-computer
+### started 2026-04-17T08:45:39-06:00
+
+=== ssh_and_run bert-hostkey-pin @ Matt@macbook-m2-pro.tailbcf3fe.ts.net 2026-04-17T08:45:39-06:00 ===
+=== scp bert-hostkey-pin.sh -> Matt@macbook-m2-pro.tailbcf3fe.ts.net:/tmp/20260417-144500-bert-hostkey-pin-bert-hostkey-pin.sh @ 2026-04-17T08:45:39-06:00 ===
+argv: ['scp', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '/Users/bob/AI-Server/ops/task_runner/remote_scripts/bert-hostkey-pin.sh', 'Matt@macbook-m2-pro.tailbcf3fe.ts.net:/tmp/20260417-144500-bert-hostkey-pin-bert-hostkey-pin.sh']
+
+exit=0
+=== ssh Matt@macbook-m2-pro.tailbcf3fe.ts.net run bert-hostkey-pin @ 2026-04-17T08:45:39-06:00 ===
+argv: ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', 'Matt@macbook-m2-pro.tailbcf3fe.ts.net', 'bash /tmp/20260417-144500-bert-hostkey-pin-bert-hostkey-pin.sh']
+bert known_hosts pinned:
+256 SHA256:FE9nwapfiRp8M+kfa4Ud0GSD+7owo3G1NKMoynYErxc bobs-mac-mini.tailbcf3fe.ts.net (ED25519)
+256 SHA256:FE9nwapfiRp8M+kfa4Ud0GSD+7owo3G1NKMoynYErxc 100.89.1.51 (ED25519)
+
+exit=0
+=== cleanup remote script @ 2026-04-17T08:45:39-06:00 ===
+argv: ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', 'Matt@macbook-m2-pro.tailbcf3fe.ts.net', 'rm -f /tmp/20260417-144500-bert-hostkey-pin-bert-hostkey-pin.sh']
+
+exit=0
+
+### finished 2026-04-17T08:45:39-06:00 exit=0
