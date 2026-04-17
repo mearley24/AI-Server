@@ -86,15 +86,22 @@ if ! sudo tailscale serve status 2>&1 | grep -E "8443.*localhost:1234" >/dev/nul
 fi
 sudo tailscale serve status | grep -qi funnel=true && { echo "Funnel is ON — STOP (tailnet-only required)"; exit 1; }
 
-# 1f. End-to-end API check
-curl -sf --max-time 10 "https://$BOB_TAILNET:8443/api/v1/server/info" -H "password: $BB_PASS" \
+# 1f. End-to-end API check (query param — Tailscale serve strips custom headers)
+curl -sf --max-time 10 "https://$BOB_TAILNET:8443/api/v1/server/info?password=$BB_PASS" \
   | python3 -m json.tool | head -15 \
   || { echo "API verify failed — STOP"; exit 1; }
 
-# 1g. Mirror into .env (not committed — .env is gitignored)
-if ! grep -q '^BLUEBUBBLES_API_PASSWORD=' .env 2>/dev/null; then
-  printf '\n# BlueBubbles\nBLUEBUBBLES_API_PASSWORD=%s\nBLUEBUBBLES_SERVER_URL=https://%s:8443\n' "$BB_PASS" "$BOB_TAILNET" >> .env
-fi
+# 1g. Mirror into .env — always reflect BB config DB truth (overwrite if present)
+touch .env
+awk -v pw="$BB_PASS" -v url="https://$BOB_TAILNET:8443" '
+  BEGIN{seen_pw=0; seen_url=0}
+  /^BLUEBUBBLES_API_PASSWORD=/{print "BLUEBUBBLES_API_PASSWORD=" pw; seen_pw=1; next}
+  /^BLUEBUBBLES_SERVER_URL=/{print "BLUEBUBBLES_SERVER_URL=" url; seen_url=1; next}
+  {print}
+  END{
+    if(!seen_pw) print "BLUEBUBBLES_API_PASSWORD=" pw
+    if(!seen_url) print "BLUEBUBBLES_SERVER_URL=" url
+  }' .env > .env.new && mv .env.new .env
 grep -q '^\.env$' .gitignore || echo ".env" >> .gitignore
 
 # 1h. launchd watchdog
@@ -131,9 +138,16 @@ git -c user.email="$(git config user.email)" -c user.name="$(git config user.nam
 
 ---
 
-## Phase 2 — Private API helper (one manual click)
+## Phase 2 — Private API helper (optional — skip if SIP is on)
 
-The helper must be installed via BlueBubbles GUI (Settings → Private API → Install Helper → admin password). You can't scriptify the dylib injection. Do this:
+BlueBubbles' "Private API" unlocks reply reactions, tapbacks, typing indicators, and send-effects by injecting a dylib into Messages.app. This requires System Integrity Protection (SIP) **disabled**, which permanently lowers Bob's kernel-level protection.
+
+**Decision matrix:**
+
+- **SIP on (recommended for Bob)** — skip helper install. Send/receive, groups, read receipts all still work. Acceptable state: `private_api: false`, `helper_connected: false`. Proceed directly to Phase 3.
+- **SIP off** — install helper via GUI using the flow below.
+
+To skip: set `SKIP_PRIVATE_API=1` and jump to Phase 3. To install:
 
 ```bash
 osascript -e 'tell application "BlueBubbles" to activate'
@@ -148,10 +162,19 @@ echo "When the toggle reads 'Installed', reply to this task with the single word
 **Do not use `read -p`. Do not block. Exit the phase cleanly and wait for my next message. When I say CONTINUE, run this verification and proceed:**
 
 ```bash
-# Verify Private API
-curl -sf --max-time 10 "https://$BOB_TAILNET:8443/api/v1/server/info" -H "password: $BB_PASS" \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); pa=d.get("data",{}).get("private_api",False); print(f"private_api={pa}"); sys.exit(0 if pa else 1)' \
-  || { echo "Private API not detected — STOP"; exit 1; }
+# Verify server healthy (private_api true OR false both acceptable — false = SIP-skipped path)
+curl -sf --max-time 10 "https://$BOB_TAILNET:8443/api/v1/server/info?password=$BB_PASS" \
+  | python3 -c '
+import sys, json
+d = json.load(sys.stdin).get("data", {})
+pa = d.get("private_api", False)
+hc = d.get("helper_connected", False)
+sv = d.get("server_version", "?")
+print(f"server_version={sv} private_api={pa} helper_connected={hc}")
+if pa and not hc:
+    print("WARN: helper installed but not connected — check Messages.app restart"); sys.exit(2)
+print("OK: server reachable; private_api=" + ("enabled" if pa else "skipped (SIP-on path)"))
+' || { echo "Server unreachable — STOP"; exit 1; }
 ```
 
 ---
@@ -174,7 +197,7 @@ async def symphony_bluebubbles_health():
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(
                 f"{BLUEBUBBLES_URL}/api/v1/server/info",
-                headers={"password": BLUEBUBBLES_PASSWORD},
+                params={"password": BLUEBUBBLES_PASSWORD},
             )
         if r.status_code != 200:
             return {"status": "offline", "http_status": r.status_code}
