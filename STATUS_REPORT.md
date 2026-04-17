@@ -84,6 +84,7 @@ _Completed since the April 11 audit baseline._
 - ✅ **.env deduplication** — duplicate `# Crypto` block removed; `KRAKEN_SECRET=` placeholder added (§Z5).
 - ✅ **symphonysh debug cleanup** — 8 debug console.log statements removed, dead `testNavigation` button removed, debug dropdown entries removed (§15).
 - ✅ **x-intake rebuilt + restarted (2026-04-13 08:14 MDT)** — Image rebuilt (`ai-server-x-intake:latest`), container recreated. Redis listener live on `events:imessage`, Uvicorn on port 8101, health endpoint returning HTTP 200. Volume mounts for `data/x_intake` (queue.db) and `data/transcripts` now applied. Status: `Up (healthy)`. Remaining follow-up: durable listener watchdog per §Z14.
+- ✅ **X-Intake Diagnose & Fix (2026-04-16)** — Three root-cause bugs fixed: (1) `transcript_analyst._ollama_analyze` crashed on qwen3:8b `<think>…</think>` tokens before the JSON; (2) `_build_prompt` used `.format()` on a template with literal JSON braces, producing `KeyError`; (3) Cortex container had no `./data/x_intake:/data/x_intake:ro` mount so `/api/x-intake/items` always returned `"db not found"`. All 12 stuck `analyzed=0` rows now cleared (analyzed=12 after backfill). Dashboard items endpoint working. See Reference: X-Intake Diagnose & Fix (2026-04-16).
 - ✅ **Prompt T drain (2026-04-13 08:24 MDT)** — `scripts/prompt_t_drain.py` ran once against `decision_journal.db`. Drained all 63 `pending` rows (1 auto_low_value + 62 duplicate_entry); 103 pre-existing `expired` rows left untouched. `pending_approvals` now shows 0 pending. Both `pending_approvals.status` and linked `decisions.outcome` updated atomically. iMessage summary sent to Matt via notification-hub. Cortex log entry written. See Reference: Prompt T Drain (§T).
 - ✅ **Email `read=1` bug fixed (2026-04-13 08:41 MDT)** — `notifier.py` was calling `mark_email_read()` on every dispatched notification — wrong because notification ≠ reply. Removed that block. `read=1` is now set **only** by `_scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` is found. Migration script `email-monitor/migrate_reset_read.py` reset 438 rows (`responded=0, read=1 → read=0`). DB: 452 emails, all `read=0, responded=0`. (§Z3)
 - ✅ **Cortex event ingestion wired (2026-04-13 08:52 MDT)** — Four services now POST to `http://cortex:8102/remember` on every meaningful event. Rate verified: 1 entry/min (follow_up cycle) sustained → ~1440+ entries/24h, well above 100 target. Cortex grew 733→735 in 65s post-deploy. See Reference: Cortex Wire-Up.
@@ -1043,3 +1044,56 @@ python3 scripts/prompt_t_drain.py --dry-run
 - The batch-to-Matt path (Phase 6) activates only for high-confidence or non-GENERAL items; it sent 0 iMessages this run because all items were auto-decided
 
 _Prompt T drain run by Cline on 2026-04-13. DB verified via live sqlite3 queries._
+
+---
+
+## Reference: X-Intake Diagnose & Fix (2026-04-16)
+
+### Phase A findings (what was broken)
+
+| Check | Result |
+|---|---|
+| A1 — Volume mounts on x-intake | ✅ Both `./data/x_intake:/data/x_intake` and `./data/transcripts:/data/transcripts` mounted |
+| A2 — TRANSCRIPT_DIR / CORTEX_URL env | ✅ `TRANSCRIPT_DIR=/data/transcripts`, `CORTEX_URL=http://cortex:8102` |
+| A3 — Queue DB | 122 880 bytes; 32 rows; 12 rows stuck at `has_transcript=1, analyzed=0`; 3 at `analyzed=2` (failed) |
+| A4 — Last 10 rows | `transcript_path` values like `/data/transcripts/@MoonDevOnYT — … — 2026-04-14.md`; `analyzed=0` on rows created Apr 13–14 |
+| A5 — Transcripts on disk | 17 .md files in `data/transcripts/`; volume IS mounted to host |
+| A6 — x-intake logs | `KeyError: '\n  "summary"'` traceback from `transcript_analyst.py:498::run_backfill` — `_build_prompt` uses `.format()` on a template with literal JSON `{}` braces |
+| A7 — Cortex dashboard | `/api/x-intake/stats` → OK; `/api/x-intake/items` → `{"error":"db not found"}` — cortex container has no `data/x_intake` mount |
+| A8 — Listener subscriber count | `[(b'events:imessage', 1)]` — listener alive |
+
+### Classification
+
+- **B3 — YES** — 12 rows stuck `analyzed=0`; `_build_prompt` raised `KeyError` crashing every backfill attempt (second bug on top of the qwen3:8b `<think>` tag issue)
+- **B5 — YES** — Cortex container missing `./data/x_intake:/data/x_intake:ro` mount
+
+### Fixes applied
+
+| Commit | Fix |
+|---|---|
+| `0a18fc6` | `fix(x-intake): strip qwen3:8b think tags + backfill CLI for stuck analyze rows` — `re.sub(r"<think>[\s\S]*?</think>", "", content)` in both `transcript_analyst._ollama_analyze` and `main._analyze_with_ollama`; added `--reanalyze-stuck` CLI to `main.py` |
+| `847496c` | `fix(cortex): mount x_intake queue db read-only into dashboard container` — added `./data/x_intake:/data/x_intake:ro` to cortex service volumes |
+| `4357509` | `fix(x-intake): fix KeyError in _build_prompt by using replace() instead of format()` — `_DEEP_PROMPT` contains literal JSON `{}` example blocks; `.format()` interprets them as named placeholders and raises `KeyError`; switched to `.replace("{author}", author).replace("{body}", body)` |
+
+### Regression test results
+
+```
+# POST /transcripts/backfill triggered after rebuild
+# After 90s:
+GET /transcripts/stats → {"files_on_disk":17,"total_with_transcript":15,"pending_analysis":0,"analyzed":12,"failed":3}
+
+# Listener test: published fake URL → detected and processed (auto_rejected, 0 relevance — expected for non-existent URL)
+# Dashboard: GET /api/x-intake/items?limit=3 → returns real rows with full JSON including summary, action, transcript_path
+
+# Log evidence (last 200 lines):
+# asyncio.new_event_loop occurrences: 0
+# Unhandled Tracebacks: 0
+# transcript_analyzed events: multiple (scores 85, 85, 0, 85, 85...)
+# transcript_cortex_posted events: multiple (ids acdd7306, d4cb07fb, ec5964c1, ...)
+```
+
+### Remaining known limits
+
+- **Ollama unreachable from x-intake container** — all 12 backfill analyses fell back to OpenAI (`transcript_ollama_miss — trying openai`). The `OLLAMA_HOST` default `http://192.168.1.189:11434` is not reachable from inside the x-intake Docker network (likely requires the host's Tailscale IP or `host.docker.internal`). Ollama is optional — OpenAI fallback works — but costs API tokens for each transcript.
+- **3 failed rows (`analyzed=2`)** — short/garbled transcripts correctly marked `too_sparse` by the analyst. These are expected failures (e.g. `@hrundel75` with only `🎵` content).
+- **x-alpha-collector source not tagged** — still sends no `source` field to `/analyze`, so dashboard can't distinguish iMessage vs collector traffic (pre-existing, low priority).
