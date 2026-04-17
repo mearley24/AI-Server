@@ -1,6 +1,6 @@
 # Cline Autorun — Meeting Audio Transcription → Cortex Ingestion (Bob)
 
-> **Cline:** read this file top to bottom. Operate in **Plan → Act**. Restate the goal, post a short plan, then execute without further prompting unless a Guardrail (§6) forces a stop. After each tool use, summarize in ≤3 bullets. When done, produce the Final Report in §8.
+> **Cline:** read this file top to bottom. Operate in **Act mode only** (no planning mode — Matt has never used it). Restate the goal in one line, then execute without further prompting unless a Guardrail (§6) forces a stop. After each tool use, summarize in ≤3 bullets. When done, produce the Final Report in §8.
 >
 > `AUTO_APPROVE = true`. Read `.clinerules`, `CLAUDE.md`, and `STATUS_REPORT.md` first — do not explore from scratch.
 
@@ -564,45 +564,68 @@ Commit: `feat(cortex): meetings recent endpoint + dashboard tile`
 
 ### Phase F — Seed run: pull Matt's 17 WAVs from Bert over Tailscale
 
-This runs on **Bert** (the M2), not Bob. At the end of this prompt, Cline writes these instructions to a file `MEETING_INGEST_STEPS.md` in the repo root and mentions it in the final report so Matt can execute on Bert.
+This runs on **Bert** (the M2 MacBook Pro, login user `Matt`), not Bob. Cline writes this as `MEETING_INGEST_STEPS.md` in the repo root and mentions it in the final report so Matt can paste **one single block** on Bert and walk away — the block handles rsync, immediate worker trigger, and status polling until every file lands in `done` or `failed` (max 90 min wall-clock). NO multi-step instructions. NO inline `#` comments (zsh-hostile).
+
+**Known environment facts for the seed run (do not re-derive):**
+- Bob tailnet FQDN: `bobs-mac-mini.tailbcf3fe.ts.net` (IP 100.89.1.51) — Bert's Tailscale is the sandboxed GUI cask build, so use the FQDN, not short `bobs-mac-mini`, and never `--ssh`.
+- SSH from Bert → Bob uses Bob's account `bob` via native macOS Remote Login (pubkey already placed during Phase 4 BB work).
+- Audio source dirs on Bert: `~/Documents/Audio Recordings/RECORD/` and `~/Documents/Audio Recordings/MEETING/`.
 
 ```markdown
-## Steps to run on Bert (M2 MacBook Pro)
+## One-paste seed run (run on Bert as user Matt)
 
-1. Confirm Tailscale is up on both machines:
-   ```bash
-   tailscale status | grep -E "bob|Bobs"
-   ```
+Paste this whole block into Bert's Terminal. It rsyncs the 17 WAVs to Bob, triggers the worker once, then polls every 60s for up to 90 minutes until every row in the queue is `done` or `failed`. Safe to re-run — rsync is idempotent and the worker holds a file lock.
 
-2. rsync the audio into Bob's incoming folder:
-   ```bash
-   rsync -avh --progress \
-     ~/Documents/Audio\ Recordings/RECORD/ \
-     ~/Documents/Audio\ Recordings/MEETING/ \
-     bob@bobs-mac-mini:/Users/bob/AI-Server/data/audio_intake/incoming/
-   ```
-   Replace `bobs-mac-mini` with the actual MagicDNS name shown by `tailscale status` — if MagicDNS isn't set up, use the tailnet IP.
+```bash
+set -euo pipefail
+BOB="bob@bobs-mac-mini.tailbcf3fe.ts.net"
+echo "=== 0. Tailscale check (Bert side) ==="
+tailscale status | grep -E "bobs-mac-mini|100\.89\.1\.51" || { echo "Bob not in tailnet — abort"; exit 1; }
 
-3. Trigger the worker immediately (optional — it'll auto-run within 10 min):
-   ```bash
-   ssh bob@bobs-mac-mini 'cd /Users/bob/AI-Server && python3 scripts/audio_intake_worker.py'
-   ```
+echo "=== 1. SSH handshake to Bob ==="
+ssh -o BatchMode=yes -o ConnectTimeout=5 "$BOB" "echo bob-reachable"
 
-4. Wait for the iMessage summary. Then, once each file's `status='done'` in the queue:
-   ```bash
-   ssh bob@bobs-mac-mini 'sqlite3 /Users/bob/AI-Server/data/audio_intake/queue.db \
-     "SELECT original_name, status, source_date FROM audio_intake_queue ORDER BY id DESC"'
-   ```
+echo "=== 2. Ensure incoming dir exists on Bob ==="
+ssh "$BOB" "mkdir -p /Users/bob/AI-Server/data/audio_intake/incoming"
 
-5. Once verified, delete originals from Bert:
-   ```bash
-   # Only after confirming everything above
-   rm -rf ~/Documents/Audio\ Recordings/RECORD/2024*
-   rm -rf ~/Documents/Audio\ Recordings/MEETING/2024*
-   ```
+echo "=== 3. rsync both source dirs (idempotent, progress, resume on network blips) ==="
+rsync -avh --partial --progress --stats \
+  "$HOME/Documents/Audio Recordings/RECORD/" \
+  "$BOB:/Users/bob/AI-Server/data/audio_intake/incoming/"
+rsync -avh --partial --progress --stats \
+  "$HOME/Documents/Audio Recordings/MEETING/" \
+  "$BOB:/Users/bob/AI-Server/data/audio_intake/incoming/"
+
+echo "=== 4. Count files landed on Bob ==="
+LANDED=$(ssh "$BOB" "ls -1 /Users/bob/AI-Server/data/audio_intake/incoming/ 2>/dev/null | wc -l | tr -d ' '")
+echo "files-on-bob: $LANDED"
+
+echo "=== 5. Trigger the worker immediately on Bob ==="
+ssh "$BOB" "cd /Users/bob/AI-Server && nohup python3 scripts/audio_intake_worker.py > /tmp/audio_intake_kick.log 2>&1 & echo kicked pid=\$!"
+
+echo "=== 6. Poll queue until every row is terminal or 90 min passes ==="
+DEADLINE=$(($(date +%s) + 5400))
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  SUMMARY=$(ssh "$BOB" "sqlite3 /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT status, COUNT(*) FROM audio_intake_queue GROUP BY status\"" 2>/dev/null || echo "queue-missing")
+  echo "[$(date '+%H:%M:%S')] $SUMMARY"
+  NONTERMINAL=$(ssh "$BOB" "sqlite3 /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT COUNT(*) FROM audio_intake_queue WHERE status NOT IN ('done','failed')\"" 2>/dev/null || echo "1")
+  if [ "$NONTERMINAL" = "0" ] && [ "$SUMMARY" != "queue-missing" ]; then
+    echo "all rows terminal — exiting poll loop"
+    break
+  fi
+  sleep 60
+done
+
+echo "=== 7. Final per-file report ==="
+ssh "$BOB" "sqlite3 -header -column /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT id, original_name, status, source_date, substr(error_msg,1,40) AS err FROM audio_intake_queue ORDER BY id\""
+
+echo "=== 8. DONE — review output above. If every row is 'done', originals on Bert are safe to delete with: ==="
+echo "    rm -rf ~/Documents/Audio\\ Recordings/RECORD/2024*"
+echo "    rm -rf ~/Documents/Audio\\ Recordings/MEETING/2024*"
+```
 ```
 
-Commit: `docs: meeting audio ingestion — seed run steps for Bert`
+Commit: `docs: meeting audio ingestion — one-paste Bert seed-run block`
 
 ### Phase G — STATUS_REPORT update
 
