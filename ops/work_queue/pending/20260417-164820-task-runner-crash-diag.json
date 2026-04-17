@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T16:48:20.027381+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "task-runner-crash-diag"
+  },
+  "signature": "GXEXvgqXeW9S/e6hFPRgBA2ege6jk5AZa4TyoEWpAwbfHXUZqcGLDDWRXr6AIaTuUdDLcYFx2g2u2HsG0DxoAA==",
+  "task_id": "20260417-164820-task-runner-crash-diag",
+  "task_type": "verify_dump"
+}
