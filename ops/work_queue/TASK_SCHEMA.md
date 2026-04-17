@@ -178,6 +178,47 @@ run_cline_prompt task" below.
 
 ---
 
+## How to queue a `run_cline_prompt` task
+
+1. Create a new prompt file under `.cursor/prompts/` following the existing
+   naming convention (`cline-prompt-<topic>.md`). The file must be
+   non-empty and contain valid Cline prompt text.
+2. Commit + push the prompt file:
+   ```
+   git add .cursor/prompts/cline-prompt-<topic>.md
+   git commit -m "prompt: add <topic> cline prompt"
+   git push origin main
+   ```
+3. Build a task JSON with `task_type: "run_cline_prompt"` and a payload
+   containing the repo-relative `prompt_file` path. Optional keys:
+   `dry_run` (bool), `timeout` (seconds). Example:
+   ```json
+   {
+     "task_id": "20260417-090000-cline-run-noop-smoke",
+     "task_type": "run_cline_prompt",
+     "created_by": "cline-bob",
+     "created_at": "2026-04-17T09:00:00-06:00",
+     "payload": {
+       "prompt_file": ".cursor/prompts/cline-prompt-noop-smoke.md",
+       "dry_run": true,
+       "timeout": 1800
+     }
+   }
+   ```
+4. Sign, commit, push the task JSON (same flow as above).
+5. Within ~2 min the runner executes the task. Expect two artifacts:
+   - `ops/verification/<task_id>-result.txt` — the runner-level log (what
+     argv was used, subprocess exit, any exceptions).
+   - `ops/verification/YYYYMMDD-HHMMSS-cline-run-<prompt-stem>.log` — the
+     launcher-level log (prompt head, CLI detection, CLI stdout/stderr).
+
+For a multi-prompt campaign, use `task_type: "run_cline_campaign"` with
+`prompt_files: ["<path1>", "<path2>", ...]` and optionally
+`stop_on_fail: true`. A campaign log lands at
+`ops/verification/YYYYMMDD-HHMMSS-cline-campaign.log`.
+
+---
+
 ## Worked example — queue a `verify_dump` task
 
 ```

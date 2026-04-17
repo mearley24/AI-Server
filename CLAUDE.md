@@ -263,6 +263,35 @@ When in doubt:
 
 ---
 
+## Running Cline Prompts via the Task Runner
+
+The Symphony Task Runner can launch a Cline prompt end-to-end without any
+manual copy-paste:
+
+- Launcher: `ops/cline-run-prompt.sh <prompt-file> [--dry-run] [--timeout SEC]`
+  - Detects the Cline CLI (`$CLINE_CLI` env override, else `cline` in PATH)
+  - Verifies prompt exists, tees output to
+    `ops/verification/YYYYMMDD-HHMMSS-cline-run-<basename>.log`
+  - Exit codes: `0` OK · `3` missing prompt · `4` CLI not found · `5` CLI
+    failure/timeout
+- Campaign wrapper: `ops/cline-run-campaign.sh [--dry-run] [--stop-on-fail]
+  [--timeout SEC] <prompt1> [prompt2 ...]`
+  - Stops on unsafe failures; treats missing prompt / missing CLI as "safe
+    blockers" (log a report, continue) unless `--stop-on-fail`.
+- Task-runner task types: `run_cline_prompt` (payload:
+  `{"prompt_file": "<repo-relative>", "dry_run": false, "timeout": 1800}`)
+  and `run_cline_campaign` (payload: `{"prompt_files": [...], "stop_on_fail":
+  false, ...}`). See `ops/work_queue/TASK_SCHEMA.md` → "How to queue a
+  `run_cline_prompt` task" for the full recipe.
+
+The launcher is safe to invoke by hand for a smoke test:
+
+```zsh
+bash ops/cline-run-prompt.sh --dry-run .cursor/prompts/cline-prompt-noop-smoke.md
+```
+
+---
+
 ## Prompts Directory
 
 All task prompts live in `.cursor/prompts/`. Key series:

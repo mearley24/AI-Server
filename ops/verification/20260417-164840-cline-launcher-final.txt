@@ -1,0 +1,100 @@
+=== cline-launcher-final @ 2026-04-17 10:48:40 -0600 ===
+
+## Summary
+
+Implemented a zero-touch Cline prompt launcher driven by the Symphony
+Task Runner. An agent can now queue a signed JSON task referencing a
+repo-committed prompt file; the runner invokes the launcher, captures
+CLI output, and commits the verification log — no manual copy-paste.
+
+## Files added / changed
+
+Added:
+  - ops/cline-run-prompt.sh (executable; single-prompt launcher)
+  - ops/cline-run-campaign.sh (executable; multi-prompt wrapper)
+  - .cursor/prompts/cline-prompt-noop-smoke.md (harmless dry-run target)
+
+Modified:
+  - scripts/task_runner.py — added run_cline_prompt + run_cline_campaign
+    to ALLOWED_TASK_TYPES; added handle_run_cline_prompt and
+    handle_run_cline_campaign with repo-root path validation (absolute
+    paths + '..' traversal rejected).
+  - ops/work_queue/TASK_SCHEMA.md — documented the two new task types,
+    exit-code semantics, and a worked 'How to queue a run_cline_prompt
+    task' recipe.
+  - CLAUDE.md — added 'Running Cline Prompts via the Task Runner' section
+    with launcher usage, task payload shapes, and a one-liner smoke test.
+
+## Exact CLI command pattern used by the launcher
+
+The launcher detects the Cline CLI via $CLINE_CLI (env override) or the
+'cline' binary in PATH and invokes:
+
+  cline ${CLINE_RUN_ARGS:-run} <prompt-file>
+
+Default $CLINE_RUN_ARGS is 'run' (subcommand); override per-session if a
+different CLI wrapper expects a different flag (e.g. --prompt-file).
+Wall-clock timeout is applied via timeout(1) / gtimeout(1) when present.
+Output is teed to ops/verification/YYYYMMDD-HHMMSS-cline-run-<stem>.log.
+
+## Dry-run smoke test
+
+Command:
+  bash ops/cline-run-prompt.sh --dry-run \
+    .cursor/prompts/cline-prompt-noop-smoke.md
+
+Result (captured above during implementation, rc=0):
+  dry-run OK  log: ops/verification/20260417-164840-cline-run-cline-prompt-noop-smoke.log
+
+Earlier dry-run artifacts in this session:
+  - ops/verification/20260417-164628-cline-run-cline-prompt-noop-smoke.log (rc=0, dry-run)
+  - ops/verification/20260417-164636-cline-run-cline-prompt-noop-smoke.log (rc=4, live CLI missing — expected)
+  - ops/verification/20260417-164636-cline-campaign.log (campaign, 2 prompts ok, rc=0)
+  - ops/verification/20260417-164649-cline-campaign.log (campaign, rc=0)
+
+Negative tests verified manually (in-session, not persisted):
+  - Missing prompt file   → rc=3 with clear stderr message
+  - Live mode + no CLI    → rc=4, launcher log explains resolution
+  - Path traversal attempt  → ValueError rejected by _validate_repo_relative
+  - Absolute path attempt → ValueError rejected by _validate_repo_relative
+
+## How to queue a run_cline_prompt task (for future agents)
+
+1. Commit a prompt file at .cursor/prompts/cline-prompt-<topic>.md.
+2. Build task JSON at ops/work_queue/pending/<stamp>-<topic>.json with:
+     task_type: run_cline_prompt
+     payload: {prompt_file: '<repo-relative>', dry_run: false, timeout: 1800}
+3. Sign with: /opt/homebrew/bin/python3 scripts/task_signer.py sign \
+     --task <path> --priv ~/.config/symphony/<signer>.ed25519.priv
+4. Commit + push. The launchd-scheduled runner picks it up within ~2 min.
+5. Pull; read:
+     - ops/verification/<task_id>-result.txt (runner log)
+     - ops/verification/YYYYMMDD-HHMMSS-cline-run-<stem>.log (launcher log)
+
+Full recipe: ops/work_queue/TASK_SCHEMA.md → 'How to queue a
+run_cline_prompt task'.
+
+## Limitations / TODOs
+
+- Cline CLI is not installed on Bob today ('cline' not in PATH; no
+  @cline/cli npm package exists as of this run). Live mode will exit 4
+  until Matt (or another agent) installs a Cline CLI and either adds it
+  to PATH as 'cline' or exports CLINE_CLI=/abs/path before invoking the
+  runner. The launcher logs this as a blocker with clear resolution text
+  rather than crashing the pipeline.
+- The launcher invokes the CLI as '<cli> run <prompt-file>' by default.
+  If the installed Cline CLI uses a different flag (--prompt-file, -f),
+  set CLINE_RUN_ARGS accordingly (e.g. CLINE_RUN_ARGS='--prompt-file').
+  A per-host override file can be added if Bob's CLI wrapper diverges.
+- No automatic queueing of a follow-up 'verify cline-ran' task yet — if
+  desired, wire a run_cline_prompt task and a follow-up verify_dump into
+  a run_cline_campaign payload.
+
+## Acceptance-criteria checklist
+
+  [x] ops/cline-run-prompt.sh exists, is executable, handles missing/invalid prompt (rc=3).
+  [x] At least one dry-run test created a log in ops/verification/ without hanging.
+  [x] scripts/task_runner.py recognises run_cline_prompt + run_cline_campaign and dispatches to the launcher (verified via direct handler call in dry-run mode, rc=0).
+  [x] Docs updated (CLAUDE.md + ops/work_queue/TASK_SCHEMA.md) so a future agent can queue a Cline job without extra instructions.
+
+--- end ---

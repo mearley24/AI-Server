@@ -79,7 +79,14 @@ TASK_TIMEOUT = 2 * 60 * 60  # 2 hours
 GIT_AUTHOR_NAME = "Perplexity Computer"
 GIT_AUTHOR_EMAIL = "earleystream@gmail.com"
 
-ALLOWED_TASK_TYPES = {"git_pull", "run_script", "ssh_and_run", "verify_dump"}
+ALLOWED_TASK_TYPES = {
+    "git_pull",
+    "run_script",
+    "ssh_and_run",
+    "verify_dump",
+    "run_cline_prompt",
+    "run_cline_campaign",
+}
 
 
 # ---------- small helpers ----------
@@ -245,6 +252,98 @@ def handle_verify_dump(payload: dict, result_path: Path) -> int:
     return _run_and_tee(argv, result_path, f"verify_dump {name}")
 
 
+# --- cline launcher helpers ---
+
+
+CLINE_LAUNCHER = REPO_ROOT / "ops" / "cline-run-prompt.sh"
+CLINE_CAMPAIGN = REPO_ROOT / "ops" / "cline-run-campaign.sh"
+
+
+def _validate_repo_relative(path_str: str, label: str) -> Path:
+    """Resolve a repo-relative path and refuse traversal outside REPO_ROOT.
+
+    Raises ValueError if the path is absolute, contains "..", or escapes the
+    repo root after normalization. Returns the resolved absolute Path.
+    """
+    if not path_str or not isinstance(path_str, str):
+        raise ValueError(f"{label}: missing or non-string path")
+    if path_str.startswith("/"):
+        raise ValueError(f"{label}: absolute paths not allowed ({path_str!r})")
+    if ".." in Path(path_str).parts:
+        raise ValueError(f"{label}: '..' not allowed in path ({path_str!r})")
+    candidate = (REPO_ROOT / path_str).resolve()
+    root_resolved = REPO_ROOT.resolve()
+    if not str(candidate).startswith(str(root_resolved) + os.sep):
+        raise ValueError(f"{label}: path escapes repo root ({path_str!r})")
+    return candidate
+
+
+def handle_run_cline_prompt(payload: dict, result_path: Path) -> int:
+    """Run ops/cline-run-prompt.sh against a repo-relative prompt file.
+
+    Payload keys:
+        prompt_file (str, required): repo-relative path to a .md prompt.
+        dry_run (bool, optional): passes --dry-run to the launcher.
+        timeout (int, optional): seconds; passes --timeout SEC.
+    """
+    prompt_rel = payload.get("prompt_file")
+    prompt_path = _validate_repo_relative(prompt_rel, "prompt_file")
+    if not prompt_path.exists():
+        raise FileNotFoundError(f"prompt_file does not exist: {prompt_rel}")
+    if not CLINE_LAUNCHER.exists():
+        raise FileNotFoundError(f"launcher missing: {CLINE_LAUNCHER}")
+
+    argv: list[str] = ["bash", str(CLINE_LAUNCHER)]
+    if bool(payload.get("dry_run", False)):
+        argv.append("--dry-run")
+    timeout = payload.get("timeout")
+    if timeout is not None:
+        if not isinstance(timeout, (int, float)) or int(timeout) <= 0:
+            raise ValueError("timeout must be a positive integer")
+        argv.extend(["--timeout", str(int(timeout))])
+    # Prompt path is passed as repo-relative so the launcher's log uses a
+    # stable basename; the launcher resolves against REPO_ROOT.
+    argv.append(str(prompt_rel))
+
+    return _run_and_tee(argv, result_path, f"run_cline_prompt {prompt_rel}")
+
+
+def handle_run_cline_campaign(payload: dict, result_path: Path) -> int:
+    """Run ops/cline-run-campaign.sh against a list of repo-relative prompts.
+
+    Payload keys:
+        prompt_files (list[str], required): repo-relative paths.
+        dry_run (bool, optional): passes --dry-run.
+        stop_on_fail (bool, optional): passes --stop-on-fail.
+        timeout (int, optional): seconds; passes --timeout SEC.
+    """
+    prompts = payload.get("prompt_files")
+    if not isinstance(prompts, list) or not prompts:
+        raise ValueError("prompt_files must be a non-empty list")
+    validated: list[str] = []
+    for p in prompts:
+        pp = _validate_repo_relative(p, "prompt_files[i]")
+        if not pp.exists():
+            raise FileNotFoundError(f"prompt_file does not exist: {p}")
+        validated.append(p)
+    if not CLINE_CAMPAIGN.exists():
+        raise FileNotFoundError(f"campaign wrapper missing: {CLINE_CAMPAIGN}")
+
+    argv: list[str] = ["bash", str(CLINE_CAMPAIGN)]
+    if bool(payload.get("dry_run", False)):
+        argv.append("--dry-run")
+    if bool(payload.get("stop_on_fail", False)):
+        argv.append("--stop-on-fail")
+    timeout = payload.get("timeout")
+    if timeout is not None:
+        if not isinstance(timeout, (int, float)) or int(timeout) <= 0:
+            raise ValueError("timeout must be a positive integer")
+        argv.extend(["--timeout", str(int(timeout))])
+    argv.extend(validated)
+
+    return _run_and_tee(argv, result_path, f"run_cline_campaign ({len(validated)} prompts)")
+
+
 def handle_ssh_and_run(payload: dict, task_id: str, result_path: Path) -> int:
     """scp a named remote script to the target, then run it via ssh.
 
@@ -365,6 +464,10 @@ def process_task(path: Path) -> tuple[str, int]:
             rc = handle_verify_dump(payload, result_path)
         elif task_type == "ssh_and_run":
             rc = handle_ssh_and_run(payload, task_id, result_path)
+        elif task_type == "run_cline_prompt":
+            rc = handle_run_cline_prompt(payload, result_path)
+        elif task_type == "run_cline_campaign":
+            rc = handle_run_cline_campaign(payload, result_path)
         else:  # defensive; allowlist checked above
             rc = 2
     except Exception as exc:  # noqa: BLE001

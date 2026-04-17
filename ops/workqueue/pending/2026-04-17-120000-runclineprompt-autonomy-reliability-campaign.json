@@ -1,0 +1,22 @@
+{
+  "id": "2026-04-17-120000-runclineprompt-autonomy-reliability-campaign",
+  "type": "runclineprompt",
+  "created_at": "2026-04-17T12:00:00-06:00",
+  "risk_tier": "low",
+  "autoapprove": true,
+  "prompt_files": [
+    ".cursor/prompts/cline-prompt-autonomy-audit-and-hardening.md",
+    ".cursor/prompts/cline-prompt-reliability-audit-and-hardening.md"
+  ],
+  "runner_options": {
+    "cwd": "/Users/bob/AI-Server",
+    "max_runtime_seconds": 7200,
+    "preflight": true,
+    "postflight_statusreport": true
+  },
+  "metadata": {
+    "category": "autonomy_and_reliability_campaign",
+    "initiator": "Matt",
+    "notes": "Run autonomy and reliability audit+hardening prompts via Cline CLI in sequence."
+  }
+}
