@@ -1,0 +1,82 @@
+=== pwd ===
+/Users/bob/AI-Server
+=== find plist ===
+ops/task_runner/com.symphony.task-runner.plist
+=== plist selected ===
+ops/task_runner/com.symphony.task-runner.plist
+=== wait ===
+=== launchctl print ===
+gui/501/com.symphony.task-runner = {
+	active count = 0
+	path = /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist
+	type = LaunchAgent
+	state = not running
+
+	program = /opt/homebrew/bin/python3
+	arguments = {
+		/opt/homebrew/bin/python3
+		/Users/bob/AI-Server/scripts/task_runner.py
+	}
+
+	working directory = /Users/bob/AI-Server
+
+	stdout path = /Users/bob/AI-Server/data/task_runner/launchd.out.log
+	stderr path = /Users/bob/AI-Server/data/task_runner/launchd.err.log
+	inherited environment = {
+		SSH_AUTH_SOCK => /private/tmp/com.apple.launchd.f8DbKoYOyi/Listeners
+	}
+
+	default environment = {
+		PATH => /usr/bin:/bin:/usr/sbin:/sbin
+	}
+
+	environment = {
+		OSLogRateLimit => 64
+		AI_SERVER_ROOT => /Users/bob/AI-Server
+		PATH => /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+		XPC_SERVICE_NAME => com.symphony.task-runner
+	}
+
+	domain = gui/501 [100023]
+	asid = 100023
+	minimum runtime = 10
+	exit timeout = 5
+	runs = 2
+	last exit code = 0
+
+	resource coalition = {
+		ID = 41461
+		type = resource
+		state = active
+		active count = 1
+		name = com.symphony.task-runner
+	}
+
+	jetsam coalition = {
+		ID = 41462
+		type = jetsam
+		state = active
+		active count = 1
+		name = com.symphony.task-runner
+	}
+
+	spawn type = daemon (3)
+	jetsam priority = 40
+	jetsam memory limit (active) = (unlimited)
+	jetsam memory limit (inactive) = (unlimited)
+	jetsamproperties category = daemon
+	jetsam thread limit = 32
+	cpumon = default
+	run interval = 120 seconds
+
+	properties = runatload | inferred program
+}
+=== pending after start ===
+=== done after start ===
+=== recent verification ===
+20260417-083909-task-runner-bootstrap.txt
+20260417-143719-verify-task-runner-result.txt
+20260417-083804-context-snapshot
+20260417-143625-smoke-git-pull-result.txt
+20260417-083639-rejections.txt
+20260417-080652-audio-pipeline.txt

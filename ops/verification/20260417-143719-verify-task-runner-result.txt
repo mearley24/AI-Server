@@ -3,3 +3,70 @@
 
 === verify_dump task-runner @ 2026-04-17T08:39:09-06:00 ===
 argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/task-runner.sh']
+=== 0. banner ===
+2026-04-17 08:39:09 -0600
+Bobs-Mac-mini.local
+bob
+4b22d55
+
+=== 1. launchd status ===
+90184	0	com.symphony.task-runner
+
+=== 2. heartbeat ===
+last-heartbeat: never
+
+=== 3. lock file ===
+-rw-r--r--  1 bob  staff  32 Apr 17 08:39 data/task_runner/.runner.lock
+
+=== 4. last 30 lines of launchd stdout ===
+[2026-04-17T08:37:08-06:00] pull ok: Already up to date.
+[2026-04-17T08:39:09-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+
+=== 5. last 30 lines of launchd stderr ===
+
+=== 6. work_queue directory counts ===
+pending: 1
+completed: 0
+failed: 0
+rejected: 0
+
+=== 7. last 10 completed tasks ===
+total 0
+
+=== 8. last 10 failed tasks ===
+total 0
+
+=== 9. last 10 rejected tasks ===
+total 0
+
+=== 10. recent verification results ===
+total 56
+-rw-r--r--  1 bob  staff    261 Apr 17 08:39 20260417-143719-verify-task-runner-result.txt
+drwxr-xr-x  6 bob  staff    192 Apr 17 08:38 20260417-083804-context-snapshot
+-rw-r--r--  1 bob  staff    319 Apr 17 08:36 20260417-143625-smoke-git-pull-result.txt
+-rw-r--r--  1 bob  staff    109 Apr 17 08:36 20260417-083639-rejections.txt
+-rw-r--r--  1 bob  staff  14803 Apr 17 08:06 20260417-080652-audio-pipeline.txt
+
+=== 11. authorized keys (names only; pubkeys truncated) ===
+cline-bob lrxnRl0JXjYu…
+
+=== 12. recent runner commits ===
+e2741db task: queue verify_dump task-runner for perplexity handoff
+7f62ffd test(task-runner): remove smoke/reject task JSONs, keep verification logs
+2bfb6f6 ops: task-runner tick 20260417-083639 — 1 completed / 0 failed / 2 rejected
+22090a7 docs(task-runner): TASK_SCHEMA + enroll cline-bob + perplexity placeholder
+9150c11 feat(task-runner): scaffold zero-touch control plane (signer+runner+scripts)
+ba495d2 ops: pre-empt SSH hostkey prompt in Bert seed block + codify interactive-prompt rule
+9aa0385 ops: codify agent verification protocol — no more paste-back
+0b46552 ops: audio pipeline verification dump 2026-04-17 08:06
+
+=== 13. remote sync state ===
+92ba301 auto: local changes before pull
+
+exit=0
+
+### finished 2026-04-17T08:39:09-06:00 exit=0
