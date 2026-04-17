@@ -1,0 +1,126 @@
+==============================================================================
+CATEGORY 4 FINAL: Memory, State, and Knowledge
+==============================================================================
+Generated: 2026-04-17 09:59 MDT
+Companion audit: 20260417-095615-memory-state-knowledge-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+Cortex memory service (engine.py, memory.py, digest.py, goals.py,
+improvement.py, migrate.py, config.py, dashboard.py), Apple Notes
+ingestion (integrations/apple_notes/ + tools/notes_*.py),
+all SQLite DBs under data/ (brain.db, jobs.db, decision_journal.db,
+follow_ups.db, emails.db, knowledge_base.db, openclaw_memory.db,
+payments.db, cost_tracker.db, price_monitor.db, portal.db), daily
+digests, state artifacts, DATABASE_SCHEMA.md.
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- cortex/brain.db (37,535 memories, 127 MB) ................................ active (strong)
+- cortex API surface (/remember, /query, /memories, /improve/run) ........... active
+- cortex/memory.py schema (importance, confidence, ttl_days) ................ active
+- decision_journal.db (4,642+ decisions, pending_approvals 0) ............... active
+- follow_ups.db (61 rows canonical) ......................................... active
+- jobs.db (41 jobs) ......................................................... active
+- emails.db (452, read=1 bug fixed) ......................................... active
+- Other openclaw DBs (6 files, 5 covered in schema doc) ..................... active
+- Apple Notes ingestion (indexer + parser + notes_to_cortex) ................ active
+- Daily digests ............................................................. active (6 files through 2026-04-16)
+- Knowledge/ dir manifest ................................................... missing (deferred)
+- DATABASE_SCHEMA.md live row counts ........................................ stale → refreshed this pass
+- Backup / rotation strategy ................................................ weak → helper added
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Cortex is the single sink. 37k+ memories, 20+ categories.
+- Schema supports importance/confidence/TTL pruning fields.
+- Schema migrations in cortex/migrate.py.
+- Daily human-readable digests.
+- DATABASE_SCHEMA.md already covered most DBs (better than the
+  audit initially assumed).
+- Apple Notes ingestion is production code, not a one-off.
+- follow_ups.db consolidation from 3 → 1 completed this morning.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- DATABASE_SCHEMA.md row counts were stale (said 39 memories;
+  actual 37,535). FIXED this pass (live snapshot section added).
+- No scheduled backup of brain.db; only a 12-day-old tarball.
+  FIXED partially: helper script added, scheduling deferred.
+- No per-category TTL policy for high-growth categories.
+- No embedding / vector index — will matter when brain.db >> 100k.
+- knowledge/ dir lacks a manifest for agent discovery.
+- price_monitor.db pipeline may be dead (file unchanged since
+  April 10).
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- litestream: continuous SQLite replication. Strong fit for brain.db.
+- Chroma / LanceDB / sqlite-vss: plan for when we cross 100k rows.
+- DuckDB analytical overlay: optional.
+
+Net: no urgent swap. Litestream is the highest-leverage future add.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) scripts/backup-cortex-dbs.sh (NEW) — dry-run-default SQLite
+   `.backup` wrapper for the 5 high-value DBs (brain.db,
+   decision_journal.db, jobs.db, follow_ups.db, emails.db).
+   Output: backups/sqlite/YYYYMMDD-HHMMSS/. Sample dry-run shows
+   brain.db at 129 MB, decision_journal.db 2.1 MB, jobs.db 128 KB,
+   follow_ups.db 36 KB, emails.db 3.1 MB = ~134 MB snapshot total.
+   RISK: LOW (dry-run default, no writes unless --execute).
+
+2) scripts/cortex-brain-snapshot.sh (NEW) — read-only brain.db
+   inspector. Writes ops/verification/<stamp>-cortex-brain-
+   snapshot.txt with row counts by category, importance
+   distribution, and the 5 newest rows. Tested: generated
+   20260417-095857-cortex-brain-snapshot.txt successfully.
+   RISK: LOW (read-only SQL queries).
+
+3) data/DATABASE_SCHEMA.md (MODIFIED) — added "Live snapshot"
+   section reconciling stale seed-count (39) with live reality
+   (37,535), live row counts for 6 key tables, plus a pointer to
+   the two new helper scripts.
+   RISK: LOW (docs).
+
+All three are LOW risk.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- brain.db backup still not automated (script exists; launchd plist
+  deferred).
+- Per-category TTL policy still absent.
+- price_monitor.db freshness unverified — may be dead pipeline.
+- knowledge/ dir manifest not yet written.
+- No vector index migration plan documented yet.
+
+------------------------------------------------------------------------------
+Next actions (deferred)
+------------------------------------------------------------------------------
+- Schedule backup-cortex-dbs.sh daily via launchd
+  (com.symphony.sqlite-backup, 03:00 MT, rotate 30 days).
+- Add per-category TTL override in cortex/memory.py ingestion path
+  (e.g. trading_strategy TTL 90d, follow_up TTL 30d).
+- Investigate price_monitor.db pipeline in Category 8 (trading).
+- Write knowledge/MANIFEST.json + a drift check.
+- Plan a vector-index migration once brain.db > 100k rows.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  data/DATABASE_SCHEMA.md (Live snapshot appended)
+- ADDED     scripts/backup-cortex-dbs.sh
+- ADDED     scripts/cortex-brain-snapshot.sh
+- ADDED     ops/verification/20260417-095615-memory-state-knowledge-audit.txt
+- ADDED     ops/verification/20260417-095857-cortex-brain-snapshot.txt (test run)
+- ADDED     ops/verification/20260417-095900-memory-state-knowledge-final.txt
+
+END OF FINAL REPORT — Category 4

@@ -58,7 +58,14 @@ PROGRESS LOG (appended per category)
                  remediator/DECOMMISSIONED.md (new),
                  CLAUDE.md + .clinerules (18 -> 19 containers)
          risk:   LOW (docs + markers + read-only check)
-[pending] 4. memory-state-knowledge
+[DONE   ] 4. memory-state-knowledge
+         audit:  ops/verification/20260417-095615-memory-state-knowledge-audit.txt
+         final:  ops/verification/20260417-095900-memory-state-knowledge-final.txt
+         files:  data/DATABASE_SCHEMA.md (live snapshot appended),
+                 scripts/backup-cortex-dbs.sh (new),
+                 scripts/cortex-brain-snapshot.sh (new, tested),
+                 ops/verification/20260417-095857-cortex-brain-snapshot.txt (test run)
+         risk:   LOW (docs + read-only snapshot + dry-run backup helper)
 [pending] 5. web-automation-integrations
 [pending] 6. coordination-business-ops
 [pending] 7. messaging-communications

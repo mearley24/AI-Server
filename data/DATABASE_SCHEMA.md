@@ -87,3 +87,31 @@ Cortex long-term memory, goals, improvement log. Written by the `cortex` service
 - **follow_ups.db is canonical** for all follow-up data (`follow_ups` + `follow_up_log`).
 - **jobs.db is canonical** for jobs, clients, and client preferences.
 - **brain.db** is managed exclusively by the Cortex service — do not write to it directly.
+
+---
+
+## Live snapshot (2026-04-17 reconciled)
+
+The `memories` row count table above shows `39` — this was the seed
+count. Live reality is very different and grows every minute.
+Run `bash scripts/cortex-brain-snapshot.sh` to write a fresh snapshot
+to `ops/verification/<stamp>-cortex-brain-snapshot.txt` (read-only).
+
+Live row counts at 2026-04-17 09:56 MDT:
+
+| Database | Table | Rows | Notes |
+|---|---|---|---|
+| `data/cortex/brain.db` | `memories` | **37,535** | 127 MB on disk. Top categories: trading_strategy (17,062), risk_management (8,450), follow_up (6,529), tech_infrastructure (3,469). |
+| `data/openclaw/decision_journal.db` | `decisions` | 4,642+ | Still the canonical decision log. |
+| `data/openclaw/decision_journal.db` | `pending_approvals` | 0 | Drained 2026-04-13 via Prompt T. |
+| `data/openclaw/jobs.db` | `jobs` | 41 | Active client jobs. |
+| `data/email-monitor/follow_ups.db` | `follow_ups` | 61 | Canonical after 2026-04-17 consolidation. |
+| `data/email-monitor/emails.db` | `emails` | 452 | `read=1` bug fixed 2026-04-13. |
+
+Backups: use `bash scripts/backup-cortex-dbs.sh --execute` to produce a
+timestamped snapshot of the 5 high-value DBs under
+`backups/sqlite/YYYYMMDD-HHMMSS/`.
+
+Schema helpers (added 2026-04-17):
+- `scripts/backup-cortex-dbs.sh` — SQLite `.backup` wrapper, dry-run by default.
+- `scripts/cortex-brain-snapshot.sh` — read-only row-count snapshot → `ops/verification/`.

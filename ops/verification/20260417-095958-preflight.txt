@@ -1,0 +1,60 @@
+=== task-runner preflight ===
+started_at: 2026-04-17T09:59:56-06:00
+finished_at: 2026-04-17T09:59:58-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-17.md
+  - knowledge/markup_exports/.session_tracking.json
+
+unsafe conflicts: 0
+
+commit: ca04499de3d3acff7b681001627292c764157073 pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/DATABASE_SCHEMA.md
+ M ops/verification/20260417-093739-category-campaign-tracker.txt
+?? ops/verification/20260417-095559-preflight.txt
+?? ops/verification/20260417-095600-preflight.txt
+?? ops/verification/20260417-095609-preflight.txt
+?? ops/verification/20260417-095615-memory-state-knowledge-audit.txt
+?? ops/verification/20260417-095620-preflight.txt
+?? ops/verification/20260417-095722-preflight.txt
+?? ops/verification/20260417-095731-preflight.txt
+?? ops/verification/20260417-095742-preflight.txt
+?? ops/verification/20260417-095844-preflight.txt
+?? ops/verification/20260417-095853-preflight.txt
+?? ops/verification/20260417-095857-cortex-brain-snapshot.txt
+?? ops/verification/20260417-095900-memory-state-knowledge-final.txt
+?? ops/verification/20260417-095905-preflight.txt
+?? ops/verification/20260417-095913-preflight.txt
+?? ops/verification/20260417-095924-preflight.txt
+?? ops/verification/20260417-095935-preflight.txt
+?? ops/verification/20260417-095945-preflight.txt
+?? scripts/backup-cortex-dbs.sh
+?? scripts/cortex-brain-snapshot.sh
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "ca04499de3d3acff7b681001627292c764157073",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-17.md",
+    "knowledge/markup_exports/.session_tracking.json"
+  ],
+  "finished_at": "2026-04-17T09:59:58-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-17T09:59:56-06:00",
+  "unsafe_conflicts": []
+}

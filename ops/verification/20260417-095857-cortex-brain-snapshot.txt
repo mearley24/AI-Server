@@ -1,0 +1,53 @@
+=== cortex/brain.db snapshot ===
+when: 2026-04-17 09:58:57 MDT
+db:   data/cortex/brain.db
+size: 129M
+
+--- row counts ---
+total: 38048
+
+--- by category (top 20) ---
+category              rows 
+--------------------  -----
+trading_strategy      17579
+risk_management       8450 
+follow_up             6531 
+tech_infrastructure   3469 
+trading               585  
+install_notes         329  
+ai_tools              224  
+x_intel               180  
+business              96   
+smart_home            80   
+prediction_markets    73   
+email                 64   
+strategy_performance  58   
+proposal_template     55   
+prediction_market     35   
+general               27   
+product_reference     26   
+access_codes          25   
+work_procedure        19   
+iot                   18   
+
+--- 5 newest memories ---
+updated_at                        category          title                                   
+--------------------------------  ----------------  ----------------------------------------
+2026-04-17T15:58:51.691720+00:00  trading_strategy  Research: What are the best time frames 
+2026-04-17T15:58:45.028412+00:00  trading_strategy  Research: How can volume analysis help i
+2026-04-17T15:58:45.018334+00:00  trading_strategy  Research: What specific volume indicator
+2026-04-17T15:58:45.007776+00:00  trading_strategy  Research: How do different time frames a
+2026-04-17T15:58:44.991597+00:00  trading_strategy  Research: What are the best indicators t
+
+--- importance distribution ---
+importance  rows 
+----------  -----
+10          82   
+9           407  
+8           729  
+7           1487 
+6           280  
+5           388  
+4           29119
+3           5550 
+0           6    

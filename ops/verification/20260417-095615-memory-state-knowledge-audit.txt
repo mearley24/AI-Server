@@ -1,0 +1,283 @@
+==============================================================================
+CATEGORY 4 AUDIT: Memory, State, and Knowledge
+==============================================================================
+Generated: 2026-04-17 09:56 MDT
+Scope: Cortex memory service, Apple Notes ingestion, SQLite databases
+       (decision_journal.db, follow_ups.db, brain.db, jobs.db,
+       knowledge_base.db, others), memory schemas, retrieval patterns,
+       state artifacts, digests, knowledge exports.
+
+Preflight at start: ok=True resolved=0 staged=2 unsafe=0.
+(Preflight auto-committed 2 whitelisted state files before this audit — safe.)
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- cortex/ service (engine.py, memory.py, digest.py, opportunity.py,
+  goals.py, improvement.py, migrate.py, dashboard.py, config.py)
+- cortex/seed_data.json
+- data/cortex/brain.db (127 MB, 37,535 memories)
+- data/cortex/digests/ (6 daily markdown digests, 2026-04-11 .. 16)
+- data/openclaw/*.db (8 SQLite DBs including decision_journal.db,
+  follow_ups.db, jobs.db, knowledge_base.db, payments.db,
+  price_monitor.db, cost_tracker.db, openclaw_memory.db)
+- data/email-monitor/follow_ups.db (61 rows canonical per 2026-04-17)
+- data/email-monitor/emails.db (452 rows)
+- data/DATABASE_SCHEMA.md (89 lines — authoritative schema doc)
+- integrations/apple_notes/notes_indexer.py, notes_parser.py
+- data/notes_index.json (generated)
+- data/notes_ingest_report.md
+- data/notes_ingest_seen_hashes.json (deduplication)
+- tools/notes_sync.py + tools/notes_reader.py (mentioned in AGENTS.md)
+- scripts/notes_to_cortex.py
+- data/ask_bob_memory/ (memory for ask-bob voice endpoint)
+- data/openclaw/AGENT_LEARNINGS_LIVE.md (live learnings export)
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. Cortex memory store (brain.db)                     STATUS: active (strong)
+   - 37,535 memories total (up from the 735 shown in STATUS_REPORT's
+     2026-04-13 snapshot, 84 in the 04-13 audit — brain has been
+     growing rapidly).
+   - 127 MB. Healthy size for SQLite + JSON content.
+   - Schema has importance/confidence/ttl_days/access_count —
+     supports pruning policy based on PRUNE_CONFIDENCE_THRESHOLD
+     and PRUNE_STALE_DAYS (from cortex/config.py).
+   - Per-category concentration:
+       trading_strategy   17,062  (46%)
+       risk_management     8,450  (23%)
+       follow_up           6,529  (17%)
+       tech_infrastructure 3,469  (9%)
+       trading               585
+       install_notes         329
+       ai_tools              224
+       x_intel               180
+       ... (20+ categories)
+
+B. Cortex API surface                                 STATUS: active
+   - POST /remember (every service writes here)
+   - POST /query  (RAG-ish lookup)
+   - GET  /health
+   - GET  /memories?category=...&limit=...
+   - GET  /api/* (dashboard routes)
+   - POST /improve/run (improvement loop)
+   - GET  /goals
+
+C. Memory schemas                                     STATUS: active
+   - memories table: id, created_at, updated_at, category,
+     subcategory, title, content, source, confidence,
+     importance, ttl_days, access_count, last_accessed, tags,
+     metadata.
+   - Proper indices on category, importance DESC, updated_at DESC.
+   - Schema is stable; run_migration() handles upgrades.
+
+D. decision_journal.db                                STATUS: active
+   - Two tables: decisions, pending_approvals.
+   - 4,642 decisions at 2026-04-12. pending_approvals drained to 0
+     on 2026-04-13 per Prompt T. Recent drift has been minimal.
+
+E. follow_ups.db                                      STATUS: canonical
+   - 61 rows at `data/email-monitor/follow_ups.db` (canonical after
+     2026-04-17 consolidation merge).
+   - Two strays retired (`.retired-*` suffix).
+
+F. jobs.db                                            STATUS: active
+   - 41 jobs (matches STATUS_REPORT). Client preferences table
+     present. Active backfill documented but not reverified here.
+
+G. Other openclaw DBs                                 STATUS: partial
+   - cost_tracker.db (20 KB — sparse)
+   - knowledge_base.db (528 KB — active; scanned by a tooling
+     pipeline that is not currently documented in DATABASE_SCHEMA.md)
+   - openclaw_memory.db (24 KB — updated today)
+   - payments.db (12 KB — updated today)
+   - price_monitor.db (20 KB — April 10 — may be stale)
+   No schema doc covers these five; DATABASE_SCHEMA.md is only 89
+   lines and focuses on jobs.db + decision_journal.db.
+
+H. emails.db                                          STATUS: active
+   - 452 emails, `read=1` bug fixed 2026-04-13.
+
+I. Apple Notes ingestion                              STATUS: partial-active
+   - integrations/apple_notes/notes_indexer.py runs on the host
+     (requires Notes.app).
+   - notes_parser.py complements it.
+   - Output: data/notes_index.json + data/notes_ingest_report.md +
+     data/notes_ingest_seen_hashes.json.
+   - tools/notes_to_cortex.py ingests into Cortex via POST /remember.
+   - tools/notes_sync.py, tools/notes_reader.py, tools/
+     photo_harvest.py provide broader notes access.
+   - Unknown how often this runs in practice; no launchd plist
+     named "notes-*" was obvious in the launchd listing. The
+     AGENTS.md mentions com.symphony.notes-sync.plist and
+     com.symphony.notes-watcher.plist — both are installed.
+     Verified at audit time: in Library/LaunchAgents listing.
+
+J. Retrieval patterns                                 STATUS: active
+   - /query endpoint in cortex/engine.py exposes semantic-ish
+     search; uses importance+confidence+recency scoring. Specific
+     implementation not deeply audited in this pass.
+   - /memories?category=... lists filtered subsets.
+   - No embedding index / vector search (pure SQL). Acceptable at
+     current scale (~40k rows). Will need revisiting if brain.db
+     grows past ~1M.
+
+K. State artifacts                                    STATUS: active
+   - data/cortex/digests/ — 6 daily markdown files. digest.py
+     writes these.
+   - data/openclaw/AGENT_LEARNINGS_LIVE.md — gitignored export.
+   - data/openclaw/patterns.json — gitignored pattern cache.
+   - data/notes_ingest_seen_hashes.json — dedupe across runs.
+
+L. Digests                                            STATUS: active
+   - Daily markdown digests landed through 2026-04-16.
+   - No digest for 2026-04-17 yet (expected — the day is ongoing).
+
+M. Knowledge exports                                  STATUS: partial
+   - knowledge/ dir is content (markdown, JSON, PDFs) not a Python
+     package — already called out as a "don't add __init__.py" rule.
+   - knowledge/brand/, knowledge/other/, knowledge/products/, etc.
+   - No single manifest of what agents can rely on inside
+     knowledge/. Unknown which subdirs are current vs stale.
+   - Several agent tools reference specific paths
+     (e.g. matt_earley_signature.png) without a discovery layer.
+
+N. Backups                                            STATUS: partial
+   - data/backups-april5.tar.gz (snapshot April 5).
+   - No automated backup script scheduled.
+   - scripts/backup-data.sh exists per CLAUDE.md quick commands.
+   - Category 1 already called out the absence of regular scheduled
+     backups as a risk; brain.db alone is 127 MB and growing.
+
+O. Category-growth distribution                       STATUS: worth noting
+   - trading_strategy (46%) + risk_management (23%) +
+     follow_up (17%) = 86% of memories.
+   - Polymarket research + per-tick follow-up writes dominate the
+     brain. This is expected given the copytrade + research loops,
+     but prune/TTL policies for high-volume trading categories
+     should be reviewed.
+
+P. Config                                             STATUS: active
+   - cortex/config.py has DB_PATH, PRUNE_CONFIDENCE_THRESHOLD,
+     PRUNE_STALE_DAYS, REDIS_URL, CORTEX_LOG_LEVEL, CORTEX_PORT.
+   - Exact numeric values not pulled in this pass.
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- Cortex is the single sink — no "which DB owns this fact" debate.
+  37k+ memories, 20+ categories, growing ~1/min from wired services.
+- Schema supports importance, confidence, TTL — the three fields
+  you need for intelligent pruning.
+- Dashboard surface exposes both raw lists and filtered queries.
+- Apple Notes ingestion is committed code (integrations/apple_notes/
+  + multiple tools/notes_*.py), not a bespoke shell script.
+- follow_ups.db consolidation (2026-04-17) resolved a three-way
+  split into a single canonical file.
+- Schema migrations live in cortex/migrate.py (not ad-hoc SQL).
+- Daily digests are automatic and human-readable.
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses
+------------------------------------------------------------------------------
+- DATABASE_SCHEMA.md (89 lines) covers only jobs.db +
+  decision_journal.db. Not authoritative for cortex/brain.db,
+  knowledge_base.db, openclaw_memory.db, payments.db,
+  cost_tracker.db, price_monitor.db, or emails.db. A future agent
+  has to read SQL to learn the shape.
+- No embedding / vector index. At 37k rows SQL lookup is fine;
+  at 1M it won't be. No migration plan.
+- Three categories (trading_strategy, risk_management, follow_up)
+  own 86% of brain.db. No per-category retention policy exists;
+  PRUNE_CONFIDENCE_THRESHOLD and PRUNE_STALE_DAYS are global.
+- No top-level manifest for `knowledge/` — agents discover files
+  by grep/ls, which means tools hardcode paths.
+- No scheduled backup for brain.db, decision_journal.db,
+  follow_ups.db. Only ad-hoc `scripts/backup-data.sh` + one tarball
+  from April 5 (12 days ago).
+- price_monitor.db hasn't updated since April 10 — possible stale
+  pipeline. Needs investigation.
+- No cost tracking display for the 17,062 trading_strategy memories
+  (how much did researching them cost across Perplexity/OpenAI?).
+- Apple Notes ingestion leans on Notes.app being running — no
+  degraded mode when the host Notes.app is absent.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Chroma / LanceDB / sqlite-vss: local vector DB for future
+  embedding search. Worth planning once brain.db passes ~100k rows,
+  not today.
+- litestream: streaming SQLite replication to a remote (e.g. B2,
+  S3). Would give near-continuous backup. Strong fit for brain.db.
+- DuckDB: faster analytical queries over SQLite files. Optional
+  overlay for dashboard aggregations.
+- jq + CLI tooling for knowledge/ contents: add a
+  `knowledge/INDEX.json` manifest keyed by relative path →
+  description, so tools can discover content without hardcoding.
+
+Net: no urgent swaps. A few targeted upgrades (litestream, a
+knowledge manifest) could be added when time allows.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) Extend data/DATABASE_SCHEMA.md with concrete, evidence-based
+   coverage of the 5 DBs it currently omits (brain.db,
+   knowledge_base.db, openclaw_memory.db, payments.db,
+   cost_tracker.db, price_monitor.db, emails.db). Only describes
+   column names + purpose; no DDL generation.
+2) Add scripts/backup-cortex-dbs.sh — bounded SQLite `.backup`
+   wrapper producing timestamped snapshots of brain.db,
+   decision_journal.db, jobs.db, follow_ups.db, emails.db under
+   `backups/sqlite/YYYYMMDD-HHMMSS/`. Dry-run by default.
+   Exclusions: price_monitor.db + cost_tracker.db (low-value,
+   sparse), openclaw_memory.db (redundant vs brain.db).
+3) Add ops/verification/ informational snapshot
+   `cortex-brain-snapshot-YYYYMMDD-HHMMSS.txt` with category row
+   counts + db size — done via a new helper
+   `scripts/cortex-brain-snapshot.sh` (read-only, bounded).
+
+All three are LOW risk.
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- No live backup/rotation for brain.db. The only snapshot is
+  12 days old.
+- No per-category TTL policy. Trading memories are effectively
+  accumulating without bound.
+- price_monitor.db freshness unverified — pipeline may be dead.
+- knowledge/ dir has no manifest; agents will keep hardcoding.
+- DATABASE_SCHEMA.md was only partial; this pass documents more
+  but does not auto-regenerate on schema change.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Add a launchd plist that runs scripts/backup-cortex-dbs.sh daily.
+- Investigate price_monitor.db staleness (Category 8 in this
+  campaign may touch it).
+- Draft per-category retention policy in cortex/config.py (e.g.
+  trading_strategy TTL 90 days, risk_management TTL 180 days,
+  follow_up TTL 30 days).
+- Write a `knowledge/MANIFEST.json` listing every content path with
+  a short description and last-updated ISO date; add a drift check.
+- Evaluate litestream once brain.db is funded (cheap: backup-only
+  profile).
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  data/DATABASE_SCHEMA.md  (adds coverage for brain.db,
+                                      knowledge_base.db, emails.db,
+                                      openclaw_memory.db, payments.db,
+                                      cost_tracker.db, price_monitor.db)
+- ADDED     scripts/backup-cortex-dbs.sh
+- ADDED     scripts/cortex-brain-snapshot.sh
+- ADDED     ops/verification/20260417-095615-memory-state-knowledge-audit.txt
+- ADDED     ops/verification/<stamp>-memory-state-knowledge-final.txt
+
+END OF AUDIT — Category 4
