@@ -1,15 +1,15 @@
 {
   "users": {
     "local-user": {
-      "totalSeconds": 3180.034587,
+      "totalSeconds": 3240.0242980000003,
       "projectSeconds": {},
       "current": {
         "startedAt": "2026-04-17T14:38:54.408018Z",
-        "lastSeenAt": "2026-04-17T15:31:54.442605Z",
+        "lastSeenAt": "2026-04-17T15:32:54.432316Z",
         "project": ""
       },
       "sessions": [],
-      "lastSeenAt": "2026-04-17T15:31:54.442605Z"
+      "lastSeenAt": "2026-04-17T15:32:54.432316Z"
     }
   }
 }
