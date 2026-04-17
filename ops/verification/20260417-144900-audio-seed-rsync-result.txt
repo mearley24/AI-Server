@@ -1,0 +1,51 @@
+### task 20260417-144900-audio-seed-rsync type=ssh_and_run signer=perplexity-computer
+### started 2026-04-17T08:49:42-06:00
+
+=== ssh_and_run audio-seed-rsync @ Matt@macbook-m2-pro.tailbcf3fe.ts.net 2026-04-17T08:49:42-06:00 ===
+=== scp audio-seed-rsync.sh -> Matt@macbook-m2-pro.tailbcf3fe.ts.net:/tmp/20260417-144900-audio-seed-rsync-audio-seed-rsync.sh @ 2026-04-17T08:49:42-06:00 ===
+argv: ['scp', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '/Users/bob/AI-Server/ops/task_runner/remote_scripts/audio-seed-rsync.sh', 'Matt@macbook-m2-pro.tailbcf3fe.ts.net:/tmp/20260417-144900-audio-seed-rsync-audio-seed-rsync.sh']
+
+exit=0
+=== ssh Matt@macbook-m2-pro.tailbcf3fe.ts.net run audio-seed-rsync @ 2026-04-17T08:49:43-06:00 ===
+argv: ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', 'Matt@macbook-m2-pro.tailbcf3fe.ts.net', 'bash /tmp/20260417-144900-audio-seed-rsync-audio-seed-rsync.sh']
+Transfer starting: 33 files
+20240716/
+Number of files: 33
+Number of files transferred: 0
+Total file size: 5287 MB
+Total transferred file size: 0 B
+Unmatched data: 0 B
+Matched data: 0 B
+File list size: 1504 B
+File list generation time: 0.037 seconds
+File list transfer time: 0.010 seconds
+Total sent: 1526 B
+Total received: 26 B
+
+sent 1526 bytes  received 26 bytes  140k bytes/sec
+total size is 5287M  speedup is 3406400.50
+Transfer starting: 68 files
+20240716/
+Number of files: 68
+Number of files transferred: 0
+Total file size: 9896 MB
+Total transferred file size: 0 B
+Unmatched data: 0 B
+Matched data: 0 B
+File list size: 3079 B
+File list generation time: 0.004 seconds
+File list transfer time: 0.013 seconds
+Total sent: 3101 B
+Total received: 26 B
+
+sent 3101 bytes  received 26 bytes  258k bytes/sec
+total size is 9896M  speedup is 3164829.99
+files-on-bob: 18
+
+exit=0
+=== cleanup remote script @ 2026-04-17T08:49:43-06:00 ===
+argv: ['ssh', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', 'Matt@macbook-m2-pro.tailbcf3fe.ts.net', 'rm -f /tmp/20260417-144900-audio-seed-rsync-audio-seed-rsync.sh']
+
+exit=0
+
+### finished 2026-04-17T08:49:44-06:00 exit=0
