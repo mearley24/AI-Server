@@ -1066,7 +1066,13 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
     @app.get("/api/symphony/proposals/templates")
     async def symphony_proposals_templates():
         data = await _safe_get(f"{PROPOSALS_URL}/proposals/templates/list")
-        return data or {"templates": [], "error": "proposals service unavailable"}
+        if not data:
+            return {"templates": [], "error": "proposals service unavailable"}
+        # Normalize upstream shape — proposals returns {proposal_templates, email_templates}
+        templates = data.get("templates")
+        if templates is None:
+            templates = data.get("proposal_templates") or []
+        return {"templates": templates, "email_templates": data.get("email_templates", [])}
 
     @app.post("/api/symphony/proposals/generate")
     async def symphony_proposals_generate(request: dict):

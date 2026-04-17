@@ -1493,7 +1493,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     digestEl.style.display = 'block';
     digestEl.textContent = 'Running improvement cycle...';
     try {
-      const r = await fetch('/improve', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      const r = await fetch('/improve/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
       const data = await r.json();
       digestEl.textContent = data.result || data.message || JSON.stringify(data);
     } catch(e) {

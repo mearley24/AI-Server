@@ -68,6 +68,9 @@ _Low priority / cleanup; no production impact today._
 
 _Completed since the April 11 audit baseline._
 
+- ✅ **Symphony Ops tab fixes (2026-04-16)** — Four defects fixed: (1) `./tools:/app/tools:ro` volume added to cortex in `docker-compose.yml` — Quick Tools now find scripts. (2) `triggerImprovement()` in `cortex/static/index.html` now POSTs to `/improve/run` (was `/improve`) — returns `{"status":"complete"}`. (3) `symphony_proposals_templates` in `cortex/dashboard.py` normalizes upstream `{proposal_templates:[...]}` shape → dashboard shows 5 templates. (4) Markup Tool launched via launchd (`ops/launchd/com.symphony.markup-tool.plist`, python3.14) — HTTP 200 at `localhost:8088`. Note: `markup_app/server.py` has no `/health` route; dashboard health check uses root `/`.
+
+
 - ✅ **Mission Control dissolved** — crash-looping container removed from `docker-compose.yml`; Cortex (8102) is now the single brain + dashboard; all services POST to `http://cortex:8102/remember`.
 - ✅ **Cortex added to docker-compose.yml** — was an orphaned container; now properly defined (Prompt S).
 - ✅ **Prompts A, C** — copytrade fake seeds/priority-wallet injection removed; sandbox fully wired; runtime-verified via code grep (§14).
