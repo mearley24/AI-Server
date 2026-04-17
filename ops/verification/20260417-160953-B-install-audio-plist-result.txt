@@ -1,0 +1,37 @@
+### task 20260417-160953-B-install-audio-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T10:14:20-06:00
+
+=== run_script install-audio-plist @ 2026-04-17T10:14:20-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-audio-plist.sh']
+copying plist: /Users/bob/AI-Server/scripts/launchd/com.symphony.audio-intake.plist -> /Users/bob/Library/LaunchAgents/com.symphony.audio-intake.plist
+OPENAI_API_KEY: loaded (len=164, tail=****MEYA)
+OLLAMA_HOST: http://192.168.1.189:11434
+OLLAMA_MEETING_MODEL: qwen3:8b
+
+bootout (ignore not-loaded error):
+
+bootstrap:
+
+verify env keys in installed plist (values masked):
+  OPENAI_API_KEY = ****MEYA (len=164)
+      AI_SERVER_ROOT = /Users/bob/AI-Server
+      OLLAMA_MEETING_MODEL = qwen3:8b
+      CORTEX_URL = http://127.0.0.1:8102
+      PATH = /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+      OLLAMA_HOST = http://192.168.1.189:11434
+
+launchctl state:
+	path = /Users/bob/Library/LaunchAgents/com.symphony.audio-intake.plist
+	state = running
+	stdout path = /Users/bob/AI-Server/data/audio_intake/launchd.out.log
+	stderr path = /Users/bob/AI-Server/data/audio_intake/launchd.err.log
+		com.apple.launchd.WatchPaths => {
+				"WatchPaths" => [
+		state = active
+		state = active
+
+ok: audio-intake plist installed with secrets injected.
+
+exit=0
+
+### finished 2026-04-17T10:14:20-06:00 exit=0

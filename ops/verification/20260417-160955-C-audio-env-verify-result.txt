@@ -1,0 +1,47 @@
+### task 20260417-160955-C-audio-env-verify type=verify_dump signer=perplexity-computer
+### started 2026-04-17T10:14:20-06:00
+
+=== verify_dump audio-env-verify @ 2026-04-17T10:14:20-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/audio-env-verify.sh']
+=== 0. banner ===
+2026-04-17 10:14:20 -0600
+Bobs-Mac-mini.local
+bob
+
+=== 1. installed plist env keys (OPENAI masked) ===
+  OPENAI_API_KEY = ****MEYA (len=164)
+      AI_SERVER_ROOT = /Users/bob/AI-Server
+      OLLAMA_MEETING_MODEL = qwen3:8b
+      CORTEX_URL = http://127.0.0.1:8102
+      PATH = /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+      OLLAMA_HOST = http://192.168.1.189:11434
+
+=== 2. git-tracked template MUST NOT contain secrets ===
+  ok: template has no OPENAI_API_KEY key (secrets only in installed copy)
+
+=== 3. live daemon env (via launchctl procinfo) ===
+  pid: 40676
+
+=== 4. ollama /api/chat with configured model ===
+  model: qwen3:8b
+{"model":"qwen3:8b","created_at":"2026-04-17T16:14:48.886976Z","message":{"role":"assistant","content":"ok","thinking":"Okay, the user wants me to reply with exactly one word: \"ok\". Let me make sure I understand the request correctly. They specified that the response should be exactly one word, and the example given is \"ok\". So I need to confirm that I'm not adding any extra text or explanations. Just the word \"ok\" in lowercase. Let me check if there are any hidden requirements. The user might be testing if I can follow simple instructions without overcomplicating. I should respond directly without any additional content. Alright, the correct response is \"ok\".\n"},"done":true,"done_reason":"stop","total_duration":28511188750,"load_duration":77301000,"prompt_eval_count":17,"prompt_eval_duration":249086375,"eval_count":121,"eval_duration":10602196878}
+  http_code=200  time_total=28.671422s
+
+=== 5. audio worker throughput (last 30 min of worker.log) ===
+  total log lines: 25
+  cutoff: 2026-04-17 09:44
+  --- transcribing starts (last 30m) ---
+2026-04-17 10:14:20,506 [INFO] transcribing 20240714__1720976932.WAV with ggml-large-v3.bin
+  --- cortex_posted (last 30m) ---
+  --- meeting_*_failed (last 30m) ---
+  --- any ERROR or WARNING (last 30m) ---
+
+=== 6. audio_intake counts ===
+  incoming: 55
+  processing: 1
+  processed: 2
+  failed: 0
+
+exit=0
+
+### finished 2026-04-17T10:14:49-06:00 exit=0

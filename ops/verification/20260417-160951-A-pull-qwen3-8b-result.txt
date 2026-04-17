@@ -3,3 +3,34 @@
 
 === run_script pull-qwen3-8b @ 2026-04-17T10:13:03-06:00 ===
 argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/pull-qwen3-8b.sh']
+=== pull-qwen3-8b @ 2026-04-17 10:13:03 -0600 ===
+model: qwen3:8b
+host: http://192.168.1.189:11434
+
+--- 0. pre-check: /api/tags ---
+{"models":[{"name":"llama3.2:3b","model":"llama3.2:3b","modified_at":"2026-04-16T09:36:29.787468715-06:00","size":2019393189,"digest":"a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"3.2B","quantization_level":"Q4_K_M"}}]}
+
+--- 1. pulling qwen3:8b (this may take several minutes) ---
+pulling manifest
+pulling a3de86cd1c13
+pulling ae370d884f10
+pulling d18a5cc71b84
+pulling cff3f395ef37
+pulling 05a61d37b084
+verifying sha256 digest
+writing manifest
+success
+
+--- 2. post-check: /api/tags ---
+{"models":[{"name":"qwen3:8b","model":"qwen3:8b","modified_at":"2026-04-17T10:14:02.590371105-06:00","size":5225388164,"digest":"500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41","details":{"parent_model":"","format":"gguf","family":"qwen3","families":["qwen3"],"parameter_size":"8.2B","quantization_level":"Q4_K_M"}},{"name":"llama3.2:3b","model":"llama3.2:3b","modified_at":"2026-04-16T09:36:29.787468715-06:00","size":2019393189,"digest":"a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"3.2B","quantization_level":"Q4_K_M"}}]}
+
+--- 3. chat smoke test on qwen3:8b ---
+{"model":"qwen3:8b","created_at":"2026-04-17T16:14:20.036495Z","message":{"role":"assistant","content":"ok","thinking":"Okay, the user wants me to reply with exactly one word: \"ok\". Let me make sure I understand the request correctly. They specified that the response should be exactly one word, and the example given is \"ok\". So I need to confirm that I'm not adding any extra text or explanations. Just the word \"ok\" in lowercase. Let me check if there are any hidden requirements. The user might be testing if I can follow simple instructions without overcomplicating. I should respond directly without any additional content. Alright, the correct response is \"ok\".\n"},"done":true,"done_reason":"stop","total_duration":17365394250,"load_duration":7204643666,"prompt_eval_count":17,"prompt_eval_duration":853580958,"eval_count":121,"eval_duration":9081775374}
+http_code=200
+
+ok: qwen3:8b is pulled and responsive.
+exit=0
+
+exit=0
+
+### finished 2026-04-17T10:14:20-06:00 exit=0
