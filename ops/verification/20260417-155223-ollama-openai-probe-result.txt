@@ -1,0 +1,62 @@
+### task 20260417-155223-ollama-openai-probe type=verify_dump signer=perplexity-computer
+### started 2026-04-17T09:55:47-06:00
+
+=== verify_dump ollama-openai-probe @ 2026-04-17T09:55:47-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/ollama-openai-probe.sh']
+=== 0. banner ===
+2026-04-17 09:55:47 -0600
+Bobs-Mac-mini.local
+bob
+ollama_host: http://192.168.1.189:11434
+ollama_model: qwen3:8b
+
+=== 1. ollama root (HTTP status only) ===
+http_code=200  time_total=0.002956s
+
+=== 2. ollama GET /api/tags (list pulled models) ===
+{"models":[{"name":"llama3.2:3b","model":"llama3.2:3b","modified_at":"2026-04-16T09:36:29.787468715-06:00","size":2019393189,"digest":"a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72","details":{"parent_model":"","format":"gguf","family":"llama","families":["llama"],"parameter_size":"3.2B","quantization_level":"Q4_K_M"}}]}
+=== 3. ollama GET /api/version ===
+{"version":"0.17.4"}
+=== 4. ollama POST /api/chat minimal probe ===
+{"error":"model 'qwen3:8b' not found"}
+---
+http_code=404  time_total=0.002835s
+
+=== 5. ollama POST /api/chat with a known-pullable fallback model (llama3.2:3b) ===
+{"model":"llama3.2:3b","created_at":"2026-04-17T15:55:48.431923Z","message":{"role":"assistant","content":"*ping*\n\nResponse time: 200 ms"},"done":true,"done_reason":"stop","total_duration":705168959,"load_duration":80058500,"prompt_eval_count":26,"prompt_eval_duration":289041167,"eval_count":10,"eval_duration":330720332}
+---
+http_code=200  time_total=0.707173s
+
+=== 6. launchd env for com.symphony.audio-intake ===
+pid: 99562
+--- ps ---
+  PID ELAPSED COMMAND
+99562   45:20 /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python /Users/bob/AI-Server/scripts/audio_intake_worker.py
+--- launchctl procinfo (may be truncated without sudo) ---
+
+--- plist OPENAI/OLLAMA entries ---
+no OPENAI/OLLAMA env keys in plist
+
+=== 7. worker.log: recent meeting_openai_failed / meeting_ollama_failed / meeting_analysis_failed ===
+14:2026-04-17 09:22:45,446 [INFO] meeting_ollama_failed: HTTP Error 404: Not Found
+15:2026-04-17 09:22:45,446 [WARNING] meeting_analysis_failed: no usable result from Ollama or OpenAI
+19:2026-04-17 09:31:17,344 [INFO] meeting_ollama_failed: HTTP Error 404: Not Found
+20:2026-04-17 09:31:17,345 [WARNING] meeting_analysis_failed: no usable result from Ollama or OpenAI
+
+=== 8. shell-level OPENAI_API_KEY presence (masked) ===
+OPENAI_API_KEY: NOT set in this shell
+
+=== 9. summary hints ===
+If /api/chat returned 404 on qwen3:8b but /api/tags shows other models:
+  -> the model isn't pulled on that host. Fix: `ollama pull qwen3:8b` on 192.168.1.189.
+If /api/chat returned 404 on both models but /api/tags works:
+  -> API surface mismatch (old Ollama version). Check /api/version.
+If /api/tags itself 404s:
+  -> that's not an Ollama server, or wrong port. Check what's at :11434.
+If OPENAI_API_KEY absent from launchd env but set in shell:
+  -> daemon needs the key baked into the plist's <EnvironmentVariables> block,
+     or loaded from a file at startup. Shell export won't reach launchd.
+
+exit=0
+
+### finished 2026-04-17T09:55:48-06:00 exit=0
