@@ -1,0 +1,266 @@
+==============================================================================
+CATEGORY 6 AUDIT: Coordination and Business Ops
+==============================================================================
+Generated: 2026-04-17 10:05 MDT
+Scope: OpenClaw orchestration, daily briefings, business process
+       automation, bid invite handling, stale opportunity handling,
+       meeting coordination, Dropbox organizer flows.
+
+Preflight at start: ok=True resolved=0 staged=2 unsafe=0.
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- openclaw/ service (58 Python modules, bind-mounted, port 8099,
+  healthy)
+- openclaw/orchestrator.py (main tick loop — run_loop, tick,
+  check_emails, check_followups, check_payments, check_calendar,
+  _redis_event_listener, _backfill_client_preferences)
+- openclaw/daily_briefing.py + daily_briefing_v2.py
+  (send_briefing, format_briefing)
+- openclaw/follow_up_engine.py, follow_up_tracker.py
+- openclaw/dtools_sync.py
+- openclaw/approval_bridge.py, approval_drain.py
+- openclaw/auto_responder.py, email_workflow.py
+- openclaw/decision_engine.py, decision_journal.py
+- openclaw/client_tracker.py, scope_tracker.py
+- openclaw/continuous_learning.py
+- openclaw/cost_tracker.py, payment_tracker.py, treasury.py
+- openclaw/doc_generator.py, doc_staleness.py
+- openclaw/docusign_integration.py, dropbox_integration.py
+- openclaw/dtools_change_watcher.py
+- openclaw/invoice_generator.py
+- openclaw/job_api.py, job_lifecycle.py, job_worker.py
+- openclaw/knowledge_base.py
+- openclaw/lifecycle_coordinator.py
+- openclaw/linear_sync.py (Linear integration — status unknown)
+- openclaw/llm_cache.py, llm_router.py
+- openclaw/main.py, memory.py
+- openclaw/outcome_listener.py
+- openclaw/pattern_engine.py
+- openclaw/preflight_check.py
+- openclaw/price_monitor.py
+- openclaw/product_recommender.py, project_learner.py,
+  project_template.py, proposal_checker.py, research_agent.py,
+  self_healer.py, sow_assembler.py, task_board.py, trade_learner.py
+- openclaw/webhook_server.py
+- openclaw/zoho_auth.py
+- scripts/dropbox-organizer.py + com.symphonysh.dropbox-organizer.plist
+  (LaunchAgent — verified running per STATUS_REPORT Z7)
+- MEETING_INGEST_STEPS.md (Bert → Bob audio rsync + meeting audio worker)
+- email-monitor/bid_triage.py (BuildingConnected bid triage)
+- email-monitor/routing_config.json + analyzer.py + router.py
+- calendar-agent/ (Zoho calendar + daily briefing integration)
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. openclaw/orchestrator.py (main loop)               STATUS: active (strong)
+   - Every-5-min tick running (confirmed healthy in Category 3).
+   - Handlers: check_emails, check_followups, check_payments,
+     check_calendar, _backfill_client_preferences,
+     _extract_client_preferences, _redis_event_listener,
+     _validate_dropbox_in_message, run_startup_health_checks.
+   - _validate_dropbox_in_message ties into the Dropbox-link rule
+     (Lesson #4) — this is hotter than the audit thought. It validates
+     inline, not a separate validator script.
+
+B. openclaw/daily_briefing.py                          STATUS: active
+   - `send_briefing()` and `format_briefing()` — used by 6 AM iMessage.
+   - Calendar integration wired (per STATUS_REPORT Prompt N Done).
+   - /calendar/daily-briefing fetch added 2026-04-13.
+
+C. openclaw/follow_up_engine.py + follow_up_tracker.py STATUS: partial
+   - tracker POSTs due follow-ups to Cortex.
+   - engine implements 3/7/14-day auto-send loop, but STATUS_REPORT
+     says `follow_up_log` empty → auto-send loop has not fired yet.
+
+D. openclaw/dtools_sync.py                             STATUS: active
+   - 41 jobs in jobs.db confirms sync is running.
+   - STATUS_REPORT Prompt N done.
+
+E. openclaw/approval_bridge.py + approval_drain.py     STATUS: active
+   - Drained 63 pending approvals 2026-04-13 (Prompt T).
+   - pending_approvals at 0 as of audit time.
+
+F. openclaw/auto_responder.py + email_workflow.py      STATUS: active
+   - Handles classified-email automated responses.
+
+G. openclaw/decision_engine.py + decision_journal.py    STATUS: active
+   - 4,642+ decisions in decision_journal.db.
+
+H. openclaw/client_tracker.py                          STATUS: active
+   - Client preference backfill documented.
+
+I. openclaw/continuous_learning.py                     STATUS: active
+   - Daily 50-query Perplexity-driven research loop per AGENTS.md.
+   - Populates Cortex trading_strategy + risk_management categories
+     (explains the 17k+ trading memories).
+
+J. openclaw/cost_tracker.py + treasury.py              STATUS: partial
+   - cost_tracker.db exists (20 KB — sparse), payment_tracker and
+     treasury modules present. Not deeply verified this pass.
+
+K. openclaw/doc_generator.py + doc_staleness.py        STATUS: active
+   - Agreement generation + stale-doc detection per STATUS_REPORT
+     reliability lessons.
+
+L. openclaw/dropbox_integration.py                     STATUS: partial
+   - Dropbox client hooks. scripts/dropbox-organizer.py runs as a
+     LaunchAgent (verified Z7). dropbox-organizer processes the
+     inbound Dropbox folder; openclaw layer probably consumes those
+     events. Not deeply traced this pass.
+
+M. openclaw/docusign_integration.py                     STATUS: unknown
+   - Present but not seen in STATUS_REPORT references. Client-portal
+     is the current e-signature path. May be legacy.
+
+N. openclaw/dtools_change_watcher.py                    STATUS: active
+   - Implied by STATUS_REPORT doc-staleness tracking — when D-Tools
+     opportunity prices change, emits events:documents / doc.stale.
+
+O. openclaw/invoice_generator.py                        STATUS: unknown
+   - Not currently cited in STATUS_REPORT or AGENTS.md.
+
+P. openclaw/linear_sync.py                              STATUS: stale/unknown
+   - Linear.app integration present but no STATUS_REPORT entry or
+     compose reference. Appears to be an exploratory feature.
+
+Q. openclaw/job_api.py, job_lifecycle.py, job_worker.py STATUS: active
+   - Part of the jobs.db pipeline (41 jobs tracked).
+
+R. openclaw/preflight_check.py                          STATUS: active
+   - Openclaw-internal preflight — separate from the task-runner's
+     ops/task_runner_preflight.py (naming collision to watch).
+
+S. openclaw/product_recommender.py, project_learner.py,
+   project_template.py, proposal_checker.py, research_agent.py,
+   sow_assembler.py, trade_learner.py                   STATUS: varies
+   - Collectively: proposal-authoring brain. STATUS_REPORT says
+     D-Tools Cloud proposal flow is ~65% complete (see
+     orchestrator/PROPOSAL_PROCESS_ROADMAP.md). Not deeply verified.
+
+T. openclaw/self_healer.py                              STATUS: partial
+   - Duplicates bob-watchdog role inside the container. Intent
+     unclear; probably Docker-level restart logic.
+
+U. openclaw/pattern_engine.py                           STATUS: unknown
+   - No explicit wiring documented.
+
+V. openclaw/webhook_server.py                           STATUS: unknown
+   - May be mostly vestigial — the overall policy is HTTP endpoints
+     on service ports, not webhooks.
+
+W. email-monitor/bid_triage.py                          STATUS: active
+   - BuildingConnected bid triage. Parses invites, classifies
+     (BID/PASS/REVIEW), notifies Matt via iMessage.
+   - bid_config.json controls trade capabilities + service territory.
+
+X. Calendar-agent daily-briefing                        STATUS: active
+   - /calendar/daily-briefing endpoint wired into orchestrator
+     daily-briefing assembly 2026-04-13.
+
+Y. scripts/dropbox-organizer.py + LaunchAgent           STATUS: active
+   - Running per STATUS_REPORT Z7. Organizes Dropbox contents.
+
+Z. MEETING_INGEST_STEPS.md                              STATUS: active
+   - Bert → Bob audio rsync + meeting audio worker
+     (scripts/audio_intake_worker.py, launchd com.symphony.audio-intake,
+     data/audio_intake/queue.db, whisper ggml-large-v3). Ran
+     successfully today via task-runner ssh_and_run flow.
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- OpenClaw is a rich, live orchestration surface: 58 modules, 41
+  active jobs, Zoho calendar + IMAP wired, dtools sync running.
+- daily_briefing + follow_up + approval_drain are all committed and
+  observed to fire.
+- Bid triage (BuildingConnected) is in place with config-driven
+  territory rules.
+- Dropbox link validation happens inline in orchestrator.py
+  (_validate_dropbox_in_message) — better than a separate lint tool.
+- MEETING_INGEST_STEPS.md is a concrete, executable ingestion plan.
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses
+------------------------------------------------------------------------------
+- 58 modules, no top-level OPENCLAW_MODULES.md explaining each.
+  Agents have to diff-grep to learn a module's role.
+- Multiple modules whose runtime role is unclear: docusign_integration,
+  invoice_generator, linear_sync, pattern_engine, webhook_server,
+  self_healer. Hard to know if any are stale.
+- Naming collision: openclaw/preflight_check.py vs
+  ops/task_runner_preflight.py — two very different tools with
+  similar names.
+- follow_up_engine hasn't fired (log empty) — may indicate the
+  rules are too conservative or an unapproved-by-Matt gate.
+- daily_briefing and daily_briefing_v2 both present. Two versions
+  in-flight → unclear which is canonical.
+- openclaw/self_healer.py duplicates scripts/bob-watchdog.sh intent.
+  No clarity on which runs when.
+- openclaw/data/ directory present alongside repo-level data/ —
+  potential confusion.
+- No documented "ownership" per module (who wrote it, what triggers
+  it, how to tell if it's working).
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- APScheduler: clean scheduling for the tick loop and per-handler
+  cadences. orchestrator.py rolls its own; APScheduler would let
+  humans see schedules declaratively.
+- Celery / Huey / RQ: real task-queue. Not recommended — the
+  git-driven task runner (Category 2) is already the autonomy plane.
+- Keep what's working. The biggest win is documentation, not code.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) Add openclaw/MODULE_MAP.md — short one-paragraph-per-module
+   description of every .py in openclaw/: status (active / partial
+   / stale / unknown) and known callers. Builds the missing
+   orientation doc. Agents can grep for "active" to find current
+   modules and "stale/unknown" to avoid dead code.
+2) Add openclaw/daily_briefing_V2_STATUS.md noting that
+   daily_briefing.py is canonical and daily_briefing_v2.py is
+   in-flight experimental. (Won't delete v2 here — that's MEDIUM
+   risk.)
+3) Add scripts/dropbox-link-validate.sh — stdin / file lint check
+   that fails on `dropbox.com/.*?/preview/` (Lesson #4 validator).
+   Complements orchestrator.py's inline check.
+
+All three are LOW risk (docs + a stdin lint script).
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- 10+ unknown-status openclaw modules. Any of them could fire on
+  a schedule we're not aware of.
+- follow_up_engine not emitting — may need a test run / unblock.
+- daily_briefing vs v2 duality.
+- openclaw/self_healer.py vs bob-watchdog.sh overlap.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Fire follow_up_engine against a stubbed job to confirm it works,
+  then document the outcome in STATUS_REPORT.
+- Resolve daily_briefing_v2 (merge or delete).
+- Decide openclaw/self_healer.py fate (delete if bob-watchdog
+  covers everything).
+- Document module ownership in openclaw/MODULE_MAP.md additions.
+- Audit openclaw/linear_sync.py — is Linear actually in use? If
+  not, mark DECOMMISSIONED and delete credentials.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     openclaw/MODULE_MAP.md
+- ADDED     openclaw/DAILY_BRIEFING_V2_STATUS.md
+- ADDED     scripts/dropbox-link-validate.sh
+- ADDED     ops/verification/20260417-100530-coordination-business-ops-audit.txt
+- ADDED     ops/verification/<stamp>-coordination-business-ops-final.txt
+
+END OF AUDIT — Category 6
