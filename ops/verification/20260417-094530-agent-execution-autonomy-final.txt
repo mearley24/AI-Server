@@ -1,0 +1,124 @@
+==============================================================================
+CATEGORY 2 FINAL: Agent Execution and Autonomy
+==============================================================================
+Generated: 2026-04-17 09:45 MDT
+Companion audit: 20260417-094300-agent-execution-autonomy-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+Symphony Task Runner v1 (scripts/task_runner.py, scripts/task_signer.py,
+ops/task_runner_preflight.py, ops/task_runner_health.py, ops/task_audit.py,
+ops/work_queue/, ops/task_runner/, TASK_SCHEMA.md, AUTHORIZED_KEYS.txt,
+~/Library/LaunchAgents/com.symphony.task-runner.plist, Cline prompt
+spec, standing-approval policy in CLAUDE.md).
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- scripts/task_runner.py (4 handlers, ed25519-gated) ......................... active
+- scripts/task_signer.py (keygen / sign / verify) ............................ active
+- ops/task_runner_preflight.py ............................................... active
+- ops/task_runner_health.py .................................................. active
+- ops/task_audit.py .......................................................... active
+- ops/work_queue/{pending, completed=13, failed=0, rejected=0} ............... active
+- AUTHORIZED_KEYS.txt (cline-bob + perplexity-computer) ...................... active
+- TASK_SCHEMA.md ............................................................. active
+- com.symphony.task-runner.plist (WatchPaths + QueueDirectories + 60s) ...... active (strong)
+- ops/launchd/com.symphony.task-runner-health.plist .......................... active
+- 8 local task scripts + 2 remote + 2 verification dumps ..................... active
+- Standing-approval risk tiers (CLAUDE.md) ................................... active
+- Cline prompt workflow ...................................................... active
+- Task chaining (depends_on / next_task) ..................................... partial (no 1st-class support)
+- Runtime state tracked in git (.runner.lock) ................................ fixed this pass
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Zero-touch: no human in the loop for any low-risk operation.
+- ed25519 + allowlist + named-script discipline keeps a git-driven
+  runner safe.
+- Event-driven plist delivers sub-second dispatch with a 60s safety
+  net and 10s throttle.
+- 3-tier safety: lock + timeout + heartbeat.
+- Handlers are small + auditable; each action logs to
+  ops/verification/<task_id>-result.txt.
+- 13 tasks succeeded today end-to-end — proves the plane works.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- No first-class chaining (`depends_on`) metadata.
+- No priority; pending sorted by filename.
+- No automatic retry for transient failures.
+- Failures invisible without polling failed/ or reading verification.
+- Runtime .runner.lock was tracked in git — FIXED this pass.
+- Allowlist hard-coded in Python, not a config file.
+- No batch signing helper, no dry-run flag on the runner.
+- No key-rotation audit trail.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Celery/RQ/Dramatiq/Temporal/Airflow: all rejected. Broker/worker
+  failure modes worse than plain git+launchd. Skip.
+- GitHub Actions: external; violates "everything stays on Bob".
+- Current design is the right shape. Improvements = additive.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) .gitignore: added
+   data/task_runner/.runner.lock,
+   data/task_runner/launchd.out.log,
+   data/task_runner/launchd.err.log.
+   Also ran `git rm --cached data/task_runner/.runner.lock` so the
+   tracked file is dropped. This removes recurring dirty-tree noise
+   that was showing up in every `git status`.
+   RISK: LOW. Pure repo hygiene. No runtime impact.
+
+2) scripts/task-queue-stats.sh — one-shot snapshot of queue counts
+   and newest filename per state, plus heartbeat + authorized signers
+   + launchd status. Bounded, read-only, safe to run at any time.
+   Test run: pending=0, completed=13, failed=0, rejected=0; 2 signers
+   enrolled; heartbeat 80s old.
+   RISK: LOW. Read-only utility.
+
+3) ops/task_runner/scripts/replay-last-failed.sh — template for
+   re-queuing a task from failed/ after stripping its signature so
+   the submitter can re-sign. Dry-run by default; requires --yes
+   to move the file; refuses to overwrite an existing pending file.
+   Even if run accidentally, the runner rejects unsigned tasks, so
+   no dangerous side effect is possible without a deliberate
+   re-sign + push.
+   RISK: MEDIUM-gated. Requires explicit --yes + explicit re-sign
+   + explicit git push before anything executes.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- Task failure alerting still not wired to a channel — Category 7.
+- No depends_on / priority metadata — deferred.
+- Allowlist lives in code — deferred.
+- Key rotation procedure documented but never exercised.
+
+------------------------------------------------------------------------------
+Next actions (deferred)
+------------------------------------------------------------------------------
+- Category 7: notify failed/ or rejected/ writes via notification-hub.
+- Externalize allowlist to ops/work_queue/ALLOWLIST.json.
+- Add depends_on + priority fields to TASK_SCHEMA + handler logic.
+- Rehearse key rotation (rotate cline-bob once in a scheduled
+  maintenance window).
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  .gitignore  (+3 task_runner runtime lines)
+- MODIFIED  data/task_runner/.runner.lock (untracked via git rm --cached)
+- ADDED     scripts/task-queue-stats.sh
+- ADDED     ops/task_runner/scripts/replay-last-failed.sh
+- ADDED     ops/verification/20260417-094300-agent-execution-autonomy-audit.txt
+- ADDED     ops/verification/20260417-094530-agent-execution-autonomy-final.txt
+
+END OF FINAL REPORT — Category 2

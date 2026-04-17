@@ -1,0 +1,259 @@
+==============================================================================
+CATEGORY 2 AUDIT: Agent Execution and Autonomy
+==============================================================================
+Generated: 2026-04-17 09:43 MDT
+Scope: Symphony Task Runner v1, signed JSON task queue, launchd integration,
+       task types, task chaining, preflight self-heal, standing approval
+       flow, Cline prompt workflow.
+
+Preflight at start: ok=True resolved=0 staged=0 unsafe=0
+Task runner health at start: healthy (all 5 checks OK).
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- scripts/task_runner.py (550 lines, 4 handlers, ed25519-gated)
+- scripts/task_signer.py (263 lines — keygen / sign / verify)
+- ops/task_runner_preflight.py (391 lines — whitelist self-heal)
+- ops/task_runner_health.py (363 lines — 5-check health)
+- ops/task_audit.py (263 lines — forensic lookup)
+- ops/work_queue/{pending,completed,failed,rejected}/
+- ops/work_queue/AUTHORIZED_KEYS.txt (cline-bob + perplexity-computer keys)
+- ops/work_queue/TASK_SCHEMA.md (authoritative)
+- ops/task_runner/scripts/ (8 local scripts, e.g. unstick/kick/install)
+- ops/task_runner/remote_scripts/ (2 SSH targets: bert-hostkey, audio-seed)
+- ops/task_runner/verifications/ (2 named dumps: audio-pipeline,
+  task-runner)
+- ~/Library/LaunchAgents/com.symphony.task-runner.plist (event-driven
+  WatchPaths + QueueDirectories + 60s StartInterval + 10s ThrottleInterval)
+- ops/launchd/com.symphony.task-runner-health.plist (committed)
+- .cursor/prompts/cline-prompt-task-runner.md (authoritative prompt doc)
+- CLAUDE.md "Standing Approval and Risk Tiers" section
+- ops/AGENT_VERIFICATION_PROTOCOL.md
+- data/task_runner/heartbeat.txt, .runner.lock, launchd.{out,err}.log
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. scripts/task_runner.py (v1 core)                   STATUS: active
+   - Lock-based single-instance execution
+   - git pull before dispatch
+   - ed25519 signature verification via task_signer
+   - allowlist: git_pull, run_script, ssh_and_run, verify_dump
+   - 2-hour per-task timeout
+   - handlers tee to ops/verification/<task_id>-result.txt
+   - heartbeat throttled to once per 10 min
+   - preflight self-heal invoked before dispatch
+   - commit+push at end of tick if anything changed
+   - 13 tasks already executed successfully today.
+
+B. scripts/task_signer.py                             STATUS: active
+   - keygen (writes ~/.config/symphony/<name>.ed25519.priv mode 600 +
+     appends pubkey to AUTHORIZED_KEYS.txt)
+   - sign (canonical JSON with sig field removed, sort_keys=True)
+   - verify (tries every pubkey in AUTHORIZED_KEYS.txt)
+   - 2 keys enrolled: cline-bob, perplexity-computer.
+
+C. ops/work_queue/ directory                          STATUS: active
+   - pending=0, completed=13, failed=0, rejected=0 at audit time.
+   - Completed history shows: verify-task-runner → bert-hostkey-pin →
+     audio-seed-rsync → verify-audio-pipeline → flatten-audio-incoming
+     → verify-audio-post-flatten → verify-audio-after-worker-tick →
+     install-audio-plist → kick-audio-intake → verify-audio-after-kick
+     → install-task-runner-plist → kick-task-runner → runner-check.
+     Proves the chain worked end-to-end today.
+
+D. com.symphony.task-runner.plist                     STATUS: active (strong)
+   - Event-driven: WatchPaths on ops/work_queue/pending + .git/refs/heads/
+     main + .git/FETCH_HEAD.
+   - QueueDirectories ensures launchd fires when files appear/disappear.
+   - StartInterval=60 safety net in case fs events miss.
+   - ThrottleInterval=10s debounces multi-file commit bursts.
+   - RunAtLoad=true so boot is clean.
+   - Committed reference copy at ops/task_runner/com.symphony.task-runner.plist.
+
+E. AUTHORIZED_KEYS.txt                                STATUS: active
+   - cline-bob key present (live, used for signing)
+   - perplexity-computer key present (enrolled; replacing the prompt's
+     placeholder line).
+   - 2/2 lines are real pubkeys. Pass.
+
+F. TASK_SCHEMA.md                                     STATUS: active
+   - Authoritative; covers JSON shape, signature scheme, canonical JSON
+     rules, allowlist, layout, heartbeat, lock, etc.
+
+G. task_runner_preflight.py (whitelist self-heal)     STATUS: active
+   - Matches CLAUDE.md risk-tier policy.
+   - Ran cleanly at audit start. Writes ops/verification/<stamp>-
+     preflight.txt regardless.
+
+H. task_runner_health.py                              STATUS: active
+   - 5 checks; JSON + human. Exit code discipline.
+   - Installed via ops/launchd/com.symphony.task-runner-health.plist.
+
+I. task_audit.py (forensic lookup)                    STATUS: active
+   - Substring match across verification + queue dirs; machine-readable
+     output via --json; --out PATH for persistence.
+
+J. Standing-approval + risk tiers (CLAUDE.md)         STATUS: active
+   - Low / Medium / High tiers published.
+   - "Default down one tier on ambiguity" rule stated.
+   - Tiered behavior matches what agents actually do in practice
+     (audits + hygiene low; restarts medium; secrets/trades high).
+
+K. Cline prompt (.cursor/prompts/cline-prompt-task-runner.md)  STATUS: active
+   - 362-line one-shot spec. All 11 acceptance criteria met in the
+     current repo. Phases A-I executed previously.
+
+L. Task chaining                                      STATUS: partial
+   - No first-class "chain" or "next_task" field. Multi-step workflows
+     are composed by the submitting agent queueing a sequence of tasks
+     with lexicographic task_id ordering. Works fine for the current
+     usage pattern but any failure mid-sequence leaves later steps
+     orphaned in pending/, requiring the submitter to cancel manually.
+   - `failed/` and `rejected/` dirs exist but no hook notifies the
+     submitter or skips dependent tasks. Documented as future work.
+
+M. Supporting scripts (ops/task_runner/scripts/)      STATUS: active
+   - approve-router.sh (Polymarket router approval)
+   - kick-audio-intake.sh, install-audio-plist.sh
+   - flatten-audio-incoming.sh
+   - install-task-runner-plist.sh, kick-task-runner.sh
+   - unstick-task-runner.sh, runner-check.sh
+   - All bounded, non-interactive, committed.
+
+N. Remote scripts                                     STATUS: active
+   - bert-hostkey-pin.sh (idempotent ssh-keyscan + dedup)
+   - audio-seed-rsync.sh (bounded rsync, Tailscale target)
+
+O. Verification dumps (named)                         STATUS: active
+   - audio-pipeline.sh (verify_dump target for audio work)
+   - task-runner.sh (self-inspection: queue status, heartbeat, recent
+     commits, launchd state)
+
+P. Data artifacts                                     STATUS: active
+   - data/task_runner/heartbeat.txt, launchd.{out,err}.log present.
+   - .runner.lock appears in git status as modified; see Cons below.
+
+Q. Agent handoff mechanism                            STATUS: active
+   - Documented: commit task, push, wait for runner tick, `git pull` to
+     read result. No paste-back needed.
+   - Works cross-agent (Perplexity Computer, future Cline sessions).
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- Zero-touch control plane. Matt is not in the loop. Every operation
+  produces an auditable verification artifact.
+- ed25519 signing + allowlist makes the runner safe even though tasks
+  arrive by plain git push.
+- Event-driven plist (WatchPaths + QueueDirectories) gives sub-second
+  response to new tasks while StartInterval=60 is a safety net.
+- ThrottleInterval=10s prevents thundering-herd on multi-file commits.
+- Preflight self-heal + whitelist keeps the runner unblocked on
+  well-understood runtime state files.
+- Handler set is small (4) and each handler is tightly scoped — easy
+  to reason about.
+- Heartbeat + per-task timeout + single-instance lock form three
+  independent safety nets.
+- Named-script discipline (run_script / verify_dump / ssh_and_run) makes
+  every remote/local action reviewable in git history.
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses / missing pieces
+------------------------------------------------------------------------------
+- No task chaining metadata. If step N fails, steps N+1..M stay in
+  pending until the submitter removes them. Workflow orchestration
+  lives entirely in the submitter's head.
+- `failed/` and `rejected/` have no alerting. A task that dies silently
+  is only visible when a human reads the dir.
+- No task replay / retry semantics. A transient network blip that
+  causes a failed ssh_and_run requires the submitter to manually
+  re-queue a near-identical task.
+- data/task_runner/.runner.lock is tracked in git (appears in
+  `git status -s` as modified). It should be in .gitignore — the
+  lock file is pure runtime state. Every runner tick creates a churn
+  opportunity.
+- No task "owner" field. Every task carries `created_by` but the
+  runner doesn't route results back to any channel — the submitter
+  must poll the repo.
+- task_signer.py has no signature revocation mechanism. If a private
+  key leaks, the only recovery is to delete the pubkey line from
+  AUTHORIZED_KEYS.txt (which works, but there's no audit of who had
+  access to a key).
+- No batch signing for agents who want to queue many tasks quickly.
+- No `dry-run` mode on the runner itself for smoke testing a new
+  handler without side effects.
+- Allowlist is hard-coded in task_runner.py. Adding a new task type
+  requires editing Python, not a config file.
+- No task priority. Runner processes pending in sorted filename order
+  (effectively timestamp-ordered), which is fine, but any emergency
+  task must have a filename that sorts before pending items.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Celery / RQ / Dramatiq: full-fat task queues. Overkill. Their
+  failure modes (broker down, worker crash) are worse than the current
+  git-driven pipeline. Don't adopt.
+- Temporal / Airflow: workflow engines. Massively overkill and would
+  be harder for humans to inspect than "read a JSON file in a repo".
+- GitHub Actions / Workflow Dispatch: external, would break the
+  tenet of "everything stays on Bob".
+- Hashicorp Vault + OIDC: proper key rotation. If key leakage becomes
+  a real concern, consider — but for two agents and a closed repo,
+  AUTHORIZED_KEYS.txt with git history is sufficient.
+
+Net: current system is the right shape. Improvements are additive
+(alerting, chaining, gitignore fixes), not replacements.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) Add data/task_runner/.runner.lock to .gitignore so every tick no
+   longer shows a dirty working copy. Matches the pattern already used
+   for data/network_watch/.
+2) Add scripts/task-queue-stats.sh — one-shot pending/completed/failed/
+   rejected counts + newest filename in each, for quick forensics
+   between agent handoffs. Bounded, read-only.
+3) Add ops/task_runner/scripts/replay-last-failed.sh — a template for
+   resubmitting the most recent failed/*.json back to pending/ after
+   stripping the old signature so the submitter can re-sign. Script
+   refuses to run without --yes; MEDIUM-risk safety gate.
+
+All three changes respect the standing approval policy (LOW for 1+2,
+MEDIUM-but-gated for 3).
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- No real-time notification on task failure — left to Category 7.
+- No automated retry of transient ssh_and_run failures.
+- Key-rotation hygiene untested (never rotated in practice).
+- Allowlist config lives in code (not a file) — minor friction when
+  adding task types.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Wire failed/ moves to notification-hub for iMessage alerts
+  (Category 7).
+- Externalize allowlist to ops/work_queue/ALLOWLIST.json so adding a
+  task type no longer requires editing scripts/task_runner.py.
+- Add `depends_on: [task_id]` metadata so a task stays in pending
+  until the named predecessor lands in completed/. Do not run until
+  deps met; auto-reject if dep in failed/.
+- Introduce a `priority` field (int, 0=high). Runner sorts pending
+  by priority first, then timestamp.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  .gitignore  (adds data/task_runner/.runner.lock)
+- ADDED     scripts/task-queue-stats.sh
+- ADDED     ops/task_runner/scripts/replay-last-failed.sh
+- ADDED     ops/verification/20260417-094300-agent-execution-autonomy-audit.txt
+- ADDED     ops/verification/<stamp>-agent-execution-autonomy-final.txt
+
+END OF AUDIT — Category 2

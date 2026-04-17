@@ -40,7 +40,13 @@ PROGRESS LOG (appended per category)
                  scripts/verification-prune.sh (new),
                  ops/verification/INDEX.txt (generated)
          risk:   LOW (all repo-safe; no destructive ops)
-[pending] 2. agent-execution-autonomy
+[DONE   ] 2. agent-execution-autonomy
+         audit:  ops/verification/20260417-094300-agent-execution-autonomy-audit.txt
+         final:  ops/verification/20260417-094530-agent-execution-autonomy-final.txt
+         files:  .gitignore (+3 task-runner lines; .runner.lock untracked),
+                 scripts/task-queue-stats.sh (new),
+                 ops/task_runner/scripts/replay-last-failed.sh (new, gated)
+         risk:   LOW for .gitignore + stats; MEDIUM-gated for replay helper
 [pending] 3. core-stack-infrastructure
 [pending] 4. memory-state-knowledge
 [pending] 5. web-automation-integrations

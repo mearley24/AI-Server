@@ -82,3 +82,8 @@ data/audio_intake/processed/
 data/audio_intake/failed/
 data/audio_intake/incoming/
 data/audio_intake/.worker.lock
+
+# Task runner runtime state (scripts/task_runner.py writes these every tick)
+data/task_runner/.runner.lock
+data/task_runner/launchd.out.log
+data/task_runner/launchd.err.log
