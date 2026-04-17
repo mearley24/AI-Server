@@ -1,0 +1,115 @@
+==============================================================================
+CATEGORY 5 FINAL: Web automation and integrations
+==============================================================================
+Generated: 2026-04-17 10:03 MDT
+Companion audit: 20260417-100100-web-automation-integrations-audit.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+agents/dtools_browser_agent.py, integrations/dtools/ (client, server,
+workflow, tonight_proposal_runner), symphony/browser/,
+tools/perplexity_research.py, tools/snapav_scraper.py,
+integrations/autoresearch/, dtools-bridge container + health,
+DTOOLS_API_KEY credential assumptions, Playwright/FastAPI integration
+surface.
+
+------------------------------------------------------------------------------
+Items found + status (brief)
+------------------------------------------------------------------------------
+- dtools-bridge container (healthy) ......................................... active
+- integrations/dtools/dtools_client.py ...................................... active
+- integrations/dtools/proposal_workflow.py .................................. active
+- integrations/dtools/tonight_proposal_runner.py ............................ partial
+- agents/dtools_browser_agent.py (Playwright) ............................... partial (missing selectors)
+- integrations/dtools/page_selectors.yaml ................................... MISSING
+- symphony/browser/ (source missing, pyc orphan) ............................ stale → documented
+- integrations/autoresearch/ (GPU-bound experimental) ....................... stale → marked NOT_PRODUCTION
+- tools/perplexity_research.py + snapav_scraper.py .......................... active
+- Dropbox link validator (Lesson #4) ........................................ missing (deferred)
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- REST-first D-Tools path is healthy and responsive.
+- dtools-bridge exposes `/health` with a real payload.
+- Browser automation is bounded to specific SKU scraping + D-Tools
+  workflows — not a general web crawler.
+- Playwright is the right tool; no swap recommended.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- page_selectors.yaml missing — browser agent non-functional on
+  fresh checkout. NOT fixed this pass (requires live D-Tools login;
+  MEDIUM risk).
+- symphony/browser/ orphan pyc — documented this pass.
+- integrations/autoresearch/ is unrelated research code —
+  documented NOT_PRODUCTION this pass.
+- No unified integrations manifest — FIXED this pass
+  (ops/INTEGRATIONS.md).
+- Dropbox link validator (Lesson #4) still absent — deferred.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+- None that justify the churn. Stick with Playwright; prefer REST
+  when D-Tools supports it.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass
+------------------------------------------------------------------------------
+1) ops/INTEGRATIONS.md (NEW) — 22-row matrix of every external
+   service: OpenAI, Ollama, Zoho Mail/Calendar, D-Tools Cloud/SI,
+   Twilio, Polymarket, Kraken, Kalshi, Perplexity, Dropbox,
+   Cloudflare, RSSHub, BuildingConnected, X/Twitter, Tailscale,
+   Telegram, BlueBubbles, GitHub, Snap One, WireGuard. Lists
+   auth, env vars, code path, and health endpoint per row.
+   RISK: LOW (docs).
+
+2) integrations/autoresearch/NOT_PRODUCTION.md (NEW) — marker
+   clearly stating this GPU-bound experimental code is not part
+   of Bob's production stack. Explains why (H100 required, uv
+   project, LLM-training workload).
+   RISK: LOW (docs).
+
+3) symphony/browser/README.md (NEW) — explains the orphan pyc
+   situation. Tells agents which entry points to use instead
+   (agents/dtools_browser_agent.py or tools/snapav_scraper.py).
+   RISK: LOW (docs).
+
+All three are LOW risk.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- page_selectors.yaml still missing. When an agent first invokes
+  the D-Tools browser agent, it will fail. Deliberate: creating a
+  YAML blind would be worse than letting the real user drive
+  selector mapping under a live session.
+- symphony/browser/autonomous source still not committed. Marker
+  added; actual restoration is out of scope.
+- Dropbox link validator still missing (Lesson #4 UNKNOWN).
+- No integration rotation automation.
+
+------------------------------------------------------------------------------
+Next actions (deferred)
+------------------------------------------------------------------------------
+- Add `--map-selectors` flag to agents/dtools_browser_agent.py that
+  writes page_selectors.yaml from a live portal walk.
+- Add scripts/dropbox-link-validate.sh that greps for `/preview/`.
+- Restore symphony/browser/autonomous.py or remove the orphan pyc.
+- Plan an integrations health endpoint that polls each external
+  service (OpenAI /models, Polymarket /health, Kraken /public/Time,
+  Kalshi /markets ping, Dropbox app info) and feeds Cortex.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     ops/INTEGRATIONS.md
+- ADDED     integrations/autoresearch/NOT_PRODUCTION.md
+- ADDED     symphony/browser/README.md
+- ADDED     ops/verification/20260417-100100-web-automation-integrations-audit.txt
+- ADDED     ops/verification/20260417-100330-web-automation-integrations-final.txt
+
+END OF FINAL REPORT — Category 5

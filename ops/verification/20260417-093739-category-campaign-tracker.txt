@@ -66,7 +66,13 @@ PROGRESS LOG (appended per category)
                  scripts/cortex-brain-snapshot.sh (new, tested),
                  ops/verification/20260417-095857-cortex-brain-snapshot.txt (test run)
          risk:   LOW (docs + read-only snapshot + dry-run backup helper)
-[pending] 5. web-automation-integrations
+[DONE   ] 5. web-automation-integrations
+         audit:  ops/verification/20260417-100100-web-automation-integrations-audit.txt
+         final:  ops/verification/20260417-100330-web-automation-integrations-final.txt
+         files:  ops/INTEGRATIONS.md (new, 22 external services),
+                 integrations/autoresearch/NOT_PRODUCTION.md (new),
+                 symphony/browser/README.md (new)
+         risk:   LOW (docs only)
 [pending] 6. coordination-business-ops
 [pending] 7. messaging-communications
 [pending] 8. trading-market-automation

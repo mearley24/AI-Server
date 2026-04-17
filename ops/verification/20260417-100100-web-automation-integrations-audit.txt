@@ -1,0 +1,226 @@
+==============================================================================
+CATEGORY 5 AUDIT: Web automation and integrations
+==============================================================================
+Generated: 2026-04-17 10:01 MDT
+Scope: browser_agent, D-Tools Cloud automation, Playwright/FastAPI
+       integration, external web UI automations, related credentials
+       and config assumptions.
+
+Preflight at start: ok=True resolved=0 staged=0 unsafe=0.
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- agents/dtools_browser_agent.py (Playwright-driven D-Tools automation)
+- integrations/dtools/dtools_client.py (D-Tools Cloud REST API client)
+- integrations/dtools/dtools_server.py (dtools-bridge container)
+- integrations/dtools/proposal_workflow.py
+- integrations/dtools/tonight_proposal_runner.py
+- integrations/dtools/setup_dtools_bridge.sh
+- integrations/dtools/Dockerfile
+- integrations/dtools/page_selectors.yaml  (MISSING — referenced in
+  agents/dtools_browser_agent.py)
+- symphony/browser/ (__pycache__ only — source deleted)
+- tools/perplexity_research.py (Perplexity web research; AGENTS.md ref)
+- tools/snapav_scraper.py (Playwright product doc scraping)
+- integrations/autoresearch/ (karpathy-inspired experimental agent;
+  not deployed — README explains it's a 5-minute LLM-retraining loop
+  targeting a GPU and uv project)
+- Compose: dtools-bridge service (port 8096 host, 5050 internal)
+  HEALTHY ({"dtools":"ready","status":"healthy"})
+- Credentials: DTOOLS_API_KEY in .env (per AGENTS.md)
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. agents/dtools_browser_agent.py (Playwright)         STATUS: partial
+   - Imports: Playwright, dotenv.
+   - Commands: --login, --create, --import, --full, --batch.
+   - Expects integrations/dtools/page_selectors.yaml — file is
+     NOT present in the repo.
+   - Without the selectors file, the agent can't locate any DOM
+     element reliably. It's unclear whether a prior run produced
+     the file locally and it was gitignored, or whether this path
+     is unused in practice (CLAUDE.md quick-refs lean on the REST
+     client instead).
+   - Classification: script exists but runtime state unknown;
+     effectively PARTIAL-to-STALE.
+
+B. integrations/dtools/dtools_client.py                STATUS: active
+   - REST client for D-Tools Cloud API. Dual auth: static Basic
+     (baked header) + X-API-Key from env.
+   - Bases: https://dtcloudapi.d-tools.cloud/api/v1 and
+     https://api.d-tools.com/si.
+   - Used by the dtools-bridge container (port 5050 → 8096).
+
+C. dtools-bridge container                             STATUS: active (healthy)
+   - live health: {"dtools":"ready","status":"healthy"}
+   - docker-compose entry present.
+
+D. integrations/dtools/proposal_workflow.py            STATUS: active
+   - Implements the full create-proposal flow over the REST client
+     (no browser required for common paths).
+
+E. integrations/dtools/tonight_proposal_runner.py      STATUS: partial
+   - Overnight proposal generator. Not verified as actively
+     scheduled in this pass.
+
+F. symphony/browser/                                   STATUS: stale
+   - Only __pycache__/ present; autonomous.cpython-314.pyc exists
+     but no autonomous.py source. Either moved/deleted and the
+     pycache was left behind, or this directory is intentionally
+     gitignored and there's source on disk only.
+   - AGENTS.md references symphony/browser/autonomous.py for the
+     "browser-use" automation wrapper. The source is missing.
+   - Net: either the source is gitignored (likely — symphony/ has
+     mixed runtime bits) or an old deletion left the pyc.
+   - Recommendation: add symphony/browser/DECOMMISSIONED.md or
+     restore the source depending on whether this is still used.
+
+G. tools/perplexity_research.py                         STATUS: active
+   - Called out in AGENTS.md; used by `/research` Telegram command.
+   - Requires PERPLEXITY_API_KEY.
+   - Not deeply audited this pass; category crosses into messaging.
+
+H. tools/snapav_scraper.py                              STATUS: active (likely)
+   - Playwright-based product doc fetcher for Snap One.
+   - `/getdocs <SKU>` Telegram command per AGENTS.md.
+
+I. integrations/autoresearch/                           STATUS: stale
+   - Karpathy-inspired autonomous research agent for LLM training.
+   - Requires NVIDIA H100 GPU — not applicable to Bob (Mac Mini M4).
+   - No active role in the Symphony stack today. README is
+     explicit that it's an experimental side project.
+   - Should have a DECOMMISSIONED.md or README header clarifying
+     that it is NOT part of the production stack.
+
+J. Credentials / config                                STATUS: active
+   - DTOOLS_API_KEY in .env (per AGENTS.md §D-Tools).
+   - PERPLEXITY_API_KEY in .env.
+   - DTOOLS_PORTAL_URL override env var supported.
+   - No staged rotation or secret manager — lives in .env like all
+     others.
+
+K. page_selectors.yaml (DOM map)                       STATUS: missing/unknown
+   - agents/dtools_browser_agent.py expects it at
+     integrations/dtools/page_selectors.yaml. File does not exist
+     in the repo. Either gitignored, regenerated at runtime, or
+     the agent has never successfully run.
+   - Given the browser agent's known fragility (D-Tools portal
+     changes, CAPTCHA), this is the single biggest failure point.
+
+L. Known limitations (per AGENTS.md "Active Projects" section)
+                                                       STATUS: documented
+   - D-Tools Cloud proposal flow ~65% complete (see
+     orchestrator/PROPOSAL_PROCESS_ROADMAP.md).
+   - Browser automation is blocked on CAPTCHA for DNS changes
+     (Cloudflare API is the listed workaround).
+
+M. Dropbox link validator (Lesson #4 from April 4)     STATUS: missing
+   - Lessons-learned still lists this as UNKNOWN. The rule is that
+     client links must use `scl/fi/` not `/preview/`. No committed
+     validator tool.
+   - A small check could grep proposal markdown/email outputs for
+     `dropbox.com/.*?/preview/` and warn. Good candidate for a
+     future tool.
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- REST-first D-Tools integration (dtools_client + proposal_workflow)
+  is stable and healthy today.
+- dtools-bridge container is running (healthy), with a real
+  `/health` endpoint returning JSON.
+- agents/dtools_browser_agent.py provides a Playwright escape hatch
+  when the REST API can't do something.
+- tools/perplexity_research + snapav_scraper give specific,
+  bounded web-scraping capabilities rather than a wide-open crawler.
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses
+------------------------------------------------------------------------------
+- page_selectors.yaml is a hard dependency of the browser agent
+  and isn't in the repo. The agent will crash on first use until
+  someone recreates it.
+- symphony/browser/ has an orphan pyc with no source — a footgun
+  for agents that `import symphony.browser.autonomous`.
+- integrations/autoresearch/ is an unrelated experimental project
+  inside AI-Server. No marker telling agents it's not part of
+  production.
+- No Dropbox link validator (Lesson #4 — still UNKNOWN).
+- No unified manifest for "what external sites does this repo
+  touch?" (D-Tools, Polymarket, Kalshi, Kraken, Zoho, Dropbox,
+  Perplexity, SnapOne, Cloudflare, BuildingConnected, Tailscale).
+- Browser-agent credentials + selectors live partly in .env, partly
+  in .yaml — no central config map.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Playwright → stick with it. It's the de facto standard.
+  browser-use (an LLM-driven Playwright wrapper) is referenced in
+  AGENTS.md; fine for autonomous tasks but not an upgrade needed.
+- Selenium / Puppeteer: not worth moving to.
+- For D-Tools specifically: prefer the REST client whenever
+  possible and reserve Playwright for endpoints with no API.
+- Consider a tiny `ops/INTEGRATIONS.md` matrix listing every
+  external service, its auth mechanism, env var name, and the
+  code path that calls it. Cheap orientation win.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) Add integrations/autoresearch/NOT_PRODUCTION.md marker clearly
+   stating this is an experimental GPU-bound project and not part
+   of Bob's operational stack. Pointer to the README.
+2) Add symphony/browser/README.md explaining the directory's
+   intended role (autonomous browser wrapper) and noting that the
+   canonical source may live outside the repo. Helps any agent
+   that lands on the orphan pyc.
+3) Add ops/INTEGRATIONS.md — a single matrix of external services
+   this repo talks to, listing:
+   - service name
+   - what it does for Symphony
+   - auth mechanism
+   - env var(s)
+   - code path (file/function)
+   - health check if any
+   This is the Category-5 analogue to ops/REPO_LAYOUT.md.
+
+All three are LOW risk (docs only).
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- page_selectors.yaml still missing — the browser agent remains a
+  one-shot-away-from-failing tool. NOT fixed this pass (creating
+  the file blind would be worse than leaving it clearly missing).
+- No Dropbox link validator.
+- No rotation automation for DTOOLS_API_KEY or PERPLEXITY_API_KEY.
+- autoresearch/ remains in the repo — marking only, not removing.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Regenerate integrations/dtools/page_selectors.yaml when Matt is
+  logged into D-Tools (MEDIUM risk — requires live session). The
+  agent itself should produce this via a "--map-selectors" flag.
+- Write a Dropbox link validator:
+  `scripts/dropbox-link-validate.sh <file-or-stdin>` that greps for
+  `/preview/` and warns.
+- Add a BuildingConnected email triage doc (AGENTS.md references
+  exist but no single reference).
+- Plan a future move of integrations/autoresearch/ to a sibling
+  repo if it stays alive (currently just dead weight in AI-Server).
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     integrations/autoresearch/NOT_PRODUCTION.md
+- ADDED     symphony/browser/README.md
+- ADDED     ops/INTEGRATIONS.md
+- ADDED     ops/verification/20260417-100100-web-automation-integrations-audit.txt
+- ADDED     ops/verification/<stamp>-web-automation-integrations-final.txt
+
+END OF AUDIT — Category 5
