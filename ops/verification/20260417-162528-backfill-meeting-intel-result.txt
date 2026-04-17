@@ -1,0 +1,38 @@
+### task 20260417-162528-backfill-meeting-intel type=run_script signer=perplexity-computer
+### started 2026-04-17T10:50:07-06:00
+
+=== run_script backfill-meeting-intel @ 2026-04-17T10:50:07-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/backfill-meeting-intel.sh']
+=== backfill-meeting-intel @ 2026-04-17 10:50:07 -0600 ===
+OLLAMA_HOST: http://192.168.1.189:11434
+OLLAMA_MEETING_MODEL: qwen3:8b
+OPENAI_API_KEY: set (len=164)
+
+candidates: 2
+  - 2024-07-16__llm-analysis-failed-raw-transcript-saved.md
+  - 2024-07-25__llm-analysis-failed-raw-transcript-saved.md
+
+=== processing: 2024-07-16__llm-analysis-failed-raw-transcript-saved.md ===
+  transcript: 3807 chars
+  summary: The meeting discusses tax deductions for businesses, emphasizing how write-offs can reduce tax liability and the importa
+  wrote: 2024-07-16__the-meeting-discusses-tax-deductions-for.md
+2026-04-17 10:52:22,025 [INFO] cortex_posted: id=c314fc9f
+  cortex: c314fc9f
+  removed old: 2024-07-16__llm-analysis-failed-raw-transcript-saved.md
+  rc=0
+
+=== processing: 2024-07-25__llm-analysis-failed-raw-transcript-saved.md ===
+  transcript: 25489 chars
+  summary: 
+  wrote: 2024-07-25__20240725-1721956752-wav.md
+2026-04-17 10:53:58,946 [INFO] cortex_posted: id=db3e8227
+  cortex: db3e8227
+  removed old: 2024-07-25__llm-analysis-failed-raw-transcript-saved.md
+  rc=0
+
+ok: backfill complete, worst_rc=0
+exit=0
+
+exit=0
+
+### finished 2026-04-17T10:53:58-06:00 exit=0

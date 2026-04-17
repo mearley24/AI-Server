@@ -1,0 +1,145 @@
+### task 20260417-164820-task-runner-crash-diag type=verify_dump signer=perplexity-computer
+### started 2026-04-17T10:53:59-06:00
+
+=== verify_dump task-runner-crash-diag @ 2026-04-17T10:53:59-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/task-runner-crash-diag.sh']
+=== 0. banner ===
+2026-04-17 10:53:59 -0600
+Bobs-Mac-mini.local
+bob
+
+=== 1. process status ===
+  pid: 63779
+  last exit: 0
+  PID ELAPSED  %CPU %MEM COMMAND
+63779   03:54   2.4  0.1 /opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python /Users/bob/AI-Server/scripts/task_runner.py
+
+=== 2. heartbeat + lock ===
+last-heartbeat: 2026-04-17T10:47:30-06:00
+
+  age_seconds: 307
+  lock present:
+-rw-r--r--  1 bob  staff  32 Apr 17 10:50 /Users/bob/AI-Server/data/task_runner/.runner.lock
+63779 2026-04-17T10:50:05-06:00
+
+=== 3. launchd stdout log tail (60 lines) ===
+    1640 /Users/bob/AI-Server/data/task_runner/launchd.out.log
+hint:
+hint: or:
+hint:
+hint: 	git rebase
+hint:
+hint: Disable this message with "git config set advice.diverging false"
+fatal: Not possible to fast-forward, aborting.
+
+[2026-04-17T10:48:53-06:00] preflight ok=False resolved=2 staged=0 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104853-preflight.txt
+[2026-04-17T10:48:53-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:48:53-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:49:03-06:00] preflight ok=False resolved=0 staged=2 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104903-preflight.txt
+[2026-04-17T10:49:03-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:49:03-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:49:14-06:00] preflight ok=False resolved=0 staged=2 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104914-preflight.txt
+[2026-04-17T10:49:14-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:49:14-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:49:24-06:00] preflight ok=False resolved=0 staged=2 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104924-preflight.txt
+[2026-04-17T10:49:24-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:49:24-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:49:35-06:00] preflight ok=False resolved=0 staged=2 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104935-preflight.txt
+[2026-04-17T10:49:35-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:49:35-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:49:44-06:00] preflight ok=False resolved=0 staged=2 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104944-preflight.txt
+[2026-04-17T10:49:44-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:49:44-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:49:54-06:00] preflight ok=False resolved=0 staged=2 unsafe=1 report=/Users/bob/AI-Server/ops/verification/20260417-104954-preflight.txt
+[2026-04-17T10:49:54-06:00] pull rc=128: error: Pulling is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T10:49:54-06:00] preflight reported unsafe conflicts; skipping task dispatch
+[2026-04-17T10:50:06-06:00] preflight ok=True resolved=0 staged=2 unsafe=0 report=/Users/bob/AI-Server/ops/verification/20260417-105006-preflight.txt
+[2026-04-17T10:50:07-06:00] pull ok: Already up to date.
+[2026-04-17T10:53:58-06:00] COMPLETED 20260417-162528-backfill-meeting-intel -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-162528-backfill-meeting-intel.json
+
+=== 4. launchd stderr log tail (60 lines) ===
+       0 /Users/bob/AI-Server/data/task_runner/launchd.err.log
+
+=== 5. launchctl print (state, last exit, throttle backoff) ===
+	path = /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist
+	state = running
+	program = /opt/homebrew/bin/python3
+	stdout path = /Users/bob/AI-Server/data/task_runner/launchd.out.log
+	stderr path = /Users/bob/AI-Server/data/task_runner/launchd.err.log
+	runs = 236
+	last exit code = 0
+		com.apple.launchd.WatchPaths => {
+				"WatchPaths" => [
+		state = active
+		state = active
+	properties = runatload | inferred program
+
+=== 6. git state around ops/ ===
+ M data/cortex/digests/2026-04-17.md
+ ? integrations/autoresearch
+ M knowledge/markup_exports/.session_tracking.json
+ D ops/work_queue/pending/20260417-162528-backfill-meeting-intel.json
+?? ops/verification/20260417-104853-preflight.txt
+?? ops/verification/20260417-104903-preflight.txt
+?? ops/verification/20260417-104914-preflight.txt
+?? ops/verification/20260417-104924-preflight.txt
+?? ops/verification/20260417-104935-preflight.txt
+?? ops/verification/20260417-104944-preflight.txt
+?? ops/verification/20260417-104954-preflight.txt
+?? ops/verification/20260417-105006-preflight.txt
+?? ops/verification/20260417-162528-backfill-meeting-intel-result.txt
+?? ops/verification/20260417-164820-task-runner-crash-diag-result.txt
+?? ops/work_queue/completed/20260417-162528-backfill-meeting-intel.json
+
+5a7b8f9 ops: task-runner preflight — 2 state files synced
+7e2b0d1 auto: local changes before pull
+760ea0d ops: task-runner preflight — 2 state files synced
+4028cb4 ops: task-runner tick 20260417-104730 — preflight-blocked heartbeat
+3134b41 ops: task-runner preflight — 2 state files synced
+
+=== 7. pending queue ===
+total 8
+drwxr-xr-x  3 bob  staff   96 Apr 17 10:53 .
+drwxr-xr-x  8 bob  staff  256 Apr 17 10:48 ..
+-rw-r--r--  1 bob  staff  359 Apr 17 10:48 20260417-164820-task-runner-crash-diag.json
+
+=== 8. last 3 preflight result timestamps ===
+Apr 17 10:50:06 2026  /Users/bob/AI-Server/ops/verification/20260417-105006-preflight.txt
+Apr 17 10:49:54 2026  /Users/bob/AI-Server/ops/verification/20260417-104954-preflight.txt
+Apr 17 10:49:44 2026  /Users/bob/AI-Server/ops/verification/20260417-104944-preflight.txt
+
+=== 9. any python task_runner.py processes ===
+bob              68207   2.1  0.0 435299328   1696   ??  S    10:53AM   0:00.03 bash /Users/bob/AI-Server/ops/task_runner/verifications/task-runner-crash-diag.sh
+bob              63779   0.5  0.1 435287168  16512   ??  S    10:50AM   0:00.15 /opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python /Users/bob/AI-Server/scripts/task_runner.py
+
+exit=0
+
+### finished 2026-04-17T10:53:59-06:00 exit=0

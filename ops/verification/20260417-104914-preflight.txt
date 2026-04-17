@@ -1,0 +1,57 @@
+=== task-runner preflight ===
+started_at: 2026-04-17T10:49:14-06:00
+finished_at: 2026-04-17T10:49:14-06:00
+ok: False
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-17.md
+  - knowledge/markup_exports/.session_tracking.json
+
+UNSAFE CONFLICTS (not auto-resolved — must be handled manually):
+  ! UU polymarket-bot/src/redeemer.py
+
+commit: none (nothing to commit or push deferred)
+
+notes:
+  * commit rc=128: U	polymarket-bot/src/redeemer.py
+error: Committing is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+
+--- raw git status --porcelain (post-preflight) ---
+M  data/cortex/digests/2026-04-17.md
+ M integrations/autoresearch
+M  knowledge/markup_exports/.session_tracking.json
+UU polymarket-bot/src/redeemer.py
+?? ops/verification/20260417-104853-preflight.txt
+?? ops/verification/20260417-104903-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-17.md",
+    "knowledge/markup_exports/.session_tracking.json"
+  ],
+  "finished_at": "2026-04-17T10:49:14-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [
+    "commit rc=128: U\tpolymarket-bot/src/redeemer.py\nerror: Committing is not possible because you have unmerged files.\nhint: Fix them up in the work tree, and then use 'git add/rm <file>'\nhint: as appropriate to mark resolution and make a commit.\nfatal: Exiting because of an unresolved conflict.\n"
+  ],
+  "ok": false,
+  "report_path": "",
+  "started_at": "2026-04-17T10:49:14-06:00",
+  "unsafe_conflicts": [
+    "UU polymarket-bot/src/redeemer.py"
+  ]
+}
