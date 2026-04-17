@@ -1,6 +1,6 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-13
+Generated: 2026-04-11 | Last updated: 2026-04-16
 Host: Bob (Mac Mini M4), branch: main.
 Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches.
 
@@ -88,6 +88,7 @@ _Completed since the April 11 audit baseline._
 - ✅ **symphonysh debug cleanup** — 8 debug console.log statements removed, dead `testNavigation` button removed, debug dropdown entries removed (§15).
 - ✅ **x-intake rebuilt + restarted (2026-04-13 08:14 MDT)** — Image rebuilt (`ai-server-x-intake:latest`), container recreated. Redis listener live on `events:imessage`, Uvicorn on port 8101, health endpoint returning HTTP 200. Volume mounts for `data/x_intake` (queue.db) and `data/transcripts` now applied. Status: `Up (healthy)`. Remaining follow-up: durable listener watchdog per §Z14.
 - ✅ **X-Intake Diagnose & Fix (2026-04-16)** — Three root-cause bugs fixed: (1) `transcript_analyst._ollama_analyze` crashed on qwen3:8b `<think>…</think>` tokens before the JSON; (2) `_build_prompt` used `.format()` on a template with literal JSON braces, producing `KeyError`; (3) Cortex container had no `./data/x_intake:/data/x_intake:ro` mount so `/api/x-intake/items` always returned `"db not found"`. All 12 stuck `analyzed=0` rows now cleared (analyzed=12 after backfill). Dashboard items endpoint working. See Reference: X-Intake Diagnose & Fix (2026-04-16).
+- ✅ **X-Intake Diagnose & Fix — Remaining Issues (2026-04-16 pass 2)** — Second diagnostic pass (cline-prompt-x-intake-diagnose-and-fix): volumes/env/schema/listener/dashboard were all working. Remaining bug: `analyzed` permanently 0 for text-only posts (no code path set it after LLM analysis completed). Fixes: (1) `queue_db.py` — added `set_analyzed(row_id, value, error_msg)` function + `error_msg TEXT` migration column; (2) `main.py` — capture `_queue_row_id` from `_db_enqueue`; call `_db_set_analyzed(row_id, 1)` for text-only posts; store watchdog on `app.state`; `logger.exception` for `url_analysis_failed`. Backfilled 18 pre-existing text-only rows. Regression test (karpathy URL via Redis): row id=34 appeared with `analyzed=1` within 90s. Commit `b7c4da9`. See Reference: X-Intake Pass 2 (2026-04-16).
 - ✅ **Prompt T drain (2026-04-13 08:24 MDT)** — `scripts/prompt_t_drain.py` ran once against `decision_journal.db`. Drained all 63 `pending` rows (1 auto_low_value + 62 duplicate_entry); 103 pre-existing `expired` rows left untouched. `pending_approvals` now shows 0 pending. Both `pending_approvals.status` and linked `decisions.outcome` updated atomically. iMessage summary sent to Matt via notification-hub. Cortex log entry written. See Reference: Prompt T Drain (§T).
 - ✅ **Email `read=1` bug fixed (2026-04-13 08:41 MDT)** — `notifier.py` was calling `mark_email_read()` on every dispatched notification — wrong because notification ≠ reply. Removed that block. `read=1` is now set **only** by `_scan_sent_for_replies()` via `mark_email_responded()` when a Sent-folder message with a matching `In-Reply-To` is found. Migration script `email-monitor/migrate_reset_read.py` reset 438 rows (`responded=0, read=1 → read=0`). DB: 452 emails, all `read=0, responded=0`. (§Z3)
 - ✅ **Cortex event ingestion wired (2026-04-13 08:52 MDT)** — Four services now POST to `http://cortex:8102/remember` on every meaningful event. Rate verified: 1 entry/min (follow_up cycle) sustained → ~1440+ entries/24h, well above 100 target. Cortex grew 733→735 in 65s post-deploy. See Reference: Cortex Wire-Up.
@@ -1100,3 +1101,79 @@ GET /transcripts/stats → {"files_on_disk":17,"total_with_transcript":15,"pendi
 - **Ollama unreachable from x-intake container** — all 12 backfill analyses fell back to OpenAI (`transcript_ollama_miss — trying openai`). The `OLLAMA_HOST` default `http://192.168.1.189:11434` is not reachable from inside the x-intake Docker network (likely requires the host's Tailscale IP or `host.docker.internal`). Ollama is optional — OpenAI fallback works — but costs API tokens for each transcript.
 - **3 failed rows (`analyzed=2`)** — short/garbled transcripts correctly marked `too_sparse` by the analyst. These are expected failures (e.g. `@hrundel75` with only `🎵` content).
 - **x-alpha-collector source not tagged** — still sends no `source` field to `/analyze`, so dashboard can't distinguish iMessage vs collector traffic (pre-existing, low priority).
+
+---
+
+## Reference: X-Intake Pass 2 — Remaining Issues (2026-04-16)
+
+_Second diagnostic pass by Cline (cline-prompt-x-intake-diagnose-and-fix.md). Previous pass fixed volumes/env/schema/cortex-mount. This pass found and fixed the one remaining gap._
+
+### Phase A findings (this session)
+
+| Check | Result |
+|---|---|
+| A1 — Volume mounts | ✅ Both `./data/x_intake:/data/x_intake` and `./data/transcripts:/data/transcripts` mounted |
+| A2 — TRANSCRIPT_DIR env | ✅ `TRANSCRIPT_DIR=/data/transcripts` set in container |
+| A3 — Queue DB | 122 880 bytes; 33 rows; schema has `analyzed`, `has_transcript`, `transcript_path` ✅ |
+| A4 — Row breakdown | `auto_approved\|0\|0\|8` — text-only posts stuck at `analyzed=0`; transcript posts at `analyzed=1/2` ✅ |
+| A5 — Transcripts on disk | 17 .md files present in `data/transcripts/` ✅ |
+| A6 — x-intake logs | Only health checks and queue/stats in last 150 lines — no `asyncio.new_event_loop`, no Traceback ✅ |
+| A7 — Cortex dashboard | `/api/x-intake/stats` → correct counts; `/api/x-intake/items` → correct JSON rows ✅ |
+| A8 — Listener subscriber | `[(b'events:imessage', 1)]` — listener alive ✅ |
+
+### Classification
+
+- **B3 — PARTIAL** — text-only posts have `analyzed=0` permanently. `queue_db.enqueue()` inserts `analyzed=0` as default and no code path ever sets it to 1 for posts without transcripts (only `_analyze_transcript_background` sets it, and only for transcript posts). All other B-class issues (mounts, schema, transcripts, dashboard, listener) were already resolved.
+
+### Fix applied
+
+**Commit `b7c4da9`** — `fix(x-intake): loud errors + set_analyzed for text posts + store watchdog task on app.state`
+
+| Change | File |
+|---|---|
+| Added `error_msg TEXT DEFAULT ''` to `_MIGRATE_COLUMNS` | `queue_db.py` |
+| Added `set_analyzed(row_id, value, error_msg)` function | `queue_db.py` |
+| Import `set_analyzed as _db_set_analyzed` | `main.py` |
+| Capture `_queue_row_id = _db_enqueue(...)` return value | `main.py` |
+| Call `_db_set_analyzed(_queue_row_id, 1)` for text-only posts (not `_has_transcript`) | `main.py` |
+| `app.state.watchdog_task = asyncio.create_task(...)` — prevent GC | `main.py` |
+| `logger.exception("url_analysis_failed")` — full traceback in logs | `main.py` |
+
+### Backfill of pre-existing rows
+
+```sql
+-- Ran directly on host (18 rows updated):
+UPDATE x_intake_queue SET analyzed=1
+WHERE has_transcript=0 AND analyzed=0 AND summary != '' AND summary IS NOT NULL;
+-- Result: all text-only rows (8 auto_approved, 6 auto_rejected, 3 rejected, 1 approved) → analyzed=1
+```
+
+### Regression test results
+
+```
+# Published https://x.com/karpathy/status/1798616493476192708 via Redis:
+docker exec x-intake python3 -c "import redis,os,json,time; r=redis.from_url(os.environ['REDIS_URL']); r.publish('events:imessage', json.dumps({'text':'https://x.com/karpathy/status/1798616493476192708','source':'regression_test','timestamp':time.time()}))"
+
+# After 90s:
+sqlite3 data/x_intake/queue.db "SELECT id, status, analyzed, has_transcript FROM x_intake_queue ORDER BY id DESC LIMIT 1"
+# → 34|auto_rejected|1|0  ← analyzed=1 for text-only post ✅
+
+curl 'http://127.0.0.1:8102/api/x-intake/items?limit=1' | python3 -m json.tool | grep '"analyzed"'
+# → "analyzed": 1  ✅
+
+docker exec x-intake python3 -c "import redis,os; r=redis.from_url(os.environ['REDIS_URL']); print(r.pubsub_numsub('events:imessage'))"
+# → [(b'events:imessage', 1)]  ✅
+
+docker logs x-intake --tail 50 | grep -c "new_event_loop"
+# → 0  ✅
+docker logs x-intake --tail 50 | grep -c "Traceback"
+# → 0  ✅
+```
+
+### Remaining known limits
+
+- **`analyze_endpoint` row_id not captured** — the `/analyze` HTTP endpoint calls `_db_enqueue` but doesn't capture the row_id to call `set_analyzed`. Text-only posts submitted via `POST /analyze` directly still get `analyzed=0`. Low impact (most traffic is via Redis listener), but worth fixing in a follow-up pass.
+- **Ollama unreachable** — `OLLAMA_HOST=http://192.168.1.189:11434` not reachable from inside Docker network; all analysis falls back to OpenAI. Not a blocker; OpenAI fallback works.
+- **x-alpha-collector source not tagged** — pre-existing, low priority.
+
+_Pass 2 run by Cline on 2026-04-16. Evidence: live `docker inspect`, `sqlite3`, `curl`, container log grep._
