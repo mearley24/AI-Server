@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T16:09:51.583233+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "script": "pull-qwen3-8b"
+  },
+  "signature": "ROHE3q/U/UDxbwk79DJ0BT+yg9Qh9xp8dK+DuSObbG8tiRdUycmLCMJYS2l0y5RFxekmW4Dwv3FdN8FPRX4kCQ==",
+  "task_id": "20260417-160951-A-pull-qwen3-8b",
+  "task_type": "run_script"
+}

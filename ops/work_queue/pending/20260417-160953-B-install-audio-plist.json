@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T16:09:53.583233+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "script": "install-audio-plist"
+  },
+  "signature": "ZGKdncubbXx4wgOd/Qk8xNFCe7OcmWjN60JCyoIGIMfPOjLRQhOvASnX+OaqgCDQjhQfa1ChyIbPUFVIRTelCg==",
+  "task_id": "20260417-160953-B-install-audio-plist",
+  "task_type": "run_script"
+}

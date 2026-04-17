@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T16:09:55.583233+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "audio-env-verify"
+  },
+  "signature": "6q7XQwaMYkZ3e+6fr0vM2xTJFyISAPjxUau//NKeLgg28mah2qCt7dLsqryziuj7FPMhMPNe4qsajfHTw+JzAw==",
+  "task_id": "20260417-160955-C-audio-env-verify",
+  "task_type": "verify_dump"
+}
