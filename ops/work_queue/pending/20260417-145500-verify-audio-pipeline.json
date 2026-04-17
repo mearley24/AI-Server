@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T14:55:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "audio-pipeline"
+  },
+  "signature": "143Jy07HjEkuhamR5k4ZifXm34IPfZQ3O8TgedmozBrTiCshwpqIyfm7OmjKzTJWmzr8W8Lwj8P29V2YtqX9BA==",
+  "task_id": "20260417-145500-verify-audio-pipeline",
+  "task_type": "verify_dump"
+}
