@@ -1,10 +1,10 @@
 {
   "users": {
     "local-user": {
-      "totalSeconds": 54604.50740200003,
+      "totalSeconds": 54915.715843000035,
       "projectSeconds": {
         "InviteTest": 121.87233900000001,
-        "12_15_25__NFC__Plans_pdf": 38397.377209000006,
+        "12_15_25__NFC__Plans_pdf": 38708.58565000001,
         "2025_0205_84_Aspen_Meadow_floor_plans_pdf": 240.63992000000002,
         "84_Aspen_Meadow_Markup": 759.8125029999999,
         "Lower_Level_QS_Lighting_Loads": 7269.317031000002,
@@ -12,8 +12,8 @@
         "Upper_Level_QS_Lighting_Loads": 3675.726567000001
       },
       "current": {
-        "startedAt": "2026-04-15T14:53:16.648381Z",
-        "lastSeenAt": "2026-04-15T15:08:54.519399Z",
+        "startedAt": "2026-04-17T12:49:27.192607Z",
+        "lastSeenAt": "2026-04-17T12:54:38.401048Z",
         "project": "12_15_25__NFC__Plans_pdf"
       },
       "sessions": [
@@ -112,9 +112,15 @@
           "endedAt": "2026-03-18T15:11:34.600763Z",
           "durationSeconds": 1199.55,
           "project": "Upper_Level_QS_Lighting_Loads"
+        },
+        {
+          "startedAt": "2026-04-15T14:53:16.648381Z",
+          "endedAt": "2026-04-15T15:08:54.519399Z",
+          "durationSeconds": 937.87,
+          "project": "12_15_25__NFC__Plans_pdf"
         }
       ],
-      "lastSeenAt": "2026-04-15T15:08:54.519399Z"
+      "lastSeenAt": "2026-04-17T12:54:38.401048Z"
     }
   }
 }
