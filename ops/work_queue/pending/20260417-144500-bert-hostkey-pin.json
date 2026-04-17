@@ -1,0 +1,12 @@
+{
+  "created_at": "2026-04-17T14:45:00+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "host": "Matt@macbook-m2-pro.tailbcf3fe.ts.net",
+    "script_args": [],
+    "script_name": "bert-hostkey-pin"
+  },
+  "signature": "qpMkdBrPjwULX+rBjYurgra0s9Lw2G2Kobko510OhtUSOmFs1myHdHLB8FbjRslNjbhzJyiBg7qruJgcfvbKAw==",
+  "task_id": "20260417-144500-bert-hostkey-pin",
+  "task_type": "ssh_and_run"
+}

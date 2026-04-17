@@ -1,2 +1,2 @@
 cline-bob lrxnRl0JXjYuF0edjS8Iij+00n5b1Jfogbeehcu0ZHY=
-# perplexity-computer <PUBKEY WILL BE PROVIDED BY AGENT AT SESSION START - replace this line with the real pubkey>
+perplexity-computer eWCqftRxqnr5WPPv5yaWjo3DZXqmQym4XzDIRs/IKZQ=
