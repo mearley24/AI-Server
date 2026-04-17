@@ -241,6 +241,8 @@ async def _analyze_with_ollama(text: str, author: str, has_video: bool, transcri
             if resp.status_code == 200:
                 data = resp.json()
                 content = data.get("message", {}).get("content", "")
+                # Strip qwen3-style <think>…</think> reasoning tokens before JSON parse.
+                content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
                 parsed = json.loads(content)
                 logger.info("ollama_analysis_ok", model=model)
 
@@ -1068,4 +1070,18 @@ async def startup():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    import argparse as _argparse
+    _parser = _argparse.ArgumentParser(description="X Intake service")
+    _parser.add_argument("--reanalyze-stuck", action="store_true",
+                         help="Re-analyze all queue rows with has_transcript=1 and analyzed=0")
+    _args, _remaining = _parser.parse_known_args()
+    if _args.reanalyze_stuck:
+        print("[reanalyze-stuck] Scanning for stuck transcript rows …")
+        try:
+            import transcript_analyst as _ta
+            result = _ta.run_backfill(limit=200)
+            print(f"[reanalyze-stuck] Done: {result}")
+        except Exception as _e:
+            print(f"[reanalyze-stuck] ERROR: {_e}")
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=PORT)

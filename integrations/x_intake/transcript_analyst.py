@@ -183,12 +183,19 @@ def _ollama_analyze(prompt: str) -> Optional[dict]:
         content = raw.get("message", {}).get("content", "")
         if not content:
             return None
+        # Strip qwen3-style <think>…</think> reasoning tokens before JSON parse.
+        content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+        if not content:
+            return None
         try:
             return json.loads(content)
         except json.JSONDecodeError:
             m = re.search(r"```(?:json)?\s*([\s\S]*?)```", content)
             if m:
-                return json.loads(m.group(1).strip())
+                try:
+                    return json.loads(m.group(1).strip())
+                except json.JSONDecodeError:
+                    pass
         return None
     except Exception as exc:
         logger.info("transcript_ollama_failed: %s", str(exc)[:100])
