@@ -1,0 +1,52 @@
+=== task-runner preflight ===
+started_at: 2026-04-17T15:06:40-06:00
+finished_at: 2026-04-17T15:06:40-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+unsafe conflicts: 0
+
+commit: none (nothing to commit or push deferred)
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M integrations/autoresearch
+?? ops/verification/20260417-150015-preflight.txt
+?? ops/verification/20260417-150026-preflight.txt
+?? ops/verification/20260417-150037-preflight.txt
+?? ops/verification/20260417-150048-preflight.txt
+?? ops/verification/20260417-150059-preflight.txt
+?? ops/verification/20260417-150110-preflight.txt
+?? ops/verification/20260417-150121-preflight.txt
+?? ops/verification/20260417-150132-preflight.txt
+?? ops/verification/20260417-150232-preflight.txt
+?? ops/verification/20260417-150334-preflight.txt
+?? ops/verification/20260417-150435-preflight.txt
+?? ops/verification/20260417-150446-preflight.txt
+?? ops/verification/20260417-150546-preflight.txt
+?? ops/verification/20260417-150557-preflight.txt
+?? ops/verification/20260417-150608-preflight.txt
+?? ops/verification/20260417-150619-preflight.txt
+?? ops/verification/20260417-150630-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-17T15:06:40-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-17T15:06:40-06:00",
+  "unsafe_conflicts": []
+}
