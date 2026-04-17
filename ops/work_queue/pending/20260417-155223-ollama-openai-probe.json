@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-04-17T15:52:23.417402+00:00",
+  "created_by": "perplexity-computer",
+  "payload": {
+    "args": [],
+    "name": "ollama-openai-probe"
+  },
+  "signature": "EAJH+4NNwC/gKABA2qflwh7ZxOgx+D7le/OG3w4BaPuQDwhBn89yCvp92H+IwdFHFEPPGnGpG02d1CUvKznZDA==",
+  "task_id": "20260417-155223-ollama-openai-probe",
+  "task_type": "verify_dump"
+}
