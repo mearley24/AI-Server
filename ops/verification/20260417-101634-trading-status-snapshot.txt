@@ -1,0 +1,313 @@
+=== polymarket-bot status snapshot ===
+when: 2026-04-17 10:16:35 MDT
+url:  http://127.0.0.1:8430
+
+--- /status (pretty) ---
+{
+    "status": "running",
+    "wallet": "0xa791E3090312981A1E18ed93238e480a03E7C0d2",
+    "strategies": {
+        "sports_arb": {
+            "name": "sports_arb",
+            "state": "running",
+            "open_orders": 0,
+            "tick_count": 181,
+            "started_at": 1776433880.842064,
+            "uptime_seconds": 8715.028769493103,
+            "params": {
+                "arb_threshold": 0.97,
+                "max_position_per_side": 10.0,
+                "slippage_tolerance": 0.005,
+                "min_liquidity_shares": 100,
+                "use_fok_orders": true,
+                "market_types": [
+                    "sports",
+                    "esports"
+                ]
+            }
+        },
+        "flash_crash": {
+            "name": "flash_crash",
+            "state": "running",
+            "open_orders": 0,
+            "tick_count": 556,
+            "started_at": 1776433880.8420954,
+            "uptime_seconds": 8715.028813123703,
+            "params": {
+                "drop_threshold": 0.15,
+                "window_seconds": 10,
+                "take_profit": 0.15,
+                "stop_loss": 0.1,
+                "size": 10.0,
+                "tokens": [
+                    "BTC",
+                    "ETH",
+                    "SOL"
+                ],
+                "timeframes": [
+                    "5m",
+                    "15m",
+                    "1h",
+                    "spot"
+                ]
+            }
+        },
+        "stink_bid": {
+            "name": "stink_bid",
+            "state": "running",
+            "open_orders": 0,
+            "tick_count": 831,
+            "started_at": 1776433880.842112,
+            "uptime_seconds": 8715.028819322586,
+            "params": {
+                "drop_threshold": 0.08,
+                "take_profit": 0.1,
+                "stop_loss": 0.08,
+                "size": 10.0,
+                "tokens": [
+                    "BTC",
+                    "ETH",
+                    "SOL"
+                ],
+                "timeframes": [
+                    "5m",
+                    "15m",
+                    "1h",
+                    "spot"
+                ]
+            }
+        },
+        "liquidity_provider": {
+            "running": true,
+            "halted": false,
+            "tick_count": 72,
+            "last_tick_time": 1776442486.0525424,
+            "quoted_markets": 0,
+            "daily_pnl": 0.0,
+            "markets": []
+        },
+        "kraken_mm": {
+            "running": true,
+            "tick_count": 364,
+            "uptime_seconds": 8713,
+            "pairs": [
+                "XRP/USD"
+            ],
+            "daily_pnl": 0.0,
+            "daily_pnl_halted": false,
+            "consecutive_failures": 0,
+            "paused_until": 0.0,
+            "max_position_usdt": 500.0,
+            "max_daily_loss": -50.0,
+            "spread_floor_bps": 10.0,
+            "inventory": {
+                "max_inventory": 10,
+                "soft_limit": 7.0,
+                "positions": {
+                    "XRP/USD": {
+                        "quantity": 4e-06,
+                        "avg_entry": 1.49096,
+                        "realized_pnl": 0.0,
+                        "total_bought": 4e-06,
+                        "total_sold": 0.0
+                    }
+                },
+                "total_realized_pnl": 0.0
+            }
+        },
+        "copytrade": {
+            "name": "polymarket_copytrade",
+            "running": true,
+            "dry_run": false,
+            "scored_wallets": 33,
+            "top_wallets": [
+                {
+                    "address": "0x5b69fe70...a6af",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 107,
+                    "score": 1.0
+                },
+                {
+                    "address": "0x9919a655...0a5d",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 54,
+                    "score": 0.97
+                },
+                {
+                    "address": "0xaff9f248...1835",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 52,
+                    "score": 0.97
+                },
+                {
+                    "address": "0x722beb62...b7db",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 60,
+                    "score": 0.97
+                },
+                {
+                    "address": "0x294fde12...4ca9",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 22,
+                    "score": 0.94
+                },
+                {
+                    "address": "0x1724b0e6...6068",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 20,
+                    "score": 0.94
+                },
+                {
+                    "address": "0x404d44cf...4d72",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 20,
+                    "score": 0.94
+                },
+                {
+                    "address": "0x0e9310b9...db0c",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 26,
+                    "score": 0.94
+                },
+                {
+                    "address": "0xd62ab38e...12b3",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 35,
+                    "score": 0.94
+                },
+                {
+                    "address": "0x990767db...ca66",
+                    "win_rate": 1.0,
+                    "adjusted_win_rate": 1.0,
+                    "pl_ratio": 5.0,
+                    "resolved_trades": 40,
+                    "score": 0.94
+                }
+            ],
+            "open_positions": 0,
+            "positions": [],
+            "seen_trades": 11981,
+            "last_scan_time": 1776433953.3861089,
+            "daily_spend": 0.0,
+            "daily_wins": 0.0,
+            "daily_net": 0.0,
+            "daily_trades": 0,
+            "daily_loss_limit": 30.0,
+            "halted": false,
+            "active_markets": 0,
+            "kelly_enabled": true,
+            "bankroll": 4.555073,
+            "llm_validation_enabled": true,
+            "category_pnl": {},
+            "correlation_exposure": {
+                "bankroll": 4.56,
+                "category_limit_pct": 0.5,
+                "category_limit_usd": 2.28,
+                "total_positions": 0,
+                "categories": {}
+            },
+            "exit_engine_tracked": 0,
+            "reentry_queue": [],
+            "whale_scanner": {
+                "running": true,
+                "last_poll_time": 1776442593.901499,
+                "last_poll_age_seconds": 2.0,
+                "trades_scanned_last_hour": 2200,
+                "trades_in_window": 4600,
+                "total_trades_polled": 6000,
+                "active_signals": 56,
+                "signals_today": 45,
+                "total_signals_ever": 545,
+                "signal_breakdown": {
+                    "whale": 56,
+                    "insider": 0,
+                    "cluster": 0
+                },
+                "uptime_hours": 2.4
+            },
+            "config": {
+                "size_usd": 3.0,
+                "max_positions": 30,
+                "min_win_rate": 0.6,
+                "min_trades": 20,
+                "scan_interval_hours": 6.0,
+                "check_interval": 30.0,
+                "daily_loss_limit": 30.0
+            }
+        },
+        "cvd_arb": {
+            "name": "cvd_arb",
+            "state": "running",
+            "open_orders": 0,
+            "tick_count": 28,
+            "started_at": 1776433888.4300625,
+            "uptime_seconds": 8707.451930522919,
+            "params": {}
+        },
+        "mean_reversion": {
+            "name": "mean_reversion",
+            "state": "running",
+            "open_orders": 0,
+            "tick_count": 29,
+            "started_at": 1776433888.4301867,
+            "uptime_seconds": 8707.451868534088,
+            "params": {}
+        },
+        "presolution_scalp": {
+            "name": "presolution_scalp",
+            "state": "running",
+            "open_orders": 0,
+            "tick_count": 29,
+            "started_at": 1776433888.4302535,
+            "uptime_seconds": 8707.451841592789,
+            "params": {}
+        }
+    },
+    "open_orders": 0,
+    "polymarket_api": true,
+    "platforms": {
+        "polymarket": {
+            "connected": true,
+            "dry_run": false,
+            "platform_name": "polymarket"
+        }
+    }
+}
+
+--- /redeem/status ---
+{
+    "status": "not_initialized"
+}
+
+--- top-level summary ---
+status: running
+wallet: 0xa791E3090312981A1E18ed93238e480a03E7C0d2
+polymarket_api: True
+strategies: 9
+  - sports_arb: state=running tick_count=181
+  - flash_crash: state=running tick_count=556
+  - stink_bid: state=running tick_count=831
+  - liquidity_provider: state=True tick_count=72
+  - kraken_mm: state=True tick_count=364
+  - copytrade: state=True tick_count=None
+  - cvd_arb: state=running tick_count=28
+  - mean_reversion: state=running tick_count=29
+  - presolution_scalp: state=running tick_count=29

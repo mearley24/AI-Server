@@ -1,0 +1,266 @@
+==============================================================================
+CATEGORY 8 AUDIT: Trading and Market Automation
+==============================================================================
+Generated: 2026-04-17 10:14 MDT
+Scope: polymarket-bot, redeemer flows, strategy modules, bankroll logic,
+       exit engine, data sources, safety and simulation controls.
+
+Live status snapshot at audit time (via /status on port 8430):
+- dry_run: false (LIVE mode)
+- wallet: 0xa791E3090312981A1E18ed93238e480a03E7C0d2
+- bankroll: $4.555 USDC (under $50 funding threshold)
+- polymarket_api: true, connected
+- whale_scanner: 56 active signals, 45 signals today, 545 total ever
+- copytrade: 33 scored wallets, top-10 win-rate = 1.0, seen_trades 11,863
+- strategies registered and ticking: sports_arb, flash_crash, stink_bid,
+  liquidity_provider, kraken_mm (XRP/USD), cvd_arb, mean_reversion,
+  presolution_scalp + copytrade
+- daily_loss_limit: $30 (copytrade), $50 (kraken_mm)
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- polymarket-bot/src/ (22 files)
+  - main.py, client.py, config.py, cortex_client.py
+  - pnl_tracker.py, paper_ledger.py
+  - redeemer.py (auto-redemption every 180s)
+  - position_syncer.py, signal_bus.py, signal_tracker.py
+  - market_intel.py, market_scanner.py, latency_detector.py
+  - order_flow_analyzer.py, debate_engine.py
+  - signer.py, trade_learner.py, websocket_client.py
+  - metar_client.py, noaa_client.py (weather)
+  - platforms/, security/, whale_scanner/
+- polymarket-bot/strategies/ (27 files)
+  - base.py, strategy_manager.py, ws_manager.py
+  - polymarket_copytrade.py (primary)
+  - stink_bid.py, flash_crash.py, sports_arb.py, mean_reversion.py
+  - liquidity_provider.py, presolution_scalp.py, spread_arb.py
+  - cvd_detector.py, correlation_tracker.py
+  - kalshi/, kalshi_client.py
+  - crypto/ subdir
+  - exit_engine.py
+  - kelly_sizing.py
+  - llm_completion.py, llm_validator.py
+  - rbi_pipeline.py (Research-Backtest-Implement meta-strategy)
+  - sentiment_engine.py
+  - weather_trader.py, weather_accuracy.py
+  - wallet_rolling_redis.py, wallet_scoring.py
+  - x_intel_processor.py, stink_bid.py
+- polymarket-bot/config.yaml (live, dry_run=false)
+- polymarket-bot/paper_ledger (parallel tracking)
+- polymarket-bot/analytics, api, heartbeat, notifications dirs
+- redeemer: `redeemer.py` + `redeemer_summary.json`
+- data/polymarket/ (trades.csv, redeemer_summary.json, etc.)
+- STATUS_REPORT Trading State section
+- bankroll + daily-loss-limit logic in /status JSON
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. polymarket-bot container                           STATUS: active (live)
+   - VPN-fronted. Container status: running.
+   - LIVE mode (dry_run=false). Blocked on wallet funding.
+
+B. Core strategies (confirmed ticking)                STATUS: active
+   - sports_arb: tick_count 177
+   - flash_crash: tick_count 544
+   - stink_bid: tick_count 813
+   - liquidity_provider: running, 0 quoted markets (wallet <funding)
+   - kraken_mm: 357 ticks, XRP/USD, daily_pnl_halted=false
+   - cvd_arb / mean_reversion / presolution_scalp: running
+   - polymarket_copytrade: scored 33 wallets (top 10 at 1.0 win-rate)
+
+C. copytrade intelligence                             STATUS: active (strong)
+   - whale_scanner: 56 active signals, 45 today, 545 ever.
+   - seen_trades: 11,863. active_markets: 0 (bankroll).
+   - kelly_enabled: true. llm_validation_enabled: true.
+   - daily_loss_limit $30, halted=false.
+   - correlation_exposure tracked per category.
+
+D. redeemer.py                                        STATUS: active
+   - 180s interval, 297 conditions redeemed all-time.
+   - POL gas 62.85 (far above 0.05 minimum).
+   - Last cycle correctly idle (no redeemable).
+   - Per STATUS_REPORT Z10/Z12.
+
+E. Exit engine                                        STATUS: active
+   - strategies/exit_engine.py exists.
+   - /status shows exit_engine_tracked=0 (no open positions due to
+     bankroll — expected).
+   - Sell-haircut rounding lesson (#17) remains UNKNOWN — would
+     require a closed-position run to verify.
+
+F. Bankroll logic                                     STATUS: active (blocked)
+   - Re-reads on-chain USDC every 5 minutes.
+   - Current: $4.56 USDC. Strategies correctly skip with
+     `low_bankroll`.
+   - Needs $50+ per STATUS_REPORT.
+
+G. Safety controls                                    STATUS: active
+   - Dry-run mode supported (now live).
+   - Paper ledger runs in parallel (`paper_ledger: enabled: true`).
+   - Daily-loss limits per strategy ($30 copytrade, $50 kraken_mm).
+   - Correlation exposure cap (50% of bankroll per category).
+   - halted flag per strategy.
+
+H. Data sources                                       STATUS: active
+   - Polymarket CLOB + Gamma (active).
+   - Kraken (auth blocker was KRAKEN_SECRET — resolved 2026-04-17
+     per STATUS_REPORT Now item).
+   - Kalshi (DEMO mode; `KALSHI_DRY_RUN=true`,
+     `KALSHI_ENVIRONMENT=demo`).
+   - NOAA + METAR clients for weather strategy.
+   - X intel via Redis (polymarket:intel_signals).
+
+I. Simulation controls                                STATUS: active
+   - paper_ledger scoring enabled (check hourly for resolved
+     markets).
+   - rbi_pipeline (research-backtest-implement) for new strategies.
+
+J. Trading observability                              STATUS: active
+   - /status endpoint returns full JSON state.
+   - STATUS_REPORT Z8 confirms startup banner with TRADING
+     READINESS section.
+   - `trading_readiness_summary` structured log.
+
+K. Polymarket copytrade                                STATUS: active
+   - Top 10 tracked wallets at perfect win-rate (selection bias —
+     these are survivors; still useful as leads).
+   - min_win_rate 0.6, min_trades 20, scan_interval 6h.
+
+L. Kraken MM                                          STATUS: active
+   - Position only 4e-6 XRP — effectively observational.
+   - max_position_usdt 500, spread_floor_bps 10.
+
+M. rbi_pipeline + llm_completion + llm_validator       STATUS: active
+   - LLM-driven strategy generation and validation present.
+   - Contributes the 17,062 trading_strategy memories in Cortex
+     (from Category 4).
+
+N. weather_trader + weather_accuracy                  STATUS: active
+   - Weather market trading with accuracy scoring on redeem
+     (STATUS_REPORT close-the-loop Part 2 Done).
+
+O. presolution_scalp + stink_bid + flash_crash         STATUS: active
+   - All ticking, 0 open orders.
+
+P. x_intel_processor                                  STATUS: active
+   - Wired to events:imessage → x-intake → intel_signals channel.
+
+Q. cortex_client                                      STATUS: active
+   - Fire-and-forget Cortex helper writes every trade event to
+     brain.db.
+
+R. price_monitor.db staleness (carryover from Cat 4)   STATUS: partial
+   - Last updated 2026-04-10. price_monitor lives in openclaw/
+     (cross-category artifact). Cat 4 audit flagged this; no
+     movement this pass. Trading decisions today don't depend on
+     it (bot has its own WS client + CLOB polling).
+
+S. Data artifacts                                     STATUS: active
+   - data/polymarket/trades.csv (477 rows per STATUS_REPORT; not
+     reverified)
+   - data/polymarket/redeemer_summary.json (persisted every cycle)
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- Fully alive, LIVE-mode trading bot with 11 strategies and a
+  redeemer — blocked only by Matt's action items (wallet funding
+  + KRAKEN_SECRET set 2026-04-17).
+- Paper ledger runs in parallel with live mode for validation.
+- Per-strategy safety guards: daily-loss limits, correlation
+  exposure caps, halted flags, spread floors.
+- Whale scanner + copytrade produce a steady signal stream.
+- Redeemer is operational (297 redemptions all-time, gas healthy).
+- Observability surface is detailed (multi-hundred-field /status).
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses
+------------------------------------------------------------------------------
+- No consolidated TRADING_STRATEGIES.md doc — 27 strategy files,
+  each with its own params. A future trader/agent has no map.
+  Analogous to the openclaw MODULE_MAP gap.
+- Lesson #17 (sell haircut rounding) still UNKNOWN.
+- Kalshi still in demo mode (STATUS_REPORT Later).
+- No automated alert on redeemer failure or bankroll <$10.
+  (See MESSAGING_ALERTS.md — TODO rows added.)
+- paper_ledger score isn't surfaced on the dashboard trading tile
+  (only live P&L shows).
+- No strategy ablation logs — hard to tell which strategy cost or
+  saved money on which day.
+- Bot is VPN-only. If the VPN container restarts mid-tick a trade
+  can be torn down silently. No explicit "missed tick" counter in
+  /status.
+- wallet_rolling_redis + wallet_scoring + whale_scanner produce
+  a lot of Redis chatter. No per-channel TTL / size metric.
+- data/polymarket/ is gitignored runtime; no backup path for
+  trades.csv, although it is replayable from on-chain events.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- None of the trading bits should be swapped out. This is bespoke
+  domain code; any replacement would be strictly worse.
+- Consider adopting `pandas-ta` or `ta-lib` if technical indicators
+  stay hand-rolled. Strictly optional.
+- Consider `pydantic` (v2) for strategy config validation if
+  type-safe param loading becomes valuable.
+
+Net: keep the stack. Add docs and alerting.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) polymarket-bot/STRATEGY_MAP.md (NEW) — one-row-per-strategy
+   table with status, params summary, daily-loss interaction,
+   and whether it reads X intel. Analogous to openclaw/
+   MODULE_MAP.md. Agents can find "active" strategies and
+   "stale/unknown" candidates in one grep.
+2) polymarket-bot/SAFETY_CHECKLIST.md (NEW) — documents the safety
+   controls in one place: dry_run flag, paper_ledger, daily-loss
+   limits, correlation exposure cap, halted flags, spread floor,
+   bankroll gate. Gives an agent investigating a trading incident
+   the checklist they need.
+3) scripts/trading-status-snapshot.sh (NEW) — thin wrapper around
+   curl that fetches /status from polymarket-bot and writes a
+   timestamped snapshot to ops/verification/. Enables periodic
+   / post-incident captures without custom scripts.
+
+All three are LOW risk (docs + read-only).
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- Lesson #17 (sell-haircut rounding) not verified.
+- No alert wiring yet on trading failures (plan is in
+  MESSAGING_ALERTS.md).
+- Wallet funding + live-mode KRAKEN/Kalshi switches are HIGH-risk
+  money actions; out of scope for this audit.
+- paper_ledger score vs live P&L diff not displayed.
+- No documented "rollback" procedure for a runaway strategy
+  beyond `halted=true` and `docker compose stop polymarket-bot`.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Verify Lesson #17 by forcing a small paper-ledger sell at a
+  rounded share price and checking loop termination.
+- Schedule scripts/trading-status-snapshot.sh via launchd daily
+  (ends each day with a captured snapshot in ops/verification/).
+- Surface paper_ledger score on the dashboard trading tile.
+- Document a step-by-step "halt all trading" runbook in
+  polymarket-bot/SAFETY_CHECKLIST.md (next revision).
+- Add strategy ablation CSV: per-day per-strategy net P&L.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     polymarket-bot/STRATEGY_MAP.md
+- ADDED     polymarket-bot/SAFETY_CHECKLIST.md
+- ADDED     scripts/trading-status-snapshot.sh
+- ADDED     ops/verification/20260417-101400-trading-market-automation-audit.txt
+- ADDED     ops/verification/<stamp>-trading-market-automation-final.txt
+
+END OF AUDIT — Category 8
