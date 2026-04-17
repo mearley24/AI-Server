@@ -1,0 +1,33 @@
+=== branch ===
+main
+=== status before ===
+UU data/cortex/digests/2026-04-17.md
+ M data/task_runner/.runner.lock
+M  data/task_runner/heartbeat.txt
+UU knowledge/markup_exports/.session_tracking.json
+A  ops/verification/20260417-083909-task-runner-bootstrap.txt
+M  ops/verification/20260417-143719-verify-task-runner-result.txt
+R  ops/work_queue/pending/20260417-143719-verify-task-runner.json -> ops/work_queue/completed/20260417-143719-verify-task-runner.json
+?? ops/verification/20260417-084103-fix-unmerged-state-files.txt
+=== resolve generated/state conflicts by taking ours ===
+=== add gitattributes protections ===
+=== status after resolve ===
+A  .gitattributes
+ M data/task_runner/.runner.lock
+M  data/task_runner/heartbeat.txt
+A  ops/verification/20260417-083909-task-runner-bootstrap.txt
+M  ops/verification/20260417-143719-verify-task-runner-result.txt
+R  ops/work_queue/pending/20260417-143719-verify-task-runner.json -> ops/work_queue/completed/20260417-143719-verify-task-runner.json
+?? ops/verification/20260417-084103-fix-unmerged-state-files.txt
+=== commit if possible ===
+[main 6972e6d] ops: resolve state-file conflicts and protect generated files
+ 5 files changed, 152 insertions(+), 1 deletion(-)
+ create mode 100644 .gitattributes
+ create mode 100644 ops/verification/20260417-083909-task-runner-bootstrap.txt
+ rename ops/work_queue/{pending => completed}/20260417-143719-verify-task-runner.json (100%)
+=== push ===
+To https://github.com/mearley24/AI-Server.git
+   92ba301..6972e6d  main -> main
+=== final status ===
+ M data/task_runner/.runner.lock
+?? ops/verification/20260417-084103-fix-unmerged-state-files.txt
