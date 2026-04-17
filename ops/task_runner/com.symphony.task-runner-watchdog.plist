@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.symphony.task-runner-watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bob/AI-Server/ops/task_runner/scripts/watchdog.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AI_SERVER_ROOT</key><string>/Users/bob/AI-Server</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>MATT_PHONE_NUMBER</key><string>__MATT_PHONE_NUMBER__</string>
+    <key>IMESSAGE_BRIDGE_URL</key><string>http://localhost:8199</string>
+  </dict>
+  <key>StartInterval</key><integer>90</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/bob/AI-Server/data/task_runner/watchdog.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/bob/AI-Server/data/task_runner/watchdog.err.log</string>
+  <key>WorkingDirectory</key><string>/Users/bob/AI-Server</string>
+</dict>
+</plist>
