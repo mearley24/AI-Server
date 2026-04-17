@@ -1,126 +1,15 @@
 {
   "users": {
     "local-user": {
-      "totalSeconds": 58171.72219500005,
-      "projectSeconds": {
-        "InviteTest": 121.87233900000001,
-        "12_15_25__NFC__Plans_pdf": 41964.59200200003,
-        "2025_0205_84_Aspen_Meadow_floor_plans_pdf": 240.63992000000002,
-        "84_Aspen_Meadow_Markup": 759.8125029999999,
-        "Lower_Level_QS_Lighting_Loads": 7269.317031000002,
-        "Main_Level_QS_Lighting_Loads": 4139.761832999999,
-        "Upper_Level_QS_Lighting_Loads": 3675.726567000001
-      },
+      "totalSeconds": 0.0,
+      "projectSeconds": {},
       "current": {
-        "startedAt": "2026-04-17T12:49:27.192607Z",
-        "lastSeenAt": "2026-04-17T13:48:54.407400Z",
-        "project": "12_15_25__NFC__Plans_pdf"
+        "startedAt": "2026-04-17T13:49:54.408881Z",
+        "lastSeenAt": "2026-04-17T13:49:54.408881Z",
+        "project": ""
       },
-      "sessions": [
-        {
-          "startedAt": "2026-03-15T23:36:44.930966Z",
-          "endedAt": "2026-03-15T23:36:44.930966Z",
-          "durationSeconds": 0.0,
-          "project": "InviteTest"
-        },
-        {
-          "startedAt": "2026-03-16T12:15:22.095093Z",
-          "endedAt": "2026-03-16T13:58:46.602410Z",
-          "durationSeconds": 6204.51,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-16T14:14:33.713068Z",
-          "endedAt": "2026-03-16T14:26:59.549553Z",
-          "durationSeconds": 745.84,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-16T16:12:45.598013Z",
-          "endedAt": "2026-03-16T16:36:51.040154Z",
-          "durationSeconds": 1445.44,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-16T17:23:00.475079Z",
-          "endedAt": "2026-03-16T17:56:32.738296Z",
-          "durationSeconds": 2012.26,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-16T19:08:46.423623Z",
-          "endedAt": "2026-03-16T19:42:14.124748Z",
-          "durationSeconds": 2007.7,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-16T21:23:15.740194Z",
-          "endedAt": "2026-03-16T22:33:29.018628Z",
-          "durationSeconds": 4213.28,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-16T22:51:25.383281Z",
-          "endedAt": "2026-03-16T23:09:06.404573Z",
-          "durationSeconds": 1061.02,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-17T00:57:34.745788Z",
-          "endedAt": "2026-03-17T03:36:20.623755Z",
-          "durationSeconds": 9525.88,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-17T12:00:05.469915Z",
-          "endedAt": "2026-03-17T13:29:20.704428Z",
-          "durationSeconds": 5355.23,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-17T13:46:46.841679Z",
-          "endedAt": "2026-03-17T14:59:57.616687Z",
-          "durationSeconds": 4390.78,
-          "project": "12_15_25__NFC__Plans_pdf"
-        },
-        {
-          "startedAt": "2026-03-17T15:27:12.779793Z",
-          "endedAt": "2026-03-17T18:02:34.213497Z",
-          "durationSeconds": 9321.43,
-          "project": "Main_Level_QS_Lighting_Loads"
-        },
-        {
-          "startedAt": "2026-03-17T18:22:20.445172Z",
-          "endedAt": "2026-03-17T18:44:25.454740Z",
-          "durationSeconds": 1325.01,
-          "project": "Main_Level_QS_Lighting_Loads"
-        },
-        {
-          "startedAt": "2026-03-18T03:50:15.467537Z",
-          "endedAt": "2026-03-18T03:50:15.467537Z",
-          "durationSeconds": 0.0,
-          "project": "Main_Level_QS_Lighting_Loads"
-        },
-        {
-          "startedAt": "2026-03-18T12:36:18.309476Z",
-          "endedAt": "2026-03-18T13:57:17.017234Z",
-          "durationSeconds": 4858.71,
-          "project": "Lower_Level_QS_Lighting_Loads"
-        },
-        {
-          "startedAt": "2026-03-18T14:51:35.052908Z",
-          "endedAt": "2026-03-18T15:11:34.600763Z",
-          "durationSeconds": 1199.55,
-          "project": "Upper_Level_QS_Lighting_Loads"
-        },
-        {
-          "startedAt": "2026-04-15T14:53:16.648381Z",
-          "endedAt": "2026-04-15T15:08:54.519399Z",
-          "durationSeconds": 937.87,
-          "project": "12_15_25__NFC__Plans_pdf"
-        }
-      ],
-      "lastSeenAt": "2026-04-17T13:48:54.407400Z"
+      "sessions": [],
+      "lastSeenAt": "2026-04-17T13:49:54.408881Z"
     }
   }
 }

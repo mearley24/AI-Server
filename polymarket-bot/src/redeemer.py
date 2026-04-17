@@ -128,16 +128,9 @@ POLYGON_RPCS = [
     # Probed 2026-04-17 — all four respond <1.5s with valid block numbers.
     # Dropped polygon-rpc.com (HTTPError, rate-limited) and ankr.com/polygon (paywalled as of 2026).
     "https://polygon-bor-rpc.publicnode.com",
-<<<<<<< Updated upstream
     "https://polygon.drpc.org",
     "https://polygon.gateway.tenderly.co",
     "https://1rpc.io/matic",
-=======
-    "https://polygon.llamarpc.com",
-    "https://polygon.drpc.org",
-    "https://polygon-rpc.com",
-    "https://rpc.ankr.com/polygon",
->>>>>>> Stashed changes
 ]
 
 # Gas settings
