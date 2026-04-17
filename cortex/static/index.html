@@ -1375,13 +1375,14 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
 
   async function checkMarkupHealth() {
     try {
-      const r = await fetch('http://localhost:8088/health', {signal: AbortSignal.timeout(3000)});
-      if (r.ok) {
+      const r = await fetch('/api/symphony/markup/health', {signal: AbortSignal.timeout(5000)});
+      const d = await r.json();
+      if (d.status === 'online') {
         $('markup-frame').style.display = 'block';
         $('markup-offline').style.display = 'none';
         $('markup-status').textContent = 'online';
         $('markup-status').style.color = 'var(--green)';
-      } else throw new Error();
+      } else throw new Error(d.error || d.http_status || 'offline');
     } catch {
       $('markup-frame').style.display = 'none';
       $('markup-offline').style.display = 'block';

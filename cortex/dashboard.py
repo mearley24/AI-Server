@@ -1087,6 +1087,18 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         except Exception as exc:
             return {"status": "offline", "error": str(exc)}
 
+    @app.get("/api/symphony/markup/health")
+    async def symphony_markup_health():
+        """Probe the Markup Tool (runs on host via launchd, reached through host.docker.internal:8088)."""
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get(f"{MARKUP_URL}/")
+            if r.status_code == 200:
+                return {"status": "online", "url": MARKUP_URL}
+            return {"status": "offline", "http_status": r.status_code}
+        except Exception as exc:
+            return {"status": "offline", "error": str(exc)}
+
     @app.get("/api/symphony/proposals/templates")
     async def symphony_proposals_templates():
         data = await _safe_get(f"{PROPOSALS_URL}/proposals/templates/list")
