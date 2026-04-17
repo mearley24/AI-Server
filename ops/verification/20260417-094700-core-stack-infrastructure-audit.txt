@@ -1,0 +1,254 @@
+==============================================================================
+CATEGORY 3 AUDIT: Core stack and infrastructure
+==============================================================================
+Generated: 2026-04-17 09:47 MDT
+Scope: AI-Server monorepo structure, Docker Compose topology, Mac Mini Bob
+       runtime assumptions, service boundaries, repo layout,
+       deployment/pull workflow.
+
+Preflight at start: ok=True resolved=0 staged=0 unsafe=0.
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- docker-compose.yml (compose services)
+- docker-compose.telegram.yml (secondary profile, telegram-only)
+- live `docker compose ps` (19 services all Up, 18 healthy)
+- top-level service directories (~20 directories)
+- scripts/pull.sh deploy/pull workflow
+- scripts/symphony-ship.sh build/up/verify script
+- CLAUDE.md service quick-reference table (claims 18 containers)
+- STATUS_REPORT.md Stack Health snapshot (2026-04-12)
+- Repo layout conventions in CLAUDE.md
+- Mac Mini M4 ("Bob") runtime assumptions
+- Tailscale + WireGuard VPN boundary
+- Redis static IP pattern
+
+------------------------------------------------------------------------------
+2. Items found + status
+------------------------------------------------------------------------------
+
+A. docker-compose.yml                                  STATUS: active
+   - 19 service definitions (redis, vpn, polymarket-bot, proposals,
+     email-monitor, voice-receptionist, calendar-agent, notification-
+     hub, dtools-bridge, clawwork, openclaw, cortex, intel-feeds,
+     x-intake, x-intake-lab, rsshub, x-alpha-collector, client-portal,
+     cortex-autobuilder).
+   - docs/CLAUDE.md still claims "18 containers" — OFF BY ONE.
+     STATUS_REPORT also says 18. Reality: 19 (x-intake-lab was added
+     but docs not synced).
+
+B. Service health                                      STATUS: strong
+   - 18/19 healthy per compose ps.
+   - 1 with no healthcheck: x-alpha-collector (by design — no HTTP
+     surface, cron-style worker that reads RSSHub).
+
+C. Docker Compose patterns                             STATUS: active
+   - Redis has static IP 172.18.0.100 (lesson #13 preserved).
+   - openclaw bind-mounted (./openclaw:/app) — restart suffices for
+     Python edits.
+   - cortex bind-mounted (./cortex:/app/cortex) — same pattern.
+   - x-intake volume-mounted (./data/x_intake, ./data/transcripts)
+     per STATUS_REPORT Apr 13 fix.
+   - VPN profile routes polymarket-bot.
+
+D. Service boundaries                                  STATUS: active
+   - Inter-service communication HTTP-only (policy enforced by
+     .clinerules / CLAUDE.md lesson #15).
+   - Cortex is the sink for all memory events (POST /remember).
+   - Each service has /health per standard (mostly — see Cons).
+
+E. Orphaned service directories                        STATUS: stale
+   Directories present in repo that are NOT in docker-compose.yml:
+   - mission_control/ (12 files) — dissolved into cortex per Prompt S;
+     files remain; not referenced by any service.
+   - context-preprocessor/ (8 files) — removed from compose per
+     STATUS_REPORT, files remain.
+   - knowledge-scanner/ (8 files) — removed from compose, files
+     remain and there IS a processor.py currently open in editor.
+   - remediator/ (4 files) — auto-restart watchdog; removed from
+     compose per a prior cleanup but STATUS_REPORT line still shows
+     it "Running healthy (no healthcheck)". Current docker ps has no
+     remediator container.
+   These are STALE but non-harmful: no launchd target, no network
+   binding, no automatic loader. Documented risk is only stale
+   signal to future agents.
+
+F. Other top-level dirs of note                        STATUS: varies
+   - agents/ (YAML persona definitions) .................. active
+   - api/ (voice_webhook, trading_api, gateway, mobile_api_legacy)  partial
+     (mobile_api_legacy explicitly tagged "legacy" in filename)
+   - apps/vault-pwa/ ..................................... unknown
+   - client_ai/ (26 files — Concierge appliance source) .. partial
+     (no compose entry; lives for manual appliance builds)
+   - core/ (3 files) ..................................... stale/seed
+   - dashboard/ (vanilla JS/HTML/CSS) .................... active
+   - ios-app/ ............................................ partial
+     (iOS client; no compose, lives on separate build path)
+   - knowledge/ .......................................... active
+     (content + small scripts; explicitly gitignored as package root)
+   - logs/, backups/, scratch/, .backups/ ................ runtime
+     (all gitignored or expected to be)
+   - mission_control/ .................................... stale
+   - operations/, orchestrator/ .......................... partial
+     (orchestrator/ has 27 files; not the same as openclaw; some
+     legacy task-board bits; used by tools scripts)
+   - polymarket-bot/ ..................................... active
+   - portfolio-site/ ..................................... partial
+     (likely staged for a future website project)
+   - proposals/ .......................................... active
+   - redis/ .............................................. ignored
+   - remediator/ ......................................... stale
+   - services/ ........................................... unknown
+     (only 6 files — unclear intent)
+   - symphony/ ........................................... active
+     (browser/email/email-monitor helpers; used by tooling)
+   - symphonysh-web/ ..................................... ignored
+   - telegram-bob-remote/, telegram-interface/ ........... partial
+     (separate composes and PWA; not in main compose)
+   - voice_receptionist/ ................................. active
+
+G. scripts/pull.sh (deploy/pull workflow)              STATUS: active
+   - Already audited in Category 1; no action here.
+
+H. scripts/symphony-ship.sh                            STATUS: active
+   - Ship script covering build + up + verify.
+
+I. Mac Mini Bob runtime assumptions                    STATUS: active
+   - /opt/homebrew/bin/python3 canonical
+   - Dropbox at ~/Library/CloudStorage/Dropbox*/
+   - Tailscale host `bobs-mac-mini.tailbcf3fe.ts.net`, IP 100.89.1.51
+   - WireGuard VPN fronts polymarket-bot
+   - PEP 668 requires --break-system-packages for system pip (lesson #25)
+
+J. Redis topology                                      STATUS: active
+   - Auth required (REDIS_URL in .env)
+   - Static IP 172.18.0.100
+   - events:log (1000-cap LIST)
+   - Multiple pub/sub channels (events:imessage, polymarket:intel_signals,
+     polymarket:knowledge_ingest, ops:email_action)
+
+K. VPN (WireGuard)                                     STATUS: active
+   - Fronts polymarket-bot (8430 via vpn)
+   - Compose service; no host port binding
+
+L. Docs / service quick-reference drift                STATUS: partial
+   - CLAUDE.md service table lists 18 rows (actual 19 per compose).
+   - STATUS_REPORT Stack Health snapshot from 2026-04-12 still
+     lists context-preprocessor, knowledge-scanner, openwebui,
+     remediator, browser-agent, etc. as part of the stack; most are
+     stale. STATUS_REPORT explicitly calls this out in some places.
+   - PORTS.md is present; haven't reviewed in depth this pass.
+
+------------------------------------------------------------------------------
+3. Pros
+------------------------------------------------------------------------------
+- Compose topology is readable — services are small and single-
+  responsibility.
+- Healthy-by-default: 18/19 services show (healthy) in compose ps.
+- Static Redis IP + auth + inter-service HTTP-only rules prevent
+  most classic Docker Compose footguns.
+- Bind-mount strategy for openclaw + cortex eliminates rebuild
+  friction for Python-only edits.
+- Deployment workflow (pull.sh + symphony-ship.sh + verify-deploy.sh)
+  is well-covered.
+- VPN-wrapped trading subsystem isolates the financial blast radius.
+
+------------------------------------------------------------------------------
+4. Cons / weaknesses
+------------------------------------------------------------------------------
+- Docs say 18 containers; actually 19. x-intake-lab not reflected.
+- Four stale service directories (mission_control, context-
+  preprocessor, knowledge-scanner, remediator) with no compose
+  entry. Any new agent reading the repo will question which are
+  current. No DECOMMISSIONED.md or in-dir README marker.
+- STATUS_REPORT Stack Health table is still ~2 weeks old and lists
+  removed services as "Up".
+- `services/` top-level dir (6 files) has unclear purpose.
+- `orchestrator/` vs `openclaw/` naming overlap is confusing to
+  outside agents (they look like the same service but serve
+  different roles).
+- No automated drift detector between repo-root service dirs vs
+  docker-compose.yml. A pre-commit check could enforce "either
+  a service dir is in compose, or it has a DECOMMISSIONED marker".
+- `.env.example` presence not verified; per Infrastructure rule,
+  must stay up-to-date.
+- No explicit "18 vs 19" count reconciliation has been done since
+  x-intake-lab was added.
+
+------------------------------------------------------------------------------
+5. Better replacements or package suggestions
+------------------------------------------------------------------------------
+- Migrating off Docker Compose (to k8s, Nomad, or bare launchd) is
+  NOT recommended. Compose matches the single-host topology
+  perfectly.
+- dockerfilelint / hadolint: lightweight Dockerfile linters; could
+  be added as a pre-commit hook. Low priority.
+- docker-compose override layering via docker-compose.override.yml
+  for dev-vs-prod differences — not needed today; stack is simple.
+- Dagger / Earthly build systems: overkill.
+
+Net: no infrastructure swap needed. Fix the drift, not the shape.
+
+------------------------------------------------------------------------------
+6. Safe improvements made (this pass)
+------------------------------------------------------------------------------
+1) Add ops/REPO_LAYOUT.md — a single source of truth listing every
+   top-level directory, its role (service / tooling / stale /
+   ignored), and whether it is in docker-compose.yml. Agents can
+   grep this first instead of running `ls`.
+2) Add scripts/compose-drift-check.sh — compares top-level
+   directories to `docker compose config --services` and flags
+   any service-shaped directory (has Dockerfile or main.py) that
+   is not in the compose file. Read-only; bounded.
+3) Place DECOMMISSIONED.md markers in four stale service dirs
+   (mission_control/, context-preprocessor/, knowledge-scanner/,
+   remediator/) explaining when and why they were removed and
+   pointing to the current replacement. Non-destructive.
+4) Correct the CLAUDE.md "18 containers" count to "19" in the
+   Tech Stack table + service table. Add x-intake-lab row. Also
+   correct the count in .clinerules header.
+
+All four are LOW risk (docs + markers + a read-only check).
+
+------------------------------------------------------------------------------
+7. Remaining risks
+------------------------------------------------------------------------------
+- STATUS_REPORT.md Stack Health snapshot is still stale; rewriting
+  is out of scope for this pass (too much prose drift to audit in
+  one serial category). It is called out elsewhere.
+- Orphan directories still on disk (not deleted in this pass —
+  repo hygiene, not removing code). Deletion is MEDIUM risk; safer
+  to mark DECOMMISSIONED first, then schedule removal.
+- No container-level resource limits set in docker-compose.yml
+  (RAM/CPU). Not breaking anything, but a runaway container
+  could eat Bob's resources.
+- No automatic renewal hook for self-signed certs or OAuth tokens
+  beyond openclaw/zoho_auth.py (Zoho). Other providers rely on
+  manual rotation.
+
+------------------------------------------------------------------------------
+8. Next actions (deferred)
+------------------------------------------------------------------------------
+- Rewrite STATUS_REPORT Stack Health table from live `docker compose ps`.
+- Plan MEDIUM-risk cleanup pass: delete the four stale dirs after
+  DECOMMISSIONED markers have been in place for ≥ one week.
+- Add resource limits per service (`deploy.resources.limits`).
+- Consider a dev docker-compose.override.yml for future local-only
+  testing.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     ops/REPO_LAYOUT.md
+- ADDED     scripts/compose-drift-check.sh
+- ADDED     mission_control/DECOMMISSIONED.md
+- ADDED     context-preprocessor/DECOMMISSIONED.md
+- ADDED     knowledge-scanner/DECOMMISSIONED.md
+- ADDED     remediator/DECOMMISSIONED.md
+- MODIFIED  CLAUDE.md (18 -> 19 container count + x-intake-lab row)
+- MODIFIED  .clinerules (18 -> 19 container count)
+- ADDED     ops/verification/20260417-094700-core-stack-infrastructure-audit.txt
+- ADDED     ops/verification/<stamp>-core-stack-infrastructure-final.txt
+
+END OF AUDIT — Category 3
