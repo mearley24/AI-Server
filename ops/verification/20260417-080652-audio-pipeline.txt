@@ -1,0 +1,324 @@
+==============================================
+AUDIO PIPELINE VERIFICATION — 2026-04-17 08:06:52 MDT
+==============================================
+
+=== 1. LAUNCHD JOB REALITY CHECK ===
+-rw-r--r--   1 bob  staff   991 Apr 17 07:55 com.symphony.audio-intake.plist
+
+-	0	com.symphony.audio-intake
+640	0	application.com.apple.audio.AudioMIDISetup.1152921500311910797.1152921500311910802
+869	0	com.apple.audio.AudioComponentRegistrar
+-	0	com.apple.bluetoothaudiod
+
+=== 2. PLIST CONTENTS (whichever exists) ===
+--- /Users/bob/Library/LaunchAgents/com.symphony.audio-intake.plist ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.symphony.audio-intake</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/bob/AI-Server/scripts/audio_intake_worker.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AI_SERVER_ROOT</key>
+    <string>/Users/bob/AI-Server</string>
+    <key>CORTEX_URL</key>
+    <string>http://127.0.0.1:8102</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/bob/AI-Server/data/audio_intake/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bob/AI-Server/data/audio_intake/launchd.err.log</string>
+</dict>
+</plist>
+
+=== 3. PYTHON ACTUALLY AVAILABLE ===
+which python3: /opt/homebrew/bin/python3
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'requests'
+homebrew python3 requests OK
+
+=== 4. MEETING_INGEST_STEPS.md FULL CONTENT ===
+# Meeting Audio — One-Paste Seed Run (Bert → Bob)
+
+This document hands off a **single block** for Matt to paste on **Bert** (the M2 MacBook Pro) that rsyncs the ~9 GB of July 2024 WAV recordings to Bob, triggers the meeting audio worker, and polls the queue until every file is in a terminal state (`done` or `failed`).
+
+No multi-step instructions. No heredocs. No inline `#` comments on command lines. Bounded commands only — zsh-safe.
+
+---
+
+## Prereqs (already in place, do not re-verify manually)
+
+| Item | Expected state |
+|---|---|
+| Bob tailnet FQDN | `bobs-mac-mini.tailbcf3fe.ts.net` (IP 100.89.1.51) |
+| Bert SSH → Bob | pubkey already placed for user `bob` (from the Phase-4 BlueBubbles install) |
+| Bert audio source dirs | `~/Documents/Audio Recordings/RECORD/` and `~/Documents/Audio Recordings/MEETING/` |
+| Bob worker | `/Users/bob/AI-Server/scripts/audio_intake_worker.py` + launchd `com.symphony.audio-intake` (10-minute interval, `RunAtLoad=true`) |
+| Bob incoming dir | `/Users/bob/AI-Server/data/audio_intake/incoming/` |
+| Bob queue DB | `/Users/bob/AI-Server/data/audio_intake/queue.db` (table `audio_intake_queue` already created) |
+| Whisper model | `ggml-large-v3.bin` (2.9 GB) under `~/AI-Server/models/whisper/`, Metal-accelerated |
+
+---
+
+## The paste block (run on Bert as user `Matt`, in Terminal)
+
+Paste this whole block into Bert's Terminal. It:
+
+1. Checks Tailscale + SSH handshake.
+2. Ensures the incoming dir exists on Bob.
+3. rsyncs both source dirs to Bob's `data/audio_intake/incoming/` — idempotent + resume-safe.
+4. Triggers the worker once on Bob (launchd will keep running it every 10 min regardless).
+5. Polls the queue every 60s until every row is `done` / `failed` (max 90 minutes).
+6. Prints a final per-file report.
+
+If it gets interrupted (laptop lid closed, WiFi drop), just paste it again — rsync picks up where it left off and the worker holds a single-instance lock.
+
+```bash
+set -euo pipefail
+BOB="bob@bobs-mac-mini.tailbcf3fe.ts.net"
+
+echo "=== 0. Tailscale check (Bert side) ==="
+tailscale status | grep -E "bobs-mac-mini|100\.89\.1\.51" || { echo "Bob not in tailnet — abort"; exit 1; }
+
+echo "=== 1. SSH handshake to Bob ==="
+ssh -o BatchMode=yes -o ConnectTimeout=5 "$BOB" "echo bob-reachable"
+
+echo "=== 2. Ensure incoming dir exists on Bob ==="
+ssh "$BOB" "mkdir -p /Users/bob/AI-Server/data/audio_intake/incoming"
+
+echo "=== 3. rsync both source dirs (idempotent, progress, resume on blips) ==="
+rsync -avh --partial --progress --stats \
+  "$HOME/Documents/Audio Recordings/RECORD/" \
+  "$BOB:/Users/bob/AI-Server/data/audio_intake/incoming/"
+rsync -avh --partial --progress --stats \
+  "$HOME/Documents/Audio Recordings/MEETING/" \
+  "$BOB:/Users/bob/AI-Server/data/audio_intake/incoming/"
+
+echo "=== 4. Count files landed on Bob ==="
+LANDED=$(ssh "$BOB" "ls -1 /Users/bob/AI-Server/data/audio_intake/incoming/ 2>/dev/null | wc -l | tr -d ' '")
+echo "files-on-bob: $LANDED"
+
+echo "=== 5. Trigger the worker immediately on Bob ==="
+ssh "$BOB" "cd /Users/bob/AI-Server && nohup /usr/bin/python3 scripts/audio_intake_worker.py > /tmp/audio_intake_kick.log 2>&1 & echo kicked pid=\$!"
+
+echo "=== 6. Poll queue until every row is terminal or 90 min passes ==="
+DEADLINE=$(($(date +%s) + 5400))
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  SUMMARY=$(ssh "$BOB" "sqlite3 /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT status, COUNT(*) FROM audio_intake_queue GROUP BY status\"" 2>/dev/null || echo "queue-missing")
+  echo "[$(date '+%H:%M:%S')] $SUMMARY"
+  NONTERMINAL=$(ssh "$BOB" "sqlite3 /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT COUNT(*) FROM audio_intake_queue WHERE status NOT IN ('done','failed')\"" 2>/dev/null || echo "1")
+  if [ "$NONTERMINAL" = "0" ] && [ "$SUMMARY" != "queue-missing" ]; then
+    echo "all rows terminal — exiting poll loop"
+    break
+  fi
+  sleep 60
+done
+
+echo "=== 7. Final per-file report ==="
+ssh "$BOB" "sqlite3 -header -column /Users/bob/AI-Server/data/audio_intake/queue.db \"SELECT id, original_name, status, source_date, substr(error_msg,1,40) AS err FROM audio_intake_queue ORDER BY id\""
+
+echo "=== 8. Done — if every row is 'done', originals on Bert are safe to delete: ==="
+echo "    rm -rf ~/Documents/Audio\\ Recordings/RECORD/2024*"
+echo "    rm -rf ~/Documents/Audio\\ Recordings/MEETING/2024*"
+```
+
+---
+
+## After the run — verify on Bob
+
+From Bob (or via SSH from Bert), after every row shows `done`:
+
+```bash
+ls -1 ~/AI-Server/data/transcripts/meetings/ | head
+curl -s http://127.0.0.1:8102/api/meetings/recent | python3 -m json.tool | head -80
+```
+
+Each meeting will show up as:
+
+- A durable `.md` artifact under `data/transcripts/meetings/<YYYY-MM-DD>__<slug>.md` with Summary / Participants / Clients / Projects / Decisions / Action Items / Dollar Amounts / Topics + the raw transcript.
+- A `meeting_intel` memory in Cortex (`brain.db`) — searchable by client name, project, date, or topic through the usual Cortex `/memories` and `/query` endpoints.
+- A row in `data/audio_intake/queue.db` (`status='done'`, `cortex_memory_id` populated, `transcript_path` set).
+- A **Meetings** tile on the Cortex dashboard (`http://localhost:8102/dashboard`, column 3 between X Intake and Daily Digest).
+
+The launchd job `com.symphony.audio-intake` runs every 10 minutes from then on, so any new audio dropped into `~/AI-Server/data/audio_intake/incoming/` (whether from Bert, Dropbox, AirDrop, or another box) is auto-processed the same way.
+
+---
+
+## Failure modes and what to do
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Rows stuck at `transcribing` | whisper-cli OOM on very long recordings | Move the file to `data/audio_intake/failed/`, reset its row to `status='pending'`, and re-run the worker manually with `/usr/bin/python3 ~/AI-Server/scripts/audio_intake_worker.py` — the worker has a 2-hour subprocess timeout per file. |
+| All rows `failed` with cortex error | Cortex down | `docker compose up -d cortex`, then clear and re-enqueue failed rows. |
+| `summary` empty but status `done` | LLM unreachable (Ollama + no OpenAI key) | Set `OPENAI_API_KEY` in `.env` (or bring Ollama up), delete the `done` rows, move originals from `processed/` back to `incoming/`, and let the launchd job pick them up on the next tick. |
+| Worker never runs | launchd not loaded | `launchctl load ~/Library/LaunchAgents/com.symphony.audio-intake.plist` then verify with `launchctl list \| grep com.symphony.audio-intake`. |
+
+=== 5. WHISPER MODEL + BINARY ===
+whisper-cpp not found
+/opt/homebrew/bin/whisper-cli
+whisper-cpp 1.8.4
+total 6060712
+-rw-r--r--  1 bob  staff   2.9G Apr 17 07:53 ggml-large-v3.bin
+
+=== 6. AUDIO INTAKE DIRS ===
+total 56
+drwxr-xr-x  2 bob  staff    64B Apr 17 07:52 failed
+drwxr-xr-x  2 bob  staff    64B Apr 17 07:52 incoming
+-rw-r--r--  1 bob  staff     0B Apr 17 07:55 launchd.err.log
+-rw-r--r--  1 bob  staff   106B Apr 17 08:05 launchd.out.log
+drwxr-xr-x  2 bob  staff    64B Apr 17 07:52 processed
+drwxr-xr-x  2 bob  staff    64B Apr 17 07:52 processing
+-rw-r--r--  1 bob  staff    20K Apr 17 07:53 queue.db
+-rw-r--r--  1 bob  staff   159B Apr 17 08:05 worker.log
+
+=== 7. QUEUE DB SCHEMA ===
+CREATE TABLE audio_intake_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  source_date TEXT,
+  size_bytes INTEGER,
+  duration_sec REAL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  transcript_path TEXT,
+  summary TEXT,
+  participants TEXT,
+  projects TEXT,
+  clients TEXT,
+  action_items TEXT,
+  dollar_amounts TEXT,
+  cortex_memory_id TEXT,
+  error_msg TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT
+);
+CREATE INDEX idx_status ON audio_intake_queue(status);
+CREATE INDEX idx_date ON audio_intake_queue(source_date);
+--- indexes ---
+idx_status
+idx_date
+--- row count ---
+0
+
+=== 8. WORKER SCRIPT HEAD + CRITICAL MARKERS ===
+-rwxr-xr-x  1 bob  staff    22K Apr 17 07:55 scripts/audio_intake_worker.py
+--- first 60 lines ---
+#!/usr/bin/env python3
+"""
+Audio Intake Worker — transcribes meeting audio with whisper.cpp, analyzes
+the transcript with an LLM, and ingests structured output into Cortex as
+`meeting_intel` memories.
+
+Runs on Bob as a host-side launchd job every 10 minutes. Safe to re-run —
+uses a single-instance lock file to prevent overlapping processing.
+
+Design note (Guardrail §6 — transcript_analyst signature divergence):
+    integrations/x_intake/transcript_analyst.analyze_transcript_file(md_path)
+    expects a specific .md layout (Summary / Flags / Strategies / Key Quotes /
+    Full Transcript) and writes its OWN Cortex memories as x_intel / strategy_idea
+    / external_research. It does not return the participants/clients/projects/
+    action_items/dollar_amounts shape this worker needs.
+
+    Per the prompt's guardrail ("do not rewrite the analyst"), this worker
+    implements a parallel, meeting-focused analyzer that reuses the same
+    Ollama-first-then-OpenAI pattern and the same Cortex /remember contract,
+    but writes a single `meeting_intel` memory per meeting with the fields
+    Matt asked for.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+from urllib.request import Request, urlopen
+
+# --- Config ---
+ROOT = Path(os.environ.get("AI_SERVER_ROOT", "/Users/bob/AI-Server"))
+INCOMING = ROOT / "data/audio_intake/incoming"
+PROCESSING = ROOT / "data/audio_intake/processing"
+PROCESSED = ROOT / "data/audio_intake/processed"
+FAILED = ROOT / "data/audio_intake/failed"
+TRANSCRIPTS = ROOT / "data/transcripts/meetings"
+QUEUE_DB = ROOT / "data/audio_intake/queue.db"
+MODELS_DIR = ROOT / "models/whisper"
+LOCK_FILE = ROOT / "data/audio_intake/.worker.lock"
+LOG_DIR = ROOT / "data/audio_intake"
+
+CORTEX_URL = os.environ.get("CORTEX_URL", "http://127.0.0.1:8102")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.189:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MEETING_MODEL", "qwen3:8b")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+IMESSAGE_NOTIFY_URL = os.environ.get("IMESSAGE_NOTIFY_URL", "http://127.0.0.1:8199/notify")
+
+AUDIO_EXTS = {".wav", ".m4a", ".mp3", ".flac", ".aac"}
+
+# --- Logging ---
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+--- grep: lock, cortex, whisper ---
+19:    Ollama-first-then-OpenAI pattern and the same Cortex /remember contract,
+50:CORTEX_URL = os.environ.get("CORTEX_URL", "http://127.0.0.1:8102")
+74:def acquire_lock() -> bool:
+92:            return acquire_lock()
+178:        "whisper-cli",
+188:    res = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+339:        url = f"{CORTEX_URL.rstrip('/')}/remember"
+515:    if not acquire_lock():
+
+=== 9. CORTEX ENDPOINT ===
+HTTP: 200
+[]
+
+=== 10. DASHBOARD MEETINGS TILE ===
+378:    <div class="card" id="meetings-card">
+379:      <h2>Meetings <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— audio intake</span></h2>
+380:      <div id="meetings"><div class="unavailable">loading</div></div>
+956:  function renderMeetings(data) {
+957:    // data: array from GET /api/meetings/recent ; [] means "pipeline idle or db not mounted"
+958:    const host = $('meetings'), card = $('meetings-card');
+1365:      xiStats, xiQueue, meetings,
+1384:      fetchJson('/api/meetings/recent?limit=20'),
+1400:    renderMeetings(meetings);
+1067:    @app.get("/api/meetings/recent")
+
+=== 11. WORKER LOG TAIL (last 50) ===
+2026-04-17 07:55:15,647 [INFO] pending/stuck rows: 0
+2026-04-17 07:55:38,166 [INFO] pending/stuck rows: 0
+2026-04-17 08:05:38,299 [INFO] pending/stuck rows: 0
+
+=== 12. RECENT COMMITS (last 10, with author) ===
+9d53f2b  Matthew Earley <earleystream@gmail.com>  docs: meeting audio ingestion — Bert seed-run block + status report
+40c0281  Matthew Earley <earleystream@gmail.com>  feat(cortex): meetings recent endpoint + dashboard tile
+c18dfe1  Matthew Earley <earleystream@gmail.com>  feat(audio-intake): launchd job — every 10 min
+d0f3c72  Matthew Earley <earleystream@gmail.com>  feat(audio-intake): whisper.cpp + meeting analyzer + Cortex worker
+6d0091d  Matthew Earley <earleystream@gmail.com>  chore(audio-intake): gitignore runtime dirs, whisper models, worker logs
+7b72034  Matthew Earley <earleystream@gmail.com>  auto: local changes before pull
+7e2d23b  Matthew Earley <earleystream@gmail.com>  auto: local changes before pull
+370388a  Matthew Earley <earleystream@gmail.com>  auto: local changes before pull
+26ce1a4  Perplexity Computer <earleystream@gmail.com>  docs(status): mark jobs.db / follow_ups.db consolidation complete
+942fe5b  Perplexity Computer <earleystream@gmail.com>  docs(prompt): meeting audio intake — act-only mode + one-paste Bert seed block
+==============================================
+END
+==============================================
