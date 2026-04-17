@@ -1,0 +1,77 @@
+=== runner-check @ 2026-04-17 09:23:23 -0600 ===
+
+--- launchctl print full ---
+Bad request.
+Could not find service "com.symphony.task-runner" in domain for user gui: 501
+
+--- last 60 lines of launchd.out.log ---
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T08:39:37-06:00] git commit rc=128: U	data/cortex/digests/2026-04-17.md
+U	knowledge/markup_exports/.session_tracking.json
+error: Committing is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+[2026-04-17T08:41:37-06:00] pull ok: Already up to date.
+[2026-04-17T08:43:38-06:00] pull ok: Already up to date.
+[2026-04-17T08:45:39-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-144500-bert-hostkey-pin.json
+[2026-04-17T08:45:39-06:00] COMPLETED 20260417-144500-bert-hostkey-pin -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-144500-bert-hostkey-pin.json
+[2026-04-17T08:45:41-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     aa132d9..205bb77  main -> main
+[2026-04-17T08:47:42-06:00] pull ok: Already up to date.
+[2026-04-17T08:49:42-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-144900-audio-seed-rsync.json
+[2026-04-17T08:49:44-06:00] COMPLETED 20260417-144900-audio-seed-rsync -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-144900-audio-seed-rsync.json
+[2026-04-17T08:49:45-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     24c4575..00f5b3a  main -> main
+[2026-04-17T08:51:46-06:00] pull ok: Already up to date.
+[2026-04-17T08:53:46-06:00] pull ok: Already up to date.
+[2026-04-17T08:55:47-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-145500-verify-audio-pipeline.json
+[2026-04-17T08:55:47-06:00] COMPLETED 20260417-145500-verify-audio-pipeline -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-145500-verify-audio-pipeline.json
+[2026-04-17T08:55:49-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     5137e48..b840597  main -> main
+[2026-04-17T08:57:49-06:00] pull ok: Already up to date.
+[2026-04-17T08:59:50-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-145800-flatten-audio-incoming.json
+[2026-04-17T08:59:50-06:00] COMPLETED 20260417-145800-flatten-audio-incoming -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-145800-flatten-audio-incoming.json
+[2026-04-17T08:59:51-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     0388c9d..918ab75  main -> main
+[2026-04-17T09:01:52-06:00] pull ok: Already up to date.
+[2026-04-17T09:03:52-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-150200-verify-audio-post-flatten.json
+[2026-04-17T09:03:52-06:00] COMPLETED 20260417-150200-verify-audio-post-flatten -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-150200-verify-audio-post-flatten.json
+[2026-04-17T09:03:54-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     550c2c4..74e7ab5  main -> main
+[2026-04-17T09:05:55-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-150700-verify-audio-after-worker-tick.json
+[2026-04-17T09:05:55-06:00] COMPLETED 20260417-150700-verify-audio-after-worker-tick -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-150700-verify-audio-after-worker-tick.json
+[2026-04-17T09:05:56-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     cd30e30..a0a7474  main -> main
+[2026-04-17T09:07:56-06:00] pull ok: Already up to date.
+[2026-04-17T09:09:58-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-151002-verify-audio-after-kick.json
+[2026-04-17T09:09:58-06:00] COMPLETED 20260417-151000-install-audio-plist -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151000-install-audio-plist.json
+[2026-04-17T09:10:28-06:00] COMPLETED 20260417-151001-kick-audio-intake -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151001-kick-audio-intake.json
+[2026-04-17T09:10:28-06:00] COMPLETED 20260417-151002-verify-audio-after-kick -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151002-verify-audio-after-kick.json
+[2026-04-17T09:10:30-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     5765c3f..dd41006  main -> main
+[2026-04-17T09:12:31-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-151201-kick-task-runner.json
+[2026-04-17T09:19:12-06:00] pull ok: Already up to date.
+[2026-04-17T09:19:42-06:00] pull ok: Already up to date.
+[2026-04-17T09:20:27-06:00] pull ok: Already up to date.
+[2026-04-17T09:20:52-06:00] pull ok: Already up to date.
+
+--- last 30 lines of launchd.err.log ---
+
+--- heartbeat ---
+last-heartbeat: 2026-04-17T09:10:28-06:00
+
+--- python version / cryptography import test ---
+cryptography 46.0.5
+
+--- manual task_runner.py --help (does it even import?) ---

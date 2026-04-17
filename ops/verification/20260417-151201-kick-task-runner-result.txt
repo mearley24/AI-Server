@@ -1,0 +1,37 @@
+### task 20260417-151201-kick-task-runner type=run_script signer=perplexity-computer
+### started 2026-04-17T09:23:23-06:00
+
+=== run_script kick-task-runner @ 2026-04-17T09:23:23-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/kick-task-runner.sh']
+kicking gui/501/com.symphony.task-runner
+2321
+state:
+	state = running
+	pid = 2321
+		state = active
+		state = active
+last 20 launchd stdout lines:
+  To https://github.com/mearley24/AI-Server.git
+     550c2c4..74e7ab5  main -> main
+[2026-04-17T09:05:55-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-150700-verify-audio-after-worker-tick.json
+[2026-04-17T09:05:55-06:00] COMPLETED 20260417-150700-verify-audio-after-worker-tick -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-150700-verify-audio-after-worker-tick.json
+[2026-04-17T09:05:56-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     cd30e30..a0a7474  main -> main
+[2026-04-17T09:07:56-06:00] pull ok: Already up to date.
+[2026-04-17T09:09:58-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-151002-verify-audio-after-kick.json
+[2026-04-17T09:09:58-06:00] COMPLETED 20260417-151000-install-audio-plist -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151000-install-audio-plist.json
+[2026-04-17T09:10:28-06:00] COMPLETED 20260417-151001-kick-audio-intake -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151001-kick-audio-intake.json
+[2026-04-17T09:10:28-06:00] COMPLETED 20260417-151002-verify-audio-after-kick -> /Users/bob/AI-Server/ops/work_queue/completed/20260417-151002-verify-audio-after-kick.json
+[2026-04-17T09:10:30-06:00] git push:
+  To https://github.com/mearley24/AI-Server.git
+     5765c3f..dd41006  main -> main
+[2026-04-17T09:12:31-06:00] pull ok:  create mode 100644 ops/work_queue/pending/20260417-151201-kick-task-runner.json
+[2026-04-17T09:19:12-06:00] pull ok: Already up to date.
+[2026-04-17T09:19:42-06:00] pull ok: Already up to date.
+[2026-04-17T09:20:27-06:00] pull ok: Already up to date.
+[2026-04-17T09:20:52-06:00] pull ok: Already up to date.
+
+exit=0
+
+### finished 2026-04-17T09:23:33-06:00 exit=0

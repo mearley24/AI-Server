@@ -1,0 +1,48 @@
+### task 20260417-151200-install-task-runner-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:12:31-06:00
+
+=== run_script install-task-runner-plist @ 2026-04-17T09:12:31-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-task-runner-plist.sh']
+### task 20260417-151200-install-task-runner-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:19:12-06:00
+
+=== run_script install-task-runner-plist @ 2026-04-17T09:19:12-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-task-runner-plist.sh']
+### task 20260417-151200-install-task-runner-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:19:42-06:00
+
+=== run_script install-task-runner-plist @ 2026-04-17T09:19:42-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-task-runner-plist.sh']
+### task 20260417-151200-install-task-runner-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:20:27-06:00
+
+=== run_script install-task-runner-plist @ 2026-04-17T09:20:27-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-task-runner-plist.sh']
+### task 20260417-151200-install-task-runner-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:20:52-06:00
+
+=== run_script install-task-runner-plist @ 2026-04-17T09:20:52-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-task-runner-plist.sh']
+### task 20260417-151200-install-task-runner-plist type=run_script signer=perplexity-computer
+### started 2026-04-17T09:23:23-06:00
+
+=== run_script install-task-runner-plist @ 2026-04-17T09:23:23-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/scripts/install-task-runner-plist.sh']
+copying plist: /Users/bob/AI-Server/ops/task_runner/com.symphony.task-runner.plist -> /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist
+bootout (ignore not-loaded error):
+Boot-out failed: 3: No such process
+bootstrap:
+verify:
+	path = /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist
+	state = xpcproxy
+	stdout path = /Users/bob/AI-Server/data/task_runner/launchd.out.log
+	stderr path = /Users/bob/AI-Server/data/task_runner/launchd.err.log
+		com.apple.launchd.WatchPaths => {
+				"WatchPaths" => [
+		state = active
+		state = active
+ok: task-runner now event-driven on pending/ + refs/heads/main + FETCH_HEAD.
+
+exit=0
+
+### finished 2026-04-17T09:23:23-06:00 exit=0
