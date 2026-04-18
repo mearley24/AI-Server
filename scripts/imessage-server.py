@@ -99,8 +99,25 @@ def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:
         return None
 
 # Redis publish for downstream consumers (e.g. Docker x-intake on events:imessage)
-_REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")
+def _host_redis_url():
+    """Resolve REDIS_URL for host-side use.
+
+    The repo `.env` ships `REDIS_URL=redis://:PASS@redis:6379/0`, which is a
+    Docker-internal hostname. This bridge runs on the host (launchd), where
+    `redis` does not resolve. Rewrite the hostname to 127.0.0.1 so we can
+    reach the container's published 6379 port while keeping the password.
+    """
+    url = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")
+    if "@redis:" in url:
+        url = url.replace("@redis:", "@127.0.0.1:")
+    elif "://redis:" in url:
+        url = url.replace("://redis:", "://127.0.0.1:")
+    return url
+
+
+_REDIS_URL = _host_redis_url()
 _redis_pub = None
+
 
 
 def _get_redis_pub():

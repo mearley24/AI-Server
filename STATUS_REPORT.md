@@ -2,11 +2,120 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-18
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18).
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18).
+
+---
+
+## X Intake — current behavior (2026-04-18)
+
+### Pipeline sketch
+
+```
+iMessage text (from +19705193013)
+  └─▶ scripts/imessage-server.py (launchd, PID on :8199)
+       ├─ monitor_loop()  — polls ~/Library/Messages/chat.db every 3s
+       ├─ _get_redis_pub().publish("events:imessage", {text,from,ts})  ◀── FAILED
+       └─ ack reply "Analyzing your X link(s) — incoming shortly…"       (sent OK)
+             │
+             ▼
+          [Redis pubsub: events:imessage]
+             │
+             ▼
+  x-intake (:8101, Docker)
+    └─ _redis_listener() → _process_url_and_reply(url, source="imessage")
+         ├─ _analyze_url(url)   — fetch → transcribe → LLM
+         ├─ queue_db.enqueue(...) → data/x_intake/queue.db (host-mounted)
+         ├─ _publish_to_bot / _ingest_to_knowledge (Redis)
+         ├─ _save_to_cortex(..)  → POST http://cortex:8102/remember
+         └─ _send_reply(summary)
+                  └─ POST http://host.docker.internal:8199/
+                        └─ imessage-server SendQueue → osascript → Messages.app
+```
+
+### Classification: **A — X intake never arrived at AI-Server**
+
+The host-side iMessage bridge (launchd-managed `scripts/imessage-server.py` on
+port 8199) was receiving X links and sending the immediate "Analyzing your X
+link(s) — incoming shortly" acknowledgement, but **silently dropping every
+Redis publish to `events:imessage`**. Because x-intake subscribes to that
+channel over Redis (not the bridge's HTTP surface), no URL ever reached the
+analyzer → no follow-up reply.
+
+### Evidence
+
+`/tmp/imessage-bridge.log` — every X-link row between 2026-04-16 and 2026-04-18
+has the same pattern:
+
+```
+[monitor] Received: https://x.com/...
+[redis] Publish connection failed: Authentication required.
+[monitor] Responding: Analyzing your X link(s) — detailed analysis incoming shortly via x-intake....
+[send] Sent via iMessage to +19705193013 (attempt 1/3)
+```
+
+Redis + x-intake were healthy:
+
+- `docker exec redis redis-cli -a <pw> PUBSUB NUMSUB events:imessage` → `1` (listener alive).
+- `docker exec redis redis-cli -a <pw> CONFIG GET requirepass` → matches `.env`.
+- Synthetic publish via `docker exec redis redis-cli PUBLISH events:imessage ...` was
+  picked up by x-intake immediately and flowed all the way through the fetch /
+  transcribe / analyze path in its logs.
+- `data/x_intake/queue.db` had no new rows since 2026-04-16 (the last regression
+  test), despite 15+ iMessage X links in that window.
+
+Root cause: the bridge reads `REDIS_URL` from `AI-Server/.env` via
+`_load_repo_env()`. That value is the Docker-network URL
+`redis://:PASS@redis:6379/0`. The bridge runs **on the host** under launchd,
+where the `redis` hostname is `NXDOMAIN`. The redis-py client bubbled up an
+`Authentication required` error (masking the underlying DNS failure after the
+client fell through to a loopback/default), leaving `_redis_pub = None` for
+every publish attempt.
+
+### Minimal fix applied
+
+`scripts/imessage-server.py` — added a small `_host_redis_url()` helper that
+rewrites `@redis:` → `@127.0.0.1:` (and `://redis:` → `://127.0.0.1:`) when the
+bridge runs on the host. No secrets, env vars, or webhook URLs were touched;
+the Redis password stays in `.env`, reached the container via its published
+`127.0.0.1:6379` port. Bridge was reloaded via
+`launchctl kickstart -k gui/$(id -u)/com.symphony.imessage-bridge`.
+
+Post-restart verification:
+
+- Bridge started clean at 08:45:24 MDT under launchd, PID 54020, listening on :8199.
+- `curl` of the bridge from inside x-intake: `http://host.docker.internal:8199/`
+  returns `{"status":"ok","service":"imessage-bridge","mode":"two-way",...}`.
+- x-intake continues to show `[(b'events:imessage', 1)]` subscribers.
+- The next live iMessage will flow through the fixed publish path; bounded
+  logs in `/tmp/imessage-bridge.log` will no longer contain
+  `[redis] Publish connection failed: Authentication required.`.
+
+### Surprises / notes
+
+- The x-intake container itself was fully healthy — volumes, env, listener,
+  queue DB mount, Ollama/OpenAI fallback — all the April 16 pass-2 fixes are in
+  place. The missing piece was entirely **upstream** on the host bridge.
+- The bridge's ack reply path was never broken. Users saw the
+  "Analyzing your X link(s) — incoming shortly" message exactly as designed;
+  the absence of a follow-up reply was a direct consequence of the failed
+  upstream publish, not a failure in the reply leg itself.
+- The x-alpha-collector path (every 10 min via `POST /analyze`) is still wired
+  and was never affected by this bug.
+
+### Recommended next action
+
+Nothing further on this lane — continue watching
+`/tmp/imessage-bridge.log` and `data/x_intake/queue.db` for the next organic X
+link to confirm. If future agents see the same `Publish connection failed:
+Authentication required.` line, either the `REDIS_URL` in `.env` changed
+shape (e.g. drop-in container alias) or the bridge is being run outside
+launchd without inheriting `.env` — both are handled by the new
+`_host_redis_url()` helper.
 
 ---
 
 ## Autonomy gap-closer (2026-04-18)
+
 
 Closes the remaining gaps around queue visibility, audit clarity,
 explicit approval gates for high-risk work, and a dry-run/staging lane
