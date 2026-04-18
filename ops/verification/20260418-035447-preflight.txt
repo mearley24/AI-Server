@@ -1,0 +1,60 @@
+=== task-runner preflight ===
+started_at: 2026-04-18T03:54:47-06:00
+finished_at: 2026-04-18T03:54:47-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+unsafe conflicts: 0
+
+commit: none (nothing to commit or push deferred)
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/clawwork/data/clawwork_state.json
+ M data/clawwork/data/sector_performance.json
+ M integrations/autoresearch
+?? ops/verification/20260418-034811-preflight.txt
+?? ops/verification/20260418-034823-preflight.txt
+?? ops/verification/20260418-034924-preflight.txt
+?? ops/verification/20260418-034934-preflight.txt
+?? ops/verification/20260418-035035-preflight.txt
+?? ops/verification/20260418-035045-preflight.txt
+?? ops/verification/20260418-035056-preflight.txt
+?? ops/verification/20260418-035107-preflight.txt
+?? ops/verification/20260418-035117-preflight.txt
+?? ops/verification/20260418-035128-preflight.txt
+?? ops/verification/20260418-035139-preflight.txt
+?? ops/verification/20260418-035150-preflight.txt
+?? ops/verification/20260418-035200-preflight.txt
+?? ops/verification/20260418-035211-preflight.txt
+?? ops/verification/20260418-035222-preflight.txt
+?? ops/verification/20260418-035232-preflight.txt
+?? ops/verification/20260418-035243-preflight.txt
+?? ops/verification/20260418-035254-preflight.txt
+?? ops/verification/20260418-035355-preflight.txt
+?? ops/verification/20260418-035405-preflight.txt
+?? ops/verification/20260418-035416-preflight.txt
+?? ops/verification/20260418-035426-preflight.txt
+?? ops/verification/20260418-035437-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-18T03:54:47-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-18T03:54:47-06:00",
+  "unsafe_conflicts": []
+}
