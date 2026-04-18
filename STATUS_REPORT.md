@@ -1,8 +1,110 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-18
+Generated: 2026-04-11 | Last updated: 2026-04-18 09:04 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18).
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)**.
+
+---
+
+## iMessage → x-intake unstuck (2026-04-18 09:04 MDT, Cline)
+
+The 2026-04-18 earlier entry below claimed a `_host_redis_url()` helper had
+been added to `scripts/imessage-server.py` to rewrite `@redis:` →
+`@127.0.0.1:` and that the bridge had been reloaded. **That helper was not
+actually in the file at pull time** (`git` blame on the imessage-server
+section showed only the literal `redis_lib.from_url(_REDIS_URL, ...)` call
+and the bare `os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")`
+default — no rewrite, no host-aware logic). Every X link between 17:00 MDT
+yesterday and 08:35 today in `/tmp/imessage-bridge.log` still logged
+`[redis] Publish connection failed: Authentication required.`
+
+### Exact runtime blocker
+
+- The bridge runs on the host under launchd (`com.symphony.imessage-bridge`).
+- `.env` has `REDIS_URL=redis://:d19c9b0faebeee9927555eb8d6b28ec9@redis:6379/0`
+  (the Docker-network form expected by containers).
+- The host cannot resolve the `redis` hostname: bounded
+  `python3 -c "import socket; socket.gethostbyname('redis')"` →
+  `socket.gaierror: [Errno 8] nodename nor servname provided, or not known`.
+- redis-py stringifies that DNS failure as `Authentication required.` in
+  the `ConnectionError` chain, which is what was flooding the log.
+- The Redis container publishes `127.0.0.1:6379` with `requirepass` set.
+  Bounded ping with the full URL rewritten to `@127.0.0.1:` succeeds
+  (`ping: True`). No password / env / webhook changes needed.
+
+### Exact fix made
+
+`scripts/imessage-server.py` — added the missing `_host_redis_url()` helper
+(the one STATUS_REPORT claimed was already there) and wrapped the
+`os.environ.get("REDIS_URL", ...)` call with it:
+
+```python
+def _host_redis_url(raw_url: str) -> str:
+    if not raw_url:
+        return raw_url
+    rewritten = raw_url.replace("@redis:", "@127.0.0.1:")
+    if rewritten == raw_url:
+        rewritten = raw_url.replace("://redis:", "://127.0.0.1:")
+    return rewritten
+
+_REDIS_URL = _host_redis_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
+```
+
+`_get_redis_pub()` log line now includes the rewritten host so future agents
+can see at a glance which endpoint is being used:
+`[redis] Connected for publish (url host=127.0.0.1:6379/0)`.
+
+No other file was touched. No import was changed; the original
+`import redis as _redis_lib` and `_redis_lib.from_url(...)` call were
+already correct — there is no module named `img` anywhere in the repo; the
+`img.get_redis_pub` reference in the task brief corresponds to
+`scripts/imessage-server.py::_get_redis_pub()` which was returning `None`
+because its underlying `_REDIS_URL` was pointed at an unreachable host.
+
+### Redis auth status after fix
+
+- Redis auth is **working** from the host bridge. Bounded end-to-end test
+  imported the post-patch module and published a synthetic event:
+  - `REDIS_URL used by bridge: redis://:<pw>@127.0.0.1:6379/0`
+  - `[redis] Connected for publish (url host=127.0.0.1:6379/0)`
+  - `pub object: OK`
+  - `published count: 1` (the 1 is the x-intake listener receiving it).
+- Listener subscriber count confirmed via
+  `docker exec redis redis-cli -a <pw> PUBSUB NUMSUB events:imessage` → `1`.
+- Bridge was reloaded via
+  `launchctl kickstart -k gui/$(id -u)/com.symphony.imessage-bridge`
+  (new PID 63714, listening on :8199, `{"status":"ok",...}` on `GET /`).
+
+### x-intake receive status
+
+- x-intake container is `Up (healthy)`; `_redis_listener` is subscribed to
+  `events:imessage` with count 1.
+- `data/x_intake/queue.db` had 35 rows at verification time.
+- The cline-verify ping was plain text (no URL), so x-intake correctly
+  did not enqueue it — but the publish landed on the subscribed channel
+  with `published count: 1`, which is the exact handshake that was
+  silently failing for the last 24+ hours. The next organic iMessage
+  containing an X link will now be picked up by x-intake.
+- Pre-existing unrelated bugs (qwen3:8b think-tag stripping, 3
+  `analyzed=2` failures on sparse transcripts) remain as documented in
+  the x-intake reference sections below. None of them are blockers for
+  the iMessage path.
+
+### Remaining blocker
+
+None on this lane. If `Authentication required.` ever shows up in
+`/tmp/imessage-bridge.log` again, two things to check in order:
+
+1. Did `REDIS_URL` in `.env` change shape? (e.g. a non-`redis:` alias,
+   TLS scheme, or a username). The current rewrite handles both
+   `@redis:` and `://redis:` forms but nothing else.
+2. Is the bridge running outside launchd without inheriting `.env`?
+   `_load_repo_env()` loads it, but only if the `.env` file exists at
+   repo root — not the case when an agent runs the script from a
+   detached working copy.
+
+Verification artifact:
+`ops/verification/20260418-090400-imessage-redis-host-url-unstuck.txt`.
 
 ---
 

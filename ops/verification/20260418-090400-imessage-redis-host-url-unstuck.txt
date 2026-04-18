@@ -1,0 +1,96 @@
+================================================================
+ iMessage -> x-intake bridge: host_redis_url helper landed (Cline)
+ Host: Bob (Mac Mini M4)  |  Ran: 2026-04-18 09:05:45 MDT
+ Branch: main
+================================================================
+
+=== 1. BLOCKER IDENTIFIED ===
+scripts/imessage-server.py uses REDIS_URL from .env =>
+REDIS_URL=redis://:<REDACTED>@redis:6379/0
+On the host, 'redis' hostname does not resolve (NXDOMAIN).
+--- bounded DNS test ---
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import socket; socket.gethostbyname('redis')
+                   ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+socket.gaierror: [Errno 8] nodename nor servname provided, or not known
+
+=== 2. FIX APPLIED (scripts/imessage-server.py) ===
+110:# _host_redis_url() rewrites the Docker-network hostname to the published
+114:def _host_redis_url(raw_url: str) -> str:
+130:_REDIS_URL = _host_redis_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
+140:            log.info("[redis] Connected for publish (url host=%s)", _REDIS_URL.rsplit("@", 1)[-1])
+
+=== 3. BOUNDED PING AFTER FIX (loopback form works) ===
+loopback ping: True
+
+=== 4. BRIDGE RELOADED UNDER LAUNCHD ===
+-	1	com.symphony.imessage-watcher
+63714	-15	com.symphony.imessage-bridge
+bridge health:
+{"status": "ok", "service": "imessage-bridge", "mode": "two-way", "queue_depth": 0, "twilio_configured": true}
+
+=== 5. END-TO-END SYNTHETIC PUBLISH (post-patch module) ===
+2026-04-18 09:05:46 [INFO] [redis] Connected for publish (url host=127.0.0.1:6379/0)
+bridge _REDIS_URL host: 127.0.0.1:6379/0
+pub object: OK
+published count: 1
+
+=== 6. REDIS SUBSCRIBERS ===
+Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.
+events:imessage
+1
+
+=== 7. DOCKER COMPOSE PS (abbreviated) ===
+SERVICE              STATUS
+calendar-agent       Up 47 hours (healthy)
+clawwork             Up 47 hours (healthy)
+client-portal        Up 47 hours (healthy)
+cortex               Up 5 minutes (healthy)
+cortex-autobuilder   Up 47 hours (healthy)
+dtools-bridge        Up 47 hours (healthy)
+email-monitor        Up 47 hours (healthy)
+intel-feeds          Up 47 hours (healthy)
+notification-hub     Up 23 hours (healthy)
+openclaw             Up 5 minutes (healthy)
+polymarket-bot       Up 23 hours (healthy)
+proposals            Up 47 hours (healthy)
+redis                Up 47 hours (healthy)
+rsshub               Up 47 hours (healthy)
+voice-receptionist   Up 47 hours (healthy)
+vpn                  Up 26 hours (healthy)
+x-alpha-collector    Up 47 hours
+x-intake             Up 35 hours (healthy)
+x-intake-lab         Up 47 hours (healthy)
+
+=== 8. X-INTAKE RECENT LOGS (last 15, filtered) ===
+x-intake  | 2026-04-18 14:45:38,459 WARNING post_fetcher: Method fxtwitter raised unexpected error: HTTP Error 404: Not Found
+x-intake  | 2026-04-18 14:45:38,563 WARNING post_fetcher: Method vxtwitter raised unexpected error: Expecting value: line 1 column 1 (char 0)
+x-intake  | 2026-04-18 14:45:43,734 WARNING post_fetcher: Method nitter failed: All Nitter instances failed. Last error: <urlopen error [Errno -2] Name or service not known>
+x-intake  | 2026-04-18 14:45:45 [warning  ] post_fetch_failed              error='All fetch methods failed for https://x.com/karpathy/status/1798616493476192708. Last error: x.com returned no parseable content (JS-rendered page)' url=https://x.com/karpathy/status/1798616493476192708
+x-intake  | ERROR: [twitter] 1798616493476192708: No video could be found in this tweet
+x-intake  | ERROR: [twitter] 1798616493476192708: No video could be found in this tweet
+x-intake  | 2026-04-18 14:45:47,967 ERROR video_transcriber: gallery_dl_failed: [twitter][info] Requesting guest token
+x-intake  | [twitter][error] An unexpected error occurred: KeyError - 'result'. Please run gallery-dl again with the --verbose flag, copy its output and report this issue on https://github.com/mikf/gallery-dl/issues .
+x-intake  | 2026-04-18 14:45:49,002 INFO video_transcriber: x_media_api_failed: https://api.fxtwitter.com/karpathy/status/1798616493476192708 err=HTTP Error 404: Not Found
+x-intake  | 2026-04-18 14:45:49,003 ERROR video_transcriber: video_download_failed_all_fallbacks
+x-intake  | 2026-04-18 14:45:49,940 INFO video_transcriber: x_media_api_failed: https://api.fxtwitter.com/karpathy/status/1798616493476192708 err=HTTP Error 404: Not Found
+x-intake  | 2026-04-18 14:47:09 [info     ] imessage_reply_sent            length=107
+
+=== 9. X-INTAKE QUEUE ROW COUNT ===
+35|35
+
+=== 10. BRIDGE LOG — NO 'Authentication required' SINCE RELOAD ===
+Pre-reload line count:
+33
+Lines after 08:45 (reload time) with 'Authentication required':
+0
+Latest bridge-log entries:
+2026-04-18 09:03:35 [INFO] [bridge] Twilio fallback: configured
+2026-04-18 09:03:35 [INFO] [bridge] OPENAI_API_KEY: set
+2026-04-18 09:03:35 [INFO] [queue] Send queue started (min gap: 2.5s)
+2026-04-18 09:03:35 [INFO] [bridge] Listening on port 8199
+2026-04-18 09:03:35 [INFO] [monitor] Watching for handles: {'16074259277', '+19705193013', '19705193013', 'mearley24@me.com', '+16074259277'}
+2026-04-18 09:03:35 [INFO] [monitor] Starting from message ID: 187266
+
+=== DONE ===

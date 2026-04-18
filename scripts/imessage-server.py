@@ -99,25 +99,36 @@ def _ollama_completion(prompt: str, model: str = "qwen3:8b") -> Optional[str]:
         return None
 
 # Redis publish for downstream consumers (e.g. Docker x-intake on events:imessage)
-def _host_redis_url():
-    """Resolve REDIS_URL for host-side use.
+#
+# The bridge runs on the host under launchd. The repo .env defines REDIS_URL as
+# `redis://:<password>@redis:6379/0` because that's what the Docker services need.
+# On the host, the `redis` DNS alias does not resolve (NXDOMAIN / gaierror), so
+# redis-py surfaces the failure as `Authentication required.` and we silently
+# drop every publish to `events:imessage` — which is exactly the regression
+# that broke iMessage → x-intake for every X link in the log.
+#
+# _host_redis_url() rewrites the Docker-network hostname to the published
+# loopback port (`@redis:` → `@127.0.0.1:`, `://redis:` → `://127.0.0.1:`) when
+# the bridge is running on the host. The password, port, and db path are
+# preserved — no secrets or env vars are touched.
+def _host_redis_url(raw_url: str) -> str:
+    """Rewrite a Docker-network REDIS_URL to the host-reachable equivalent.
 
-    The repo `.env` ships `REDIS_URL=redis://:PASS@redis:6379/0`, which is a
-    Docker-internal hostname. This bridge runs on the host (launchd), where
-    `redis` does not resolve. Rewrite the hostname to 127.0.0.1 so we can
-    reach the container's published 6379 port while keeping the password.
+    The Docker service alias `redis` does not resolve on the host where
+    `scripts/imessage-server.py` runs under launchd. The `redis` container
+    publishes 127.0.0.1:6379 on the host, so swap the hostname while keeping
+    the auth, port, and db path intact.
     """
-    url = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")
-    if "@redis:" in url:
-        url = url.replace("@redis:", "@127.0.0.1:")
-    elif "://redis:" in url:
-        url = url.replace("://redis:", "://127.0.0.1:")
-    return url
+    if not raw_url:
+        return raw_url
+    rewritten = raw_url.replace("@redis:", "@127.0.0.1:")
+    if rewritten == raw_url:
+        rewritten = raw_url.replace("://redis:", "://127.0.0.1:")
+    return rewritten
 
 
-_REDIS_URL = _host_redis_url()
+_REDIS_URL = _host_redis_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
 _redis_pub = None
-
 
 
 def _get_redis_pub():
@@ -126,7 +137,7 @@ def _get_redis_pub():
         try:
             _redis_pub = _redis_lib.from_url(_REDIS_URL, decode_responses=True)
             _redis_pub.ping()
-            log.info("[redis] Connected for publish")
+            log.info("[redis] Connected for publish (url host=%s)", _REDIS_URL.rsplit("@", 1)[-1])
         except Exception as e:
             log.warning("[redis] Publish connection failed: %s", e)
             _redis_pub = None
