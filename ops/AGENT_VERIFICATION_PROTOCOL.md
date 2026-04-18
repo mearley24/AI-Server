@@ -256,6 +256,46 @@ Repo-based tooling that implements this policy:
 - `ops/task_audit_index.py` — follow a task from task JSON → prompt files → verification artifacts → git commits
 - `ops/task_queue_status.py` — queue-visibility summary with staleness flags
 - `ops/tests/test_task_runner_gates.py` — smoke test for the gate policy
+- `ops/learning_miner.py` — mines recent verification files and upserts rows in `ops/LESSONS_REGISTRY.md`
+- `ops/learning_digest.py` — generates the owner-facing "teach Matt" digest under `ops/verification/`
+
+### Learning loop (feeds the registry)
+
+Verification reports are **input** to a lightweight self-learning loop. See
+`ops/AUTONOMOUS_EXECUTION_PIPELINE.md` → "Learning and continuous
+improvement" for the full spec.
+
+Agent obligations when producing a verification file:
+
+1. **Use miner-friendly section headings** for any non-obvious finding.
+   Supported labels (case-insensitive, any Markdown heading level, or
+   plain `===` / `---` banners): `Root cause`, `Cause`, `Fix applied`,
+   `Minimal fix applied`, `Exact fix made`, `Remaining blocker`, `Next`,
+   `Next action`, `Limitations`, `Known limitations`, `TODO`,
+   `Follow up`, `Approval pattern`. The miner keys on these headings and
+   captures the next few non-empty lines as the lesson summary.
+2. **Add a lesson row when appropriate.** Any significant failure, fix,
+   or workflow gap that could repeat should end up in
+   `ops/LESSONS_REGISTRY.md`. The miner does this automatically for
+   headings that match; if the finding is subtler, hand-edit the file.
+3. **Promote stable lessons into guardrails.** If a lesson recurs across
+   verification files or is clearly a safety/money concern, flip its
+   `status` to `promoted_to_guardrail` and add a row to
+   `ops/GUARDRAILS.md` with the next `G-NN` id pointing back at the
+   lesson_id(s) via `derived_from_lessons`. Evidence references must
+   remain non-empty — guardrail G-07 enforces this.
+4. **Never paste-back.** If the learning loop surfaces something the
+   owner needs to know, let the digest (`ops/learning_digest.py
+   --write`) produce the report; do not ask Matt to read raw verification
+   files.
+
+Suggested operator cadence (manual for now; scheduling is tracked in the
+pipeline doc's "Scheduling (recommended)" section):
+
+```
+python3 ops/learning_miner.py --days 7 --update
+python3 ops/learning_digest.py --days 7 --write
+```
 
 
 ---

@@ -340,6 +340,56 @@ by hand.
 
 ---
 
+## Learning and Lessons
+
+The pipeline now has a lightweight self-learning layer. Every meaningful
+action already writes to `ops/verification/`; those files are mined into a
+machine-readable **lessons registry**, stable patterns are promoted to a
+**guardrails registry**, and a **digest** script teaches Matt what changed.
+Full spec: `ops/AUTONOMOUS_EXECUTION_PIPELINE.md` → "Learning and continuous
+improvement".
+
+Key files:
+
+- `ops/LESSONS_REGISTRY.md` — mined + hand-added lessons (Markdown table
+  between `<!-- LESSONS_TABLE_START -->` markers).
+- `ops/GUARDRAILS.md` — promoted operational rules. Bootstrap rows G-01 …
+  G-07 cover the verification contract, preflight, approval gate, pull
+  script, shell hazards, compose hygiene, and the lessons/guardrails
+  contract itself.
+- `ops/learning_miner.py` — scans recent `ops/verification/` files and
+  upserts rows into `LESSONS_REGISTRY.md`. Idempotent, stdlib-only.
+- `ops/learning_digest.py` — writes a plain-language digest to
+  `ops/verification/YYYYMMDD-HHMMSS-learning-digest.md`.
+
+Expectations for every agent working in this repo:
+
+1. **Consult first.** Before writing a new fix for something that looks
+   like a known problem, grep `ops/LESSONS_REGISTRY.md` and
+   `ops/GUARDRAILS.md`. Don't rediscover what the system already learned.
+2. **Record new fixes with miner-friendly headings.** In verification
+   reports use the headings the miner recognises: `Root cause`,
+   `Fix applied` (or `Minimal fix applied` / `Exact fix made`),
+   `Remaining blocker`, `Next`, `Limitations` / `Known limitations`,
+   `TODO`, `Follow up`. That's how the next miner tick picks them up.
+3. **Promote lessons that stabilize.** If a lesson shows up in more than
+   one verification file and describes a stable rule (not a one-off
+   incident), flip its `status` to `promoted_to_guardrail` and add a new
+   row to `ops/GUARDRAILS.md` with the next `G-NN` id.
+4. **Run the miner and digest on demand.** Suggested cadence: miner
+   daily, digest weekly.
+   ```zsh
+   python3 ops/learning_miner.py --days 7 --update
+   python3 ops/learning_digest.py --days 7 --write
+   ```
+   The digest output is committed to `ops/verification/` like any other
+   verification artifact.
+
+No scheduler is wired yet; the runner already knows how to execute those
+scripts via the `run_script` handler when you queue the task JSON.
+
+---
+
 ## Running Cline Prompts via the Task Runner
 
 The Symphony Task Runner can launch a Cline prompt end-to-end without any

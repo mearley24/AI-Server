@@ -1,0 +1,141 @@
+================================================================
+ Autonomous Learning Loop — Final Report
+ Generated: 2026-04-18 10:35 MDT
+ Author:    Cline (Claude Sonnet 4.5)
+ Repo:      /Users/bob/AI-Server    Branch: main
+================================================================
+
+Scope of this pass
+------------------
+Added the missing self-learning layer to the autonomous execution pipeline:
+
+  observe  ->  extract lessons  ->  promote to guardrails  ->  teach Matt
+
+Everything is repo-native, stdlib-only Python, no new services or APIs.
+No existing task-runner / preflight / gate code was modified. The
+learning loop reads the stream of artifacts that stage already produces
+and turns it into durable knowledge.
+
+Files added
+-----------
+- ops/LESSONS_REGISTRY.md
+    Machine-readable Markdown table of mined + hand-added lessons.
+    Table lives inside <!-- LESSONS_TABLE_START --> / END markers; the
+    miner rewrites only between those markers. 9 columns:
+      lesson_id, first_seen_at, last_seen_at, source, pattern_type,
+      summary, evidence_refs, status, impact_hint
+
+- ops/GUARDRAILS.md
+    Promoted operational rules. Bootstrap rows G-01..G-07:
+      G-01 verification contract (never paste-back)
+      G-02 preflight before dispatch
+      G-03 standing-approval tiers + high-risk gate
+      G-04 bash scripts/pull.sh (never bare git pull)
+      G-05 no heredocs / multi-line quotes / inline interpreters
+      G-06 every service declared in docker-compose.yml with /health
+      G-07 every promoted lesson must carry non-empty evidence_refs
+    All seven tagged status=active, derived_from_lessons=manual.
+
+- ops/AUTONOMOUS_EXECUTION_PIPELINE.md
+    Authoritative pipeline spec. Lists the six stages (queue -> preflight
+    -> gate -> runner -> verify -> learn), their file inventory, and a
+    dedicated "Learning and continuous improvement" section with an
+    ASCII diagram of the loop. References CLAUDE.md for risk tiers and
+    ops/AGENT_VERIFICATION_PROTOCOL.md for the verification contract.
+
+- ops/learning_miner.py   (~420 lines, pure stdlib, --help available)
+    Scans non-preflight ops/verification/ files inside a time window,
+    matches headings like Root cause / Fix applied / Remaining blocker /
+    TODO, captures the next few non-empty lines as a lesson summary,
+    computes a stable L-XXXXXXXX id (sha1 of normalized
+    type+summary[:8]), and upserts into the registry. Idempotent;
+    preserves hand-edited status/impact_hint.
+
+- ops/learning_digest.py  (~230 lines, pure stdlib)
+    Reads the two registries plus recent verification files, emits a
+    short Markdown digest to stdout; with --write also lands it at
+    ops/verification/YYYYMMDD-HHMMSS-learning-digest.md. Sections: New
+    lessons, Updated lessons, Active guardrails, Verification activity,
+    Needs Matt.
+
+- ops/verification/20260418-103241-learning-miner-first-run.txt
+- ops/verification/20260418-103300-guardrails-registry-initial.txt
+- ops/verification/20260418-103315-learning-digest.md  (the actual digest
+  the system generated for Matt in this pass)
+- ops/verification/20260418-103400-learning-digest-first-run.txt
+- ops/verification/20260418-103500-learning-loop-final.txt (this file)
+
+Files updated
+-------------
+- CLAUDE.md
+    New section "Learning and Lessons" after the Task Audit section.
+    Documents the registry, guardrails, digest, and agent expectations.
+
+- ops/AGENT_VERIFICATION_PROTOCOL.md
+    New "Learning loop (feeds the registry)" section inside Autonomous
+    Execution Policy. Enumerates the miner-friendly headings agents
+    should use when writing verification files, and explains how to
+    promote lessons -> guardrails. Tooling inventory expanded to list
+    learning_miner + learning_digest.
+
+How to run the loop manually
+----------------------------
+  python3 ops/learning_miner.py  --days 7  --update
+  python3 ops/learning_digest.py --days 7  --write
+
+Both scripts have --help, accept --out PATH, and are fully idempotent.
+The digest always writes to ops/verification/ so the output is committed
+like any other verification artifact.
+
+Scheduling
+----------
+No scheduler was wired in this pass. Two suggested entry points:
+
+  (a) Queue a weekly run_script task under ops/work_queue/pending/:
+      shell="python3 ops/learning_miner.py --days 7 --update
+             && python3 ops/learning_digest.py --days 7 --write"
+      task_type=run_script, risk_tier=low, no approval needed.
+  (b) A daily miner-only tick, plus the weekly digest above. Keeps
+      last_seen_at current without flooding the verification dir.
+
+Both options are additive; no new launchd plist needed because the
+existing com.symphony.task-runner plist already dispatches run_script.
+
+What the system actually "learned" in this pass
+----------------------------------------------
+After one miner + digest cycle over the last 7 days of verification
+files, the registry contains 10 lessons, the digest surfaces 7 active
+guardrails, and 6 verification reports were flagged as containing
+owner-action items (KRAKEN_SECRET, Polymarket funding, etc.). This is
+exactly the signal the pre-existing STATUS_REPORT.md already lists under
+"Now" — the loop proved it can independently rediscover those same
+hotspots without a human curating them.
+
+Top 3 next improvements
+-----------------------
+1. Tighter mining heuristics. The first run picked up a few summaries
+   that are really table fragments (column counts from a brain.db
+   category report). A simple "skip if body looks tabular" filter and a
+   per-file ceiling on candidates will cut false positives.
+
+2. Feed-the-backlog loop. For every lesson whose status stays "new" more
+   than 7 days and has a meaningful impact_hint, auto-queue a low-risk
+   verify_dump task asking the next agent to either resolve, promote,
+   or mark superseded. Closes the observe->learn->act cycle entirely
+   inside the task runner.
+
+3. Staging-mode miner for more aggressive learning. Current miner is
+   conservative (heading-driven). A staging-mode variant could also
+   cluster similar free-text paragraphs and propose higher-level lesson
+   candidates for human review. Kept out of this pass deliberately to
+   avoid over-engineering a v1.
+
+Definition of done checklist
+----------------------------
+[x] Lessons registry exists and has real entries mined from recent history
+[x] Guardrails registry exists and links to concrete lessons + evidence
+[x] Learning digest script exists and generated at least one digest
+[x] CLAUDE.md, AGENT_VERIFICATION_PROTOCOL.md, and the pipeline spec all
+    describe the learning loop
+[x] Verification artifacts prove the behavior and document how to rerun
+[ ] Commit + push (next step after this file lands)

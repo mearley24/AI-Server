@@ -1,0 +1,72 @@
+=== learning-digest — first run ===
+generated_at: 2026-04-18T10:34:00-06:00
+author:       Cline (learning-loop landing)
+repo:         /Users/bob/AI-Server
+branch:       main
+
+--- invocation ---
+python3 ops/learning_digest.py --days 7 --write
+
+Output file: ops/verification/20260418-103315-learning-digest.md (71 lines)
+
+--- what it reported ---
+- Lessons in registry: 10 (fresh from the miner's first run)
+- Active guardrails: 7 of 7 (G-01 through G-07) — parseable + listed
+- New lessons in window: 10
+- Updated lessons in window: 0 (first run — expected)
+- Verification files written in window (preflight excluded): 6
+- "Needs Matt" hits: 6 verification files contain owner-action keywords
+  ("Blocker", "[Matt]", "requires approval", "KRAKEN_SECRET", etc.)
+
+--- sample digest bullets ---
+
+  New lesson:
+    **L-4d8089dc** _failure_ (reliability): identified
+    `ops/task_runner_preflight.py::run_preflight()` previously wrote a
+    timestamped `ops/verification/YYYYMMDD-HHMMSS-preflight.txt` on *every*
+    invocation...
+    source: ops/verification/20260418-082600-autonomy-gap-closer-resume-final.txt
+
+  Active guardrail:
+    **G-04** _git_ (risk tier 2): Never use `git pull` directly on AI-Server;
+    always use `bash scripts/pull.sh`. The bare pull fails on `data/` state
+    files and leaves the tree in a half-merged state.
+
+  Needs Matt:
+    - ops/verification/20260418-090400-imessage-redis-host-url-unstuck.txt
+    - ops/verification/20260418-082600-autonomy-gap-closer-resume-final.txt
+    - ops/verification/20260417-101700-trading-market-automation-final.txt
+
+--- sanity checks ---
+- `python3 -m py_compile ops/learning_miner.py ops/learning_digest.py`
+  -> SYNTAX_OK
+- Second run (with the registry already populated) would report
+  lessons_updated > 0 on the miner and "Updated lessons" on the digest.
+  Not reproduced here to keep the first-run artifact pristine.
+- The parser that reads GUARDRAILS.md had to be taught to skip the schema
+  table and pick up the "Active guardrails" table (the file has two
+  pipe-tables before the active one). Fixed in this pass via a header
+  detection heuristic — see the commit for ops/learning_digest.py.
+
+--- known limitations / obvious false positives ---
+1. Current lesson summaries include some noise — e.g. L-0b742109 is a
+   brain.db category count block that happens to follow a "TODO" label.
+   Future miner passes can filter fragments that look like tables.
+2. Most bootstrap lessons are status=new and don't yet have an
+   impact_hint beyond what the keyword heuristic guessed. Agents can
+   hand-edit these cells; the miner will preserve them on re-runs.
+3. The digest's "Needs Matt" section matches on keywords, which catches
+   the verification files themselves (they contain the word "Blocker"
+   describing the blocker-report *pattern*). Tightening this heuristic
+   is a straightforward follow-up.
+4. No scheduler is wired. Daily miner + weekly digest are suggested in
+   ops/AUTONOMOUS_EXECUTION_PIPELINE.md; queueing them via the task
+   runner is the intended next step.
+
+--- how another agent can reproduce ---
+bash scripts/pull.sh
+python3 ops/learning_miner.py --days 7 --update --out ops/verification/<stamp>-learning-miner-run.txt
+python3 ops/learning_digest.py --days 7 --write
+git add ops/verification/<stamp>*
+git -c user.email="earleystream@gmail.com" -c user.name="Matt Earley" commit -m "ops: learning digest run"
+git push origin main

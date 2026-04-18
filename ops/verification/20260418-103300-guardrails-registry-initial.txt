@@ -1,0 +1,55 @@
+=== guardrails-registry — initial bootstrap ===
+generated_at: 2026-04-18T10:33:00-06:00
+author:       Cline (learning-loop landing)
+repo:         /Users/bob/AI-Server
+branch:       main
+
+--- files added ---
+- ops/GUARDRAILS.md   (new — promoted-rules registry)
+- ops/LESSONS_REGISTRY.md  (new — machine-readable lessons table, companion file)
+- ops/AUTONOMOUS_EXECUTION_PIPELINE.md  (new — authoritative pipeline spec, ties the
+  existing runner + verification + the new learning loop together)
+
+--- initial guardrail rows ---
+G-01  verification     never ask Matt to paste terminal output; write to ops/verification/, commit, push.
+G-02  task_runner      always run ops/task_runner_preflight.py before dispatching queued tasks.
+G-03  task_runner      repo-safe ops auto-approved; high-risk ops require committed ops/approvals/<token>.approval or dry_run=true.
+G-04  git              never bare `git pull`; use `bash scripts/pull.sh`.
+G-05  shell            no heredocs / multi-line quoted strings / inline interpreters in zsh/bash blocks.
+G-06  docker           every service declared in docker-compose.yml with a GET /health endpoint.
+G-07  pipeline_general every lesson promoted to a guardrail must carry non-empty evidence_refs.
+
+All seven are tagged status=active, derived_from_lessons=manual (policy-born).
+Future guardrails should be lesson-backed whenever possible — see the
+"How to add a guardrail" section in ops/GUARDRAILS.md.
+
+--- tie-back to lessons + evidence ---
+These bootstrap guardrails are policy rules that already exist elsewhere in
+the repo (`CLAUDE.md`, `ops/AGENT_VERIFICATION_PROTOCOL.md`,
+`.clinerules`). The `derived_from_lessons = manual` column records that.
+Any future guardrail added via the learning loop will point at one or more
+`L-*` ids in `ops/LESSONS_REGISTRY.md`; the miner ensures those rows carry
+`evidence_refs` back to specific `ops/verification/<stamp>-*.txt` files.
+
+--- how future agents add a guardrail ---
+1. Open ops/LESSONS_REGISTRY.md. Find the relevant lesson_id (L-XXXXXXXX)
+   and flip its status to `promoted_to_guardrail`.
+2. Open ops/GUARDRAILS.md. Append a row under "Active guardrails" with
+   the next G-NN id, `derived_from_lessons = <lesson_id>` (pipe-separated
+   if multiple), and filled-in scope / risk_tier / enforcement / verification.
+3. If the guardrail introduces automated enforcement, update the relevant
+   script (preflight, gate, launchd plist, prompts).
+4. Commit both files in the same change. Do not delete old rows — set
+   `status = deprecated` for rules that are superseded.
+
+--- limitations / next improvements ---
+- No automated "promote this lesson" CLI yet. The promotion step is a
+  structured manual edit — intentional for this first pass, so humans stay
+  in the loop on what becomes a rule.
+- `ops/learning_digest.py` surfaces the active guardrails table each run,
+  which gives a cheap cross-check that the file is parseable and that no
+  row has been accidentally dropped.
+- G-07 is advisory today; the miner currently only populates
+  `evidence_refs` from verification file names, not from Decision Journal
+  / Follow-ups DB rows. Adding that will happen when the miner gets its
+  next upgrade.
