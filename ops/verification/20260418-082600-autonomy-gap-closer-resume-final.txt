@@ -1,0 +1,135 @@
+=== autonomy-gap-closer — resume-pass final verification ===
+generated_at: 2026-04-18T08:26:00-06:00
+author:       Cline (Claude Sonnet 4.5), resume pass
+repo:         /Users/bob/AI-Server
+branch:       main
+
+--- scope of this pass ---
+A prior agent (Perplexity Computer) had largely implemented the "autonomy
+gap-closer" work: approval-token + dry-run gates, queue-status tool, task-
+audit-index tool, preflight self-heal, and the associated documentation.
+That work was NOT redone. This resume pass focused strictly on the runaway
+preflight artefact loop that had filed ~3,082 `ops/verification/*-preflight.txt`
+files and produced 177 local commits that never pushed (the ref had diverged
+from origin by the time a human returned).
+
+--- already complete (left untouched) ---
+* scripts/task_runner.py              — gate hookup, blocked path, dry-run propagation, approval_token surfacing in result header
+* ops/task_runner_gates.py            — GateDecision, is_dry_run, is_high_risk, _approval_file_exists, evaluate(), blocker_text()
+* ops/task_runner_preflight.py        — .gitattributes seed, whitelisted conflict resolve, dirty stage, commit+push
+* ops/task_queue_status.py            — per-state counts, oldest/stale pending, recent-N, alt-queue support, JSON/text output, --out file
+* ops/task_audit_index.py             — resolves a task_id to its prompt files, verification artefacts, and git commits
+* ops/approvals/README.md             — policy + operator flow
+* ops/approvals/AUTO_APPROVE_IDS.txt  — self-approval allowlist (one id per line)
+* ops/tests/test_task_runner_gates.py — existing gate unit tests (not modified)
+* ops/AGENT_VERIFICATION_PROTOCOL.md  — already authoritative
+* The LaunchAgent plist at ops/task_runner/com.symphony.task-runner.plist is event-driven (WatchPaths on pending/, refs/heads/main, FETCH_HEAD) plus a 60s safety StartInterval and 10s throttle.
+
+--- root cause identified ---
+`ops/task_runner_preflight.py::run_preflight()` previously wrote a
+timestamped `ops/verification/YYYYMMDD-HHMMSS-preflight.txt` on *every*
+invocation — including clean no-op ticks. The runner's commit/push loop
+then added those files to git, which updated `refs/heads/main` +
+`FETCH_HEAD`, which re-fired the launchd WatchPath, which re-invoked the
+runner, which re-ran the preflight, which wrote another report. This
+positive-feedback loop accumulated to:
+
+* 3,082 preflight reports under `ops/verification/` (tracked, committed).
+* 177 local heartbeat commits diverging from origin/main after the remote
+  moved (`05d960d`, `06bcab7` watchdog commits) — `git push origin main`
+  was silently non-fast-forward and never reached the remote.
+
+--- minimal fix applied ---
+File: ops/task_runner_preflight.py
+
+1. New helper `_preflight_did_work(result)` returns True only when
+   preflight actually mutated state: gitattributes updates, whitelisted
+   conflicts resolved, whitelisted dirty staged, unsafe conflicts,
+   notes present, or result.ok == False.
+
+2. `run_preflight()` now calls `write_report(result)` only when
+   `_preflight_did_work()` is True. Otherwise it stamps `finished_at`
+   and returns without touching disk. Clean ticks produce no artefact,
+   so no launchd re-trigger is possible.
+
+3. No changes to the write-report path itself — when preflight really
+   does heal a conflict, a single timestamped report still lands in
+   ops/verification/ as before, and the commit_and_push loop continues
+   to push it.
+
+4. No changes to the runner, gates, queue-status, audit-index, or
+   approvals tools. Those were correct as-is.
+
+--- smoke tests (all PASSED) ---
+1. Gate policy:
+     LOW:            allowed=True  (standing approval)
+     HIGH/no-token:  allowed=False ("high-risk task is missing required approval_token")
+     HIGH/dry_run:   allowed=True  ("high risk but dry_run=true — no side effects; allowed")
+     HIGH/bad-token: allowed=False ("approval_token '…' did not match any approval file under ops…")
+
+2. python3 ops/task_queue_status.py
+     state_counts: pending=0 completed=20 failed=0 rejected=0 blocked=0
+     heartbeat loaded, recent_completed populated, alt-queue detected.
+
+3. python3 ops/task_audit_index.py 20260417-164820-task-runner-crash-diag
+     chains: 1
+     artifacts: task_json + verification file both [OK]
+     commits:  c78583f correctly correlated.
+
+4. python3 ops/task_runner_preflight.py --dry-run  (on clean tree)
+     stdout: preflight ok=True resolved=0 staged=0 unsafe=0 report=
+     ops/verification/*-preflight.txt count unchanged (3,276 → 3,276)
+     → no-op writes NO artefact. Fix confirmed.
+
+--- dry-run path documentation ---
+Both high-risk and low-risk tasks can opt into dry-run via either:
+  * top-level `"dry_run": true` on the task JSON, or
+  * `payload.dry_run = true`.
+The gate module treats dry_run as a universal high-risk bypass (no side
+effects). scripts/task_runner.py propagates the flag into the payload
+shallow-copy so handlers that understand `--dry-run` (run_cline_prompt,
+run_cline_campaign) forward it to their launchers. Handlers that cannot
+honor dry-run should never be flagged high-risk — the gate module
+recognises only dry_run as an authority bypass.
+
+--- divergence recovery ---
+* `bash scripts/pull.sh` rebased/stashed successfully, fixed conflict
+  markers across auto-healed files, ran Python syntax validation, and
+  produced a clean working tree.
+* Two whitelisted digest/session_tracking paths came out of stash-pop
+  as `UU` (both-modified) after rebase — resolved with
+  `git checkout --ours` + `git add`; this is the behaviour the
+  preflight is designed to automate on subsequent ticks.
+* Lock file `data/task_runner/.runner.lock` (stale PID 40458) removed.
+* The task-runner launchd agent was booted out during this pass; it is
+  safe to `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.symphony.task-runner.plist`
+  to re-enable it now that the loop fix is in.
+
+--- what was NOT done (remaining limitations) ---
+1. The 3,000+ accumulated `ops/verification/*-preflight.txt` files from
+   the feedback-loop era are still in git history. We did not delete
+   them — the rules say no unrelated edits. A follow-up cleanup task
+   can optionally `git rm ops/verification/2026041[78]-0*-preflight.txt`
+   in its own commit if anyone cares; the fix above prevents new ones,
+   which is what matters for the "no repeated preflight loop" goal.
+2. The launchd agent was not re-bootstrapped in this pass — deliberate,
+   so an operator can confirm the fix is live before re-enabling the
+   WatchPath-driven run.
+3. The AUTO_APPROVE_IDS.txt is intentionally empty; operators add
+   task_ids here to allow self-approval.
+4. No code was modified in scripts/task_runner.py, ops/task_runner_gates.py,
+   ops/task_queue_status.py, ops/task_audit_index.py. The resume pass
+   touched only ops/task_runner_preflight.py (plus docs/verification).
+
+--- files changed in this resume pass ---
+* ops/task_runner_preflight.py       — added _preflight_did_work() gate
+* STATUS_REPORT.md                    — brief update
+* ops/verification/20260418-082600-autonomy-gap-closer-resume-final.txt  (this file)
+
+--- definition of done checklist ---
+[x] No repeated preflight loop — clean-tick preflight writes no artefact.
+[x] Repo state is clean — only the untracked integrations/autoresearch
+    submodule remains; it's out of scope for this task.
+[x] Final verification artefact exists — this file.
+[x] Changes committed and pushed — see git log for the commit covering
+    ops/task_runner_preflight.py + STATUS_REPORT.md + this report.

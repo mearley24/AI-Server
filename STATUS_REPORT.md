@@ -12,6 +12,22 @@ Closes the remaining gaps around queue visibility, audit clarity,
 explicit approval gates for high-risk work, and a dry-run/staging lane
 for the Symphony Task Runner.
 
+### Resume-pass fix (2026-04-18 08:26)
+
+`ops/task_runner_preflight.py::run_preflight()` previously wrote a
+timestamped report on every tick, including clean no-op ticks. Combined
+with the launchd `WatchPaths` on `.git/refs/heads/main` + `FETCH_HEAD`,
+this produced a self-retriggering feedback loop that accumulated ~3,000
+no-op preflight files and 177 un-pushed heartbeat commits.
+
+Fix: a new `_preflight_did_work()` helper returns True only when
+preflight actually mutated state. `run_preflight()` now writes the
+report only when that helper returns True — a clean tick is a silent
+no-op. Report `ops/verification/20260418-082600-autonomy-gap-closer-resume-final.txt`.
+Divergence reconciled via `bash scripts/pull.sh`.
+
+
+
 ### Queue visibility tooling
 
 `python3 ops/task_queue_status.py` prints a concise snapshot of
