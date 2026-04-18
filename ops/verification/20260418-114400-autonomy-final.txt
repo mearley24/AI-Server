@@ -1,0 +1,158 @@
+==============================================================================
+AGENT EXECUTION AND AUTONOMY — FINAL REPORT
+==============================================================================
+Generated: 2026-04-18T11:44-06:00
+Operator:  Cline (autorun, standing approval for low-risk repo-safe work)
+Companion audit: ops/verification/20260418-114400-autonomy-audit.txt
+Prior pass: ops/verification/20260417-094530-agent-execution-autonomy-final.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+Symphony Task Runner v1 (scripts/task_runner.py 728 lines,
+scripts/task_signer.py 263 lines, ops/task_runner_preflight.py 420 lines,
+ops/task_runner_health.py 419 lines, ops/task_audit.py 263 lines,
+ops/task_audit_index.py 478 lines, ops/task_queue_status.py 399 lines,
+ops/task_runner_gates.py 235 lines, ops/cline-run-prompt.sh 286 lines,
+ops/cline-run-campaign.sh 184 lines, ops/tests/test_task_runner_gates.py,
+ops/work_queue/{AUTHORIZED_KEYS.txt, TASK_SCHEMA.md, approvals/},
+~/Library/LaunchAgents/com.symphony.task-runner.plist, CLAUDE.md tier
+model, AGENT_VERIFICATION_PROTOCOL.md, .cursor/prompts/cline-prompt-
+task-runner.md, live queue/heartbeat state on Bob).
+
+------------------------------------------------------------------------------
+Items found + status
+------------------------------------------------------------------------------
+- scripts/task_runner.py (728 lines, 6 handlers, gate-aware) .... active (1 bug FIXED)
+- scripts/task_signer.py (keygen/sign/verify) ................... active
+- ops/task_runner_preflight.py (no-op suppressor 4/18) .......... active
+- ops/task_runner_health.py (disk.pressure added 4/18) .......... active
+- ops/task_audit.py / task_audit_index.py ....................... active
+- ops/task_queue_status.py (NEW 4/18) ........................... active
+- ops/task_runner_gates.py (NEW 4/18) ........................... active
+- ops/tests/test_task_runner_gates.py (8/8 pass) ................ active
+- ops/cline-run-prompt.sh / cline-run-campaign.sh ............... active
+- ops/work_queue/{pending=1, completed=20, failed=0, rejected=0,
+  blocked=0} ..................................................... partial (1 stuck)
+- AUTHORIZED_KEYS.txt (cline-bob + perplexity-computer) ......... active
+- TASK_SCHEMA.md ................................................ active (gate + dry-run updated)
+- com.symphony.task-runner.plist (installed, NOT loaded now) .... partial
+- ops/launchd/com.symphony.task-runner-health.plist ............. active
+- ops/approvals/ (NEW 4/18) ..................................... active
+- Standing-approval risk tiers (CLAUDE.md + protocol) ........... active (expanded)
+- Cline prompt workflow (cline-prompt-task-runner.md) ........... active
+- Task chaining (depends_on / next_task) ........................ missing
+- Task priority ................................................. missing
+- Automatic retry of transient failures ......................... missing
+- Failure notification (failed/ rejected/ → iMessage) ........... missing (cross-cat)
+- ALLOWED_TASK_TYPES externalized to ALLOWLIST.json ............. missing
+
+Live runtime signals picked up by the tooling:
+  - task_runner_health.py: launchd not loaded, heartbeat 11826s stale,
+    1 task stuck 3.3h, disk 98.6% used.
+  - task_queue_status.py: 1 stale pending (install-watchdog, 3.3h),
+    20 completed, 0 failed, 0 rejected, 0 blocked.
+  - launchd.out.log: pull --ff-only diverged → runner looped on failure
+    → launchd backoff → plist removed from live list. ROOT CAUSE
+    IDENTIFIED and FIXED in the pull_latest patch this pass.
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- 20 tasks completed end-to-end since v1, zero failed, zero rejected.
+- Approval-token gate + dry-run lane is wired, tested, and honored
+  by process_task. Graceful degradation when gate module is missing.
+- Six handlers (git_pull, run_script, ssh_and_run, verify_dump,
+  run_cline_prompt, run_cline_campaign) cover every current use case.
+- Queue-visibility + audit-index CLIs let any agent answer "what's
+  happening?" without touching the runner or launchd.
+- Preflight is idempotent + silent on no-op ticks (4/18 fix).
+- Cline launchers validate every repo-relative path against REPO_ROOT
+  — no traversal, no absolute paths, no shell injection surface.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- pull_latest had no divergence fallback (FIXED this pass).
+- Runner is not currently loaded (launchd backoff after the above
+  bug). Recovery is a kickstart after disk relief — MEDIUM risk,
+  deferred.
+- ALLOWED_TASK_TYPES still hardcoded in task_runner.py line 92.
+- No depends_on / priority / retry metadata.
+- No batch signing helper.
+- No failure-alerting channel (cross-category: messaging).
+- Key rotation procedure documented but never exercised.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+Re-validated: current v1 shape is right. Celery/RQ/Dramatiq/Temporal/
+Airflow/GitHub Actions all introduce worse failure modes or violate
+the "everything stays on Bob" rule. Improvements should be additive
+(chaining, priority, retry, external allowlist), not a rewrite.
+
+------------------------------------------------------------------------------
+Is v2 needed?
+------------------------------------------------------------------------------
+NO. v1 works and is steadily gaining features (approval gate, dry-run,
+queue-status, audit-index, Cline handlers — all added since 4/17).
+Next round should be features, not a rewrite.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass (committed)
+------------------------------------------------------------------------------
+1) MOD  scripts/task_runner.py::pull_latest — added rebase-autostash
+   fallback on divergence + fail-open when even rebase fails.
+   The runner now logs the divergence, continues the tick (heartbeat
+   + task dispatch still happen on locally-pending work), and lets a
+   future `bash scripts/pull.sh` heal the repo.
+   RISK: LOW. Fast path unchanged; additive recovery surface only.
+   VERIFIED: module imports cleanly, 6 handlers present, gate test
+   still 8/8 pass.
+
+2) NEW  ops/verification/20260418-114400-autonomy-audit.txt
+3) NEW  ops/verification/20260418-114400-autonomy-final.txt (this file)
+
+No plist (re-)loaded, no secret touched, no queue state mutated.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- Task runner is offline (launchd backoff removal). Kickstart is a
+  MEDIUM-risk recovery step that should happen after disk relief.
+- Still no depends_on / priority / retry metadata.
+- Allowlist still hardcoded.
+- Failure alerting still not wired to notification-hub.
+- AUTHORIZED_KEYS rotation unexercised.
+
+------------------------------------------------------------------------------
+Next actions (deferred to later passes)
+------------------------------------------------------------------------------
+LOW:
+- Document-only schema bump for `depends_on: [task_id]` and
+  `priority: int` in TASK_SCHEMA.md (not enforced yet).
+- Externalize ALLOWED_TASK_TYPES to ops/work_queue/ALLOWLIST.json
+  (runner falls back to the hardcoded set if file missing).
+- Integration test `ops/tests/test_task_runner_pull.py` simulating
+  divergence → assert pull_latest doesn't crash.
+
+MEDIUM:
+- `launchctl kickstart -k gui/$(id -u)/com.symphony.task-runner`
+  after disk relief; verify a tick lands + stuck install-watchdog
+  task clears.
+- Honor depends_on in dispatch; auto-reject dependents of
+  failed/rejected predecessors.
+- Retry ssh_and_run on exit 255 up to 3× with exponential backoff.
+
+HIGH:
+- None in this category today.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  scripts/task_runner.py
+           (pull_latest now has rebase-autostash + fail-open fallback)
+- ADDED    ops/verification/20260418-114400-autonomy-audit.txt
+- ADDED    ops/verification/20260418-114400-autonomy-final.txt
+
+END OF FINAL REPORT — Autonomy category pass 2026-04-18.

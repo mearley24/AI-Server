@@ -621,16 +621,70 @@ def commit_and_push(summary: str) -> None:
 
 
 def pull_latest() -> None:
+    """Fetch and advance main, with a safe rebase fallback on divergence.
+
+    Historically this used plain ``git pull --ff-only origin main``. That
+    works fine on a healthy repo but bricks the runner permanently the
+    moment HEAD diverges from origin/main (e.g. a local preflight commit
+    + a remote commit land in the same window). When that happens git
+    returns ``fatal: Not possible to fast-forward, aborting.`` and every
+    subsequent tick fails the same way. Observed 2026-04-18 on Bob.
+
+    New contract:
+      1. Try ``pull --ff-only`` (fast path — 99% of ticks).
+      2. If that fails AND the message names the fast-forward problem,
+         retry with ``pull --rebase --autostash`` which is safe when the
+         only local commits are preflight auto-heals / runner heartbeats.
+      3. If the rebase fails too, log the failure but do NOT crash the
+         tick. The runner still processes locally-pending tasks, writes
+         the heartbeat, and commits. A future tick (or a human running
+         ``bash scripts/pull.sh``) will heal the divergence.
+    """
     proc = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "pull", "--ff-only", "origin", "main"],
         capture_output=True,
         text=True,
     )
-    if proc.returncode != 0:
-        log(f"pull rc={proc.returncode}: {proc.stdout}{proc.stderr}")
-    else:
+    if proc.returncode == 0:
         tail = proc.stdout.strip().splitlines()[-1:] or ["(no output)"]
         log(f"pull ok: {tail[0]}")
+        return
+
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    needs_rebase = (
+        "Not possible to fast-forward" in combined
+        or "non-fast-forward" in combined
+        or "diverged" in combined
+    )
+    if not needs_rebase:
+        log(f"pull rc={proc.returncode}: {combined.strip()}")
+        return
+
+    log(f"pull --ff-only diverged; retrying with --rebase --autostash")
+    proc2 = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(REPO_ROOT),
+            "-c",
+            "rebase.autoStash=true",
+            "pull",
+            "--rebase",
+            "origin",
+            "main",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if proc2.returncode == 0:
+        tail = proc2.stdout.strip().splitlines()[-1:] or ["(no output)"]
+        log(f"pull rebase ok: {tail[0]}")
+        return
+    combined2 = (proc2.stdout or "") + (proc2.stderr or "")
+    log(
+        f"pull rebase rc={proc2.returncode}: {combined2.strip()[:400]} "
+        "(continuing tick; run `bash scripts/pull.sh` to recover)"
+    )
 
 
 def run_preflight_self_heal() -> bool:
