@@ -26,18 +26,44 @@ echo "$SERVICES" | sed 's/^/  - /'
 echo ""
 
 # 1) Any top-level dir with a Dockerfile that is NOT a compose service?
+#
+# Honor an allowlist of dirs that hold Dockerfiles but are intentionally NOT
+# compose services on Bob. These fall in three buckets:
+#   a. Directory name differs from compose service name (voice_receptionist
+#      on disk = voice-receptionist in compose).
+#   b. Subsidiary/external compose stacks (telegram-*, operations).
+#   c. Build artifact or dev-only containers not meant for production.
+# Add new entries one per line; keep alphabetical.
+KNOWN_NOT_STALE_NO_COMPOSE=(
+  operations
+  telegram-bob-remote
+  telegram-interface
+  voice_receptionist
+)
 echo "## Dockerfile-bearing top-level dirs not in compose"
 FOUND=0
 for d in */; do
   d="${d%/}"
   if [ -f "$d/Dockerfile" ]; then
     if ! printf '%s\n' "$SERVICES" | grep -qx "$d"; then
-      echo "  WARN: $d has Dockerfile but is not in compose"
-      FOUND=1
+      # Skip allowlisted dirs — they are known-not-stale intentionally.
+      is_allowed=0
+      for allow in "${KNOWN_NOT_STALE_NO_COMPOSE[@]}"; do
+        if [ "$d" = "$allow" ]; then
+          is_allowed=1
+          break
+        fi
+      done
+      if [ "$is_allowed" = 1 ]; then
+        echo "  OK  : $d has Dockerfile but is intentionally not in compose (allowlisted)"
+      else
+        echo "  WARN: $d has Dockerfile but is not in compose"
+        FOUND=1
+      fi
     fi
   fi
 done
-[ "$FOUND" = 0 ] && echo "  (none)"
+[ "$FOUND" = 0 ] && echo "  (no new drift)"
 echo ""
 
 # 2) Known stale directories — require DECOMMISSIONED.md marker.

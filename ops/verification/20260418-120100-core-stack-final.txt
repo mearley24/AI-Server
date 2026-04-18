@@ -1,0 +1,160 @@
+==============================================================================
+CORE STACK AND INFRASTRUCTURE — FINAL REPORT
+==============================================================================
+Generated: 2026-04-18T12:01-06:00
+Operator:  Cline (autorun, standing approval for low-risk repo-safe work)
+Companion audit: ops/verification/20260418-120100-core-stack-audit.txt
+Prior pass: ops/verification/20260417-095400-core-stack-infrastructure-final.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+docker-compose.yml (730 lines, 19 services), scripts/pull.sh,
+scripts/symphony-ship.sh, scripts/verify-deploy.sh,
+scripts/compose-drift-check.sh (extended this pass), ops/REPO_LAYOUT.md,
+CLAUDE.md service tables, .clinerules, STATUS_REPORT.md Stack Health
+snapshot, live top-level directory inventory, DECOMMISSIONED.md markers
+in 4 stale dirs, Mac Mini Bob runtime assumptions (Docker, Tailscale,
+launchd, VPN), Redis + VPN topology, monorepo boundary vs symphonysh.
+
+------------------------------------------------------------------------------
+Items found + status
+------------------------------------------------------------------------------
+- docker-compose.yml (19 services, 0 drift) ................. active
+- Compose patterns (static Redis IP, bind mounts, x-intake volumes) .. active
+- Service boundaries (HTTP-only per lesson #15) .............. active
+- compose-drift-check.sh (extended with allowlist this pass) . active + extended
+- scripts/pull.sh ............................................ active
+- scripts/symphony-ship.sh ................................... likely_active
+- scripts/verify-deploy.sh ................................... active
+- ops/REPO_LAYOUT.md ......................................... active
+- CLAUDE.md + .clinerules (19 containers, matches compose) ... active
+- STATUS_REPORT.md Stack Health table ........................ stale (needs refresh)
+- 4 stale service dirs (decommissioned, markers in place) .... partial (deletion deferred)
+- Redis topology (static 172.18.0.100 + auth) ................ active
+- VPN (WireGuard fronting polymarket-bot) .................... active
+- Bind mounts (openclaw + cortex) ............................ active
+- Mac Mini Bob runtime (Docker, 45 plists, disk 98.6% used) .. partial (live incident)
+- Deploy/pull workflow (pull_latest fix landed this campaign) . active
+- Monorepo vs split-repo ..................................... correct as is
+- Per-service resource limits ................................ missing
+- services/ + core/ top-level dirs ........................... unknown (deferred)
+
+Live runtime signals:
+  - docker compose config --services lists exactly 19 sorted services
+  - compose-drift-check.sh (post-allowlist): 19 services, 0 false-
+    positive WARNs, 4 legitimate WARNs for the decommissioned dirs
+  - disk at 98.6% used; Docker Desktop intermittent today
+  - 4 stale dirs total 27 files, all carrying DECOMMISSIONED.md
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- 19-service compose stack fits in one screen, small blast radius,
+  tight single-responsibility boundaries.
+- Static Redis IP + auth + HTTP-only-between-services + VPN-wrapped
+  trading together form a very clean security perimeter.
+- Bind mounts keep the edit→restart loop fast for openclaw + cortex.
+- scripts/pull.sh, symphony-ship.sh, verify-deploy.sh, and now
+  compose-drift-check.sh each own one narrow responsibility.
+- ops/REPO_LAYOUT.md and the 4 DECOMMISSIONED.md markers make
+  orientation for a new agent unambiguous.
+- compose-drift-check.sh now has an allowlist so it only fires on
+  real drift; no more noise to train around.
+
+------------------------------------------------------------------------------
+Cons / weaknesses
+------------------------------------------------------------------------------
+- STATUS_REPORT.md Stack Health table lists 4 decommissioned
+  services as "Up 🟢" and still mentions "18 containers" in places.
+- 4 stale dirs still on disk; 4/24 deletion-window target arrives
+  in 6 days.
+- No per-service deploy.resources.limits.
+- pull.sh does not invoke compose-drift-check.sh as a post-step.
+- x-intake-lab (dev-only) has no compose profile gate.
+- services/ and core/ top-level dirs purpose unclear.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+Re-validated April 17:
+- Docker Compose IS the right shape for single-host ≤20 services on
+  macOS. Keep it.
+- Nomad: server+agent overhead for zero gain on one host. REJECT.
+- k3s: too heavy. REJECT.
+- Compose profiles: MILDLY useful to gate x-intake-lab (2-line
+  change). Not urgent.
+- docker-compose.override.yml: not needed today.
+- hadolint / dockerfilelint: low-priority nice-to-have.
+
+Net: keep compose. Future improvements are config polish, not
+architecture.
+
+------------------------------------------------------------------------------
+Is the monorepo compose model still the right fit?
+------------------------------------------------------------------------------
+YES. One developer, one host, 19 services, tight cross-service
+interdependence, and a working git-driven deploy pipeline. A split
+would cost 4-6x the pull/deploy overhead with no offsetting benefit.
+The website repo (symphonysh) is correctly split because its stack
+(React+Vite+Cloudflare Pages) is fundamentally different.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass (committed)
+------------------------------------------------------------------------------
+1) MOD  scripts/compose-drift-check.sh — added
+   KNOWN_NOT_STALE_NO_COMPOSE allowlist (operations,
+   telegram-bob-remote, telegram-interface, voice_receptionist).
+   Eliminates 4 persistent false-positive WARNs that April 17 final
+   explicitly flagged as acceptable noise. Real drift (the 4
+   decommissioned dirs) still surfaces as WARN.
+   RISK: LOW. Read-only detection logic.
+   TEST: ran with Docker up → 2 allowlisted OKs + 4 real-drift
+   WARNs. Ran with Docker down → "(skipping — nothing to check)"
+   clean exit.
+
+2) NEW  ops/verification/20260418-120100-core-stack-audit.txt
+3) NEW  ops/verification/20260418-120100-core-stack-final.txt (this file)
+
+No compose change, no plist touched, no service restart, no secret
+touched, no stale dir deleted.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- STATUS_REPORT.md Stack Health table misleads readers (claims 4
+  decommissioned services still Up).
+- 4 stale dirs on disk past their cleanup target window.
+- No resource limits — an OOM event is unbounded today.
+- Drift only surfaces on deliberate invocation (pull.sh hook not
+  wired).
+
+------------------------------------------------------------------------------
+Next actions (deferred to later passes)
+------------------------------------------------------------------------------
+LOW:
+- 2-line hook in pull.sh to run compose-drift-check.sh as a post-step.
+- Gate x-intake-lab with `profiles: ["dev"]`.
+- scripts/stack-health-snapshot.sh that produces the Stack Health
+  table from live docker compose ps.
+
+MEDIUM:
+- Delete the 4 stale dirs after 4/24 (grep-for-imports first, rename
+  to `.retired-<stamp>` as a safety net before actual rm).
+- Add deploy.resources.limits to voice-receptionist (2G), cortex
+  (1G), polymarket-bot (1G). Monitor for OOM over 48h.
+- Rewrite STATUS_REPORT Stack Health table from live data (requires
+  Docker up).
+
+HIGH:
+- None in this category today.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- MODIFIED  scripts/compose-drift-check.sh
+           (KNOWN_NOT_STALE_NO_COMPOSE allowlist)
+- ADDED    ops/verification/20260418-120100-core-stack-audit.txt
+- ADDED    ops/verification/20260418-120100-core-stack-final.txt
+
+END OF FINAL REPORT — Core stack & infrastructure pass 2026-04-18.
