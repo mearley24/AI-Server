@@ -159,14 +159,104 @@ If a task cannot proceed autonomously — because a secret is missing, a high-ri
 
 The blocker report is committed and pushed like any other verification artifact. **An agent does not ask Matt to paste terminal output back into chat.** If the blocker is informational, the report itself is the channel; a future agent (or Matt) can act on it.
 
+### High-risk approval tokens
+
+**Where:** `ops/approvals/*.approval` files (committed) and
+`ops/approvals/AUTO_APPROVE_IDS.txt`.
+
+**What counts as high-risk:** see the list in CLAUDE.md → "High risk" and
+the tier table above. Any task whose JSON declares
+`requires_approval: true` or `risk_tier: "high"` / `"critical"` (top
+level OR inside `payload`) is flagged high-risk by
+`ops/task_runner_gates.evaluate()`.
+
+**How the gate works:**
+
+1. Low / medium risk — no gate change; runs autonomously, writes a
+   verification report as usual.
+2. High-risk task with `dry_run: true` — allowed (no side effects).
+3. High-risk task with `approval_token: "<tok>"` — allowed iff
+   `ops/approvals/<tok>.approval` is a file already committed in the
+   repo.
+4. High-risk task with `approval_token == task_id` — allowed iff the
+   task_id is listed on its own line in
+   `ops/approvals/AUTO_APPROVE_IDS.txt` (pre-authorized recurring
+   operations only).
+5. Anything else — the runner writes
+   `ops/verification/YYYYMMDD-HHMMSS-blocker-<task_id>.txt`, moves the
+   task to `ops/work_queue/blocked/`, and returns without executing.
+
+**How to request approval (as a future agent):**
+
+1. Commit the task JSON to `ops/work_queue/pending/` with
+   `requires_approval: true` (or `risk_tier: "high"`) and a chosen
+   `approval_token`.
+2. Write a short approval file:
+   `printf 'approved by <name> at %s\n' "$(date -u +%FT%TZ)" > ops/approvals/<token>.approval`
+3. Commit both in separate commits if you want the approval to land
+   after review; commit them together if you are Matt.
+4. On the next runner tick the gate sees the approval file and executes
+   the task. The task result references the token in its first result
+   line so the audit trail is one `git log`.
+
+**How to revoke approval:** `git rm ops/approvals/<token>.approval &&
+git commit && git push`. Subsequent ticks will block any task reusing
+that token.
+
+**Self-approval (`AUTO_APPROVE_IDS.txt`):** intended for routine,
+scheduled, pre-authorized operations only. Add an entry only after
+explicit human sign-off. Any new recurring high-risk workflow should
+document its entry in a commit message referencing the policy review
+that authorized it.
+
+### Dry-run / staging lane
+
+There is no separate staging AI-Server host. The runner supports an
+in-place dry-run lane instead:
+
+- Any task with `dry_run: true` at the top level or in `payload` runs
+  through the normal dispatch path with `dry_run=true` propagated into
+  the handler payload.
+- Handlers that understand the flag (`run_cline_prompt`,
+  `run_cline_campaign`) pass `--dry-run` to their launcher. The Cline
+  launcher validates the prompt file and detects the CLI but does not
+  invoke it. Handlers that don't support dry-run will still execute —
+  only add `dry_run` to tasks whose side effects are bounded and safe.
+- The task's result file records the gate decision, including whether
+  approval was granted via `dry_run` vs a committed approval file.
+
+**Promotion from dry-run to live:**
+
+1. Queue the task with `dry_run: true` (and `requires_approval: true`
+   if it is high-risk — the dry-run path allows it through without a
+   token).
+2. Read the resulting `ops/verification/<task_id>-result.txt` and the
+   launcher log to confirm the planned actions look right.
+3. Queue the same task again with `dry_run: false` and a committed
+   `approval_token`. The runner executes it live on the next tick.
+
+### Queue visibility
+
+`ops/task_queue_status.py` prints a concise queue summary: pending
+count by task_type and category, oldest pending task, pending tasks
+older than a stale threshold, and the most recent completed / failed /
+rejected / blocked tasks. Use `--json` for machine output and `--out
+PATH` to persist into `ops/verification/`. `scripts/task-queue-stats.sh`
+is a complementary shell snapshot focused on launchd status.
+
 ### Tooling
 
 Repo-based tooling that implements this policy:
 
 - `scripts/task_runner.py` — main autonomous executor (launchd `com.symphony.task-runner`)
 - `ops/task_runner_preflight.py` — preflight self-heal + report
+- `ops/task_runner_gates.py` — approval-token + dry-run gate evaluated on every task
 - `ops/task_runner_health.py` — periodic health snapshot
-- `ops/task_audit.py` — fast inspection of verification history and queue state
+- `ops/task_audit.py` — fast substring inspection of verification + queue state
+- `ops/task_audit_index.py` — follow a task from task JSON → prompt files → verification artifacts → git commits
+- `ops/task_queue_status.py` — queue-visibility summary with staleness flags
+- `ops/tests/test_task_runner_gates.py` — smoke test for the gate policy
+
 
 ---
 

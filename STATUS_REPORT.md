@@ -1,12 +1,141 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-17
+Generated: 2026-04-11 | Last updated: 2026-04-18
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18).
+
+---
+
+## Autonomy gap-closer (2026-04-18)
+
+Closes the remaining gaps around queue visibility, audit clarity,
+explicit approval gates for high-risk work, and a dry-run/staging lane
+for the Symphony Task Runner.
+
+### Queue visibility tooling
+
+`python3 ops/task_queue_status.py` prints a concise snapshot of
+`ops/work_queue/` (pending / completed / failed / rejected / blocked
+counts, oldest pending, stale pending by configurable threshold, and
+the most recent N of each terminal state). Options:
+
+- `--stale-minutes <N>` — flag pending tasks older than N minutes
+  (default 60).
+- `--recent-limit <N>` — how many recent completed/failed tasks to show.
+- `--json` — emit machine-readable JSON.
+- `--out PATH` — also persist the rendered output (useful for writing
+  a verification artifact).
+
+The tool also reads the alternate `ops/workqueue/` campaign-descriptor
+tree when present. `scripts/task-queue-stats.sh` remains a complementary
+shell-only snapshot focused on launchd state.
+
+### Task audit tooling
+
+`python3 ops/task_audit.py <query>` continues to provide fast substring
+search across `ops/verification/` and `ops/work_queue/`.
+
+`python3 ops/task_audit_index.py <task_id_or_substring>` loads the task
+JSON and walks the audit chain end-to-end:
+
+1. Task JSON (path, state, queue, created_by, metadata).
+2. Prompt file(s) referenced by `payload.prompt_file` /
+   `payload.prompt_files` (for `run_cline_prompt` /
+   `run_cline_campaign`) and the top-level `prompt_files` used by
+   campaign descriptors.
+3. Verification artifacts — `<task_id>-result.txt` plus
+   `*-cline-run-<prompt-stem>*.log` and `*-cline-campaign*.log` matches.
+4. Git commits that touched any of the above paths.
+
+Supports `--json` and `--out PATH` for persisting reports into
+`ops/verification/`. Example:
+
+```
+python3 ops/task_audit_index.py 20260417-143719-verify-task-runner
+```
+
+### Approval-token approach
+
+`ops/task_runner_gates.py` is a small module imported by
+`scripts/task_runner.py`. It evaluates every pending task and classifies
+it as low / medium / high risk based on:
+
+- `requires_approval: true` at the top level OR inside `payload`.
+- `risk_tier: "high"` (or `"critical"`) at the top level OR inside
+  `payload`.
+
+Low/medium tasks run unchanged. High-risk tasks require one of:
+
+1. `dry_run: true` — allowed, no side effects.
+2. `approval_token: "<tok>"` + committed
+   `ops/approvals/<tok>.approval` file — allowed.
+3. `approval_token == task_id` + the task_id listed in
+   `ops/approvals/AUTO_APPROVE_IDS.txt` — allowed.
+
+Anything else is **blocked**: the runner writes
+`ops/verification/YYYYMMDD-HHMMSS-blocker-<task_id>.txt`, moves the task
+to `ops/work_queue/blocked/`, and returns without executing. See
+`ops/approvals/README.md` for the operational recipe and CLAUDE.md →
+"How the runner enforces the high-risk gate" for policy.
+
+A smoke test for the gate lives at
+`ops/tests/test_task_runner_gates.py` (15 checks, runs in ~0.1s).
+
+### Dry-run / staging lane
+
+There is no separate staging AI-Server host. The runner supports an
+in-place dry-run lane instead — any task with `dry_run: true` at the
+top level or in `payload` has that flag propagated into its handler,
+and handlers that understand the flag (`run_cline_prompt`,
+`run_cline_campaign`) pass `--dry-run` to their launcher. The task's
+result file records the gate decision so the audit trail is explicit
+about which runs were dry.
+
+**How to promote a campaign from dry-run to live:**
+
+1. Queue the task JSON with `dry_run: true` (plus `requires_approval:
+   true` if it's high-risk — dry-run bypasses the approval gate).
+2. Read `ops/verification/<task_id>-result.txt` to confirm the planned
+   actions look right.
+3. Re-queue the same task with `dry_run: false` and a valid
+   `approval_token` backed by a committed
+   `ops/approvals/<token>.approval` file. The runner executes it live
+   on the next tick.
+
+### Files added / updated
+
+- `ops/task_queue_status.py` — new queue-visibility CLI.
+- `ops/task_audit_index.py` — new task→artifacts audit chain CLI.
+- `ops/task_runner_gates.py` — new approval-token + dry-run policy
+  module.
+- `ops/approvals/README.md` + `ops/approvals/AUTO_APPROVE_IDS.txt` —
+  new approval-file directory with operational docs.
+- `ops/tests/test_task_runner_gates.py` — new smoke test.
+- `scripts/task_runner.py` — gate integration, `blocked/` destination,
+  dry-run payload propagation, commit-summary counts blocks.
+- `CLAUDE.md` — new "How the runner enforces the high-risk gate",
+  "Dry-run / staging lane", and "Task Audit" sections.
+- `ops/AGENT_VERIFICATION_PROTOCOL.md` — new "High-risk approval
+  tokens", "Dry-run / staging lane", "Queue visibility", expanded
+  tooling index.
+
+Limitations / TODOs:
+
+- No dedicated staging host — dry-run is the staging lane today. Note
+  it explicitly in any high-risk plan.
+- Handlers other than `run_cline_prompt` / `run_cline_campaign` don't
+  honor `dry_run` internally yet. If you add a `run_script` that writes
+  to disk or touches external systems, either (a) make the script
+  respect `DRY_RUN=1` / `--dry-run`, or (b) skip the dry-run lane and
+  rely on the approval-token gate exclusively.
+- The gate doesn't inspect the contents of `.approval` files — presence
+  + commit history is the whole audit trail. If you need richer
+  justification metadata, include it in the commit message.
 
 ---
 
 ## Now
+
 
 _Action-required items this week. Most require Matt's input (credentials/funding)._
 

@@ -61,6 +61,14 @@ except Exception:  # noqa: BLE001
     # missing or broken — fall back to the legacy behaviour.
     task_runner_preflight = None  # type: ignore[assignment]
 
+try:
+    import task_runner_gates  # noqa: E402
+except Exception:  # noqa: BLE001
+    # If the gate module is missing the runner falls back to pre-gate
+    # behaviour (treats every task as low-risk). This preserves uptime
+    # while still logging a warning in run_once().
+    task_runner_gates = None  # type: ignore[assignment]
+
 WORK_QUEUE = REPO_ROOT / "ops" / "work_queue"
 TASK_RUNNER_DIR = REPO_ROOT / "ops" / "task_runner"
 VERIFICATION_DIR = REPO_ROOT / "ops" / "verification"
@@ -70,6 +78,8 @@ PENDING = WORK_QUEUE / "pending"
 COMPLETED = WORK_QUEUE / "completed"
 REJECTED = WORK_QUEUE / "rejected"
 FAILED = WORK_QUEUE / "failed"
+BLOCKED = WORK_QUEUE / "blocked"
+
 
 LOCK_PATH = DATA_DIR / ".runner.lock"
 HEARTBEAT_PATH = DATA_DIR / "heartbeat.txt"
@@ -126,13 +136,16 @@ def ensure_dirs() -> None:
         COMPLETED,
         REJECTED,
         FAILED,
+        BLOCKED,
         VERIFICATION_DIR,
         DATA_DIR,
         TASK_RUNNER_DIR / "scripts",
         TASK_RUNNER_DIR / "remote_scripts",
         TASK_RUNNER_DIR / "verifications",
+        REPO_ROOT / "ops" / "approvals",
     ):
         p.mkdir(parents=True, exist_ok=True)
+
 
 
 # ---------- single-instance lock ----------
@@ -447,13 +460,68 @@ def process_task(path: Path) -> tuple[str, int]:
         log(f"REJECT {path.name}: {reason} -> {rej}")
         return ("rejected", 2)
 
+    # High-risk approval gate (see ops/task_runner_gates.py and
+    # ops/AGENT_VERIFICATION_PROTOCOL.md). Low/medium-risk tasks fall through
+    # without side effect. High-risk tasks require either dry_run=true or a
+    # committed approval token. A blocked task is moved to work_queue/blocked/
+    # with a blocker report in ops/verification/.
+    gate_decision = None
+    if task_runner_gates is not None:
+        try:
+            gate_decision = task_runner_gates.evaluate(task)
+        except Exception as exc:  # noqa: BLE001
+            log(f"gate evaluation crashed (continuing without gate): {exc}")
+            gate_decision = None
+
+    if gate_decision is not None and not gate_decision.allowed:
+        blocker_path = (
+            VERIFICATION_DIR
+            / f"{now_stamp()}-blocker-{task_id}.txt"
+        )
+        blocker_path.parent.mkdir(parents=True, exist_ok=True)
+        blocker_path.write_text(
+            task_runner_gates.blocker_text(gate_decision, task) + "\n",
+            encoding="utf-8",
+        )
+        dest = move(path, BLOCKED)
+        log(
+            f"BLOCKED {task_id}: {gate_decision.reason} -> {dest} "
+            f"(report: {blocker_path.relative_to(REPO_ROOT)})"
+        )
+        return ("blocked", 0)
+
     result_path = VERIFICATION_DIR / f"{task_id}-result.txt"
     VERIFICATION_DIR.mkdir(parents=True, exist_ok=True)
     with result_path.open("a", encoding="utf-8") as fh:
         fh.write(f"### task {task_id} type={task_type} signer={detail}\n")
-        fh.write(f"### started {now_iso()}\n\n")
+        fh.write(f"### started {now_iso()}\n")
+        if gate_decision is not None:
+            fh.write(
+                f"### gate: allowed={gate_decision.allowed} "
+                f"high_risk={gate_decision.high_risk} "
+                f"dry_run={gate_decision.is_dry_run} "
+                f"source={gate_decision.approval_source or '-'} "
+                f"token={gate_decision.approval_token or '-'}\n"
+            )
+            fh.write(f"### gate_reason: {gate_decision.reason}\n")
+        fh.write("\n")
 
     payload = task.get("payload", {}) or {}
+
+    # Propagate dry-run into the payload so handlers that understand the flag
+    # (run_cline_prompt, run_cline_campaign) pass --dry-run through to their
+    # launcher. Handlers that do not honor dry-run but receive a high-risk
+    # task will never reach this branch (they will either be dry_run=false
+    # and approved, or blocked above).
+    is_dry = bool(
+        gate_decision.is_dry_run if gate_decision is not None
+        else payload.get("dry_run", False) or task.get("dry_run", False)
+    )
+    if is_dry:
+        # Set on a shallow copy so the JSON-on-disk remains untouched.
+        payload = dict(payload)
+        payload["dry_run"] = True
+
     rc = 0
     try:
         if task_type == "git_pull":
@@ -485,6 +553,7 @@ def process_task(path: Path) -> tuple[str, int]:
     dest = move(path, FAILED)
     log(f"FAILED {task_id} (exit={rc}) -> {dest}")
     return ("failed", rc)
+
 
 
 def maybe_update_heartbeat() -> bool:
@@ -616,7 +685,7 @@ def run_once() -> int:
                 commit_and_push("preflight-blocked heartbeat")
             return 0
         tasks = sorted(PENDING.glob("*.json"))
-        completed = failed = rejected = 0
+        completed = failed = rejected = blocked = 0
         for path in tasks:
             status, _ = process_task(path)
             if status == "completed":
@@ -625,14 +694,20 @@ def run_once() -> int:
                 failed += 1
             elif status == "rejected":
                 rejected += 1
+            elif status == "blocked":
+                blocked += 1
 
         did_heartbeat = maybe_update_heartbeat()
 
         if tasks or did_heartbeat:
-            summary = f"{completed} completed / {failed} failed / {rejected} rejected"
+            summary = (
+                f"{completed} completed / {failed} failed / "
+                f"{rejected} rejected / {blocked} blocked"
+            )
             if not tasks and did_heartbeat:
                 summary = "heartbeat"
             commit_and_push(summary)
+
         else:
             # Nothing happened; skip the commit to avoid spam.
             pass

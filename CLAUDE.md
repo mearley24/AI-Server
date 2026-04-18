@@ -2,6 +2,7 @@
 
 You are working on the AI backend for **Symphony Smart Homes**, a residential AV/smart-home integration company in Eagle County, Colorado (Vail Valley). Owner: Matt Earley. This runs on a Mac Mini M4 nicknamed "Bob."
 
+
 Read this file completely before doing anything. Every section exists because time was wasted learning it the hard way.
 
 ---
@@ -251,6 +252,59 @@ These actions require explicit approval from Matt before running. Do not shortcu
 - Destructive infrastructure changes (dropping containers outside AI-Server, routing/DNS changes, VPN config)
 - Actions outside AI-Server's current operational boundary (modifying another machine's filesystem beyond `ssh_and_run` allowlisted scripts, touching unrelated repos)
 
+#### How the runner enforces the high-risk gate
+
+`scripts/task_runner.py` invokes `ops/task_runner_gates.evaluate()` on every
+task. A task is flagged **high-risk** when any of the following is set
+(either at the top level or inside `payload`):
+
+- `requires_approval: true`
+- `risk_tier: "high"` (or `"critical"`)
+
+A high-risk task is only executed if **one** of the following is true:
+
+1. `dry_run: true` — no side effects, so no approval is required.
+2. The task JSON carries `approval_token: "<token>"` AND the repo contains
+   a committed file `ops/approvals/<token>.approval`. The file's contents
+   are free-form; its presence + commit history is the audit trail.
+3. `approval_token` equals the task's own `task_id`, AND that task_id is
+   listed in `ops/approvals/AUTO_APPROVE_IDS.txt` (self-approval for
+   pre-authorized recurring operations only).
+
+Otherwise the runner writes a blocker report to
+`ops/verification/YYYYMMDD-HHMMSS-blocker-<task_id>.txt`, moves the task
+to `ops/work_queue/blocked/`, and does NOT execute it. A future agent
+can unblock it by committing the approval file and re-queuing.
+
+A future agent requesting approval should:
+
+1. Queue the task JSON with `requires_approval: true` and a chosen
+   `approval_token`.
+2. Commit a `ops/approvals/<token>.approval` file describing the
+   justification.
+3. Matt (or another authorized agent) reviews and pushes the approval
+   commit, at which point the next runner tick will execute the task.
+
+See `ops/approvals/README.md` for the full operational recipe and
+`ops/AGENT_VERIFICATION_PROTOCOL.md` for the tier model this implements.
+
+#### Dry-run / staging lane
+
+For high-risk campaigns, the recommended pattern is to **first queue the
+task with `dry_run: true`** to exercise the logging path without any
+write side-effects. The runner:
+
+- Marks the gate decision as `approval_source=dry_run`.
+- Propagates `dry_run=true` into the handler payload so handlers that
+  support the flag (e.g. `run_cline_prompt`, `run_cline_campaign`) pass
+  `--dry-run` to their launcher.
+- Records the dry-run decision in the task's result file.
+
+Once the dry-run log looks correct, re-queue the same task with
+`dry_run: false` plus a valid `approval_token` + committed
+`.approval` file to promote it to live. There is no separate staging
+host today; dry-run is the staging lane within the same runner.
+
 ### Default behavior
 
 When in doubt:
@@ -260,6 +314,29 @@ When in doubt:
 3. If blocked, write a blocker report to `ops/verification/` naming exactly what is needed — do not ask Matt to paste terminal output back
 
 **Never ask Matt to manually relay command output.** The verification-to-file-then-commit pattern is the only supported way to share results between agents.
+
+### Task Audit — linking a task to its artifacts
+
+Every task produces a chain of artifacts: the signed JSON file under
+`ops/work_queue/`, optional prompt file(s) for `run_cline_prompt` /
+`run_cline_campaign` tasks, one or more verification logs under
+`ops/verification/`, and the git commits that touched any of them.
+
+Two repo-local CLI tools resolve this chain:
+
+- `python3 ops/task_audit.py <query>` — fast substring search across
+  verification + queue dirs. Good for "show me everything matching X".
+- `python3 ops/task_audit_index.py <task_id_or_substring>` — loads the
+  task JSON and follows its references. Prints the task JSON path,
+  linked prompt file(s), verification artifacts, and relevant git
+  commits in a single compact summary. Accepts `--json` for machine
+  output and `--out PATH` to persist the report under
+  `ops/verification/`.
+
+Use `ops/task_audit_index.py` whenever you need to answer "what did this
+task actually do, and where is the proof?" without paging through logs
+by hand.
+
 
 ---
 

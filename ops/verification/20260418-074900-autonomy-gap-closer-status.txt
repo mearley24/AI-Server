@@ -1,0 +1,219 @@
+=== AUTONOMY GAP-CLOSER — verification artifact ===
+generated_at: 2026-04-18T07:49:00-06:00
+git_head:     6ed26bf
+git_branch:   main
+
+================================================================
+SECTION 1 — What was added / updated
+================================================================
+
+New files:
+     12588B  ops/task_queue_status.py  (OK)
+     16033B  ops/task_audit_index.py  (OK)
+      8386B  ops/task_runner_gates.py  (OK)
+      2880B  ops/approvals/README.md  (OK)
+       524B  ops/approvals/AUTO_APPROVE_IDS.txt  (OK)
+      4832B  ops/tests/test_task_runner_gates.py  (OK)
+
+Updated files:
+  scripts/task_runner.py
+  CLAUDE.md
+  ops/AGENT_VERIFICATION_PROTOCOL.md
+  STATUS_REPORT.md
+
+================================================================
+SECTION 2 — How to run the new tools
+================================================================
+
+Queue visibility:
+  python3 ops/task_queue_status.py
+  python3 ops/task_queue_status.py --stale-minutes 30 --json
+  python3 ops/task_queue_status.py --out ops/verification/<stamp>-queue.txt
+
+Task audit (substring search):
+  python3 ops/task_audit.py verify-task-runner
+
+Task audit-index (task -> prompt -> verification -> commits):
+  python3 ops/task_audit_index.py <task_id_or_substring>
+  python3 ops/task_audit_index.py <query> --json --out <path>
+
+Gate smoke test:
+  python3 ops/tests/test_task_runner_gates.py
+
+All policy documented in CLAUDE.md (Standing Approval and Risk
+Tiers) and ops/AGENT_VERIFICATION_PROTOCOL.md (High-risk approval
+tokens + Dry-run / staging lane).
+
+================================================================
+SECTION 3 — Example: queue status output
+================================================================
+
+$ python3 ops/task_queue_status.py --stale-minutes 60
+=== Symphony Task Runner — queue status ===
+generated_at: 2026-04-18T07:49:01-06:00
+repo_root:    /Users/bob/AI-Server
+heartbeat:    last-heartbeat: 2026-04-18T07:43:55-06:00
+
+state_counts (ops/work_queue):
+  pending    0
+  completed  20
+  failed     0
+  rejected   0
+  blocked    0
+
+oldest_pending:    (none)
+
+stale_pending (age >= 60m): 0
+
+recent_completed (5):
+  - 2026-04-17T10:48:51  20260417-164820-task-runner-crash-diag  type=verify_dump  age=21.0h
+  - 2026-04-17T10:48:51  20260417-162528-backfill-meeting-intel  type=run_script  age=21.0h
+  - 2026-04-17T10:20:53  20260417-162045-audio-throughput-analysis  type=verify_dump  age=21.5h
+  - 2026-04-17T10:13:03  20260417-160955-C-audio-env-verify  type=verify_dump  age=21.6h
+  - 2026-04-17T10:13:03  20260417-160953-B-install-audio-plist  type=run_script  age=21.6h
+
+recent_failed (0):
+  (none)
+
+recent_rejected (0):
+  (none)
+
+recent_blocked (0):
+  (none)
+
+alt_queue (ops/workqueue) counts:
+  pending    1
+  completed  0
+  failed     0
+  rejected   0
+  blocked    0
+
+
+[exit=0]
+
+================================================================
+SECTION 4 — Example: task audit-index output
+================================================================
+
+$ python3 ops/task_audit_index.py verify-task-runner
+=== task_audit_index ===
+chains: 1
+
+--- 20260417-143719-verify-task-runner ---
+  path:            ops/work_queue/completed/20260417-143719-verify-task-runner.json
+  queue/state:     work_queue/completed
+  task_type:       verify_dump
+  created_by:      cline-bob
+  created_at:      2026-04-17T08:37:19-06:00
+  requires_approval: False
+  dry_run:         False
+
+  artifacts (2):
+    [OK ] [task_json     ] 2026-04-17T08:37:19             311B  ops/work_queue/completed/20260417-143719-verify-task-runner.json
+    [OK ] [verification  ] 2026-04-17T08:39:09            2518B  ops/verification/20260417-143719-verify-task-runner-result.txt
+
+  commits (2):
+    6972e6d  2026-04-17T08:41:03-06:00  ops: resolve state-file conflicts and protect generated files
+    92ba301  2026-04-17T08:39:09-06:00  auto: local changes before pull
+
+
+[exit=0]
+
+$ python3 ops/task_audit_index.py autonomy-reliability
+=== task_audit_index ===
+chains: 1
+
+--- 2026-04-17-120000-runclineprompt-autonomy-reliability-campaign ---
+  path:            ops/workqueue/pending/2026-04-17-120000-runclineprompt-autonomy-reliability-campaign.json
+  queue/state:     workqueue/pending
+  task_type:       runclineprompt
+  created_by:      unknown
+  created_at:      2026-04-17T12:00:00-06:00
+  category:        autonomy_and_reliability_campaign
+  notes:           Run autonomy and reliability audit+hardening prompts via Cline CLI in sequence.
+  requires_approval: False
+  dry_run:         False
+
+  artifacts (3):
+    [OK ] [task_json     ] 2026-04-17T10:48:52             706B  ops/workqueue/pending/2026-04-17-120000-runclineprompt-autonomy-reliability-campaign.json
+    [MISS] [prompt_file   ] -                                 0B  .cursor/prompts/cline-prompt-autonomy-audit-and-hardening.md
+    [MISS] [prompt_file   ] -                                 0B  .cursor/prompts/cline-prompt-reliability-audit-and-hardening.md
+
+  commits (1):
+    7e2b0d1  2026-04-17T10:48:51-06:00  auto: local changes before pull
+
+
+[exit=0]
+
+================================================================
+SECTION 5 — Gate smoke test
+================================================================
+
+$ python3 ops/tests/test_task_runner_gates.py
+=== task_runner_gates smoke test ===
+  OK   low-risk task allowed
+  OK   low-risk not flagged high_risk
+  OK   high-risk no-token blocked
+  OK   blocker reason mentions token
+  OK   high-risk dry_run allowed
+  OK   dry_run source correctly tagged
+  OK   risk_tier=high blocked without token
+  OK   risk_tier=high flagged high_risk
+  OK   high-risk + valid approval_token allowed
+  OK   approval source = approval_file
+  OK   traversal approval_token rejected
+  OK   payload.requires_approval flags high_risk
+  OK   payload.requires_approval without token blocks
+  OK   payload.dry_run allows high-risk task
+  OK   self-approval blocked when task_id not on AUTO_APPROVE_IDS
+
+all gate checks passed
+
+[exit=0]
+
+================================================================
+SECTION 6 — Python syntax check (task_runner + new modules)
+================================================================
+
+$ python3 -m py_compile <files>
+
+[exit=0]
+
+================================================================
+SECTION 7 — Limitations / TODOs
+================================================================
+
+* No dedicated staging host. Dry-run is the staging lane today.
+  Add an explicit note in any high-risk plan.
+* Handlers other than run_cline_prompt / run_cline_campaign do not
+  honor dry_run internally. If a run_script task writes to disk
+  or hits external systems, either make the script honor DRY_RUN/
+  --dry-run, or skip the dry-run lane and rely on the approval-
+  token gate.
+* The gate does not inspect .approval file contents — presence
+  plus commit history is the whole audit trail. Include any
+  justification metadata in the commit message.
+* AUTO_APPROVE_IDS.txt is intentionally empty; add task_ids only
+  after explicit human sign-off on a recurring high-risk op.
+
+================================================================
+SECTION 8 — Verification checklist
+================================================================
+
+[x] Queue status tool exists, produces concise summary, documented
+    in STATUS_REPORT.md and ops/AGENT_VERIFICATION_PROTOCOL.md.
+[x] Task audit-index tool traces task -> JSON -> prompt files ->
+    verification artifacts -> git commits.
+[x] High-risk approval-token handling encoded in
+    ops/task_runner_gates.py and integrated into
+    scripts/task_runner.py.
+[x] Dry-run mode supported (flag propagated to handlers).
+[x] Blocker reports land in ops/verification/ and tasks move to
+    ops/work_queue/blocked/.
+[x] Policy docs updated: CLAUDE.md (Standing Approval and Risk
+    Tiers), ops/AGENT_VERIFICATION_PROTOCOL.md (High-risk tokens,
+    Dry-run / staging lane, Queue visibility).
+[x] STATUS_REPORT.md has an 'Autonomy gap-closer (2026-04-18)'
+    section summarising all of the above.
+[x] Gate smoke test passes all 15 checks.
+

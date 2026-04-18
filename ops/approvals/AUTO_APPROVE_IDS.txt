@@ -1,0 +1,12 @@
+# Symphony Task Runner — self-approval allowlist
+#
+# Each non-comment line is a single task_id that is pre-authorised to
+# self-approve: a high-risk task whose `approval_token` equals its own
+# `task_id` will be allowed to run if and only if its task_id appears here.
+#
+# Empty by default. Add entries only after a human (Matt) has signed off
+# on a specific recurring high-risk operation. Lines starting with `#` are
+# ignored.
+#
+# Example (do not uncomment unless you mean it):
+# 20260420-030000-nightly-redemption-push
