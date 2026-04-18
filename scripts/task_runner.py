@@ -96,6 +96,7 @@ ALLOWED_TASK_TYPES = {
     "verify_dump",
     "run_cline_prompt",
     "run_cline_campaign",
+    "run_autonomy_sweep",
 }
 
 
@@ -357,6 +358,82 @@ def handle_run_cline_campaign(payload: dict, result_path: Path) -> int:
     return _run_and_tee(argv, result_path, f"run_cline_campaign ({len(validated)} prompts)")
 
 
+# --- autonomy sweep handler ---
+
+
+AUTONOMY_SWEEP_SCRIPT = REPO_ROOT / "scripts" / "autonomy_sweep.py"
+
+_SAFE_SWEEP_TOKEN_RE = None  # populated lazily below
+
+
+def _validate_sweep_token(val: object, label: str, max_len: int = 120) -> str:
+    """Coerce a payload value into a short, shell-safe string for the sweep.
+
+    Rejects anything that isn't str/int/float, anything with shell meta
+    characters, and anything longer than ``max_len`` chars. Returns the
+    normalized string.
+    """
+    import re as _re  # local import so top-of-file stays tidy
+
+    global _SAFE_SWEEP_TOKEN_RE
+    if _SAFE_SWEEP_TOKEN_RE is None:
+        _SAFE_SWEEP_TOKEN_RE = _re.compile(r"^[A-Za-z0-9_.\-: /]+$")
+
+    if val is None:
+        return ""
+    if not isinstance(val, (str, int, float)):
+        raise ValueError(f"{label}: must be string/number, got {type(val).__name__}")
+    s = str(val).strip()
+    if not s:
+        return ""
+    if len(s) > max_len:
+        raise ValueError(f"{label}: too long ({len(s)} > {max_len})")
+    if not _SAFE_SWEEP_TOKEN_RE.match(s):
+        raise ValueError(f"{label}: contains disallowed characters")
+    return s
+
+
+def handle_run_autonomy_sweep(payload: dict, result_path: Path) -> int:
+    """Run scripts/autonomy_sweep.py with sanitized payload values.
+
+    Payload keys (all optional):
+        trigger (str):       human-readable reason; default "task-runner".
+        slug (str):          slug for the output filename.
+        trigger_file (str):  repo-relative path to a sentinel file whose
+                             contents get embedded in the sweep report.
+        dry_run (bool):      build report to stdout, don't write to disk.
+
+    The handler deliberately does NOT pass --json so the tee log captures
+    the full sweep report. The sweep itself is low-risk and bounded (no
+    network I/O, no writes outside ops/verification/).
+    """
+    if not AUTONOMY_SWEEP_SCRIPT.exists():
+        raise FileNotFoundError(
+            f"autonomy sweep script missing: {AUTONOMY_SWEEP_SCRIPT}"
+        )
+
+    argv: list[str] = [sys.executable, str(AUTONOMY_SWEEP_SCRIPT)]
+    trigger = _validate_sweep_token(payload.get("trigger"), "trigger")
+    if trigger:
+        argv.extend(["--trigger", trigger])
+    slug = _validate_sweep_token(payload.get("slug"), "slug", max_len=40)
+    if slug:
+        argv.extend(["--slug", slug])
+
+    trigger_file = payload.get("trigger_file")
+    if trigger_file is not None:
+        if not isinstance(trigger_file, str):
+            raise ValueError("trigger_file must be a string")
+        # Validate as repo-relative like cline-run-prompt handlers do.
+        _validate_repo_relative(trigger_file, "trigger_file")
+        argv.extend(["--trigger-path", trigger_file])
+
+    if bool(payload.get("dry_run", False)):
+        argv.append("--dry-run")
+
+    return _run_and_tee(argv, result_path, "run_autonomy_sweep")
+
+
 def handle_ssh_and_run(payload: dict, task_id: str, result_path: Path) -> int:
     """scp a named remote script to the target, then run it via ssh.
 
@@ -536,6 +613,8 @@ def process_task(path: Path) -> tuple[str, int]:
             rc = handle_run_cline_prompt(payload, result_path)
         elif task_type == "run_cline_campaign":
             rc = handle_run_cline_campaign(payload, result_path)
+        elif task_type == "run_autonomy_sweep":
+            rc = handle_run_autonomy_sweep(payload, result_path)
         else:  # defensive; allowlist checked above
             rc = 2
     except Exception as exc:  # noqa: BLE001

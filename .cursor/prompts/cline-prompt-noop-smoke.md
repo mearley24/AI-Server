@@ -1,5 +1,12 @@
 # Cline Autorun — No-Op Smoke Prompt
 
+<!-- autonomy: start -->
+Category: meta
+Risk tier: low
+Trigger:   manual
+Status:    active
+<!-- autonomy: end -->
+
 > **Cline:** this is a harmless placeholder used by
 > `ops/cline-run-prompt.sh --dry-run` to verify that the launcher's prompt
 > validation and logging path work end-to-end. It contains no operational

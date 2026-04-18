@@ -1,0 +1,1 @@
+Host role config for autonomous sweep origination.\n\nleader  = may auto-enqueue realized-change-driven autonomy sweeps\nstandby = installed and ready, but does not auto-enqueue sweeps unless promoted\nworker  = may execute explicitly assigned work but does not originate sweeps\n

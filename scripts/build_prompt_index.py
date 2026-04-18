@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""
+Build .cursor/prompts/INDEX.md from every cline-prompt-*.md in the
+.cursor/prompts/ directory.
+
+Reads the "autonomy" metadata block defined by
+.cursor/prompts/AUTONOMOUS_PROMPT_STANDARD.md:
+
+    <!-- autonomy: start -->
+    Category: ops
+    Risk tier: low
+    Trigger:   manual
+    Status:    active
+    <!-- autonomy: end -->
+
+Prompts without an autonomy block render as NON-STANDARD and are still
+listed so the human editor can find and fix them.
+
+Usage:
+    python3 scripts/build_prompt_index.py            # write INDEX.md
+    python3 scripts/build_prompt_index.py --check    # exit non-zero if stale
+    python3 scripts/build_prompt_index.py --json     # emit machine-readable
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PROMPT_DIR = REPO_ROOT / ".cursor" / "prompts"
+INDEX_PATH = PROMPT_DIR / "INDEX.md"
+
+AUTONOMY_BLOCK = re.compile(
+    r"<!--\s*autonomy:\s*start\s*-->(?P<body>.*?)<!--\s*autonomy:\s*end\s*-->",
+    re.DOTALL | re.IGNORECASE,
+)
+
+FIELD_LINE = re.compile(
+    r"^\s*(category|risk\s*tier|trigger|status)\s*:\s*(?P<val>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+VALID_CATEGORIES = {
+    "ops",
+    "trading",
+    "messaging",
+    "web",
+    "data",
+    "knowledge",
+    "safety",
+    "meta",
+}
+VALID_RISK = {"low", "medium", "high"}
+VALID_STATUS = {"active", "done", "retired"}
+
+
+@dataclass
+class PromptMeta:
+    path: str
+    title: str
+    category: str = ""
+    risk: str = ""
+    trigger: str = ""
+    status: str = ""
+    standard: bool = False
+    issues: tuple[str, ...] = ()
+
+
+def _extract_title(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("# "):
+            return line[2:].strip()
+    return fallback
+
+
+def _parse_autonomy_block(body: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for line in body.splitlines():
+        match = FIELD_LINE.match(line)
+        if not match:
+            continue
+        key = match.group(1).strip().lower().replace(" ", "_")
+        if key == "risk_tier":
+            key = "risk"
+        out[key] = match.group("val").strip()
+    return out
+
+
+def load_prompt(path: Path) -> PromptMeta:
+    text = path.read_text(encoding="utf-8", errors="replace")
+    title = _extract_title(text, path.stem)
+    meta = PromptMeta(
+        path=str(path.relative_to(REPO_ROOT)),
+        title=title,
+    )
+    block = AUTONOMY_BLOCK.search(text)
+    issues: list[str] = []
+    if not block:
+        meta.standard = False
+        issues.append("missing autonomy metadata block")
+    else:
+        fields = _parse_autonomy_block(block.group("body"))
+        meta.category = fields.get("category", "")
+        meta.risk = fields.get("risk", "").lower()
+        meta.trigger = fields.get("trigger", "")
+        meta.status = fields.get("status", "").lower()
+        meta.standard = True
+
+        if meta.category and meta.category.lower() not in VALID_CATEGORIES:
+            issues.append(f"unknown category {meta.category!r}")
+        if meta.risk and meta.risk not in VALID_RISK:
+            issues.append(f"unknown risk tier {meta.risk!r}")
+        if meta.status and meta.status not in VALID_STATUS:
+            issues.append(f"unknown status {meta.status!r}")
+        for required, name in [
+            (meta.category, "category"),
+            (meta.risk, "risk"),
+            (meta.trigger, "trigger"),
+            (meta.status, "status"),
+        ]:
+            if not required:
+                issues.append(f"missing {name}")
+    meta.issues = tuple(issues)
+    return meta
+
+
+def collect_prompts() -> list[PromptMeta]:
+    if not PROMPT_DIR.exists():
+        return []
+    items: list[PromptMeta] = []
+    for path in sorted(PROMPT_DIR.glob("cline-prompt-*.md")):
+        items.append(load_prompt(path))
+    return items
+
+
+def _fmt_row(meta: PromptMeta) -> str:
+    filename = Path(meta.path).name
+    category = meta.category or "—"
+    risk = meta.risk or "—"
+    trigger = meta.trigger or "—"
+    status = meta.status or "—"
+    note = ""
+    if not meta.standard:
+        note = " `[NON-STANDARD]`"
+    elif meta.issues:
+        note = f" `[issues: {', '.join(meta.issues)}]`"
+    return (
+        f"| [{filename}]({filename}) | {category} | {risk} | "
+        f"{trigger} | {status} |{note}"
+    )
+
+
+def render_index(prompts: list[PromptMeta]) -> str:
+    active = [p for p in prompts if (p.status or "").lower() == "active" and p.standard]
+    done = [p for p in prompts if (p.status or "").lower() == "done" and p.standard]
+    retired = [p for p in prompts if (p.status or "").lower() == "retired" and p.standard]
+    nonstd = [p for p in prompts if not p.standard]
+
+    lines: list[str] = []
+    lines.append("# Autonomous Prompt Index")
+    lines.append("")
+    lines.append(
+        "Generated by `scripts/build_prompt_index.py`. Do not edit by hand — "
+        "regenerate after any change to the prompt set."
+    )
+    lines.append("")
+    lines.append(
+        "Standard: `.cursor/prompts/AUTONOMOUS_PROMPT_STANDARD.md`. Every "
+        "autonomous prompt declares category, risk tier, trigger, and "
+        "status via the autonomy metadata block."
+    )
+    lines.append("")
+
+    def section(title: str, items: list[PromptMeta]) -> None:
+        lines.append(f"## {title} ({len(items)})")
+        lines.append("")
+        if not items:
+            lines.append("_None._")
+            lines.append("")
+            return
+        lines.append("| Prompt | Category | Risk | Trigger | Status | Notes |")
+        lines.append("|---|---|---|---|---|---|")
+        for meta in items:
+            lines.append(_fmt_row(meta))
+        lines.append("")
+
+    section("Active", active)
+    section("Done (kept for audit trail)", done)
+    section("Retired", retired)
+    section("Non-standard (needs metadata block)", nonstd)
+
+    lines.append("---")
+    lines.append(
+        f"Counts: active={len(active)}, done={len(done)}, "
+        f"retired={len(retired)}, non_standard={len(nonstd)}, "
+        f"total={len(prompts)}"
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--check", action="store_true", help="exit 1 if INDEX.md is stale")
+    ap.add_argument("--json", action="store_true", help="emit parsed prompts as JSON")
+    args = ap.parse_args()
+
+    prompts = collect_prompts()
+
+    if args.json:
+        print(json.dumps([asdict(p) for p in prompts], indent=2, default=list))
+        return 0
+
+    rendered = render_index(prompts)
+    if args.check:
+        current = INDEX_PATH.read_text(encoding="utf-8") if INDEX_PATH.exists() else ""
+        if current.strip() != rendered.strip():
+            print("INDEX.md is stale; re-run scripts/build_prompt_index.py", file=sys.stderr)
+            return 1
+        print("INDEX.md up to date")
+        return 0
+
+    INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    INDEX_PATH.write_text(rendered, encoding="utf-8")
+    print(f"wrote {INDEX_PATH.relative_to(REPO_ROOT)} ({len(prompts)} prompts)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

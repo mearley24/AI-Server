@@ -1,0 +1,57 @@
+=== task-runner health check ===
+started_at: 2026-04-18T13:03:23-06:00
+finished_at: 2026-04-18T13:03:23-06:00
+overall_ok: False
+
+checks:
+  [FAIL] launchd.loaded: plist installed at /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist but launchctl did not list com.symphony.task-runner — run `launchctl load` or `kickstart`.
+  [FAIL] heartbeat.fresh: heartbeat is 16665s old (>900s); content='last-heartbeat: 2026-04-18T08:15:00-06:00'
+  [FAIL] queue.not_stuck: 1 pending task(s) older than 3600s: 20260417-170500-install-watchdog.json age=16668s
+  [OK ] verification.recent: newest=20260418-121600-memory-state-knowledge-final.txt age=2717s
+  [OK ] preflight.seen: newest preflight=20260418-113747-preflight.txt age=5136s
+  [FAIL] disk.pressure: LOW DISK — free=4.19 GiB / total=228.3 GiB (used 98.2%) at /Users/bob/AI-Server; threshold 5.0 GiB
+
+--- environment ---
+LAUNCHD_LABEL: com.symphony.task-runner
+HEARTBEAT_PATH: /Users/bob/AI-Server/data/task_runner/heartbeat.txt
+PENDING_DIR: /Users/bob/AI-Server/ops/work_queue/pending
+VERIFICATION_DIR: /Users/bob/AI-Server/ops/verification
+
+--- structured result (JSON) ---
+{
+  "checks": [
+    {
+      "detail": "plist installed at /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist but launchctl did not list com.symphony.task-runner \u2014 run `launchctl load` or `kickstart`.",
+      "name": "launchd.loaded",
+      "ok": false
+    },
+    {
+      "detail": "heartbeat is 16665s old (>900s); content='last-heartbeat: 2026-04-18T08:15:00-06:00'",
+      "name": "heartbeat.fresh",
+      "ok": false
+    },
+    {
+      "detail": "1 pending task(s) older than 3600s: 20260417-170500-install-watchdog.json age=16668s",
+      "name": "queue.not_stuck",
+      "ok": false
+    },
+    {
+      "detail": "newest=20260418-121600-memory-state-knowledge-final.txt age=2717s",
+      "name": "verification.recent",
+      "ok": true
+    },
+    {
+      "detail": "newest preflight=20260418-113747-preflight.txt age=5136s",
+      "name": "preflight.seen",
+      "ok": true
+    },
+    {
+      "detail": "LOW DISK \u2014 free=4.19 GiB / total=228.3 GiB (used 98.2%) at /Users/bob/AI-Server; threshold 5.0 GiB",
+      "name": "disk.pressure",
+      "ok": false
+    }
+  ],
+  "finished_at": "2026-04-18T13:03:23-06:00",
+  "ok": false,
+  "started_at": "2026-04-18T13:03:23-06:00"
+}

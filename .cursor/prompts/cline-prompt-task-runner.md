@@ -1,5 +1,13 @@
 # Cline Autorun — Symphony Task Runner v1 (Bob)
 
+<!-- autonomy: start -->
+Category: meta
+Risk tier: medium
+Trigger:   manual
+Status:    done
+<!-- autonomy: end -->
+
+
 > **Cline:** read this file top to bottom. Operate in **Act mode only**. Restate the goal in one line, then execute without further prompting unless a Guardrail (§6) forces a stop. After each tool use, summarize in ≤3 bullets. Produce the Final Report in §7.
 >
 > `AUTO_APPROVE = true`. Read `.clinerules`, `CLAUDE.md`, `STATUS_REPORT.md`, and `ops/AGENT_VERIFICATION_PROTOCOL.md` first.

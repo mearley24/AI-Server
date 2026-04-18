@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.symphony.realized-change-watcher</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bob/AI-Server/scripts/realized_change_watcher.sh</string>
+    <string>launchd-watchpath</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AI_SERVER_ROOT</key><string>/Users/bob/AI-Server</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/bob/AI-Server/STATUS_REPORT.md</string>
+    <string>/Users/bob/AI-Server/ops/realized_changes</string>
+  </array>
+
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/bob/AI-Server/data/task_runner/realized-change-watcher.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bob/AI-Server/data/task_runner/realized-change-watcher.err.log</string>
+</dict>
+</plist>

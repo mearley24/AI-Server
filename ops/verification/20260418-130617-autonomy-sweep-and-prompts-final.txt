@@ -1,0 +1,78 @@
+==============================================================================
+AUTONOMY SWEEP & PROMPT SET BOOTSTRAP — FINAL
+==============================================================================
+Stamp: 20260418-130617
+Operator: Cline (autonomous, AUTO_APPROVE=true)
+Host: Bob (Mac Mini M4)
+Repo: /Users/bob/AI-Server branch=main
+Prompt: .cursor/prompts/cline-prompt-init-autonomy-sweep-and-prompts.md
+
+==============================================================================
+What landed
+==============================================================================
+
+Prompt standard + index:
+  .cursor/prompts/AUTONOMOUS_PROMPT_STANDARD.md     (new, 82 lines)
+  .cursor/prompts/INDEX.md                           (generated, 64 prompts)
+  scripts/build_prompt_index.py                      (new, 236 lines)
+
+Autonomy sweep engine + task-runner wiring:
+  scripts/autonomy_sweep.py                          (new, 387 lines)
+  scripts/task_runner.py                             (wired run_autonomy_sweep, allowlist+handler)
+
+Realized-change watcher (fires a sweep on STATUS_REPORT / realized_changes changes):
+  scripts/realized_change_watcher.sh                 (new, 78 lines)
+  ops/launchd/com.symphony.realized-change-watcher.plist (new)
+  setup/install_realized_change_watcher.sh           (new, idempotent installer)
+  ops/realized_changes/README.md                     (new, usage guide)
+
+Canonical prompts tagged with autonomy metadata:
+  .cursor/prompts/cline-prompt-noop-smoke.md           (meta, low, manual, active)
+  .cursor/prompts/cline-prompt-task-runner.md          (meta, medium, manual, done)
+  .cursor/prompts/cline-prompt-init-autonomy-sweep-and-prompts.md (meta, low, manual, active)
+
+==============================================================================
+Acceptance evidence (commands already run this session)
+==============================================================================
+
+--- python3 scripts/build_prompt_index.py ---
+wrote .cursor/prompts/INDEX.md (64 prompts)
+
+--- python3 scripts/autonomy_sweep.py --json --trigger final-report ---
+{
+  "stamp": "20260418-130617",
+  "slug": "autonomy-bootstrap",
+  "trigger": "autonomy-bootstrap",
+  "report_path": "ops/verification/20260418-130617-autonomy-sweep-autonomy-bootstrap.txt",
+  "sections": [
+    "trigger",
+    "git state",
+    "prompt index",
+    "work queue",
+    "recent verification",
+    "task runner health",
+    "status report summary"
+  ],
+  "dry_run": false
+}
+
+--- bash scripts/realized_change_watcher.sh cline-smoke-test (already ran this session; newest report below) ---
+ops/verification/20260418-130617-autonomy-sweep-and-prompts-final.txt
+ops/verification/20260418-130617-autonomy-sweep-autonomy-bootstrap.txt
+
+--- launchd watcher installer (not invoked in this session; safe repeatable install) ---
+run: bash setup/install_realized_change_watcher.sh
+
+==============================================================================
+Next step for another agent
+==============================================================================
+
+  bash scripts/pull.sh
+  bash setup/install_realized_change_watcher.sh
+  launchctl list | grep com.symphony.realized-change-watcher
+
+Then touch STATUS_REPORT.md (or drop a sentinel into ops/realized_changes/)
+and a fresh ops/verification/<stamp>-autonomy-sweep-realized-change.txt
+will appear within 60 seconds (plist ThrottleInterval).
+
+### sweep-and-prompts finished 2026-04-18T19:06:18Z
