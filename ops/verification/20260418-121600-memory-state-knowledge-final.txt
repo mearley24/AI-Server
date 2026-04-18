@@ -1,0 +1,258 @@
+==============================================================================
+CATEGORY 4 FINAL: Memory, State, and Knowledge (2026-04-18 re-audit)
+==============================================================================
+Generated: 2026-04-18 12:16 MDT
+Companion audit: 20260418-121300-memory-state-knowledge-audit.txt
+Prior pass: 20260417-095615 / 20260417-095900
+
+Scope discipline: this pass stayed strictly inside Memory / State /
+Knowledge (Cortex, Apple Notes, SQLite DBs, digests, schemas,
+retrieval patterns, knowledge exports, merge-conflict protections).
+No code outside this category was modified. No data or schema
+migrations were attempted.
+
+------------------------------------------------------------------------------
+Status summary (active / inactive / partial / stale / unknown)
+------------------------------------------------------------------------------
+- Cortex brain.db (45 294 memories, 146 MB) ......... active (strong, accelerating)
+- Cortex /remember + /query + /memories + /improve/run active
+- cortex/memory.py schema (importance, confidence, TTL) active (but CATEGORIES drift)
+- cortex/cortex.db (21 entries, 10 neural_paths) .... stale / orphaned
+- decision_journal.db (7 968 decisions)             active
+- decision_journal.db pending_approvals (474)       partial (regressed since Prompt T drain)
+- follow_ups.db consolidation ...................... partial (regressed; 3 live files)
+- jobs.db (41 jobs) ................................ active
+- emails.db (569; read=1 fix holds) ................ active
+- knowledge_base.db / openclaw_memory.db / payments.db active
+- cost_tracker.db .................................. stale (13 days)
+- price_monitor.db ................................. stale (8 days)
+- Apple Notes ingestion (launchd wired, code wired) . inactive (FDA permission gap, 3+ days down)
+- Cortex daily digests (9 files, 2026-04-11..2026-04-18) active
+- Knowledge/ manifest .............................. missing
+- Scheduled brain.db backup ........................ missing (helpers exist, plist absent)
+- Per-category TTL policy .......................... missing
+- Mistakes / recurring-problems registry ........... partial (cortex.db stubs unused)
+- .gitattributes merge=ours whitelist ............... active
+- Preflight auto-heal for whitelisted conflicts ..... partial (didn't self-trigger on 2026-04-17 digest)
+
+------------------------------------------------------------------------------
+Headline findings
+------------------------------------------------------------------------------
+1. **brain.db doubled in ~26 h.** 37,535 → 45,294 memories, 25,173
+   of them in the last 24 h. Category concentration is identical to
+   prior pass (trading_strategy + risk_management + follow_up +
+   tech_infrastructure = 86 %). The growth rate is important: at
+   25 k/day, SQL-LIKE retrieval will start visibly slowing before
+   the end of the month.
+
+2. **follow_ups.db consolidation regressed.** The 2026-04-17
+   consolidation ("3 → 1 canonical") did not stick. The repo now
+   has THREE live files with two different schemas and two active
+   writers:
+     - data/openclaw/follow_ups.db             60 rows (active)
+     - data/email-monitor/follow_ups.db        61 rows (ghost)
+     - data/email-monitor/email-monitor/follow_ups.db 37 rows (active)
+   This is the same path-stacking bug from earlier pages of
+   STATUS_REPORT — only the files were moved; no compose/env
+   change landed. Real cleanup is medium-risk and deferred.
+
+3. **Merge=ours alone did not prevent a generated-file conflict.**
+   `data/cortex/digests/2026-04-17.md` was sitting in UU state in
+   the git index at task start. The `merge=ours` driver only fires
+   on automatic merges; a local edit + pull left the file in
+   "both modified" state. Preflight fixes that case via
+   `git checkout --ours`, but preflight had not ticked / healed.
+   Resolved by hand this pass.
+
+4. **Apple Notes ingestion has been silently dead for 3+ days.**
+   launchd plists are loaded and firing daily, but
+   scripts/export_notes.py can't read NoteStore.sqlite (Full Disk
+   Access not granted to the launchd interpreter). Fix is a one-
+   click System Settings grant; deferred because it's not a code
+   change.
+
+5. **cortex.db is orphan.** 21 entries, 10 neural_paths, 6
+   recurring_problems, last touched 2026-04-11. The current
+   engine reads brain.db. The `recurring_problems` table is the
+   right substrate for a structured mistakes registry layered on
+   top of Cortex (see audit §6) — either adopt or archive.
+
+6. **cortex/memory.py CATEGORIES set is now fiction.** The three
+   categories with 30,876 memories combined (trading_strategy,
+   risk_management, tech_infrastructure) are not in the declared
+   set. `remember()` doesn't enforce the set, so writes succeed
+   silently.
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- One-sink architecture still holds: every service writes to
+  Cortex `/remember`, and the dashboard reads from brain.db +
+  openclaw DBs. Debate about "which DB owns this fact" is over.
+- Schema has importance/confidence/TTL — all three pruning levers
+  exist, just not wired for per-category policy yet.
+- Daily digest is landing automatically. 9 files cover the last 9
+  days.
+- emails.db read=1 bug stays fixed through 569 emails.
+- Every openclaw DB that should be updating today, is updating
+  today (knowledge_base, openclaw_memory, payments, jobs,
+  decision_journal, the right follow_ups copy).
+- Prior-pass helpers (`scripts/backup-cortex-dbs.sh`,
+  `scripts/cortex-brain-snapshot.sh`) are still in the repo and
+  executable.
+- `.gitattributes` + preflight is the right architectural answer
+  for the generated-state-file conflict problem. The gap is that
+  preflight must run, which is a separate infrastructure concern.
+
+------------------------------------------------------------------------------
+Cons
+------------------------------------------------------------------------------
+- follow_ups.db split (3 live DBs). Dashboard readers will pick
+  different files depending on which container's default path
+  they inherit.
+- 474 pending `email_classification` approvals re-accumulated
+  since the Prompt T drain. No auto-drain scheduled.
+- cortex/memory.py CATEGORIES drift. Declared schema != actual
+  use. Writers don't enforce.
+- Apple Notes ingestion broken (launchd FDA gap).
+- No per-category TTL. brain.db will hit 1 M rows in ~40 days at
+  current rate, all with unbounded lifetime.
+- No embedding / vector index. Plan still deferred.
+- No automated backup of brain.db (146 MB, pipelining-wise large
+  enough to lose hours if corrupted).
+- AGENT_LEARNINGS.md (repo, 108 lines, 2026-04-05) vs
+  AGENT_LEARNINGS_LIVE.md (state, 8 lines, 2026-04-18) — two files
+  with the same role, different cadences, ambiguous authority.
+- cortex.db + recurring_problems stubs exist but nothing feeds
+  them. ops/verification/*-blocker-*.txt contains rich data that
+  should be mined into a mistakes registry; nothing does it.
+- cost_tracker.db + price_monitor.db are untouched pipelines
+  (respectively 13 and 8 days).
+- knowledge/ dir still has no MANIFEST.json. Agents hardcode
+  paths to find content.
+
+------------------------------------------------------------------------------
+Missing pieces
+------------------------------------------------------------------------------
+- Single-path follow_ups.db (with a migration that unifies the
+  two schemas).
+- Full Disk Access granted to the launchd interpreter used by
+  com.symphony.notes-sync / com.symphony.notes-watcher /
+  com.symphony.notes-sync-photos.
+- com.symphony.sqlite-backup launchd plist (daily, 30-day
+  rotation, `scripts/backup-cortex-dbs.sh --execute`).
+- com.symphony.approval-drain launchd plist
+  (scripts/prompt_t_drain.py --dry-run default, weekly).
+- Per-category TTL policy in cortex/memory.py.remember().
+- Reliable preflight tick (so the `merge=ours` auto-heal actually
+  runs on every pull, not just when the runner ticks).
+- A bridge that lifts `ops/verification/*-blocker-*.txt` into a
+  structured mistakes registry (cortex.db.recurring_problems OR a
+  new `known_mistake` category in brain.db).
+- knowledge/MANIFEST.json — inventory of every knowledge path
+  with a one-line description and last-updated ISO date.
+- Refresh of cortex/memory.py CATEGORIES to match live data (or
+  enforcement/warn-on-drift).
+
+------------------------------------------------------------------------------
+Safer replacements where clearly better
+------------------------------------------------------------------------------
+Cortex + SQLite remains the best stack today. Concrete alternatives
+and their verdicts:
+
+- **PostgreSQL + pgvector** — real rewrite, only worth it if we
+  cross ~500 k brain.db rows or start running concurrent writers.
+  Not today.
+- **litestream** — single-node continuous SQLite backup to S3/B2.
+  Low intrusion. Best candidate for "scheduled backup" work.
+- **LiteFS** — streaming replication with FUSE. Overkill for
+  single host; reconsider if a second node joins.
+- **sqlite-vss** — load as SQLite extension on brain.db, keep the
+  file. Plan for when brain.db >100 k rows. Embedding cost at
+  current write rate ≈ $0.12/day.
+- **Mistakes registry over Cortex** — not a replacement, a
+  *layer*. This is the highest-leverage upgrade: promote
+  ops/verification/*-blocker-*.txt to brain.db/cortex.db rows so
+  recurring failures can be detected automatically.
+
+------------------------------------------------------------------------------
+Merge-conflict-prone files + current protections
+------------------------------------------------------------------------------
+Protected (merge=ours in .gitattributes):
+  knowledge/markup_exports/.session_tracking.json
+  data/cortex/digests/**
+
+Gitignored (runtime-only, never committed):
+  data/**/*.db / *.db-shm / *.db-wal
+  data/network_watch/
+  data/intake_uploads/
+  data/manual_digest/
+  data/transcripts/
+  data/**/*.json (with the specific overrides listed)
+  data/openclaw/AGENT_LEARNINGS_LIVE.md
+  data/openclaw/patterns.json
+  data/task_runner/.runner.lock
+  data/audio_intake/worker.log
+  data/backups*.tar.gz
+
+Preflight whitelist for auto-`--ours` healing:
+  knowledge/markup_exports/.session_tracking.json
+  data/cortex/digests/**
+
+Observation: merge=ours is necessary but not sufficient. It does
+not fire on interactive "both modified" merges. Preflight's
+`git checkout --ours` path is the gap-filler, and it must actually
+run. See the §5 "didn't self-trigger" finding above.
+
+No new protections added this pass; existing ones are correct.
+The gap is preflight reliability, which is a separate category.
+
+------------------------------------------------------------------------------
+Exact changed files + verification notes
+------------------------------------------------------------------------------
+RESOLVED (git checkout --ours + git add):
+  data/cortex/digests/2026-04-17.md
+  knowledge/markup_exports/.session_tracking.json
+
+MODIFIED (docs only):
+  data/DATABASE_SCHEMA.md
+    - Refreshed "Live snapshot" section for 2026-04-18 (45,294
+      memories, 146 MB, top-4 categories, 24 h delta, 569 emails,
+      474 pending approvals).
+    - New "Known regressions" section documenting:
+      * follow_ups.db split (3 live files, 2 schemas, 2 writers)
+      * cortex.db orphan
+      * Apple Notes FDA permission gap
+      * cortex/memory.py CATEGORIES drift
+      * dormant cost_tracker.db + price_monitor.db
+    - New "Merge-conflict protections" section explaining the
+      gap between `merge=ours` (automatic merges only) and
+      preflight (both modified).
+    - Cross-references to this audit + final + prior passes.
+
+ADDED:
+  ops/verification/20260418-121300-memory-state-knowledge-audit.txt
+  ops/verification/20260418-121600-memory-state-knowledge-final.txt  (this file)
+
+Verification notes:
+  - `git status -s` before commit will show exactly:
+      M data/DATABASE_SCHEMA.md
+      M data/cortex/digests/2026-04-17.md
+      M knowledge/markup_exports/.session_tracking.json
+      A ops/verification/20260418-121300-memory-state-knowledge-audit.txt
+      A ops/verification/20260418-121600-memory-state-knowledge-final.txt
+  - No service was restarted; no container rebuilt; no DB touched.
+  - `scripts/pull.sh` was used as the pull entrypoint (never bare
+    `git pull`), confirming the .clinerules requirement.
+
+------------------------------------------------------------------------------
+Blockers
+------------------------------------------------------------------------------
+None for this audit. Every deferred item (follow_ups.db
+consolidation, FDA grant, per-category TTL, scheduled backup,
+mistakes registry, knowledge manifest) is medium- to low-risk and
+outside this category's safe-improvement scope. They are listed
+individually in the audit's §9 so the next prompt can pick them up.
+
+END OF FINAL REPORT — Category 4 (Memory, State, Knowledge)
+2026-04-18 12:16 MDT

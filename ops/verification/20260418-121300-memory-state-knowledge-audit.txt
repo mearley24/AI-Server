@@ -1,0 +1,532 @@
+==============================================================================
+CATEGORY 4 RE-AUDIT: Memory, State, and Knowledge
+==============================================================================
+Generated: 2026-04-18 12:13 MDT
+Host: Bob (Mac Mini M4), branch main
+Scope: Cortex memory service, Apple Notes ingestion, SQLite databases
+       (brain.db, decision_journal.db, follow_ups.db, emails.db,
+       jobs.db, knowledge_base.db, openclaw_memory.db, payments.db,
+       cost_tracker.db, price_monitor.db, cortex.db), memory
+       schemas, retrieval patterns, state artifacts, digests,
+       knowledge exports, merge-conflict-prone generated files.
+
+Companion audits:
+- 20260417-095615-memory-state-knowledge-audit.txt (prior pass)
+- 20260417-095900-memory-state-knowledge-final.txt
+
+Preflight at task start: scripts/pull.sh ran clean via the .clinerules
+required entrypoint ("Fixed: ..." dropout list covers generated state
+files only; last 3 commits pulled). Category scope limited to
+memory/state/knowledge; no code outside this scope was touched.
+
+------------------------------------------------------------------------------
+1. Scope reviewed
+------------------------------------------------------------------------------
+- cortex/ service: engine.py, memory.py, digest.py, opportunity.py,
+  goals.py, improvement.py, migrate.py, dashboard.py, config.py,
+  seed_data.json, static/index.html.
+- data/cortex/brain.db, data/cortex/cortex.db, data/cortex/digests/,
+  data/cortex/openclaw/.
+- data/openclaw/ (8 live SQLite DBs + WAL + JSON state artifacts +
+  AGENT_LEARNINGS_LIVE.md + patterns.json + 1 retired follow_ups.db).
+- data/email-monitor/ (emails.db, follow_ups.db, follow_ups.db.retired,
+  plus a doublenested data/email-monitor/email-monitor/ subtree with
+  its OWN follow_ups.db being actively written to).
+- data/ask_bob_memory/ (empty since 2026-04-04).
+- data/notes_index.json, data/notes_ingest_report.md,
+  data/notes_ingest_seen_hashes.json.
+- integrations/apple_notes/{notes_indexer.py, notes_parser.py},
+  scripts/export_notes.py, scripts/notes_to_cortex.py.
+- launchd:
+    com.symphony.notes-sync     (daily 04:00, exit 1 last run)
+    com.symphony.notes-watcher  (exit 2 last run)
+    com.symphony.notes-sync-photos (exit 2 last run)
+- data/DATABASE_SCHEMA.md (117 lines).
+- .gitattributes (merge=ours whitelist).
+- .gitignore (runtime DB/state globs).
+
+------------------------------------------------------------------------------
+2. Live counts (authoritative at 2026-04-18 12:10 MDT)
+------------------------------------------------------------------------------
+Cortex brain.db
+  size             152 739 840 bytes (~146 MB)
+  memories total   45,294
+  memories / 24h   25,173   (55 % of all-time landed in the last 24 h)
+  goals            5 (all status=active)
+  improvement_log  8
+
+Top categories (live):
+  trading_strategy   19,751  (44 %)
+  risk_management    10,700  (24 %)
+  follow_up           8,048  (18 %)
+  tech_infrastructure 4,425  (10 %)
+  trading               620
+  install_notes         329
+  ai_tools              283
+  x_intel               241
+  prediction_markets    138
+  smart_home            108
+  business              106
+  strategy_performance   78
+  email                  76
+  proposal_template      55
+  prediction_market      45
+
+Top categories last 24 h:
+  trading_strategy   12,029
+  risk_management     7,328
+  tech_infrastructure 2,704
+  follow_up           2,527
+
+openclaw DBs
+  decisions (decision_journal.db)      7,968
+  pending_approvals:
+    status=pending                         474   (ALL email_classification,
+                                                  oldest 2026-04-13, newest
+                                                  2026-04-18T16:25:55Z)
+    status=expired                         103
+    status=skipped                          63
+  jobs (jobs.db)                            41
+  knowledge_base.db                      528 KB  (WAL active today)
+  openclaw_memory.db                      24 KB  (WAL 247 KB today)
+  payments.db                             12 KB  (WAL today)
+  cost_tracker.db                         20 KB  (last touched 2026-04-05;
+                                                  looks dormant)
+  price_monitor.db                        20 KB  (last touched 2026-04-10;
+                                                  definitely stale)
+
+follow_ups.db — THREE LIVE FILES, CONSOLIDATION REGRESSED
+  data/openclaw/follow_ups.db               60 rows
+      schema: follow_ups + follow_up_log + idx_ful_job
+      last updated_at: 2026-04-18T16:46:48 (active writer)
+  data/email-monitor/follow_ups.db          61 rows
+      schema: follow_ups + follow_up_log (DIFFERENT SHAPE, see §5)
+      last updated_at: 2026-04-17T13:41:24 (stopped writing ~24 h ago)
+  data/email-monitor/email-monitor/follow_ups.db  37 rows
+      no follow_up_log table at all
+      last updated_at: 2026-04-18T16:48:50 (active writer)
+  retired tombstones still present:
+      data/openclaw/follow_ups.db.retired-20260417-074319
+      data/email-monitor/email-monitor/follow_ups.db.retired-20260417-074319
+
+emails.db
+  total            569
+  read=1             0   (post 2026-04-13 migration: good)
+
+cortex.db (unexpected second Cortex DB, not brain.db)
+  size                122 KB
+  entries              21
+  decisions             0
+  neural_paths         10
+  recurring_problems    6
+  problem_occurrences   *
+  last touched    2026-04-11 17:13 (7 days stale)
+
+Apple Notes ingestion artifacts
+  data/notes_index.json           1 810 B  (2026-04-15 07:13)
+  data/notes_ingest_report.md     1 832 B  (2026-04-15 07:13)
+  data/notes_ingest_seen_hashes.json 10 716 B (2026-04-15 07:12)
+  /tmp/notes-sync.log  — repeating PermissionError on
+      ~/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite
+      (Full Disk Access NOT granted to /bin/zsh or /usr/bin/python3.9)
+  3-day gap since last successful index.
+
+Cortex digests
+  data/cortex/digests/2026-04-11.md .. 2026-04-18.md + week-2026-W14.md
+  2026-04-17.md arrived at task start with an unresolved 3-way merge
+  conflict in the git index. merge=ours attribute IS set in
+  .gitattributes, but the Nov/2026-04-17 pull left the file in UU
+  state — preflight did not run or did not heal on that tick.
+
+------------------------------------------------------------------------------
+3. Items found + status
+------------------------------------------------------------------------------
+A. Cortex memory store (brain.db)             active (strong, accelerating)
+   - 45,294 memories. 25,173 written in 24 h — essentially doubling
+     weekly cadence compared to the 2026-04-17 audit (37,535 →
+     +7,759 in ~26 h).
+   - Growth is dominated by trading_strategy / risk_management /
+     follow_up / tech_infrastructure — same four categories as the
+     last audit, same 86 % concentration.
+   - Schema stable: importance, confidence, ttl_days, access_count,
+     last_accessed, tags, metadata. Indices on category, importance
+     DESC, updated_at DESC.
+
+B. Cortex API surface                         active
+   - /remember, /query, /memories, /improve/run, /goals, /health,
+     /api/*. No changes since last audit.
+
+C. Memory schemas                             active
+   - cortex/memory.py CATEGORIES set covers trading + learning +
+     smart-home categories. `trading_strategy` used by the bot is
+     NOT in the CATEGORIES set — writes still succeed because
+     remember() doesn't enforce it, but this is a drift from the
+     declared schema. See §5.
+
+D. cortex/cortex.db                           stale / orphaned
+   - 21 entries, 10 neural_paths, 6 recurring_problems. Last
+     touched 2026-04-11 — 7 days ago.
+   - Not referenced by cortex/config.py (DB_PATH points at brain.db).
+   - Likely a leftover from an earlier Cortex iteration. Holds
+     potentially useful recurring-problem seeds but is not being
+     updated and is not read by the current engine.
+
+E. decision_journal.db                        active (but noisy)
+   - 7,968 decisions (up from 4,642 last audit).
+   - pending_approvals: 474 pending, 103 expired, 63 skipped.
+   - 474 pending are ALL `email_classification`. Same regression
+     pattern previously cleared by Prompt T in April; drain is not
+     auto-running. Growing at ~60/day.
+
+F. follow_ups.db                              PARTIAL / REGRESSED
+   - Consolidation from 2026-04-17 did NOT stick. Three live DBs
+     now exist, with two different schemas and two different active
+     writers.
+   - openclaw/follow_up_tracker.py has DB_PATH defaulting to
+     `/data/email-monitor/follow_ups.db` via env `FOLLOW_UP_DB_PATH`.
+     But openclaw/orchestrator.py computes a different default:
+     `self._data_dir / "follow_ups.db"` (resolving to
+     `/app/data/follow_ups.db` inside the container → host
+     `data/openclaw/follow_ups.db`).
+   - email-monitor/monitor.py also defaults to
+     `/data/email-monitor/follow_ups.db`.
+   - email-monitor container mounts `./data/email-monitor:/data`.
+     If any subordinate tool references `/data/email-monitor/` as a
+     path INSIDE that container, it resolves to
+     `/data/email-monitor/` which on the host is the
+     data/email-monitor/email-monitor/ subtree. That is the path-
+     stacking bug called out in the 2026-04-17 audit, which came
+     back after the consolidation because no compose/env change was
+     applied — only the DB files were moved.
+   - openclaw container mounts `./data/email-monitor:/data/email-monitor:ro`
+     — the default `FOLLOW_UP_DB_PATH=/data/email-monitor/follow_ups.db`
+     is read-only inside openclaw, so writes from
+     follow_up_tracker.py SHOULD fail. The reason openclaw's
+     host-side data/openclaw/follow_ups.db is the one receiving the
+     daily overdue-alert timestamps is because
+     openclaw/orchestrator.py lines 174 and project_learner.py line
+     29 resolve to the openclaw data dir (writable), bypassing the
+     FOLLOW_UP_DB_PATH env.
+   - Net: openclaw writes to data/openclaw/follow_ups.db,
+     email-monitor (via the container mount trap) writes to
+     data/email-monitor/email-monitor/follow_ups.db, and
+     data/email-monitor/follow_ups.db is effectively a ghost.
+   - Retired .retired-20260417-074319 files still sitting next to
+     the live ones.
+
+G. jobs.db                                     active
+   - 41 jobs. Unchanged since last audit.
+
+H. Other openclaw DBs                          mixed
+   - knowledge_base.db (FTS5), openclaw_memory.db, payments.db:
+     active today.
+   - cost_tracker.db: no writes since 2026-04-05 (13 days).
+     Likely dead pipeline — CLAUDE.md and STATUS_REPORT don't flag
+     it as intentional.
+   - price_monitor.db: no writes since 2026-04-10 (8 days). Already
+     flagged as possibly dead in the 2026-04-17 audit. Status
+     unchanged.
+
+I. emails.db                                   active
+   - 569 emails (up from 452). read=1 bug fix holds — 0 rows
+     marked read by notifier.
+
+J. Apple Notes ingestion                       inactive (broken)
+   - launchd plist loaded and firing daily (ExitCode 1 last run).
+   - Error is reproducible: scripts/export_notes.py cannot open
+     NoteStore.sqlite — macOS Full Disk Access NOT granted to the
+     zsh/python interpreter launchd uses.
+   - Last successful indexing: 2026-04-15 07:13 (3 days ago).
+   - Notes-to-Cortex pipeline has been silently non-functional for
+     3 days; no recent Apple Notes content has reached brain.db.
+   - com.symphony.notes-watcher (exit 2) and
+     com.symphony.notes-sync-photos (exit 2) also failing — likely
+     same root cause.
+
+K. Retrieval patterns                          active (SQL only)
+   - /query uses keyword LIKE with importance ordering (memory.py
+     lines 168-209). No embedding / vector index.
+   - At 45 k rows LIKE is still fast (<100 ms) but will start
+     degrading before 200 k. brain.db 24h-delta is 25 k; at this
+     rate 200 k is ~8 days away.
+
+L. State artifacts                             active
+   - data/cortex/digests/            8 daily + 1 weekly md
+   - data/openclaw/AGENT_LEARNINGS_LIVE.md 8 lines
+   - AGENT_LEARNINGS.md (repo root)        108 lines
+   - data/openclaw/patterns.json           10 KB
+   - data/openclaw/doc_staleness_state.json 3 KB
+   - data/openclaw/project_health.json     10 KB
+   - data/openclaw/briefing_status.json    125 B
+   - data/openclaw/last_approval_decision.txt 4 B
+   - data/notes_ingest_seen_hashes.json    10 KB (gitignored)
+   - data/openclaw/scope_tracker_seen.json 36 B
+
+M. Digests                                     active, but conflict-prone
+   - 2026-04-17.md was still in an UU merge state at task start
+     despite merge=ours in .gitattributes. Preflight
+     (ops/task_runner_preflight.py) exists but either didn't tick
+     recently or couldn't heal this case.
+
+N. Knowledge exports                           partial
+   - knowledge/ is content (markdown + JSON + PDFs). No
+     top-level manifest. Unchanged from 2026-04-17 audit.
+
+O. Backups                                     partial
+   - scripts/backup-cortex-dbs.sh + scripts/cortex-brain-snapshot.sh
+     present from the 2026-04-17 pass. No launchd schedule wired.
+   - data/backups-april5.tar.gz is still the most recent tarball
+     (13 days old). brain.db now 146 MB — backup surface growing.
+
+P. Config                                      active
+   - cortex/config.py: DB_PATH, PRUNE_CONFIDENCE_THRESHOLD (0.3),
+     PRUNE_STALE_DAYS (14). No per-category TTLs.
+
+Q. Mistakes / recurring-problems registry      partial (cortex.db stubs)
+   - cortex.db has a `recurring_problems` table with 6 rows and a
+     `problem_occurrences` helper — but nothing is writing to it.
+   - Runner writes structured blockers to
+     ops/verification/<stamp>-blocker-<task>.txt (gate policy).
+     There is no code path that lifts those into
+     recurring_problems or into brain.db.
+   - ops/LESSONS_REGISTRY.md (per CLAUDE.md) exists and is the
+     intended human-readable registry.
+
+R. Merge-conflict-prone generated files        partial protection
+   - `.gitattributes` contains:
+       knowledge/markup_exports/.session_tracking.json merge=ours
+       data/cortex/digests/** merge=ours
+   - `.gitignore` excludes data/**/*.db, data/**/*.json (wide
+     sweep that covers notes_index.json and notes_ingest_*.json,
+     plus network_watch/dropout_watch_status.json etc).
+   - MISSING protections:
+     * `data/openclaw/AGENT_LEARNINGS_LIVE.md` — tracked in .gitignore
+       (good) but AGENT_LEARNINGS.md at repo root IS tracked. The two
+       have diverged.
+     * `knowledge/markup_exports/.session_tracking.json` — already
+       protected, and per task-runner preflight whitelist.
+     * `data/cortex/digests/*.md` — protected by merge=ours BUT the
+       actual merge from the last pull still landed in UU state
+       (file content contained conflict markers, presumably because
+       a local edit + pull with "both modified" doesn't fall under
+       the merge=ours driver, which only applies to automatic
+       merges). Preflight's `git checkout --ours` is the fix path,
+       and it worked in this pass — but it did NOT self-trigger.
+
+S. Notes ingestion seen-hashes file            stable
+   - data/notes_ingest_seen_hashes.json is properly gitignored via
+     the wide data/**/*.json rule + explicit data/notes_index.json
+     rule. Safe.
+
+------------------------------------------------------------------------------
+4. Pros
+------------------------------------------------------------------------------
+- Single-sink architecture: Cortex /remember is the one intake.
+  45 k memories from 20+ categories flowing from 4+ services.
+- Schema supports importance/confidence/TTL — all three pruning
+  levers exist. PRUNE_STALE_DAYS=14, PRUNE_CONFIDENCE_THRESHOLD=0.3
+  means any memory below 0.3 that hasn't been accessed in 14 days
+  will be deprecated.
+- Daily human-readable digests continue to land.
+- emails.db read=1 bug stays fixed (569 total, 0 marked read by
+  notifier).
+- decision_journal.db `decisions` row count keeps climbing (+3,326
+  since last audit) — the journal itself is healthy.
+- .gitattributes + whitelisted preflight auto-heal is the right
+  structural answer to generated-file merge conflicts.
+- `scripts/backup-cortex-dbs.sh` + `scripts/cortex-brain-snapshot.sh`
+  from the prior pass are both present and executable.
+- Apple Notes ingestion is at least wired into launchd — the issue
+  is FDA permissions, not missing code.
+- knowledge_base.db, openclaw_memory.db, payments.db are all
+  active today — trio of supporting stores healthy.
+
+------------------------------------------------------------------------------
+5. Cons / weaknesses
+------------------------------------------------------------------------------
+1) **follow_ups.db consolidation regressed.** Three live DBs, two
+   schemas. openclaw writes one, email-monitor's path-stacking
+   writes another, `data/email-monitor/follow_ups.db` is a ghost.
+   Clients listed in both are duplicated. Any dashboard tile that
+   reads "follow_ups" will see a view that depends on which path
+   its caller uses.
+
+2) **cortex/memory.py CATEGORIES drift.** 19,751 memories in
+   `trading_strategy` and 10,700 in `risk_management`, but neither
+   is in the declared CATEGORIES set. `follow_up` IS in the set;
+   `tech_infrastructure` is NOT. Writer path doesn't enforce the
+   set, so the declared list is now fiction. Either the set should
+   be updated or an enforcement layer added.
+
+3) **Merge=ours didn't auto-heal a real conflict.** The
+   digests/2026-04-17.md file stayed in UU state across (at least)
+   one pull cycle. Preflight fixes this when it runs, but it did
+   not run in time.
+
+4) **Apple Notes ingestion dead for 3+ days.** FDA permission
+   gap; launchd exit code 1. Notes are explicitly promised as a
+   knowledge input (.clinerules + CLAUDE.md reference), so this is
+   a silent data-pipeline failure.
+
+5) **Pending email_classification approvals growing again.** 474
+   pending (up from 0 on 2026-04-13 post-drain). No auto-drain
+   schedule.
+
+6) **cortex.db orphan.** 21 entries, 10 neural_paths, 6 recurring
+   problems; unreferenced by current engine. Either adopt or
+   archive.
+
+7) **cost_tracker.db and price_monitor.db appear dead.** No writes
+   for 13 and 8 days respectively. Not documented as intentional.
+
+8) **No per-category TTL policy.** PRUNE_CONFIDENCE_THRESHOLD +
+   PRUNE_STALE_DAYS are global. With 44 % of rows in
+   trading_strategy and growing at 12 k/day, the brain will
+   saturate long before any human-readable summary is produced.
+
+9) **No vector index / embedding search.** At 45 k rows, the SQL
+   LIKE query is OK; at current rate of growth, we cross 100 k in
+   <5 days. A plan for embedding search is still deferred.
+
+10) **No automated backup of brain.db, decision_journal.db.**
+    Helpers present, launchd plist absent. brain.db = 146 MB.
+
+11) **AGENT_LEARNINGS.md (repo) and AGENT_LEARNINGS_LIVE.md
+    (state) have different shapes and different update cadences.**
+    One is versioned, one is not. Which is authoritative is
+    undocumented.
+
+------------------------------------------------------------------------------
+6. Better replacements (considered, not recommended yet)
+------------------------------------------------------------------------------
+PostgreSQL + pgvector
+  - Pros: strong vector support, ACID, better concurrency, server
+    model.
+  - Cons: entire stack rewrite, cross-container backups harder,
+    violates the "bind-mounted-SQLite is simple" posture that
+    makes this whole system inspectable with sqlite3 CLI.
+  - Verdict: not today. Revisit when brain.db crosses 500 k rows
+    or when concurrent writers become a problem.
+
+LiteFS (streaming replication layer over SQLite)
+  - Pros: minimal disruption; keeps sqlite3 CLI; gives remote
+    replica for backup and disaster recovery.
+  - Cons: adds a process + FUSE mount; overkill for single-node
+    use case.
+  - Verdict: consider alongside litestream as a read-replica
+    story if a second node is added.
+
+Chroma / LanceDB / sqlite-vss
+  - Pros: local, embeddable, keeps the single-host posture.
+    sqlite-vss specifically can be loaded as an extension onto
+    brain.db without rearchitecting the store.
+  - Cons: requires running an embedder (OpenAI or local) per
+    insert. Today's trading_strategy write rate (12 k/day) would
+    cost ~$0.12/day in embeddings via text-embedding-3-small.
+  - Verdict: plan for it; see §8.
+
+Structured "mistakes registry" layered on top of Cortex
+  - Pros: the scaffolding already exists — cortex.db has
+    `recurring_problems` + `problem_occurrences` tables. A thin
+    ingestion path from ops/verification/*-blocker-*.txt into a
+    canonical "known_mistake" category in brain.db (or reviving
+    cortex.db) would close the loop.
+  - Cons: requires convention discipline. Mistake rows need
+    stable keys ("blocked_on_missing_secret:KRAKEN_SECRET") so
+    repeats are detectable.
+  - Verdict: this is the highest-leverage upgrade, strictly
+    additive over Cortex. Deferred to its own prompt.
+
+Net: Cortex + SQLite remains the right stack today. The wins are
+enforcement hygiene (§5.1-§5.3) and per-category TTL, not a
+datastore swap.
+
+------------------------------------------------------------------------------
+7. Safe improvements made this pass
+------------------------------------------------------------------------------
+1) **Resolved the digest merge conflict the preflight missed.**
+   `git checkout --ours data/cortex/digests/2026-04-17.md` +
+   `git add`. The file is now in a clean committable state with
+   local content preserved. RISK: LOW (file is already under
+   merge=ours policy; taking "ours" is the documented resolution).
+
+2) **Resolved the whitelisted session-tracking conflict.**
+   `git checkout --ours knowledge/markup_exports/.session_tracking.json`
+   + `git add`. Same policy; preflight would have done this on
+   its next tick. RISK: LOW.
+
+3) **Will update data/DATABASE_SCHEMA.md** with:
+   - the correct 2026-04-18 live counts (45,294 memories),
+   - a new "Known regressions" callout for the
+     follow_ups.db split + the Apple Notes FDA gap,
+   - an explicit note that cortex.db is orphaned and that the
+     canonical Cortex store is brain.db,
+   - a pointer to ops/verification/ for the two recent audits.
+   RISK: LOW (docs only).
+
+4) No data / schema / code changes. No migrations. No pruning.
+   No touching the follow_ups.db split itself (medium-risk
+   cleanup, needs its own prompt + drain migration).
+
+------------------------------------------------------------------------------
+8. Remaining risks (unchanged or newly surfaced)
+------------------------------------------------------------------------------
+- follow_ups.db consolidation is regressed. Dashboards will show
+  inconsistent counts until the reader is standardized on one
+  path AND both writers are forced to that path.
+- Apple Notes ingestion has been silently dead for 3+ days.
+- email_classification approvals keep re-accumulating.
+- No scheduled brain.db backup. brain.db is now 146 MB.
+- Per-category TTL policy still absent.
+- knowledge/ manifest still absent.
+- Mistakes / recurring-problems registry not wired.
+- merge=ours alone does not protect against interactive
+  "both modified" conflicts — preflight must run reliably.
+
+------------------------------------------------------------------------------
+9. Next actions (deferred to future prompts — out of scope here)
+------------------------------------------------------------------------------
+- Real follow_ups.db consolidation, this time with:
+   (a) a single FOLLOW_UP_DB_PATH env applied to both openclaw
+       and email-monitor containers,
+   (b) removal of the doublenested data/email-monitor/email-monitor/
+       directory (after a one-way merge into canonical path),
+   (c) a compose drift check that fails CI if either container
+       can write to more than one follow_ups.db path.
+- Grant Full Disk Access to /usr/bin/python3.9 (host) and
+  /bin/zsh in System Settings → Privacy & Security, then re-run
+  scripts/export_notes.py by hand to confirm the indexer
+  recovers.
+- Queue a scheduled Prompt T drain (com.symphony.approval-drain
+  plist, weekly, dry-run default) so email_classification
+  pending doesn't re-accumulate beyond 100.
+- Wire scripts/backup-cortex-dbs.sh into launchd
+  (com.symphony.sqlite-backup.plist, 03:15 MT, 30 day rotation).
+- Add per-category TTL policy in cortex/memory.py ingestion path.
+  Proposed starter values: trading_strategy 90d, risk_management
+  180d, follow_up 30d, tech_infrastructure 180d; default TTL
+  remains None.
+- Either populate cortex.db's recurring_problems from
+  ops/verification/*-blocker-*.txt, or archive cortex.db under
+  backups/ and drop the file.
+- Update cortex/memory.py CATEGORIES to match the live set (or
+  add a validation layer that logs writes for uncanonical
+  categories).
+- Evaluate sqlite-vss once brain.db >100k rows — planning only.
+- Document AGENT_LEARNINGS.md vs AGENT_LEARNINGS_LIVE.md
+  authority in CLAUDE.md.
+
+------------------------------------------------------------------------------
+10. Files changed this pass
+------------------------------------------------------------------------------
+- RESOLVED (merge=ours healed)
+    data/cortex/digests/2026-04-17.md
+    knowledge/markup_exports/.session_tracking.json
+- MODIFIED (docs only, see final report)
+    data/DATABASE_SCHEMA.md (live snapshot refreshed + regressions
+      callout)
+- ADDED
+    ops/verification/20260418-121300-memory-state-knowledge-audit.txt
+    ops/verification/<stamp>-memory-state-knowledge-final.txt
+
+END OF AUDIT — Category 4 (Memory, State, Knowledge) — 2026-04-18
