@@ -340,14 +340,38 @@ def write_report(result: PreflightResult) -> Path:
 # ---------- public entry ----------
 
 
+def _preflight_did_work(result: PreflightResult) -> bool:
+    """Return True when the preflight actually changed state or has notes.
+
+    Used to suppress writing a no-op report on every tick. Without this
+    suppression the preflight creates a new ``ops/verification/*-preflight.txt``
+    every ~60s which then flows into the task-runner's commit/push loop and
+    retriggers the launchd WatchPath on ``.git/refs/heads/main`` /
+    ``.git/FETCH_HEAD``, producing the "repeated preflight file" feedback
+    loop observed on 2026-04-18.
+    """
+    return bool(
+        result.gitattributes_updated
+        or result.conflicts_resolved
+        or result.dirty_whitelisted_staged
+        or result.unsafe_conflicts
+        or result.notes
+        or not result.ok
+    )
+
+
 def run_preflight(commit_and_push: bool = True) -> PreflightResult:
     """Main entry.
 
-    Returns the structured result; also writes a timestamped report to
-    ``ops/verification/``.
+    Returns the structured result. A timestamped report is written to
+    ``ops/verification/`` **only when the preflight actually did something
+    or has something actionable to report** — a clean tick is a no-op and
+    writes no artifact. This prevents the self-retriggering preflight loop
+    where every empty report became a commit, which updated refs/heads/main
+    + FETCH_HEAD, which re-fired the launchd WatchPath.
 
-    ``commit_and_push=False`` makes this a dry run (report only, no git
-    write operations) — useful for debugging.
+    ``commit_and_push=False`` makes this a dry run (no git write operations)
+    — useful for debugging.
     """
     result = PreflightResult()
 
@@ -366,9 +390,14 @@ def run_preflight(commit_and_push: bool = True) -> PreflightResult:
     if commit_and_push:
         commit_and_push_if_needed(result)
 
-    # If anything unsafe remains, the runner should not proceed — but we
-    # still write the report so the next agent can read it.
-    write_report(result)
+    # Only persist an artifact when preflight actually did something (healed
+    # a conflict, staged a state file, refreshed .gitattributes) or when
+    # anything unsafe / not-ok requires a follow-up. A no-op tick produces
+    # no report.
+    if _preflight_did_work(result):
+        write_report(result)
+    else:
+        result.finished_at = now_iso()
     return result
 
 
