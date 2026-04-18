@@ -1,0 +1,316 @@
+==============================================================
+X-INTAKE SUBTASK AUDIT — 2026-04-18 11:19:41 MDT
+Scope: x-intake container, host iMessage bridge, Redis handshake,
+       queue.db, transcripts volume, listener watchdog, dashboard.
+Operator: Cline (autorun, AUTO_APPROVE=true for low-risk).
+==============================================================
+
+=== 0. Git head / branch ===
+main
+9f8d8fc auto: local changes before pull
+834e8e7 auto: local changes before pull
+b73d7f5 Automate STATUS_REPORT summarization and follow-up tagging
+684889e Add autonomous learning loop: lessons, guardrails, teaching digest
+c91d349 auto: local changes before pull
+
+=== 1. docker compose ps for x-intake + redis + cortex ===
+EOF
+EOF
+
+=== 2. x-intake health endpoint (bounded curl 3s) ===
+curl: (7) Failed to connect to 127.0.0.1 port 8101 after 0 ms: Couldn't connect to server
+
+Queue stats:
+curl: (7) Failed to connect to 127.0.0.1 port 8101 after 0 ms: Couldn't connect to server
+
+Transcript stats:
+curl: (7) Failed to connect to 127.0.0.1 port 8101 after 0 ms: Couldn't connect to server
+
+=== 3. x-intake container mounts (confirms volumes hold) ===
+EOF
+x-intake container id: <none>
+
+=== 4. Redis listener subscriber count on events:imessage ===
+PUBSUB NUMSUB events:imessage
+EOF
+PUBSUB NUMSUB polymarket:intel_signals polymarket:knowledge_ingest
+EOF
+DBSIZE:
+EOF
+
+=== 5. Host-side iMessage bridge launchd state ===
+63714	-15	com.symphony.imessage-bridge
+
+Bridge socket on :8199 (bounded 2s):
+{"status": "ok", "service": "imessage-bridge", "mode": "two-way", "queue_depth": 0, "twilio_configured": true}
+Bridge pid (pgrep):
+63714
+
+=== 6. imessage-server.py _host_redis_url helper present? ===
+104:# `redis://:<password>@redis:6379/0` because that's what the Docker services need.
+110:# _host_redis_url() rewrites the Docker-network hostname to the published
+111:# loopback port (`@redis:` → `@127.0.0.1:`, `://redis:` → `://127.0.0.1:`) when
+114:def _host_redis_url(raw_url: str) -> str:
+124:    rewritten = raw_url.replace("@redis:", "@127.0.0.1:")
+126:        rewritten = raw_url.replace("://redis:", "://127.0.0.1:")
+130:_REDIS_URL = _host_redis_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
+1043:r = redis.from_url('redis://redis:6379', decode_responses=True)
+
+=== 7. Bridge log — last 60 lines + recent auth errors ===
+--- bridge log tail 60 ---
+2026-04-18 10:50:56 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_yto5n1_j/chat.db'
+2026-04-18 10:50:59 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_koc3fscx/chat.db'
+2026-04-18 10:51:03 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_t7dbft7u/chat.db'
+2026-04-18 10:51:06 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_ovo8p4m7/chat.db'
+2026-04-18 10:51:09 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_8typleax/chat.db'
+2026-04-18 10:51:12 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg__f6j4qde'
+2026-04-18 10:51:15 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_au3l8uuk'
+2026-04-18 10:51:18 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_wmk2zr5q'
+2026-04-18 10:51:22 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_96h_sohy'
+2026-04-18 10:51:25 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_ln5o5vw8'
+2026-04-18 10:51:28 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_bfixvof0'
+2026-04-18 10:51:31 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_bju7556a'
+2026-04-18 10:51:34 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_qav3ovd_'
+2026-04-18 10:51:37 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_vs3qwpsw'
+2026-04-18 10:51:40 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_mspj5d3e'
+2026-04-18 10:51:43 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_l39wbxd3'
+2026-04-18 10:51:46 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_67v0qgbp'
+2026-04-18 10:51:49 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_7zneey6t'
+2026-04-18 10:51:52 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_wx0tojvn'
+2026-04-18 10:51:55 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_t_4l022f'
+2026-04-18 10:51:59 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_scrqqr3j/chat.db'
+2026-04-18 10:52:02 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_juf1v30r/chat.db'
+2026-04-18 10:52:05 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_4ma52a0o/chat.db'
+2026-04-18 10:52:08 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_q54ierls/chat.db'
+2026-04-18 10:52:11 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_wbn_b20o/chat.db'
+2026-04-18 10:52:14 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_570vr3gl/chat.db'
+2026-04-18 10:52:18 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/Users/bob/Library/Messages/chat.db' -> '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_p677v3qd/chat.db'
+2026-04-18 10:52:21 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_9ya971ga'
+2026-04-18 10:52:24 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_i7_qxswh'
+2026-04-18 10:52:27 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_llk5wy3v'
+2026-04-18 10:52:30 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_2_qqykpt'
+2026-04-18 10:52:33 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_ank5hk_c'
+2026-04-18 10:52:36 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_hu0un691'
+2026-04-18 10:52:39 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_eezbcdhq'
+2026-04-18 10:52:42 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_19nz39es'
+2026-04-18 10:52:46 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_ur26dp8m'
+2026-04-18 10:52:49 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_ijneh5vu'
+2026-04-18 10:52:52 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_fb6080sn'
+2026-04-18 10:52:55 [ERROR] [monitor] Error reading messages: [Errno 28] No space left on device: '/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/imsg_o25sm3vl'
+2026-04-18 11:10:39 [INFO] [monitor] DB row 187267: handle=+19705193013 match=True text=https://x.com/usronaldcarter/status/20452175321438
+2026-04-18 11:10:39 [INFO] [monitor] DB row 187268: handle=+19705193013 match=True text=Add this guy to the watch list for daily news
+2026-04-18 11:10:39 [INFO] [monitor] Received: https://x.com/usronaldcarter/status/2045217532143886428?s=42
+2026-04-18 11:10:39 [WARNING] [redis] Publish connection failed: Error 61 connecting to 127.0.0.1:6379. Connection refused.
+2026-04-18 11:10:39 [INFO] [monitor] Responding: Analyzing your X link(s) — detailed analysis incoming shortly via x-intake....
+2026-04-18 11:10:39 [INFO] [queue] Queued for +19705193013 (depth: 1)
+2026-04-18 11:10:39 [INFO] [monitor] Received: Add this guy to the watch list for daily news
+2026-04-18 11:10:39 [WARNING] [redis] Publish connection failed: Error 61 connecting to 127.0.0.1:6379. Connection refused.
+2026-04-18 11:10:39 [INFO] [monitor] Responding: Error processing request: <urlopen error [Errno 61] Connection refused>...
+2026-04-18 11:10:39 [INFO] [queue] Queued for +19705193013 (depth: 2)
+2026-04-18 11:10:39 [INFO] [send] Attempting to send to: +19705193013
+2026-04-18 11:10:39 [INFO] [send] Sent via iMessage to +19705193013 (attempt 1/3)
+2026-04-18 11:10:42 [INFO] [send] Attempting to send to: +19705193013
+2026-04-18 11:10:42 [INFO] [send] Sent via iMessage to +19705193013 (attempt 1/3)
+2026-04-18 11:12:14 [INFO] [monitor] DB row 187271: handle=+19705193013 match=True text=https://x.com/moondevonyt/status/20455185884891711
+2026-04-18 11:12:14 [INFO] [monitor] Received: https://x.com/moondevonyt/status/2045518588489171125?s=42
+2026-04-18 11:12:14 [WARNING] [redis] Publish connection failed: Error 61 connecting to 127.0.0.1:6379. Connection refused.
+2026-04-18 11:12:14 [INFO] [monitor] Responding: Analyzing your X link(s) — detailed analysis incoming shortly via x-intake....
+2026-04-18 11:12:14 [INFO] [queue] Queued for +19705193013 (depth: 1)
+2026-04-18 11:12:14 [INFO] [send] Attempting to send to: +19705193013
+2026-04-18 11:12:14 [INFO] [send] Sent via iMessage to +19705193013 (attempt 1/3)
+--- auth-required line count since 2026-04-18 ---
+33
+--- last 5 Authentication required lines (should be zero today) ---
+805:2026-04-17 10:01:16 [WARNING] [redis] Publish connection failed: Authentication required.
+812:2026-04-17 10:01:31 [WARNING] [redis] Publish connection failed: Authentication required.
+822:2026-04-18 07:37:23 [WARNING] [redis] Publish connection failed: Authentication required.
+833:2026-04-18 08:05:05 [WARNING] [redis] Publish connection failed: Authentication required.
+840:2026-04-18 08:35:48 [WARNING] [redis] Publish connection failed: Authentication required.
+--- last 5 'Publish failed' or 'Publish connection failed' lines ---
+833:2026-04-18 08:05:05 [WARNING] [redis] Publish connection failed: Authentication required.
+840:2026-04-18 08:35:48 [WARNING] [redis] Publish connection failed: Authentication required.
+943:2026-04-18 11:10:39 [WARNING] [redis] Publish connection failed: Error 61 connecting to 127.0.0.1:6379. Connection refused.
+947:2026-04-18 11:10:39 [WARNING] [redis] Publish connection failed: Error 61 connecting to 127.0.0.1:6379. Connection refused.
+956:2026-04-18 11:12:14 [WARNING] [redis] Publish connection failed: Error 61 connecting to 127.0.0.1:6379. Connection refused.
+--- last 5 'Connected for publish' lines ---
+
+=== 8. queue.db row count + schema + recent activity ===
+Path: /Users/bob/AI-Server/data/x_intake/queue.db
+-rw-r--r--  1 bob  staff  122880 Apr 18 08:47 /Users/bob/AI-Server/data/x_intake/queue.db
+--- schema ---
+CREATE TABLE x_intake_queue (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url             TEXT    NOT NULL,
+    author          TEXT    DEFAULT '',
+    post_type       TEXT    DEFAULT 'info',
+    relevance       INTEGER DEFAULT 0,
+    summary         TEXT    DEFAULT '',
+    action          TEXT    DEFAULT 'none',
+    suggested_dest  TEXT    DEFAULT '',
+    status          TEXT    NOT NULL DEFAULT 'pending',
+    source          TEXT    DEFAULT 'imessage',
+    poly_signals    TEXT    DEFAULT '{}',
+    has_transcript  INTEGER DEFAULT 0,
+    transcript_path TEXT    DEFAULT '',
+    analyzed        INTEGER DEFAULT 0,
+    created_at      REAL    NOT NULL,
+    reviewed_at     REAL,
+    review_note     TEXT
+, error_msg TEXT DEFAULT '');
+CREATE INDEX idx_xi_status     ON x_intake_queue(status);
+CREATE INDEX idx_xi_created    ON x_intake_queue(created_at DESC);
+CREATE INDEX idx_xi_transcript ON x_intake_queue(has_transcript, analyzed);
+--- status histogram ---
+auto_approved|21
+auto_rejected|9
+rejected|4
+approved|1
+--- analyzed histogram ---
+1|32
+2|3
+--- last 10 rows (id,status,analyzed,has_transcript,created_at,source,author,url) ---
+id  status         analyzed  has_transcript  created           source    author           url                                                          
+--  -------------  --------  --------------  ----------------  --------  ---------------  -------------------------------------------------------------
+35  auto_rejected  1         0               1776523629.6459   imessage  karpathy         https://x.com/karpathy/status/1798616493476192708            
+34  auto_rejected  1         0               1776399231.88906  imessage  karpathy         https://x.com/karpathy/status/1798616493476192708            
+33  auto_rejected  1         0               1776394544.32669  imessage  moondevonyt      https://x.com/moondevonyt/status/1234567890000000001         
+32  auto_approved  1         1               1776166660.10968  imessage  MoonDevOnYT      https://x.com/moondevonyt/status/2044009056361234587?s=42    
+31  auto_approved  1         1               1776136128.04374  imessage  MoonDevOnYT      https://x.com/moondevonyt/status/2043845472247505265?s=42    
+30  auto_approved  2         1               1776131958.24001  imessage  k1rallik         https://x.com/k1rallik/status/2043724669644116149?s=42       
+29  auto_approved  1         1               1776131902.33392  imessage  leopardracer     https://x.com/leopardracer/status/2043687701082263960?s=42   
+28  auto_approved  1         0               1776131793.55351  imessage  outsource_       https://x.com/outsource_/status/2043710372176122085?s=42     
+27  auto_approved  1         0               1776131756.72113  imessage  heyshrutimishra  https://x.com/heyshrutimishra/status/2043671200321417562?s=42
+26  rejected       1         1               1776131271.9648   imessage  jessez           https://x.com/jessez/status/2043784193478668780?s=42         
+--- rows in last 24h ---
+0
+--- unanalyzed rows older than 10 min (potential stuck) ---
+
+=== 9. Transcripts directory — counts + last 5 by mtime ===
+Path: /Users/bob/AI-Server/data/transcripts
+md file count: 37
+2026-04-18 09:58 /Users/bob/AI-Server/data/transcripts/meetings/2024-07-12__the-meeting-transcript-contains-fragment.md
+2026-04-18 09:56 /Users/bob/AI-Server/data/transcripts/meetings/2024-08-15__the-transcript-contains-no-relevant-meet.md
+2026-04-18 09:55 /Users/bob/AI-Server/data/transcripts/meetings/2024-07-19__the-meeting-transcript-contains-no-subst.md
+2026-04-18 09:39 /Users/bob/AI-Server/data/transcripts/meetings/2024-07-12__20240712-1720791149-wav.md
+2026-04-18 05:54 /Users/bob/AI-Server/data/transcripts/meetings/2024-07-16__20240716-1721160041-wav.md
+
+=== 10. x-intake container last 120 log lines (bounded) ===
+
+=== 11. Listener-related log evidence (watchdog, restarts, errors) ===
+
+=== 12. Cortex x_intel memory count (pipeline proof-of-life) ===
+--- total memories by category (top 10) ---
+trading_strategy|19751
+risk_management|10700
+follow_up|8048
+tech_infrastructure|4425
+trading|620
+install_notes|329
+ai_tools|283
+x_intel|241
+prediction_markets|138
+smart_home|108
+--- x_intel total ---
+241
+--- x_intel last 24h ---
+77
+
+=== 13. Dashboard x-intake proxy endpoints (bounded 3s) ===
+{"detail":"Not Found"}
+{"detail":"Not Found"}
+=== 14. Compose drift on x-intake (volumes + env confirmed) ===
+  x-intake:
+    build:
+      context: ./integrations/x_intake
+    container_name: x-intake
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8101:8101"
+    volumes:
+      - ./data/x_intake:/data/x_intake
+      - ./data/transcripts:/data/transcripts
+    environment:
+      - REDIS_URL=${REDIS_URL}
+      - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-qwen3:8b}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - TRANSCRIPT_DIR=/data/transcripts
+      - CORTEX_URL=http://cortex:8102
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8101/health')"]
+      interval: 30s
+      timeout: 120s
+      retries: 5
+      start_period: 15s
+    mem_limit: 256m
+    networks:
+      - default
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  x-intake-lab:
+    build: ./integrations/x_intake
+    container_name: x-intake-lab
+    restart: unless-stopped
+    command: ["python3", "lab_main.py"]
+    ports:
+      - "127.0.0.1:8103:8101"
+    mem_limit: 512m
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CORTEX_URL=http://cortex:8102
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
+      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-llama3.2:3b}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Denver
+      - LAB_MODE=true
+    volumes:
+      - ./data/transcripts:/data/transcripts
+      - ./data/bookmarks:/data/bookmarks
+
+=== 15. Known open items from STATUS_REPORT — x-intake lane ===
+5:Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)**.
+29:## iMessage → x-intake unstuck (2026-04-18 09:04 MDT, Cline)
+38:yesterday and 08:35 today in `/tmp/imessage-bridge.log` still logged
+43:- The bridge runs on the host under launchd (`com.symphony.imessage-bridge`).
+91:  - `published count: 1` (the 1 is the x-intake listener receiving it).
+95:  `launchctl kickstart -k gui/$(id -u)/com.symphony.imessage-bridge`
+98:### x-intake receive status
+100:- x-intake container is `Up (healthy)`; `_redis_listener` is subscribed to
+102:- `data/x_intake/queue.db` had 35 rows at verification time.
+103:- The cline-verify ping was plain text (no URL), so x-intake correctly
+107:  containing an X link will now be picked up by x-intake.
+110:  the x-intake reference sections below. None of them are blockers for
+116:`/tmp/imessage-bridge.log` again, two things to check in order:
+131:## X Intake — current behavior (2026-04-18)
+146:  x-intake (:8101, Docker)
+149:         ├─ queue_db.enqueue(...) → data/x_intake/queue.db (host-mounted)
+162:Redis publish to `events:imessage`**. Because x-intake subscribes to that
+168:`/tmp/imessage-bridge.log` — every X-link row between 2026-04-16 and 2026-04-18
+174:[monitor] Responding: Analyzing your X link(s) — detailed analysis incoming shortly via x-intake....
+178:Redis + x-intake were healthy:
+183:  picked up by x-intake immediately and flowed all the way through the fetch /
+185:- `data/x_intake/queue.db` had no new rows since 2026-04-16 (the last regression
+203:`launchctl kickstart -k gui/$(id -u)/com.symphony.imessage-bridge`.
+208:- `curl` of the bridge from inside x-intake: `http://host.docker.internal:8199/`
+209:  returns `{"status":"ok","service":"imessage-bridge","mode":"two-way",...}`.
+210:- x-intake continues to show `[(b'events:imessage', 1)]` subscribers.
+212:  logs in `/tmp/imessage-bridge.log` will no longer contain
+217:- The x-intake container itself was fully healthy — volumes, env, listener,
+230:`/tmp/imessage-bridge.log` and `data/x_intake/queue.db` for the next organic X
+394:- ~~**Rebuild + restart x-intake**~~ ✅ **Done 2026-04-13 08:14 MDT** — Rebuilt image (`ai-server-x-intake:latest`) and recreated container. Redis listener started on `events:imessage`, Uvicorn running on port 8101, health endpoint returning HTTP 200. Container status: `Up (healthy)`. Queue DB (`data/x_intake/queue.db`) and transcript volume (`data/transcripts`) mounted via `docker-compose.yml`. Follow-up still needed: durable listener watchdog (§Z14) — see Next.
+
+=== DONE ===
+Sat Apr 18 11:19:42 MDT 2026

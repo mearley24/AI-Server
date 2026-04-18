@@ -1,6 +1,6 @@
 # ops/verification/ INDEX
-# Generated: 2026-04-17 10:18:43 MDT
-# Artifact count: 178
+# Generated: 2026-04-18 11:31:21 MDT
+# Artifact count: 77
 
 ## Newest artifact per topic
 20260417-080652-audio-pipeline.txt
@@ -8,10 +8,8 @@
 20260417-083804-context-snapshot
 20260417-083909-task-runner-bootstrap.txt
 20260417-084103-fix-unmerged-state-files.txt
-20260417-093100-task-runner-health.txt
 20260417-093106-task-audit-smoke.txt
 20260417-093125-autonomous-hardening-final.txt
-20260417-093739-category-campaign-tracker.txt
 20260417-093900-reliability-observability-audit.txt
 20260417-094200-reliability-observability-final.txt
 20260417-094300-agent-execution-autonomy-audit.txt
@@ -31,7 +29,6 @@
 20260417-101634-trading-status-snapshot.txt
 20260417-101700-trading-market-automation-final.txt
 20260417-101800-category-campaign-final.txt
-20260417-101839-preflight.txt
 20260417-143625-smoke-git-pull-result.txt
 20260417-143719-verify-task-runner-result.txt
 20260417-144500-bert-hostkey-pin-result.txt
@@ -52,35 +49,56 @@
 20260417-160951-A-pull-qwen3-8b-result.txt
 20260417-160953-B-install-audio-plist-result.txt
 20260417-160955-C-audio-env-verify-result.txt
+20260417-162045-audio-throughput-analysis-result.txt
+20260417-162528-backfill-meeting-intel-result.txt
+20260417-164649-cline-campaign.log
+20260417-164820-task-runner-crash-diag-result.txt
+20260417-164840-cline-launcher-final.txt
+20260418-074900-autonomy-gap-closer-status.txt
+20260418-082600-autonomy-gap-closer-resume-final.txt
+20260418-090400-imessage-redis-host-url-unstuck.txt
+20260418-103241-learning-miner-first-run.txt
+20260418-103300-guardrails-registry-initial.txt
+20260418-103315-learning-digest.md
+20260418-103400-learning-digest-first-run.txt
+20260418-103500-learning-loop-final.txt
+20260418-105302-status-report-summary.md
+20260418-105305-status-report-summarizer-first-run.txt
+20260418-105400-status-report-summarizer-final.txt
+20260418-110925-category-campaign-tracker.txt
+20260418-111824-preflight.txt
+20260418-111941-x-intake-subtask-audit.txt
+20260418-113121-task-runner-health.txt
+20260418-170840-cline-run-cline-prompt-noop-smoke.log
 
 ## Last 30 artifacts (newest first)
 INDEX.txt
-20260417-101839-preflight.txt
+20260418-113121-task-runner-health.txt
+20260418-111941-x-intake-subtask-audit.txt
+20260418-111824-preflight.txt
+20260418-110925-category-campaign-tracker.txt
+20260418-170840-cline-run-cline-prompt-noop-smoke.log
+20260418-110814-preflight.txt
+20260418-105400-status-report-summarizer-final.txt
+20260418-105305-status-report-summarizer-first-run.txt
+20260418-105302-status-report-summary.md
+20260418-103500-learning-loop-final.txt
+20260418-103400-learning-digest-first-run.txt
+20260418-103300-guardrails-registry-initial.txt
+20260418-103315-learning-digest.md
+20260418-103241-learning-miner-first-run.txt
+20260418-090400-imessage-redis-host-url-unstuck.txt
+20260418-082600-autonomy-gap-closer-resume-final.txt
+20260418-074900-autonomy-gap-closer-status.txt
+20260417-164820-task-runner-crash-diag-result.txt
+20260417-162528-backfill-meeting-intel-result.txt
+20260417-164840-cline-launcher-final.txt
+20260417-164840-cline-run-cline-prompt-noop-smoke.log
+20260417-164649-cline-campaign.log
+20260417-164650-cline-run-cline-prompt-noop-smoke.log
+20260417-164649-cline-run-cline-prompt-noop-smoke.log
+20260417-164636-cline-campaign.log
+20260417-164636-cline-run-cline-prompt-noop-smoke.log
+20260417-164628-cline-run-cline-prompt-noop-smoke.log
+20260417-162045-audio-throughput-analysis-result.txt
 20260417-101800-category-campaign-final.txt
-20260417-101828-preflight.txt
-20260417-101818-preflight.txt
-20260417-101807-preflight.txt
-20260417-101758-preflight.txt
-20260417-093739-category-campaign-tracker.txt
-20260417-101700-trading-market-automation-final.txt
-20260417-101655-preflight.txt
-20260417-101634-trading-status-snapshot.txt
-20260417-101552-preflight.txt
-20260417-101400-trading-market-automation-audit.txt
-20260417-160955-C-audio-env-verify-result.txt
-20260417-160953-B-install-audio-plist-result.txt
-20260417-160951-A-pull-qwen3-8b-result.txt
-20260417-101250-preflight.txt
-20260417-101239-preflight.txt
-20260417-101229-preflight.txt
-20260417-101200-messaging-communications-final.txt
-20260417-101128-preflight.txt
-20260417-101119-preflight.txt
-20260417-101017-preflight.txt
-20260417-100940-messaging-communications-audit.txt
-20260417-100925-preflight.txt
-20260417-100916-preflight.txt
-20260417-101303-preflight.txt
-20260417-100906-preflight.txt
-20260417-100856-preflight.txt
-20260417-100844-preflight.txt

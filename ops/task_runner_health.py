@@ -23,6 +23,12 @@ Checks performed:
 5. **Preflight artifact presence**: the most recent preflight report (if
    any) is surfaced. Missing preflight is a warning, not a failure, because
    the preflight only writes on actionable ticks.
+6. **Disk pressure**: the repo root filesystem must have at least
+   ``--min-free-gib`` gibibytes free (default 5 GiB). Below that, Docker
+   Desktop stalls, iMessage bridge floods ENOSPC, and the runner's own
+   ``git push`` can fail mid-tick. Derived from observed 2026-04-18
+   production outage on Bob. Repo root is chosen because it's the volume
+   ``git`` and Docker share on macOS.
 
 Usage::
 
@@ -239,6 +245,47 @@ def _check_recent_verification(max_age: int) -> HealthCheck:
     )
 
 
+def _check_disk_pressure(min_free_gib: float) -> HealthCheck:
+    """Fail when the repo-root filesystem has less than ``min_free_gib`` free.
+
+    On Bob (Mac Mini M4) the repo and Docker share ``/System/Volumes/Data``
+    in the APFS container. When that fills up:
+      - Docker Desktop stalls (observed 2026-04-18: daemon unresponsive)
+      - iMessage bridge floods ``ENOSPC`` errors (chat.db copy fails)
+      - ``git push`` can fail mid-commit, bricking the task runner tick
+
+    The check is intentionally simple — shutil.disk_usage on REPO_ROOT. It
+    doesn't probe every volume; it probes the one that matters for AI-Server.
+    """
+    try:
+        usage = shutil.disk_usage(REPO_ROOT)
+    except Exception as exc:  # noqa: BLE001
+        return HealthCheck(
+            name="disk.pressure",
+            ok=False,
+            detail=f"disk_usage({REPO_ROOT}) failed: {exc}",
+        )
+    gib = 1024 ** 3
+    free_gib = usage.free / gib
+    total_gib = usage.total / gib
+    used_pct = 100.0 * (usage.total - usage.free) / usage.total if usage.total else 0.0
+    detail_core = (
+        f"free={free_gib:.2f} GiB / total={total_gib:.1f} GiB "
+        f"(used {used_pct:.1f}%) at {REPO_ROOT}"
+    )
+    if free_gib < min_free_gib:
+        return HealthCheck(
+            name="disk.pressure",
+            ok=False,
+            detail=f"LOW DISK — {detail_core}; threshold {min_free_gib:.1f} GiB",
+        )
+    return HealthCheck(
+        name="disk.pressure",
+        ok=True,
+        detail=detail_core,
+    )
+
+
 def _check_preflight_presence() -> HealthCheck:
     """Warn-level check — not a failure if no preflight report exists yet."""
     if not VERIFICATION_DIR.exists():
@@ -272,6 +319,7 @@ def run_health(
     max_heartbeat_age: int = 900,
     max_pending_age: int = 3600,
     max_verification_age: int = 3600,
+    min_free_gib: float = 5.0,
 ) -> HealthResult:
     result = HealthResult()
     result.checks.append(_check_launchd())
@@ -279,6 +327,7 @@ def run_health(
     result.checks.append(_check_pending_queue(max_pending_age))
     result.checks.append(_check_recent_verification(max_verification_age))
     result.checks.append(_check_preflight_presence())
+    result.checks.append(_check_disk_pressure(min_free_gib))
     result.ok = all(c.ok for c in result.checks)
     result.finished_at = now_iso()
     return result
@@ -329,6 +378,12 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--max-pending-age", type=int, default=3600)
     ap.add_argument("--max-verification-age", type=int, default=3600)
     ap.add_argument(
+        "--min-free-gib",
+        type=float,
+        default=5.0,
+        help="minimum free GiB on the repo-root filesystem before disk.pressure fails (default 5)",
+    )
+    ap.add_argument(
         "--dry-run",
         action="store_true",
         help="print summary without writing a verification report",
@@ -341,6 +396,7 @@ def main(argv: list[str]) -> int:
             max_heartbeat_age=args.max_heartbeat_age,
             max_pending_age=args.max_pending_age,
             max_verification_age=args.max_verification_age,
+            min_free_gib=args.min_free_gib,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"health check crashed: {exc}", file=sys.stderr)

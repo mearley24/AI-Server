@@ -1,0 +1,85 @@
+==============================================================================
+Symphony launchd inventory — 2026-04-18T11:32:41-06:00
+LaunchAgents dir: /Users/bob/Library/LaunchAgents
+Total com.symphony.*.plist: 45
+Currently loaded by launchctl list: 44
+Plists referencing a missing script (silent drift): 24
+==============================================================================
+
+LABEL                                                LOADED  TARGET EXISTS  TARGET
+--------------------------------------------------------------------------------------------------------------------------------------------
+com.symphony.audio-intake                            yes     OK             /Users/bob/AI-Server/scripts/audio_intake_worker.py
+com.symphony.bob-maintenance                         yes     OK             /Users/bob/AI-Server/tools/bob_maintenance.py
+com.symphony.bob.workspace                           yes     OK             /Users/bob/AI-Server/scripts/start_bob_workspace.sh
+com.symphony.business-hours-throttle                 yes     OK             /Users/bob/AI-Server/tools/business_hours_throttle.py
+com.symphony.core-ops-health-hourly                  yes     MISSING        /Users/bob/AI-Server/orchestrator/core_ops_alert_runner.py
+com.symphony.daily-digest                            yes     OK             /Users/bob/AI-Server/integrations/telegram/daily_digest.py
+com.symphony.decision-hygiene-hourly                 yes     MISSING        /Users/bob/AI-Server/trading/decision_hygiene.py
+com.symphony.email-project-intake                    yes     OK             -m
+com.symphony.email-reply-agent                       yes     OK             -m
+com.symphony.employee-beatrice-bot                   yes     MISSING        /Users/bob/AI-Server/telegram-bob-remote/start_employee_bot.sh
+com.symphony.employee-betty-bot                      yes     MISSING        /Users/bob/AI-Server/telegram-bob-remote/start_employee_bot.sh
+com.symphony.failure-replay-queue                    yes     MISSING        /Users/bob/AI-Server/trading/failure_replay_queue.py
+com.symphony.file-watcher                            yes     OK             /Users/bob/AI-Server/services/file-watcher/run.sh
+com.symphony.focus-ops-monitor                       yes     MISSING        /Users/bob/AI-Server/tools/focus_ops_monitor.py
+com.symphony.graph-drift-watcher-daily               yes     MISSING        /Users/bob/AI-Server/trading/graph_drift_watcher.py
+com.symphony.imessage-bridge                         yes     OK             /Users/bob/AI-Server/scripts/imessage-server.py
+com.symphony.imessage-watcher                        yes     OK             /Users/bob/AI-Server/tools/imessage_watcher.py
+com.symphony.incoming-tasks                          yes     MISSING        /Users/bob/AI-Server/orchestrator/incoming_task_processor.py
+com.symphony.learning                                yes     OK             /Users/bob/AI-Server/openclaw/continuous_learning.py
+com.symphony.markup-app                              yes     OK             /Users/bob/AI-Server/tools/markup_app/server.py
+com.symphony.markup-tool                             yes     OK             /Users/bob/AI-Server/tools/markup_app/server.py
+com.symphony.mobile-api                              yes     MISSING        /Users/bob/AI-Server/api/mobile_api.py
+com.symphony.network-guard                           yes     OK             /Users/bob/AI-Server/tools/network_guard_daemon.py
+com.symphony.notes-sync                              yes     OK             -c
+com.symphony.notes-watcher                           yes     MISSING        /Users/bob/AI-Server/tools/notes_watcher.py
+com.symphony.overnight-learner                       yes     MISSING        /Users/bob/AI-Server/tools/overnight_learner.py
+com.symphony.polymarket-hourly                       yes     MISSING        /Users/bob/AI-Server/integrations/polymarket/polymarket_hourly_scan.py
+com.symphony.polymarket-scan                         yes     MISSING        /Users/bob/AI-Server/integrations/polymarket/polymarket_scan.py
+com.symphony.quality-gate-nightly                    yes     MISSING        /Users/bob/AI-Server/trading/quality_gate_nightly.py
+com.symphony.service-sre-loop                        yes     MISSING        /Users/bob/AI-Server/trading/service_sre_loop.py
+com.symphony.signal-action-hourly                    yes     MISSING        /Users/bob/AI-Server/trading/signal_action_runner.py
+com.symphony.smoke-test                              yes     OK             /Users/bob/AI-Server/scripts/smoke-test.sh
+com.symphony.subscription-audit                      yes     MISSING        /Users/bob/AI-Server/integrations/telegram/subscription_audit.py
+com.symphony.task-runner                             no      OK             /Users/bob/AI-Server/scripts/task_runner.py
+com.symphony.trading-api                             yes     OK             /Users/bob/AI-Server/api/trading_api.py
+com.symphony.trading-pnl-attribution-daily           yes     MISSING        /Users/bob/AI-Server/trading/pnl_attribution_report.py
+com.symphony.trading-provider-slo-monitor            yes     MISSING        /Users/bob/AI-Server/trading/provider_slo_monitor.py
+com.symphony.trading-research-bot-hourly             yes     MISSING        /Users/bob/AI-Server/trading/research_bot_hourly.py
+com.symphony.trading-research-daily-digest           yes     MISSING        /Users/bob/AI-Server/trading/research_bot_daily_digest.py
+com.symphony.trading-research-quality-weekly         yes     MISSING        /Users/bob/AI-Server/trading/research_quality_loop.py
+com.symphony.trading-topic-graph-daily               yes     MISSING        /Users/bob/AI-Server/trading/cross_topic_graph_runner.py
+com.symphony.voice-webhook                           yes     OK             /Users/bob/AI-Server/api/voice_webhook.py
+com.symphony.watcher                                 yes     OK             -m
+com.symphony.worker-betty                            yes     MISSING        /Users/bob/AI-Server/orchestrator/autonomous_worker.py
+com.symphony.x-autoposter                            yes     OK             /Users/bob/AI-Server/tools/x_auto_scheduler.py
+
+Missing-target plists (ordered):
+  com.symphony.core-ops-health-hourly  ->  /Users/bob/AI-Server/orchestrator/core_ops_alert_runner.py
+  com.symphony.decision-hygiene-hourly  ->  /Users/bob/AI-Server/trading/decision_hygiene.py
+  com.symphony.employee-beatrice-bot  ->  /Users/bob/AI-Server/telegram-bob-remote/start_employee_bot.sh
+  com.symphony.employee-betty-bot  ->  /Users/bob/AI-Server/telegram-bob-remote/start_employee_bot.sh
+  com.symphony.failure-replay-queue  ->  /Users/bob/AI-Server/trading/failure_replay_queue.py
+  com.symphony.focus-ops-monitor  ->  /Users/bob/AI-Server/tools/focus_ops_monitor.py
+  com.symphony.graph-drift-watcher-daily  ->  /Users/bob/AI-Server/trading/graph_drift_watcher.py
+  com.symphony.incoming-tasks  ->  /Users/bob/AI-Server/orchestrator/incoming_task_processor.py
+  com.symphony.mobile-api  ->  /Users/bob/AI-Server/api/mobile_api.py
+  com.symphony.notes-watcher  ->  /Users/bob/AI-Server/tools/notes_watcher.py
+  com.symphony.overnight-learner  ->  /Users/bob/AI-Server/tools/overnight_learner.py
+  com.symphony.polymarket-hourly  ->  /Users/bob/AI-Server/integrations/polymarket/polymarket_hourly_scan.py
+  com.symphony.polymarket-scan  ->  /Users/bob/AI-Server/integrations/polymarket/polymarket_scan.py
+  com.symphony.quality-gate-nightly  ->  /Users/bob/AI-Server/trading/quality_gate_nightly.py
+  com.symphony.service-sre-loop  ->  /Users/bob/AI-Server/trading/service_sre_loop.py
+  com.symphony.signal-action-hourly  ->  /Users/bob/AI-Server/trading/signal_action_runner.py
+  com.symphony.subscription-audit  ->  /Users/bob/AI-Server/integrations/telegram/subscription_audit.py
+  com.symphony.trading-pnl-attribution-daily  ->  /Users/bob/AI-Server/trading/pnl_attribution_report.py
+  com.symphony.trading-provider-slo-monitor  ->  /Users/bob/AI-Server/trading/provider_slo_monitor.py
+  com.symphony.trading-research-bot-hourly  ->  /Users/bob/AI-Server/trading/research_bot_hourly.py
+  com.symphony.trading-research-daily-digest  ->  /Users/bob/AI-Server/trading/research_bot_daily_digest.py
+  com.symphony.trading-research-quality-weekly  ->  /Users/bob/AI-Server/trading/research_quality_loop.py
+  com.symphony.trading-topic-graph-daily  ->  /Users/bob/AI-Server/trading/cross_topic_graph_runner.py
+  com.symphony.worker-betty  ->  /Users/bob/AI-Server/orchestrator/autonomous_worker.py
+
+Next action: for each missing target, either restore the script or
+unload the plist (`launchctl bootout gui/$(id -u) <plist>`) and remove
+the plist file. Silent drift is CLAUDE.md lesson #23.

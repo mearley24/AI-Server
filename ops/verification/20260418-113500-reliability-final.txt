@@ -1,0 +1,141 @@
+==============================================================================
+RELIABILITY AND OBSERVABILITY — FINAL REPORT
+==============================================================================
+Generated: 2026-04-18T11:35-06:00
+Operator:  Cline (autorun, standing approval for low-risk repo-safe work)
+Companion: ops/verification/20260418-113500-reliability-audit.txt
+Prior pass: ops/verification/20260417-094200-reliability-observability-final.txt
+
+------------------------------------------------------------------------------
+Scope reviewed
+------------------------------------------------------------------------------
+ops/verification/, ops/AGENT_VERIFICATION_PROTOCOL.md,
+ops/task_runner_preflight.py, ops/task_runner_health.py,
+ops/task_audit{,_index}.py, ops/task_queue_status.py,
+ops/launchd_inventory.py (new), scripts/pull.sh, smoke-test.sh,
+verify-deploy.sh, verify-cursor.sh, bob-watchdog.sh,
+verification-index.sh, verification-prune.sh,
+.gitattributes, .gitignore, Redis events:log, Docker healthchecks,
+45 ~/Library/LaunchAgents/com.symphony.*.plist, Cortex dashboard tile,
+STATUS_REPORT.md + auto-summarizer, LESSONS_REGISTRY / GUARDRAILS.
+
+------------------------------------------------------------------------------
+Items found + status
+------------------------------------------------------------------------------
+- ops/verification/ (76 files, 652 KiB) ........................... active
+- ops/AGENT_VERIFICATION_PROTOCOL.md ............................... active
+- scripts/pull.sh (108 lines, conflict-safe) ....................... active
+- scripts/smoke-test.sh ............................................ active (not re-run)
+- scripts/verify-deploy.sh (post Apr 17 refresh) ................... active
+- scripts/verify-cursor.sh ......................................... active
+- scripts/bob-watchdog.sh .......................................... partial (no disk check)
+- ops/task_runner_preflight.py ..................................... active
+- ops/task_runner_health.py (added disk.pressure) .................. active (extended)
+- ops/task_audit.py / task_audit_index.py .......................... active
+- ops/task_queue_status.py ......................................... active
+- ops/launchd_inventory.py ......................................... active (NEW)
+- Redis events:log ................................................. unreachable (Docker down)
+- .gitattributes merge=ours whitelist .............................. active
+- Docker per-service healthchecks .................................. partial (client-portal)
+- LaunchAgents suite: 45 plists, 24 drifted ........................ partial (sprawling)
+- Cortex dashboard service tile .................................... active
+- STATUS_REPORT.md + auto-summarizer ............................... active
+- Self-healing (watchdog / preflight / remediator / x-intake) ...... partial
+- Lessons / Guardrails registry .................................... active (new layer)
+
+Live incidents picked up by the reliability tooling:
+  - bob-watchdog.sh: `[ALERT] Docker Desktop is down` at 10:50:55 MDT
+  - task_runner_health.py: heartbeat 11285s stale, 1 task stuck, disk at
+    98.6% used (3.17 GiB free of 228 GiB)
+  - verify-deploy.sh: 5 service FAILs + Redis FAIL
+
+------------------------------------------------------------------------------
+Pros
+------------------------------------------------------------------------------
+- Multiple independent observability layers DETECTED the outage without
+  human trigger: bob-watchdog (Docker alert), preflight (whitelist heal),
+  verify-deploy (service matrix), task_runner_health (heartbeat + disk).
+- x-intake host_redis_url fix verified present on disk (644e059) and the
+  bridge log error transition predicted by that fix is happening.
+- Preflight no-op suppressor (6c6ef9e) stopped the retriggering commit loop.
+- Full April 17 reliability campaign (verify-deploy refresh, INDEX script,
+  prune script) is intact and functional.
+
+------------------------------------------------------------------------------
+Cons / weaknesses (remaining)
+------------------------------------------------------------------------------
+- Disk saturation is the upstream cause of essentially every container
+  outage in this audit. Not remediable in the reliability write lane;
+  documented and passed to the infrastructure remediation lane.
+- bob-watchdog.sh does NOT monitor disk (April 17 audit overstated its
+  coverage). Partially mitigated by task_runner_health.disk.pressure
+  added this pass, but that plist runs less often and can't self-heal.
+- 24 of 45 Symphony launchd plists reference missing scripts. Silent
+  drift. Now enumerated by ops/launchd_inventory.py.
+- verification-index.sh and verification-prune.sh still unscheduled.
+- task_runner_health FAIL alerting still not wired to notification-hub.
+- ops/AGENTS_LAUNCHD_INDEX.md (prose narrative) still not written.
+
+------------------------------------------------------------------------------
+Better replacements or package suggestions
+------------------------------------------------------------------------------
+None worth adopting today. healthchecks.io external ping is the only
+candidate worth revisiting once we have off-site redundancy. Internal
+tooling remains sufficient.
+
+------------------------------------------------------------------------------
+Safe improvements made this pass (committed)
+------------------------------------------------------------------------------
+1) NEW  ops/launchd_inventory.py (plist missing-target sweeper)
+   RISK: LOW. Read-only; writes only to ops/verification/ when --write.
+   First baseline: ops/verification/20260418-113241-launchd-inventory.txt
+   (45 plists total, 24 missing targets).
+
+2) MOD  ops/task_runner_health.py — sixth check, `disk.pressure`, with
+   `--min-free-gib` flag (default 5 GiB). Confirmed to fire on today's
+   outage: free=3.17 GiB / used 98.6% → FAIL → exit 1.
+   RISK: LOW. Additive, no existing check changed.
+
+3) NEW  ops/verification/20260418-113500-reliability-audit.txt
+   NEW  ops/verification/20260418-113500-reliability-final.txt (this file)
+
+4) DATA ops/verification/20260418-111941-x-intake-subtask-audit.txt kept
+   as context artifact from the earlier scope.
+
+All changes respect the standing approval policy. No launchd plist was
+installed, no service restarted, no secret touched, no existing behavior
+changed.
+
+------------------------------------------------------------------------------
+Remaining risks
+------------------------------------------------------------------------------
+- Disk saturation remediation is medium-risk (touches production data).
+  Needs a separate pass.
+- Task runner needs a kickstart once disk is freed.
+- 24 drifted plists need batch remediation (4-6 per pass).
+- Scheduling of verification-index / verification-prune still pending.
+- task_runner_health FAIL → iMessage wiring still pending (cross-category).
+
+------------------------------------------------------------------------------
+Next actions (deferred to later passes)
+------------------------------------------------------------------------------
+- Free disk (prune data/audio_intake, docker prune, rotate bridge log).
+- Install ops/launchd/com.symphony.verification-index.plist (hourly) and
+  .verification-prune.plist (weekly Sun 03:30).
+- Install ops/launchd/com.symphony.launchd-inventory.plist (daily).
+- Extend bob-watchdog.sh with a disk-pressure trigger (<5 GiB free).
+- Batch-clean the 24 drifted plists (4-6 per commit).
+- Wire task_runner_health FAIL → notification-hub iMessage.
+- Write ops/AGENTS_LAUNCHD_INDEX.md prose to explain per-job purpose.
+
+------------------------------------------------------------------------------
+Files changed this pass
+------------------------------------------------------------------------------
+- ADDED     ops/launchd_inventory.py
+- MODIFIED  ops/task_runner_health.py (added _check_disk_pressure + CLI)
+- ADDED     ops/verification/20260418-111941-x-intake-subtask-audit.txt
+- ADDED     ops/verification/20260418-113241-launchd-inventory.txt
+- ADDED     ops/verification/20260418-113500-reliability-audit.txt
+- ADDED     ops/verification/20260418-113500-reliability-final.txt
+
+END OF FINAL REPORT — Reliability & Observability pass 2026-04-18.
