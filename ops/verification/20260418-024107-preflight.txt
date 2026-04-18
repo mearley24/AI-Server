@@ -1,0 +1,59 @@
+=== task-runner preflight ===
+started_at: 2026-04-18T02:41:07-06:00
+finished_at: 2026-04-18T02:41:07-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+unsafe conflicts: 0
+
+commit: none (nothing to commit or push deferred)
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/clawwork/data/clawwork_state.json
+ M data/clawwork/data/sector_performance.json
+ M integrations/autoresearch
+?? ops/verification/20260418-023444-preflight.txt
+?? ops/verification/20260418-023453-preflight.txt
+?? ops/verification/20260418-023504-preflight.txt
+?? ops/verification/20260418-023515-preflight.txt
+?? ops/verification/20260418-023526-preflight.txt
+?? ops/verification/20260418-023536-preflight.txt
+?? ops/verification/20260418-023547-preflight.txt
+?? ops/verification/20260418-023648-preflight.txt
+?? ops/verification/20260418-023659-preflight.txt
+?? ops/verification/20260418-023709-preflight.txt
+?? ops/verification/20260418-023720-preflight.txt
+?? ops/verification/20260418-023730-preflight.txt
+?? ops/verification/20260418-023831-preflight.txt
+?? ops/verification/20260418-023841-preflight.txt
+?? ops/verification/20260418-023852-preflight.txt
+?? ops/verification/20260418-023903-preflight.txt
+?? ops/verification/20260418-023914-preflight.txt
+?? ops/verification/20260418-024015-preflight.txt
+?? ops/verification/20260418-024025-preflight.txt
+?? ops/verification/20260418-024036-preflight.txt
+?? ops/verification/20260418-024047-preflight.txt
+?? ops/verification/20260418-024057-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-18T02:41:07-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-18T02:41:07-06:00",
+  "unsafe_conflicts": []
+}
