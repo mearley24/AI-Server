@@ -1,0 +1,65 @@
+=== task-runner preflight ===
+started_at: 2026-04-18T05:49:24-06:00
+finished_at: 2026-04-18T05:49:24-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+unsafe conflicts: 0
+
+commit: none (nothing to commit or push deferred)
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/clawwork/data/clawwork_state.json
+ M data/clawwork/data/sector_performance.json
+ M integrations/autoresearch
+?? ops/verification/20260418-054103-preflight.txt
+?? ops/verification/20260418-054114-preflight.txt
+?? ops/verification/20260418-054124-preflight.txt
+?? ops/verification/20260418-054135-preflight.txt
+?? ops/verification/20260418-054146-preflight.txt
+?? ops/verification/20260418-054157-preflight.txt
+?? ops/verification/20260418-054207-preflight.txt
+?? ops/verification/20260418-054308-preflight.txt
+?? ops/verification/20260418-054319-preflight.txt
+?? ops/verification/20260418-054330-preflight.txt
+?? ops/verification/20260418-054340-preflight.txt
+?? ops/verification/20260418-054441-preflight.txt
+?? ops/verification/20260418-054452-preflight.txt
+?? ops/verification/20260418-054503-preflight.txt
+?? ops/verification/20260418-054513-preflight.txt
+?? ops/verification/20260418-054524-preflight.txt
+?? ops/verification/20260418-054534-preflight.txt
+?? ops/verification/20260418-054635-preflight.txt
+?? ops/verification/20260418-054646-preflight.txt
+?? ops/verification/20260418-054657-preflight.txt
+?? ops/verification/20260418-054707-preflight.txt
+?? ops/verification/20260418-054808-preflight.txt
+?? ops/verification/20260418-054819-preflight.txt
+?? ops/verification/20260418-054830-preflight.txt
+?? ops/verification/20260418-054841-preflight.txt
+?? ops/verification/20260418-054851-preflight.txt
+?? ops/verification/20260418-054902-preflight.txt
+?? ops/verification/20260418-054913-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-18T05:49:24-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-18T05:49:24-06:00",
+  "unsafe_conflicts": []
+}
