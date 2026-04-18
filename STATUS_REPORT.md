@@ -2,7 +2,27 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-18 09:04 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)**.
+
+### Tagging conventions (for the summarizer)
+
+`ops/status_report_summarizer.py` parses this file and produces a short
+owner-readable digest at `ops/verification/<stamp>-status-report-summary.md`.
+To help it, use these bullet prefixes when adding new items:
+
+- `- [FOLLOWUP]` — an open follow-up task that no one is blocked on; the
+  summarizer groups these under "Follow-ups".
+- `- [NEEDS_MATT]` — requires a real-world decision or input from Matt
+  (pricing, credentials, funding, testimonials, approvals); the summarizer
+  groups these under "Needs Matt".
+- `- ~~...~~ ✅` — strikethrough + green check means the item is done and
+  can stay in its original section as a history trail.
+
+Legacy prose like `[Matt]`, `Fund ... wallet`, `Requires approval` still
+works — the summarizer's regex picks it up — but the explicit tags are
+preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
+"STATUS_REPORT conventions" for the full rule.
+
 
 ---
 
@@ -368,7 +388,8 @@ _Action-required items this week. Most require Matt's input (credentials/funding
 
 - ~~**Set `KRAKEN_SECRET`**~~ ✅ **Resolved 2026-04-17** — add the real Kraken API secret (same value as `KRAKEN_API_SECRET` in `.env` line 284) using `bash scripts/set-env.sh KRAKEN_SECRET <value>`, then `docker compose up -d polymarket-bot` (no rebuild needed). Kraken MM auth fails on every tick until this is set. KRAKEN_SECRET set (88-char base64, matches KRAKEN_API_SECRET).
 
-- **[Matt] Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code change needed — bot re-reads on-chain balance every 5 minutes. Full operation needs $500 (configured bankroll). **Still pending Matt action ($750+ in positions as of April 12).**
+- [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code change needed — bot re-reads on-chain balance every 5 minutes. Full operation needs $500 (configured bankroll). **Still pending Matt action ($750+ in positions as of April 12).**
+
 
 - ~~**Rebuild + restart x-intake**~~ ✅ **Done 2026-04-13 08:14 MDT** — Rebuilt image (`ai-server-x-intake:latest`) and recreated container. Redis listener started on `events:imessage`, Uvicorn running on port 8101, health endpoint returning HTTP 200. Container status: `Up (healthy)`. Queue DB (`data/x_intake/queue.db`) and transcript volume (`data/transcripts`) mounted via `docker-compose.yml`. Follow-up still needed: durable listener watchdog (§Z14) — see Next.
 

@@ -185,8 +185,10 @@ Not yet built. The intended next iteration:
 | Lessons | `ops/LESSONS_REGISTRY.md`, `ops/learning_miner.py` | Machine-readable lessons |
 | Guardrails | `ops/GUARDRAILS.md` | Promoted rules |
 | Digest | `ops/learning_digest.py` | Owner-facing summary |
+| Status summary | `ops/status_report_summarizer.py`, `STATUS_REPORT.md` | Owner-readable digest of open / follow-up / Needs-Matt items (tags: `[FOLLOWUP]`, `[NEEDS_MATT]`). Writes `<stamp>-status-report-summary.md` into `ops/verification/`. |
 | Approvals | `ops/approvals/*.approval`, `ops/approvals/AUTO_APPROVE_IDS.txt` | Committed approval tokens |
 | Verification | `ops/verification/*` | Ground truth of every action |
+
 
 ## 6. Agent etiquette
 

@@ -1,0 +1,137 @@
+================================================================
+ STATUS_REPORT summarizer — first-run verification
+ Generated: 2026-04-18 10:53 MDT
+ Author:    Cline (Claude Sonnet 4.5)
+ Repo:      /Users/bob/AI-Server    Branch: main
+================================================================
+
+Scope
+-----
+First real run of `ops/status_report_summarizer.py` after the script
+landed. Purpose is to prove the summarizer reads the current
+`STATUS_REPORT.md`, classifies bullets correctly, writes an owner-
+readable digest into `ops/verification/`, and persists a snapshot so
+subsequent runs can diff against it.
+
+Commands used
+-------------
+```
+cd /Users/bob/AI-Server
+python3 ops/status_report_summarizer.py --write
+```
+
+The summarizer internally:
+  1. Reads STATUS_REPORT.md from the repo root.
+  2. Parses H2 sections (`Now`, `Next`, `Later`, `Done`, `Reference: ...`).
+  3. Classifies each top-level bullet as open / done / followup / needs_matt.
+  4. Writes the digest to ops/verification/<stamp>-status-report-summary.md.
+  5. Persists a snapshot to data/status_report_summarizer/last_snapshot.json
+     (gitignored via the existing `data/**/*.json` rule).
+
+Summary file written this run
+-----------------------------
+Path: ops/verification/20260418-105302-status-report-summary.md
+Size: 5634 bytes
+
+Key headline numbers (from the first-run summary):
+  Open items              : 11 (across Now / Next / Later)
+  Follow-ups              : 9
+  Needs Matt              : 1
+  Completed (Done section): 24
+
+Top 3 next actions (copied verbatim from the digest):
+  1. [Now — needs Matt] Fund Polymarket wallet — deposit $50+ USDC to
+     0xa791E3090312981A1E18ed93238e480a03E7C0d2 on Polygon. Wallet holds
+     $4.56 USDC.e.
+  2. [Next] Verify Prompt I runtime — docker compose logs
+     --tail=100 polymarket-bot 2>&1 | grep redeemer.
+  3. [Later — follow-up] client-portal /health endpoint — add a GET
+     /health returning {"status":"ok"} so the compose healthcheck
+     passes.
+
+[NEEDS_MATT] items surfaced
+---------------------------
+  - [Now] Fund Polymarket wallet ($50+ USDC on Polygon).
+
+This is the single outstanding real-world-input item the summarizer
+identified. All other "Matt actions" were already resolved on earlier
+passes (KRAKEN_SECRET set 2026-04-17) and are now under the strikethrough
+"done" pattern.
+
+[FOLLOWUP] items surfaced
+-------------------------
+All 9 open bullets in the `Later` section were auto-classified as
+follow-ups by the section-default rule (anything in `Later` that is not
+already done is treated as a low-priority follow-up). Examples:
+
+  - client-portal /health endpoint
+  - pull.sh hardening
+  - Dropbox link validator (Lesson #4)
+  - Sell haircut rounding (Lesson #17)
+  - imessage-server `_re` NameError
+  - Supabase cleanup (AI-Server)
+  - Supabase -> Bob migration (symphonysh)
+  - Kalshi live mode
+  - Vite/esbuild upgrade (symphonysh)
+
+Excerpt from the summary file (first 30 lines)
+----------------------------------------------
+STATUS_REPORT summary
+
+_Generated: 2026-04-18 10:53 MDT · repo commit: `684889efd905` · STATUS_REPORT last touched: 2026-04-18_
+
+This digest is produced by `ops/status_report_summarizer.py` from
+`STATUS_REPORT.md`. See `ops/AGENT_VERIFICATION_PROTOCOL.md` for the
+tagging conventions (`[FOLLOWUP]`, `[NEEDS_MATT]`).
+
+## Headline
+
+- **Open items:** 11 across 3 actionable sections
+- **Follow-ups:** 9
+- **Needs Matt:** 1
+- **Completed (in Done section):** 24
+
+## What changed since last summary
+
+_No prior snapshot or no detectable changes._
+
+(The "What changed" block is empty because this is the first run. The
+next run — after any STATUS_REPORT edit — will populate it from the diff
+against data/status_report_summarizer/last_snapshot.json.)
+
+STATUS_REPORT tagging conventions
+---------------------------------
+As part of this pass, STATUS_REPORT.md grew a short "Tagging conventions"
+block near the top documenting the two new bullet prefixes:
+
+  `- [FOLLOWUP]`   -> grouped under "Follow-ups" in the digest.
+  `- [NEEDS_MATT]` -> grouped under "Needs Matt" in the digest.
+
+Legacy prose markers (`[Matt]`, `Fund ... wallet`, `Requires approval`,
+etc.) continue to be picked up by the summarizer's regex fallback, so
+older entries still work without re-tagging.
+
+One real entry — "Fund Polymarket wallet" — was re-tagged as
+`[NEEDS_MATT]` in place to demonstrate the new convention end to end.
+
+How to run (operator)
+---------------------
+```
+python3 ops/status_report_summarizer.py --write
+```
+
+Notes
+-----
+- On-disk snapshot is at data/status_report_summarizer/last_snapshot.json
+  and is gitignored under the existing `data/**/*.json` rule.
+- Script is stdlib-only, no new dependencies, no external network.
+- A thin shell wrapper lives at
+  ops/task_runner/scripts/status-report-summary.sh so the Symphony Task
+  Runner can invoke the summarizer via a `run_script` task (payload:
+  `{"script": "status-report-summary", "args": []}`).
+
+Result
+------
+First-run summary exists, is well-formed Markdown, and correctly
+surfaces the one outstanding Needs-Matt blocker plus all open
+follow-ups. Ready for commit.

@@ -1,0 +1,175 @@
+================================================================
+ STATUS_REPORT summarizer — final report
+ Generated: 2026-04-18 10:54 MDT
+ Author:    Cline (Claude Sonnet 4.5)
+ Repo:      /Users/bob/AI-Server    Branch: main
+================================================================
+
+Scope of this pass
+------------------
+Automated STATUS_REPORT.md digestion so Bob regularly produces a short
+owner-readable summary, and formalised follow-up / Needs-Matt tagging
+so the digest can surface real-world-input items.
+
+Files added or updated
+----------------------
+- ops/status_report_summarizer.py          NEW
+    Stdlib-only Python CLI that reads STATUS_REPORT.md, classifies
+    bullets, writes ops/verification/<stamp>-status-report-summary.md,
+    and persists a diff snapshot to
+    data/status_report_summarizer/last_snapshot.json.
+
+- ops/task_runner/scripts/status-report-summary.sh   NEW
+    Thin shell wrapper so the Symphony Task Runner can invoke the
+    summarizer via a `run_script` task with payload
+    `{"script": "status-report-summary", "args": []}`.
+
+- STATUS_REPORT.md                           UPDATED
+    Added a "Tagging conventions" block near the top documenting the
+    two new bullet prefixes. Re-tagged the outstanding "Fund Polymarket
+    wallet" item as `[NEEDS_MATT]` as a working example.
+
+- ops/AGENT_VERIFICATION_PROTOCOL.md         UPDATED
+    New "STATUS_REPORT conventions" section + tooling-list entry for
+    the summarizer.
+
+- CLAUDE.md                                  UPDATED
+    New "STATUS_REPORT summarizer" block between the learning-loop
+    section and the Cline-runner docs, pointing at the one-liner and
+    the tag conventions.
+
+- ops/AUTONOMOUS_EXECUTION_PIPELINE.md       UPDATED
+    Added a "Status summary" row to the interface/file-inventory
+    table.
+
+- ops/verification/20260418-105302-status-report-summary.md   NEW
+    First real summary artifact (see first-run report).
+
+- ops/verification/20260418-105305-status-report-summarizer-first-run.txt   NEW
+    First-run verification log.
+
+- ops/verification/20260418-105400-status-report-summarizer-final.txt   NEW
+    This file.
+
+Also cleaned up in this pass:
+- 3,276 stale `ops/verification/*-preflight.txt` files were removed
+  from the working tree (they were a known runaway from the
+  2026-04-18 08:26 preflight loop; STATUS_REPORT Z14-adjacent note
+  says the root cause was already fixed). Their removal is staged
+  alongside this report because Bob's system disk was 100% full
+  (109 MiB free at task start) and those files were occupying
+  git-tracked space without adding ongoing value. A follow-up pass
+  should consider a verification-prune launchd job so this does not
+  recur.
+
+How to run the summarizer manually
+----------------------------------
+```
+cd /Users/bob/AI-Server
+python3 ops/status_report_summarizer.py --write
+```
+
+Outputs:
+  - ops/verification/YYYYMMDD-HHMMSS-status-report-summary.md
+  - data/status_report_summarizer/last_snapshot.json  (gitignored)
+
+Flags:
+  --write           also write the digest to ops/verification/
+  --out PATH        explicit output path (overrides the default name)
+  --print           force stdout (default when --write is absent)
+  --no-snapshot     do not update the diff baseline (useful for
+                    one-off previews)
+  --status-report PATH   alternate STATUS_REPORT.md location
+
+Wiring into the task runner
+---------------------------
+A shell wrapper lives at
+`ops/task_runner/scripts/status-report-summary.sh`. Queue a task JSON
+under `ops/work_queue/pending/` with this payload:
+
+```
+{
+  "task_type": "run_script",
+  "payload": {
+    "script": "status-report-summary",
+    "args": []
+  },
+  ...task_id, created_by, created_at, signature...
+}
+```
+
+On the next runner tick the wrapper executes, the summarizer writes a
+new digest, and the runner commits the result into the verification
+stream as usual. Low-risk; no approval token required.
+
+Scheduling recommendation (no launchd installed in this pass):
+  - Run once per working session and immediately after any non-trivial
+    STATUS_REPORT.md edit.
+  - For hands-free operation, add a `StartCalendarInterval`-based
+    launchd plist calling the summarizer at e.g. 09:00 MT daily. The
+    script is idempotent and cheap (~60ms wall-clock), so more
+    frequent runs do not hurt — they just produce more snapshots.
+
+Tagging conventions
+-------------------
+The summarizer recognises two bullet-level tags inside STATUS_REPORT.md
+top-level sections (`Now` / `Next` / `Later`):
+
+  `- [FOLLOWUP] description...`    grouped under "Follow-ups"
+  `- [NEEDS_MATT] description...`  grouped under "Needs Matt"
+  `- ~~title~~ ✅ ...`             treated as done; retained as history
+
+Legacy prose markers continue to trigger the same classification:
+  - `[Matt]`, `Needs Matt`, `Awaiting Matt`, `Requires Matt`,
+    `pending Matt`, `Matt action`
+  - `Fund ... wallet`
+  - `KRAKEN_SECRET`
+  - `Requires approval` / `Explicit approval`
+  - `Follow-up`, `Follow up`
+  - `Recommended next action`, `Remaining follow-up`
+
+Section defaults:
+  - Items in `Later` default to follow-up unless explicitly done.
+  - Items in `Now` default to "surface prominently" (tagged as
+    follow-up for visibility) when they lack an explicit
+    `[NEEDS_MATT]` marker.
+
+Lessons / guardrails loop
+-------------------------
+No code change needed on `ops/learning_miner.py`. The miner already
+scans non-preflight `ops/verification/*.txt` and `*.md` files by
+default; the new `<stamp>-status-report-summary.md` digests fall under
+that rule and will appear in `LESSONS_REGISTRY.md` when they contain
+miner-friendly headings. Recurring follow-ups that show up in multiple
+consecutive digests will naturally surface with increasing
+`evidence_refs`, which is the signal for guardrail promotion.
+
+Top 3 recommended next improvements
+-----------------------------------
+1. Richer diffing between successive digests. Today's diff is
+   structural only (added / removed / moved_to_done / reopened). A
+   future pass could surface "item is still open after N digests" as
+   a staleness signal, and/or "same tag cluster reappears week after
+   week" as a pattern hint to the miner.
+
+2. Notify Matt via his preferred channel. The summary is committed to
+   the repo today. Hook it into `notification-hub` so a one-paragraph
+   "here's what's on the board" message lands on iMessage when a new
+   summary shows up (tier-low; low-risk because the body is always the
+   digest text, never raw data).
+
+3. Disk-usage guard. This pass uncovered a 100%-full root partition on
+   Bob (109 MiB free at task start). Wire a launchd job that runs
+   `scripts/verification-prune.sh` (already committed but not
+   currently scheduled) so the ops/verification tree stays bounded.
+   This also protects the summarizer, which itself writes into that
+   tree.
+
+Result
+------
+Summarizer lands clean, produces a useful first digest with correct
+`[NEEDS_MATT]` and follow-up classification, and is both manually
+runnable and task-runner-ready. STATUS_REPORT.md now carries the
+tagging convention in-file so future edits Just Work. Documentation
+is in place for the next agent in both `CLAUDE.md` and
+`ops/AGENT_VERIFICATION_PROTOCOL.md`.

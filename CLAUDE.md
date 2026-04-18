@@ -390,7 +390,41 @@ scripts via the `run_script` handler when you queue the task JSON.
 
 ---
 
+## STATUS_REPORT summarizer
+
+`ops/status_report_summarizer.py` reads `STATUS_REPORT.md` and writes a
+short owner-readable digest to `ops/verification/<stamp>-status-report-summary.md`.
+It recognizes two bullet-level tags added at the top of STATUS_REPORT:
+
+- `- [FOLLOWUP]` — an open follow-up task, surfaced in the "Follow-ups"
+  section of the digest.
+- `- [NEEDS_MATT]` — requires real-world decision / input (pricing,
+  credentials, funding, approvals); surfaced in the "Needs Matt" section.
+- `- ~~title~~ ✅` — strikethrough + green check keeps the item in place
+  as history.
+
+Legacy prose like `[Matt]`, `Fund … wallet`, `KRAKEN_SECRET`, `Requires
+approval` is still picked up by the regex fallback, so older entries
+continue to work.
+
+One-liner (suggested cadence: once per working session and after any
+non-trivial STATUS_REPORT edit):
+
+```zsh
+python3 ops/status_report_summarizer.py --write
+```
+
+First run establishes a snapshot at
+`data/status_report_summarizer/last_snapshot.json`; subsequent runs
+diff against it in the "What changed since last summary" block.
+
+Full convention table + recommended workflow: `ops/AGENT_VERIFICATION_PROTOCOL.md`
+→ "STATUS_REPORT conventions".
+
+---
+
 ## Running Cline Prompts via the Task Runner
+
 
 The Symphony Task Runner can launch a Cline prompt end-to-end without any
 manual copy-paste:

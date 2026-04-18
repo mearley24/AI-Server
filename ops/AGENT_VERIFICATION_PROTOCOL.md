@@ -258,8 +258,42 @@ Repo-based tooling that implements this policy:
 - `ops/tests/test_task_runner_gates.py` — smoke test for the gate policy
 - `ops/learning_miner.py` — mines recent verification files and upserts rows in `ops/LESSONS_REGISTRY.md`
 - `ops/learning_digest.py` — generates the owner-facing "teach Matt" digest under `ops/verification/`
+- `ops/status_report_summarizer.py` — parses `STATUS_REPORT.md` and writes an owner-readable digest (`<stamp>-status-report-summary.md`) under `ops/verification/`; recognizes `[FOLLOWUP]` / `[NEEDS_MATT]` bullet tags
+
+### STATUS_REPORT conventions
+
+`STATUS_REPORT.md` at the repo root tracks the full system picture. The
+summarizer (`ops/status_report_summarizer.py`) parses it and produces a
+short digest for Matt. To help the summarizer (and any future agent) do
+good work, use these bullet-level conventions when adding new items to
+the `Now` / `Next` / `Later` sections:
+
+| Prefix | Meaning |
+|---|---|
+| `- [FOLLOWUP]` | An open follow-up task that is not blocked on anyone; grouped under "Follow-ups" in the digest. |
+| `- [NEEDS_MATT]` | Requires a real-world decision or input from Matt (pricing, credentials, funding, testimonials, approvals); grouped under "Needs Matt" in the digest. |
+| `- ~~title~~ ✅` | Done — strikethrough the title and add the green check plus a dated "Resolved …" note. The summarizer treats this as closed and keeps it in the original section as history. |
+
+Legacy prose markers — `[Matt]`, `Fund … wallet`, `KRAKEN_SECRET`,
+`Requires approval`, `Awaiting Matt`, etc. — are still picked up by the
+summarizer's regex fallback, but new entries should prefer the explicit
+bracket tags above for clarity.
+
+**Recommended cadence:** run the summarizer once per working session and
+whenever STATUS_REPORT.md receives a non-trivial edit. A launchd
+schedule is not wired today; the recommended one-liner is:
+
+```zsh
+python3 ops/status_report_summarizer.py --write
+```
+
+The summarizer writes a snapshot to
+`data/status_report_summarizer/last_snapshot.json` so the next run's
+"What changed since last summary" block has a baseline. Pass
+`--no-snapshot` for dry runs that should not update the baseline.
 
 ### Learning loop (feeds the registry)
+
 
 Verification reports are **input** to a lightweight self-learning loop. See
 `ops/AUTONOMOUS_EXECUTION_PIPELINE.md` → "Learning and continuous
