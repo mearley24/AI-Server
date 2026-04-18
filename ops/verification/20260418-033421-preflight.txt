@@ -1,0 +1,63 @@
+=== task-runner preflight ===
+started_at: 2026-04-18T03:34:21-06:00
+finished_at: 2026-04-18T03:34:21-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+unsafe conflicts: 0
+
+commit: none (nothing to commit or push deferred)
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/clawwork/data/clawwork_state.json
+ M data/clawwork/data/sector_performance.json
+ M integrations/autoresearch
+?? ops/verification/20260418-032712-preflight.txt
+?? ops/verification/20260418-032723-preflight.txt
+?? ops/verification/20260418-032734-preflight.txt
+?? ops/verification/20260418-032745-preflight.txt
+?? ops/verification/20260418-032755-preflight.txt
+?? ops/verification/20260418-032856-preflight.txt
+?? ops/verification/20260418-032907-preflight.txt
+?? ops/verification/20260418-032917-preflight.txt
+?? ops/verification/20260418-032928-preflight.txt
+?? ops/verification/20260418-032939-preflight.txt
+?? ops/verification/20260418-032950-preflight.txt
+?? ops/verification/20260418-033000-preflight.txt
+?? ops/verification/20260418-033011-preflight.txt
+?? ops/verification/20260418-033022-preflight.txt
+?? ops/verification/20260418-033033-preflight.txt
+?? ops/verification/20260418-033043-preflight.txt
+?? ops/verification/20260418-033144-preflight.txt
+?? ops/verification/20260418-033155-preflight.txt
+?? ops/verification/20260418-033206-preflight.txt
+?? ops/verification/20260418-033216-preflight.txt
+?? ops/verification/20260418-033227-preflight.txt
+?? ops/verification/20260418-033238-preflight.txt
+?? ops/verification/20260418-033249-preflight.txt
+?? ops/verification/20260418-033259-preflight.txt
+?? ops/verification/20260418-033400-preflight.txt
+?? ops/verification/20260418-033411-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-18T03:34:21-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-18T03:34:21-06:00",
+  "unsafe_conflicts": []
+}
