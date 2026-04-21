@@ -1,15 +1,22 @@
 {
   "users": {
     "local-user": {
-      "totalSeconds": 13042.180306,
+      "totalSeconds": 250222.0188379997,
       "projectSeconds": {},
       "current": {
-        "startedAt": "2026-04-18T15:28:32.254284Z",
-        "lastSeenAt": "2026-04-18T19:05:54.434590Z",
+        "startedAt": "2026-04-18T20:40:54.416667Z",
+        "lastSeenAt": "2026-04-21T14:33:54.255199Z",
         "project": ""
       },
-      "sessions": [],
-      "lastSeenAt": "2026-04-18T19:05:54.434590Z"
+      "sessions": [
+        {
+          "startedAt": "2026-04-18T15:28:32.254284Z",
+          "endedAt": "2026-04-18T19:05:54.434590Z",
+          "durationSeconds": 13042.18,
+          "project": ""
+        }
+      ],
+      "lastSeenAt": "2026-04-21T14:33:54.255199Z"
     }
   }
 }
