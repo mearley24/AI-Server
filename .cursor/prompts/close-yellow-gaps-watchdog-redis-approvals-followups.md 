@@ -1,0 +1,210 @@
+You are working on AI-Server on Bob.
+
+Goal
+Apply five low-risk fixes highlighted by the 2026-04-21 full system sweep so autonomy/messaging/trading can move from 🟡 toward 🟢:
+
+1) Stop the watchdog install hot loop caused by .env parsing.
+2) Fix Redis health checks in scripts/verify-deploy.sh.
+3) Repair OpenClaw’s Redis helper to eliminate 10s warn spam.
+4) Drain and govern the pending_approvals backlog (476 rows).
+5) Wire follow_up_log so follow-ups are actually logged.
+
+Assumptions
+- You are starting from commit 4a60921 (post-bluebubbles and full system sweep).
+- The sweep artifact is at ops/verification/20260421-143522-full-system-sweep-and-audit.txt.
+- STATUS_REPORT.md has the “Full system sweep (2026-04-21 14:35 MDT, Cline)” section summarizing these findings.
+
+Rules
+- No heredocs
+- No inline interpreters
+- No docker logs -f, docker compose logs -f, tail -f, watch
+- No interactive editors
+- Keep scope tightly limited to the 5 fixes below
+- Do not touch secrets, API keys, or funding amounts
+- Prefer small, explicit changes over refactors
+- For each fix, update STATUS_REPORT.md minimally to document what changed
+
+Steps
+
+0. Sync and confirm baseline
+   - cd ~/AI-Server
+   - bash scripts/pull.sh
+   - git status
+   - Confirm HEAD matches or is ahead of 4a60921.
+   - Open ops/verification/20260421-143522-full-system-sweep-and-audit.txt and the most recent STATUS_REPORT.md to re-read the exact descriptions of:
+     - the watchdog install loop
+     - redis-cli PING behavior
+     - OpenClaw _get_redis warnings
+     - pending_approvals count (~476)
+     - follow_up_log = 0 rows
+
+1) Stop the watchdog install hot loop (.env + install_bob_watchdog.sh)
+
+1.1 Fix ACH_BANK_NAME line in .env
+   - Locate the ACH_BANK_NAME=First Bank of Colorado line in .env (around line 348).
+   - Adjust it so bash parses it as a single value, e.g.:
+     - ACH_BANK_NAME="First Bank of Colorado"
+   - Ensure no other env lines use unquoted values with spaces that would break shell parsing.
+
+1.2 Check and re-run install_bob_watchdog.sh
+   - Inspect scripts/install_bob_watchdog.sh to confirm:
+     - how it sources .env,
+     - how it reports errors,
+     - what it considers “success” vs “failure”.
+   - Run:
+     - bash scripts/install_bob_watchdog.sh
+   - Confirm it completes without the previous “Bank” command error.
+
+1.3 Ensure the pending watchdog work item clears
+   - Inspect ops/work_queue/pending/20260417-170500-install-watchdog.json:
+     - Identify which queue/runner should pick it up.
+   - Trigger the appropriate runner if necessary (bounded, no -f):
+     - e.g., python or a small CLI already used to process ops/work_queue/pending.
+   - Confirm that:
+     - the file is either moved out of pending or marked as completed/dead in the intended way,
+     - the flood of *-watchdog-install.txt artifacts stops.
+
+2) Fix Redis health checks in scripts/verify-deploy.sh
+
+2.1 Inspect current verify-deploy Redis check
+   - Open scripts/verify-deploy.sh and locate the code that runs redis-cli PING.
+   - Confirm how Redis is configured in AI-Server:
+     - host/port
+     - auth (password or ACL)
+     - whether there is already a health endpoint used elsewhere.
+
+2.2 Implement a correct Redis health check
+   - Choose one of:
+     - Use redis-cli with the correct auth options and host/port from config/env, or
+     - Call an existing HTTP health endpoint for the Redis service if one exists, and treat non-200 as failure.
+   - Replace the unauthenticated “redis-cli PING” with the chosen method.
+   - Ensure:
+     - failures are clearly logged,
+     - success cases do not produce false negatives.
+
+2.3 Validate verify-deploy
+   - Run:
+     - bash scripts/verify-deploy.sh
+   - Confirm Redis is correctly reported as healthy when it is actually healthy.
+
+3) Repair OpenClaw Redis helper (_get_redis)
+
+3.1 Locate the failing code
+   - Search for _get_redis and related warnings in the OpenClaw-related code:
+     - e.g., grep -R "_get_redis" .
+   - Find the place where the 10-second warn spam originates (the sweep described “_get_redis attribute missing” warnings).
+
+3.2 Implement or correct _get_redis
+   - If a canonical Redis accessor exists (e.g., get_redis_client or similar), wrap it in a method/property called _get_redis on the appropriate class/module so callers can use it consistently.
+   - If no such accessor exists, implement a minimal internal helper that:
+     - reads Redis configuration (host/port/auth) from the same source the rest of AI-Server uses,
+     - returns a ready-to-use Redis client object.
+   - Ensure:
+     - the helper is only instantiated once per process or per service (no client leak in hot loops),
+     - error handling is clear and does not spam logs every 10 seconds.
+
+3.3 Verify reduced warn spam
+   - With the fix in place, restart the relevant service (bounded, no -f).
+   - Run:
+     - docker compose logs --tail=80 <openclaw-related-service>
+   - Confirm that the previous “_get_redis missing” warnings no longer appear, or appear only when there is a true configuration error.
+
+4) Drain and govern pending_approvals (~476 rows)
+
+4.1 Inspect current approvals state
+   - Identify the DB and table that holds pending_approvals (likely decisionjournal.db or similar).
+   - Using a bounded DB query (sqlite or whichever store is used), verify:
+     - the current count (~476),
+     - the kinds of approvals present (e.g., email, trades, automation actions),
+     - timestamps (age of entries).
+
+4.2 Implement a batched approvals drain plan
+   - Based on existing patterns (e.g., earlier Prompt T work), define:
+     - groupings by kind or priority,
+     - rules for auto-expiring truly stale entries (e.g., older than N days),
+     - a minimal format for sending batched approvals to the owner (likely via BlueBubbles/iMessage or email).
+   - Implement a small script or function that:
+     - iterates over pending_approvals in batches,
+     - prepares summary prompts/messages for human review (do not auto-approve),
+     - marks entries as:
+       - approved / rejected when decisions are made, or
+       - expired with a recorded reason when too old.
+
+4.3 Execute a limited drain
+   - Run the new drain process in a bounded way:
+     - handle a subset of the 476 entries (e.g., the oldest or most critical kinds).
+   - Confirm that:
+     - pending_approvals count decreases meaningfully,
+     - records are marked with their new state (approved, rejected, expired),
+     - no data corruption occurs.
+
+5) Wire follow_up_log (still 0 rows)
+
+5.1 Locate follow-up sending code paths
+   - Search for the logic that:
+     - decides to send follow-ups (email, alerts, etc.),
+     - actually sends them.
+   - Identify where follow_up_log is supposed to be written:
+     - DB/table or file structure,
+     - any existing helper method or ORM model.
+
+5.2 Implement logging for follow-ups
+   - Add a simple, reliable log write for each follow-up send:
+     - a row in follow_up_log with at least:
+       - timestamp
+       - channel/type
+       - target identifier (e.g., email, account, conversation ID)
+       - a short description or hash of the content
+       - result (sent, error)
+   - Ensure:
+     - this logging is part of the normal follow-up flow, not gated behind debug flags,
+     - failures to log do not prevent the follow-up from being sent, but are visible for debugging.
+
+5.3 Verify follow_up_log is active
+   - Trigger a few real or test follow-ups through the normal system (bounded).
+   - Query follow_up_log to confirm new rows appear and fields are populated correctly.
+
+6) Update STATUS_REPORT.md and write a verification artifact
+
+6.1 STATUS_REPORT.md updates
+   - In STATUS_REPORT.md, in or near the “Full system sweep (2026-04-21 14:35 MDT, Cline)” section, add a brief update describing:
+     - .env / watchdog hot loop fix:
+       - ACH_BANK_NAME quoting,
+       - successful install_bob_watchdog.sh,
+       - pending install-watchdog work item cleared.
+     - scripts/verify-deploy.sh Redis check fix:
+       - new health check method,
+       - verified behavior.
+     - OpenClaw _get_redis repair:
+       - helper implemented or corrected,
+       - warn spam resolved.
+     - pending_approvals state:
+       - new governed drain process,
+       - current count after the first pass.
+     - follow_up_log wiring:
+       - logging now active,
+       - basic validation of new entries.
+
+6.2 New verification file
+   - Create:
+     - ops/verification/YYYYMMDD-HHMMSS-close-yellow-gaps.txt
+   - Include:
+     - AI-Server Git commit hash on Bob,
+     - short summary of each of the 5 fixes,
+     - evidence snippets (counts, sample log rows, or DB queries) for each,
+     - any remaining TODOs that are intentionally deferred.
+
+7. Commit and push
+   - If you changed any files, run:
+     - git status
+     - git add .
+     - git commit -m "Close key yellow gaps: watchdog loop, Redis verify, OpenClaw Redis helper, approvals backlog, follow_up_log"
+     - git push
+
+Output
+- Watchdog install hot loop stopped; pending install-watchdog work item processed or explicitly retired.
+- scripts/verify-deploy.sh correctly reports Redis health.
+- OpenClaw no longer spams missing _get_redis warnings; Redis helper is explicit.
+- pending_approvals backlog reduced and governed by a repeatable drain process.
+- follow_up_log now records real follow-up actions.
+- STATUS_REPORT.md and ops/verification/*-close-yellow-gaps.txt document the changes and remaining TODOs.

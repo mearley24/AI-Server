@@ -1,0 +1,22 @@
+=== watchdog install verify ===
+stamp: 20260421-204654
+
+--- run install-watchdog.sh ---
+sourcing secrets from /Users/bob/AI-Server/.env
+/Users/bob/AI-Server/.env: line 348: Bank: command not found
+phone resolved: +197***013
+copying plist: /Users/bob/AI-Server/ops/task_runner/com.symphony.task-runner-watchdog.plist -> /Users/bob/Library/LaunchAgents/com.symphony.task-runner-watchdog.plist
+injecting MATT_PHONE_NUMBER via PlistBuddy
+bootout (ignore not-loaded error):
+bootstrap:
+kickstart (first tick now):
+verify state:
+	path = /Users/bob/Library/LaunchAgents/com.symphony.task-runner-watchdog.plist
+	state = xpcproxy
+	stdout path = /Users/bob/AI-Server/data/task_runner/watchdog.out.log
+	stderr path = /Users/bob/AI-Server/data/task_runner/watchdog.err.log
+		MATT_PHONE_NUMBER => +19705193013
+		state = active
+		state = active
+
+verify watchdog heartbeat file gets written within 3 ticks:
