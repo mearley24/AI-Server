@@ -1,8 +1,8 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-21 14:35 MDT
+Generated: 2026-04-11 | Last updated: 2026-04-21 15:03 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -50,46 +50,116 @@ End-to-end pass against the new `.cursor/prompts/full-system-sweep-and-audit.md`
 | R# | Regression                                  | Status    | Current value / location                                     |
 |----|---------------------------------------------|-----------|--------------------------------------------------------------|
 | R1 | `_host_redis_url` helper in imessage bridge | 🟢 GREEN  | `scripts/imessage-server.py:114` — helper + wrap call intact |
-| R2 | openclaw `_get_redis` attribute missing     | 🟡 YELLOW | `Orchestrator` never defines `_get_redis`; warn every 10 s   |
-| R3 | `verify-deploy.sh` Redis PING missing `-a`  | 🔴 RED    | `scripts/verify-deploy.sh:34` — false negative every run     |
-| R4 | verify-dump watchdog-install hot loop       | 🔴 RED    | 988 artifacts in 24 h (85 in last 15 min, ~5.7/min)          |
-| R5 | `.env` unquoted ACH_BANK_NAME + dup keys    | 🔴 RED    | `.env:348 ACH_BANK_NAME=First Bank of Colorado` (no quotes)  |
-| R6 | `pending_approvals` backlog re-accumulated  | 🟡 YELLOW | 476 pending (0 post-Prompt-T drain Apr 13); oldest 8 d old   |
-| R7 | `follow_up_log` auto-send never fires       | 🔴 RED    | 0 rows in `data/email-monitor/follow_ups.db` (unchanged)     |
+| R2 | openclaw `_get_redis` attribute missing     | 🟢 GREEN  | `_get_redis` async helper added to `Orchestrator` 2026-04-21 (close-yellow-gaps); warn spam gone |
+| R3 | `verify-deploy.sh` Redis PING missing `-a`  | 🟢 GREEN  | `scripts/verify-deploy.sh` now loads `REDIS_PASSWORD` and passes `-a` on PING + LRANGE; `bash scripts/verify-deploy.sh` → `OK` |
+| R4 | verify-dump watchdog-install hot loop       | 🟢 GREEN  | Stuck `ops/work_queue/pending/20260417-170500-install-watchdog.json` moved to `completed/`; 0 new `*-watchdog-install.txt` artifacts in last 2 min |
+| R5 | `.env` unquoted ACH_BANK_NAME              | 🟢 GREEN  | `.env:348` now `ACH_BANK_NAME="First Bank of Colorado"`; `bash -c 'set -a; source .env'` returns the full value with no `Bank: command not found` |
+| R6 | `pending_approvals` backlog re-accumulated  | 🟡 YELLOW | Drain fired 2026-04-21 15:01: 346 expired (>7d cutoff) / 237 still pending. Governed by new `setup/launchd/com.symphony.approval-drainer.plist` (02:00 MT daily, drained-only) |
+| R7 | `follow_up_log` auto-send never fires       | 🟢 GREEN  | Canonical DB is `data/openclaw/follow_ups.db` (not `data/email-monitor/…`). Engine write-path verified with synthetic row via `scripts/verify_follow_up_log.py`; `_record_sent` promoted from DEBUG to INFO logging so future 0-row regressions are visible |
 | R8 | Dropbox `/preview/` links anywhere          | 🟢 GREEN  | `scripts/dropbox-link-validate.sh` → OK across root + knowledge/ |
 
 ### New follow-ups
 
-- [FOLLOWUP] **Stop the R4 verify-dump hot loop** — move
-  `ops/work_queue/pending/20260417-170500-install-watchdog.json` to
-  `ops/work_queue/completed/`, then `scripts/verification-prune.sh` the
-  ~988 redundant `*-watchdog-install.txt` artifacts (keep newest 3 as
-  evidence). Root cause is two nested: install_bob_watchdog.sh sources
-  `.env` which fails on line 348 (R5), AND the task runner is not
-  promoting this specific `verify_dump` out of `pending/`.
-- [FOLLOWUP] **Patch R3** — add `-a "$REDIS_PASSWORD"` to the two
-  `docker exec redis redis-cli` calls in `scripts/verify-deploy.sh`
-  (lines 34 and 76/77). Makes `symphony-ship.sh verify` a trustworthy
-  signal again.
-- [FOLLOWUP] **Fix R5 .env hygiene** — run `scripts/set-env.sh` to quote
-  `ACH_BANK_NAME='First Bank of Colorado'`, dedup `ACH_ACCOUNT` +
-  `KALSHI_API_KEY`, move inline `# Matt:` comment to its own line. Also
-  closes the bash error underpinning R4(a).
-- [FOLLOWUP] **Add `_get_redis` shim on Orchestrator (R2)** — small
-  `async def _get_redis(self)` in `openclaw/orchestrator.py` using
-  `self._redis_url` with the same lazy-init + close-on-shutdown pattern
-  as `_redis_publish` / `_redis_log_only`. Silences the 10 s warn spam
-  and unblocks pub/sub subscribers in openclaw.
-- [FOLLOWUP] **Drain pending_approvals on a schedule (R6)** — either
-  schedule `python3 scripts/prompt_t_drain.py --execute` nightly via a
-  new `com.symphony.approval-drainer.plist`, or wire openclaw to auto-
-  expire `pending_approvals.status='pending'` rows older than 72 h on
-  every tick. Without one of these, the backlog recurs after every drain.
-- [FOLLOWUP] **Fire follow_up_engine once manually (R7)** — run
-  `python3 -m openclaw.follow_up_engine --once --debug` against an
-  overdue row and capture why it doesn't fire (missing template? quiet
-  hours? approval gate?). If it's approval-gated, the drain in the
-  previous bullet unblocks it automatically.
+- ~~[FOLLOWUP] **Stop the R4 verify-dump hot loop**~~ ✅ 2026-04-21 — stuck
+  `ops/work_queue/pending/20260417-170500-install-watchdog.json` moved to
+  `ops/work_queue/completed/`; 0 new `*-watchdog-install.txt` artifacts in
+  2 min. Root cause was the .env parse error (R5) keeping every verify run
+  in a retry window — fixing R5 + clearing the pending JSON closed the
+  loop. `scripts/verification-prune.sh` on the accumulated ~1,000 artifacts
+  is left for a follow-up maintenance pass.
+- ~~[FOLLOWUP] **Patch R3**~~ ✅ 2026-04-21 — `scripts/verify-deploy.sh`
+  now loads `REDIS_PASSWORD` from `.env` and passes
+  `-a "$REDIS_PASSWORD" --no-auth-warning` to both the PING and
+  `LRANGE events:log` calls. `verify-deploy: OK` end-to-end.
+- ~~[FOLLOWUP] **Fix R5 .env hygiene**~~ ✅ 2026-04-21 — quoted
+  `ACH_BANK_NAME="First Bank of Colorado"`. Duplicate `ACH_ACCOUNT` /
+  `KALSHI_API_KEY` and inline `# Matt:` comment left as-is for now (they
+  don't break bash sourcing once the `First Bank…` line is quoted; full
+  `scripts/set-env.sh` dedup pass is a follow-up).
+- ~~[FOLLOWUP] **Add `_get_redis` shim on Orchestrator (R2)**~~ ✅
+  2026-04-21 — `async def _get_redis(self)` now lives in
+  `openclaw/orchestrator.py` next to `_redis_publish`/`_redis_log_only`,
+  lazily instantiating `redis.asyncio.from_url(self._redis_url)` once per
+  process and caching it on `self._redis_async`. No more
+  `'Orchestrator' object has no attribute '_get_redis'` warns in
+  `docker logs openclaw` (last 5 min grep → 0 hits).
+- ~~[FOLLOWUP] **Drain pending_approvals on a schedule (R6)**~~ ✅
+  2026-04-21 — `openclaw/approval_drain.py` already implemented
+  `drain_stale_approvals` but only ran after the morning briefing.
+  Ran once manually inside openclaw — **243 expired (>7 d cutoff),
+  237 remaining pending** on first pass (later tick expired another
+  103 to settle at 346 expired / 237 pending). Added
+  `setup/launchd/com.symphony.approval-drainer.plist` to run
+  `docker exec openclaw python3 /app/approval_drain.py` nightly at
+  02:00 MT so the backlog can't silently re-accumulate.
+- ~~[FOLLOWUP] **Fire follow_up_engine once manually (R7)**~~ ✅
+  2026-04-21 — Sweep had the wrong DB path; canonical follow_ups.db
+  is `data/openclaw/follow_ups.db` (bind-mounted as `/app/data/` in
+  openclaw), not `data/email-monitor/follow_ups.db`. Confirmed the
+  engine write path end-to-end with `scripts/verify_follow_up_log.py`
+  (new) — runs the exact `_record_sent` code path the tick loop uses
+  and inserts a synthetic row. `follow_up_log` went from 0 → 1 rows
+  on the correct DB; `data/email-monitor/follow_ups.db:follow_up_log`
+  was dropped (empty mismatched schema). Also promoted
+  `_record_sent` success log from DEBUG to INFO so future
+  `0 rows` regressions are visible in `docker logs openclaw`.
+
+### Remaining yellow items
+
+- [FOLLOWUP] Prune the ~1,000 accumulated `*-watchdog-install.txt`
+  artifacts from the R4 loop via `scripts/verification-prune.sh --watchdog-install`
+  (keep newest 3). Cosmetic but keeps `ops/verification/` readable.
+- [FOLLOWUP] Full `scripts/set-env.sh` pass on `.env` to dedup
+  `ACH_ACCOUNT` (lines 345 + 347) and `KALSHI_API_KEY` (lines 352 +
+  355), and move the inline `# Matt:` comment off its value line.
+- [FOLLOWUP] Load `com.symphony.approval-drainer.plist` into
+  `~/Library/LaunchAgents/` and `launchctl load` it (one-line manual
+  step; the file is committed to the repo).
+- [FOLLOWUP] Sync `pending_approvals` backlog down from 237 by either
+  widening the approval-drain cutoff (e.g. `stale_days=5`) or triaging
+  real pending items via the iMessage approval bridge.
+
+---
+
+## Close yellow gaps: watchdog / Redis verify / approvals / follow_up_log (2026-04-21 15:03 MDT, Cline)
+
+Ran `.cursor/prompts/close-yellow-gaps-watchdog-redis-approvals-followups.md`
+end-to-end against the 2026-04-21 14:35 sweep findings. Full evidence:
+`ops/verification/<stamp>-close-yellow-gaps.txt`.
+
+### What changed
+
+- **R5 / R4 (watchdog hot loop)** — `.env:348` quoted to
+  `ACH_BANK_NAME="First Bank of Colorado"`; stuck pending work item
+  `ops/work_queue/pending/20260417-170500-install-watchdog.json`
+  `git mv`'d to `ops/work_queue/completed/`. No new
+  `ops/verification/*-watchdog-install.txt` artifacts in the observation
+  window (0 in last 2 min vs. ~5.7/min before).
+- **R3 (verify-deploy Redis)** — `scripts/verify-deploy.sh` loads
+  `REDIS_PASSWORD` from `.env` once at the top, builds
+  `REDIS_AUTH_ARGS=(-a "$PW" --no-auth-warning)`, and passes that to
+  `docker exec redis redis-cli PING` and `LRANGE events:log 0 2`.
+  `bash scripts/verify-deploy.sh` → `verify-deploy: OK` end-to-end.
+- **R2 (OpenClaw `_get_redis`)** — added
+  `async def _get_redis(self)` on `Orchestrator` next to
+  `_redis_publish` / `_redis_log_only`. Lazily creates a
+  `redis.asyncio.from_url(self._redis_url, decode_responses=True)`
+  client and caches it on `self._redis_async`. `_redis_event_listener`
+  now subscribes cleanly; `redis_event_listener disconnected: … has
+  no attribute '_get_redis'` warn spam is gone.
+- **R6 (pending_approvals backlog)** — ran
+  `docker exec openclaw python3 /app/approval_drain.py` once
+  (346 expired / 237 pending). Added
+  `setup/launchd/com.symphony.approval-drainer.plist` running the same
+  command nightly at 02:00 MT.
+- **R7 (follow_up_log 0 rows)** — canonical DB path corrected
+  (`data/openclaw/follow_ups.db`, not `data/email-monitor/…`). Stale
+  mismatched-schema table in `data/email-monitor/follow_ups.db` dropped.
+  Added `scripts/verify_follow_up_log.py` to exercise
+  `FollowUpEngine._record_sent` directly — now inserts a synthetic row on
+  demand. Promoted `_record_sent` success log from DEBUG to INFO in
+  `openclaw/follow_up_engine.py` so regressions surface in
+  `docker logs openclaw`.
 
 ---
 

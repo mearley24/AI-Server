@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.symphony.approval-drainer</string>
+
+  <!-- close-yellow-gaps 2026-04-21: nightly approval drain governs
+       pending_approvals backlog (see .cursor/prompts/close-yellow-gaps-
+       watchdog-redis-approvals-followups.md). The orchestrator also
+       fires approval_drain after the morning briefing, but that window
+       can be missed when the briefing fails. This plist guarantees the
+       >7d expiry pass runs once a day regardless. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>docker exec openclaw python3 /app/approval_drain.py &gt;&gt; /Users/bob/AI-Server/logs/approval-drain.log 2&gt;&amp;1</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/bob/AI-Server</string>
+
+  <!-- 02:00 MT every day -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>2</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/bob/AI-Server/logs/approval-drain.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bob/AI-Server/logs/approval-drain.err.log</string>
+
+  <key>RunAtLoad</key><false/>
+</dict>
+</plist>

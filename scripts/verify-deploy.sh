@@ -8,6 +8,17 @@ ROOT="${SYMPHONY_ROOT:-$HOME/AI-Server}"
 cd "$ROOT"
 FAIL=0
 
+# Load REDIS_PASSWORD from .env without polluting the shell or echoing values.
+# (close-yellow-gaps 2026-04-21: previous PING had no -a flag -> NOAUTH -> false FAIL.)
+REDIS_PASSWORD=""
+if [ -z "${REDIS_PASSWORD:-}" ] && [ -f "$ROOT/.env" ]; then
+  REDIS_PASSWORD="$(grep -E '^REDIS_PASSWORD=' "$ROOT/.env" | head -1 | cut -d= -f2- | tr -d '"'"'"' ')"
+fi
+REDIS_AUTH_ARGS=()
+if [ -n "$REDIS_PASSWORD" ]; then
+  REDIS_AUTH_ARGS=(-a "$REDIS_PASSWORD" --no-auth-warning)
+fi
+
 echo "=== Manifest: expected files ==="
 # Manifest covers the canonical orchestrator + brain + compose surface.
 # mission_control/main.py removed — dissolved into cortex (Prompt S).
@@ -31,7 +42,7 @@ done
 
 echo ""
 echo "=== Redis PING (container) ==="
-if docker exec redis redis-cli PING 2>/dev/null | grep -q PONG; then
+if docker exec redis redis-cli "${REDIS_AUTH_ARGS[@]}" PING 2>/dev/null | grep -q PONG; then
   echo "OK redis PONG"
 else
   echo "FAIL redis not responding"
@@ -73,8 +84,8 @@ done
 
 echo ""
 echo "=== Redis events:log (sample) ==="
-if docker exec redis redis-cli LRANGE events:log 0 0 >/dev/null 2>&1; then
-  docker exec redis redis-cli LRANGE events:log 0 2 || true
+if docker exec redis redis-cli "${REDIS_AUTH_ARGS[@]}" LRANGE events:log 0 0 >/dev/null 2>&1; then
+  docker exec redis redis-cli "${REDIS_AUTH_ARGS[@]}" LRANGE events:log 0 2 || true
 else
   echo "(redis not reachable)"
 fi

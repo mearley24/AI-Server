@@ -490,7 +490,12 @@ class FollowUpEngine:
     def _record_sent(
         self, job_id: int, interval_days: int, email_id: str, template: str
     ) -> None:
-        """Insert or replace a row in follow_up_log."""
+        """Insert or replace a row in follow_up_log.
+
+        close-yellow-gaps 2026-04-21: promoted success log to INFO so the
+        follow-up audit trail is visible in ``docker logs openclaw`` and
+        so that ``follow_up_log = 0 rows`` regressions are easy to spot.
+        """
         try:
             conn = _get_conn(self._follow_ups_db)
             _ensure_follow_up_log(conn)
@@ -505,11 +510,25 @@ class FollowUpEngine:
             )
             conn.commit()
             conn.close()
-            logger.debug(
-                "follow_up_logged job_id=%d interval=%d", job_id, interval_days
+            logger.info(
+                "follow_up_logged job_id=%s interval_days=%d template=%s "
+                "email_id=%s db=%s",
+                job_id,
+                interval_days,
+                template,
+                (email_id or "")[:40],
+                self._follow_ups_db,
             )
         except Exception as exc:
-            logger.warning("_record_sent error: %s", exc)
+            # Never let a logging failure swallow the send, but make it loud
+            # enough that the 0-row regression doesn't silently re-appear.
+            logger.warning(
+                "_record_sent error job_id=%s interval_days=%d db=%s: %s",
+                job_id,
+                interval_days,
+                self._follow_ups_db,
+                exc,
+            )
 
     @staticmethod
     def _build_subject(interval_days: int, project_name: str) -> str:

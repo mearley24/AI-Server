@@ -217,6 +217,34 @@ class Orchestrator:
         except Exception as e:
             logger.debug("redis_log_only: %s", e)
 
+    async def _get_redis(self):
+        """Return a lazily-initialized ``redis.asyncio.Redis`` client.
+
+        Used by callers that need a persistent async connection (e.g.
+        ``_redis_event_listener`` for pub/sub, or ``DToolsChangeWatcher``
+        for key/list operations). Publish-only paths should keep using
+        ``_redis_publish`` / ``_redis_log_only`` so they benefit from
+        ``event_bus`` instrumentation.
+
+        The client is cached on ``self._redis_async`` and recreated on
+        demand if it has been closed. Raises ``RuntimeError`` if
+        ``self._redis_url`` is not configured so callers can fail loudly
+        instead of silently returning ``None``.
+        (close-yellow-gaps 2026-04-21: previously missing -> 10s warn
+        spam from ``_redis_event_listener``.)
+        """
+        if not self._redis_url:
+            raise RuntimeError("_get_redis: REDIS_URL not configured")
+        from redis import asyncio as redis_async
+        client = getattr(self, "_redis_async", None)
+        if client is None:
+            client = redis_async.from_url(
+                self._redis_url,
+                decode_responses=True,
+            )
+            self._redis_async = client
+        return client
+
 
     async def _validate_dropbox_in_message(self, text: str) -> tuple[bool, str]:
         """Block client-facing content with bad Dropbox links (/preview/) or unreachable URLs."""
