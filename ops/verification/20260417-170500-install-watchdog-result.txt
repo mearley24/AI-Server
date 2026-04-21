@@ -7530,3 +7530,178 @@ argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-inst
 
 === verify_dump watchdog-install-verify @ 2026-04-21T14:50:47-06:00 ===
 argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:51:00-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:51:00-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:51:09-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:51:09-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:51:19-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:51:19-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:51:30-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:51:30-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:51:41-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:51:41-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:51:51-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:51:51-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:52:02-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:52:02-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:52:13-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:52:13-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:52:23-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:52:23-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:52:34-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:52:34-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:52:45-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:52:45-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:52:55-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:52:55-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:53:06-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:53:06-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:53:16-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:53:16-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:53:27-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:53:27-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:53:38-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:53:38-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:53:48-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:53:48-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:53:59-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:53:59-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:54:10-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:54:10-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:54:20-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:54:20-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:54:31-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:54:31-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:54:41-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:54:41-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:54:52-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:54:52-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:55:03-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:55:03-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
+### task 20260417-170500-install-watchdog type=verify_dump signer=perplexity-computer
+### started 2026-04-21T14:55:13-06:00
+### gate: allowed=True high_risk=False dry_run=False source=- token=-
+### gate_reason: low/medium risk — standing approval
+
+=== verify_dump watchdog-install-verify @ 2026-04-21T14:55:13-06:00 ===
+argv: ['bash', '/Users/bob/AI-Server/ops/task_runner/verifications/watchdog-install-verify.sh']
