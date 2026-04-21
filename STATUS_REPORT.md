@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-18 09:04 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,61 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## X-intake + autonomy lane health + Bob auto-reset (2026-04-21 11:49 MDT, Cline)
+
+**Why:** Earlier today Bob's Docker daemon went into a zombie mode — the
+client-side `docker` CLI connected to the socket but every call returned
+`EOF` on stderr with exit 1. Matt had to manually `open -a Docker` and
+restart Docker Desktop. This section documents the fixes that build that
+recovery into the stack so Matt never has to reset Bob by hand for this
+failure class again.
+
+### Changes shipped
+
+1. `scripts/bob-watchdog.sh` rewritten:
+   - New `docker_healthy()` detects the EOF / zombie-backend mode
+     (exit 0 but empty `ServerVersion`, or EOF on stderr of `docker info`
+     / `docker ps`). The old `docker info >/dev/null` check silently
+     passed in that state.
+   - `check_docker()` now `pkill -9` the orphan `docker` / `com.docker.backend`
+     / `Docker Desktop Helper` processes before `open -a Docker`, waits up
+     to 120 s for the daemon, and writes a breadcrumb to
+     `ops/alerts/bob_watchdog.alerts` if recovery fails.
+   - Log / state dir now fall back to `data/task_runner/` when
+     `/usr/local/var/log/` is not writable (user LaunchAgent install).
+   - New `check_x_intake()` probes `http://127.0.0.1:8101/health` every
+     tick; two strike failures trigger `docker restart x-intake`, then
+     re-probe after 20 s.
+   - Writes `data/task_runner/bob_watchdog_heartbeat.txt` every tick so
+     "is the watchdog alive" is a stat call, not a log grep.
+
+2. `ops/launchd/com.symphony.bob-watchdog.plist` + `setup/install_bob_watchdog.sh` —
+   idempotent user-LaunchAgent install (no sudo). Running every 60 s.
+   Install: `bash setup/install_bob_watchdog.sh`.
+
+3. `ops/tools/x_intake_recent.py` — read-only CLI that prints the last N
+   queue items with author, status, relevance, URL. Sources the data
+   through the existing `/queue/stats` + `/queue` HTTP endpoints, so it is
+   safe across rebuilds and never mutates state.
+
+4. `setup/install_realized_change_watcher.sh` run — the
+   `com.symphony.realized-change-watcher` LaunchAgent is now loaded in
+   `~/Library/LaunchAgents/` (previously it was a repo plist only).
+
+### How to verify
+
+```
+curl -s http://127.0.0.1:8101/health | jq .           # x-intake healthy
+python3 ops/tools/x_intake_recent.py --limit 10       # lane snapshot
+launchctl list | grep bob-watchdog                    # watchdog loaded
+cat data/task_runner/bob_watchdog_heartbeat.txt       # last tick time
+bash setup/install_realized_change_watcher.sh --status
+```
+
+Full evidence: `ops/verification/20260421-114916-x-intake-and-autonomy-lane-health.txt`.
 
 ---
 

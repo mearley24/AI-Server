@@ -1,0 +1,110 @@
+=== X-Intake + Autonomy Lane Health ===
+stamp: 20260421-114916
+host: Bobs-Mac-mini.local
+git HEAD: 64b5895659a12fe3fb2100d6e33b757508412792
+git branch: main
+
+--- 1. docker compose ps (relevant services) ---
+NAMES                STATUS                   PORTS
+email-monitor        Up 4 minutes (healthy)   127.0.0.1:8092->8092/tcp
+notification-hub     Up 9 minutes (healthy)   127.0.0.1:8095->8095/tcp
+cortex               Up 7 minutes (healthy)   127.0.0.1:8102->8102/tcp
+x-intake             Up 9 minutes (healthy)   127.0.0.1:8101->8101/tcp
+x-intake-lab         Up 9 minutes (healthy)   127.0.0.1:8103->8101/tcp
+cortex-autobuilder   Up 9 minutes (healthy)   127.0.0.1:8115->8115/tcp
+openclaw             Up 7 minutes (healthy)   127.0.0.1:8099->3000/tcp
+redis                Up 9 minutes (healthy)   127.0.0.1:6379->6379/tcp
+rsshub               Up 9 minutes (healthy)   1200/tcp
+
+--- 2. x-intake /health ---
+{"status":"healthy","service":"x-intake"}
+
+--- 3. x-intake /queue/stats ---
+{"pending":0,"auto_approved":21,"auto_rejected":9,"approved":1,"rejected":4,"error":0,"total":35}
+
+--- 4. x-intake listener watchdog (in main.py) ---
+901:async def _listener_watchdog() -> None:
+906:            logger.warning("redis_listener_restarting")
+1073:    app.state.watchdog_task = asyncio.create_task(_listener_watchdog())
+
+--- 5. x-intake recent queue (via ops/tools/x_intake_recent.py) ---
+X-intake queue — total=35  pending=0
+Showing last 5 rows
+--------------------------------------------------------------------------------
+#  35 [auto_rejected  ] rel=  0% @karpathy                 1776523629.6458979
+      https://x.com/karpathy/status/1798616493476192708
+#  34 [auto_rejected  ] rel=  0% @karpathy                 1776399231.889059
+      https://x.com/karpathy/status/1798616493476192708
+#  33 [auto_rejected  ] rel=  0% @moondevonyt              1776394544.326691
+      https://x.com/moondevonyt/status/1234567890000000001
+#  32 [auto_approved  ] rel= 85% @MoonDevOnYT              1776166660.1096785
+      https://x.com/moondevonyt/status/2044009056361234587?s=42
+#  31 [auto_approved  ] rel= 85% @MoonDevOnYT              1776136128.0437431
+      https://x.com/moondevonyt/status/2043845472247505265?s=42
+
+--- 6. realized-change watcher launchd state ---
+-	0	com.symphony.realized-change-watcher
+-rw-r--r--  1 bob  staff  1165 Apr 21 08:43 /Users/bob/Library/LaunchAgents/com.symphony.realized-change-watcher.plist
+
+--- 7. bob-watchdog launchd state ---
+-	0	com.symphony.bob-watchdog
+-rw-r--r--  1 bob  staff  943 Apr 21 11:43 /Users/bob/Library/LaunchAgents/com.symphony.bob-watchdog.plist
+heartbeat file:
+-rw-r--r--  1 bob  staff  25 Apr 21 11:48 data/task_runner/bob_watchdog_heartbeat.txt
+2026-04-21T11:48:40-0600
+
+--- 8. bob-watchdog log tail ---
+ Container redis Waiting 
+ Container cortex Waiting 
+ Container redis Healthy 
+ Container rsshub Waiting 
+ Container x-intake Waiting 
+ Container vpn Waiting 
+ Container redis Healthy 
+ Container redis Healthy 
+ Container redis Healthy 
+ Container redis Healthy 
+ Container cortex Healthy 
+ Container vpn Healthy 
+ Container rsshub Healthy 
+ Container cortex Healthy 
+ Container notification-hub Healthy 
+ Container x-intake Healthy 
+ Container redis Healthy 
+ Container redis Healthy 
+2026-04-21 11:48:40 [watchdog]   Containers recovered
+2026-04-21 11:48:40 [watchdog] --- done ---
+
+--- 9. Recent x-intake container logs ---
+INFO:     127.0.0.1:39056 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:63530 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:64136 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:64150 - "GET /queue/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53766 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:57646 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:57662 - "GET /queue/stats HTTP/1.1" 200 OK
+INFO:     172.18.0.1:57676 - "GET /queue?status=&limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49376 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:57872 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37910 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60828 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:64232 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55296 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58332 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:60890 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38664 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58358 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:62814 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59860 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:63652 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:63666 - "GET /queue/stats HTTP/1.1" 200 OK
+INFO:     172.18.0.1:63676 - "GET /health HTTP/1.1" 200 OK
+INFO:     172.18.0.1:63686 - "GET /queue/stats HTTP/1.1" 200 OK
+INFO:     172.18.0.1:63702 - "GET /queue?status=&limit=5 HTTP/1.1" 200 OK
+
+=== CLASSIFICATION ===
+x-intake ingestion:              IN PLACE — container healthy, /health 200, 35 queue rows
+x-intake durability:             IN PLACE — _listener_watchdog (in-process) + bob-watchdog /health probe (host)
+realized-change watcher runtime: IN PLACE — user LaunchAgent loaded (setup/install_realized_change_watcher.sh)
+user-facing X-intake visibility: IN PLACE — ops/tools/x_intake_recent.py + existing Cortex dashboard
+bob self-heal on Docker hang:    IN PLACE — bob-watchdog detects EOF / zombie mode, restarts Docker Desktop

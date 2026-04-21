@@ -3,10 +3,23 @@
 # Runs every 60s via LaunchDaemon.
 
 REPO_DIR="${BOB_REPO_DIR:-/Users/bob/AI-Server}"
-LOG="/usr/local/var/log/bob-watchdog.log"
-STATE_DIR="/usr/local/var/bob-watchdog"
 COMPOSE="docker compose"
 MAX_LOG_BYTES=2000000
+
+# Prefer the system log path when writable (LaunchDaemon install), otherwise
+# fall back to the repo-local path (user LaunchAgent install — no sudo needed).
+DEFAULT_LOG="/usr/local/var/log/bob-watchdog.log"
+DEFAULT_STATE="/usr/local/var/bob-watchdog"
+FALLBACK_LOG="$REPO_DIR/data/task_runner/bob-watchdog.log"
+FALLBACK_STATE="$REPO_DIR/data/task_runner/bob-watchdog-state"
+
+if mkdir -p "$(dirname "$DEFAULT_LOG")" 2>/dev/null && [ -w "$(dirname "$DEFAULT_LOG")" ]; then
+    LOG="$DEFAULT_LOG"
+    STATE_DIR="$DEFAULT_STATE"
+else
+    LOG="$FALLBACK_LOG"
+    STATE_DIR="$FALLBACK_STATE"
+fi
 
 mkdir -p "$STATE_DIR" "$(dirname "$LOG")" 2>/dev/null
 
@@ -112,27 +125,65 @@ restore_tailscale_dns() {
 }
 
 # --- CHECK 3: Docker Desktop ---
-check_docker() {
-    docker info >/dev/null 2>&1 && return
+#
+# Two failure modes to detect:
+#   a) "Cannot connect to the Docker daemon" — docker info fails outright
+#   b) "EOF" / zombie backend — docker info or docker ps returns EOF on stderr
+#      with exit 1 even though the socket file exists. This mode is what
+#      stranded Bob on 2026-04-21; we explicitly test for it now.
+docker_healthy() {
+    local out err rc
+    out=$(docker info --format '{{.ServerVersion}}' 2>/tmp/docker_info.err)
+    rc=$?
+    err=$(cat /tmp/docker_info.err 2>/dev/null)
+    rm -f /tmp/docker_info.err 2>/dev/null
+    if (( rc != 0 )); then
+        return 1
+    fi
+    # Exit 0 but empty ServerVersion or EOF in stderr = zombie daemon.
+    if [[ -z "$out" || "$err" == *"EOF"* || "$err" == *"Cannot connect"* ]]; then
+        return 1
+    fi
+    # Final smoke: must be able to list containers without EOF.
+    if ! docker ps -q >/dev/null 2>/tmp/docker_ps.err; then
+        return 1
+    fi
+    err=$(cat /tmp/docker_ps.err 2>/dev/null)
+    rm -f /tmp/docker_ps.err 2>/dev/null
+    [[ "$err" == *"EOF"* ]] && return 1
+    return 0
+}
 
-    log_alert "Docker Desktop is down"
+check_docker() {
+    docker_healthy && return
+
+    log_alert "Docker Desktop is down or in zombie state"
     in_cooldown "docker" 180 && { log "  cooldown, skip"; return; }
 
-    killall -9 com.docker.backend 2>/dev/null || true
-    sleep 2
-    sudo -u "$BOB_USER" open -a Docker 2>/dev/null || open -a Docker 2>/dev/null
+    # Kill lingering helpers so the new Docker Desktop has a clean backend.
+    pkill -9 -x docker 2>/dev/null || true
+    pkill -9 -f 'com.docker.backend' 2>/dev/null || true
+    pkill -9 -f 'Docker Desktop Helper' 2>/dev/null || true
+    sleep 3
+
+    # Reopen Docker Desktop. open(1) will relaunch Docker.app if not running.
+    open -a Docker 2>/dev/null
 
     local waited=0
-    while (( waited < 90 )); do
+    while (( waited < 120 )); do
         sleep 5; waited=$((waited + 5))
-        docker info >/dev/null 2>&1 && {
+        docker_healthy && {
             log "  Docker ready after ${waited}s"
             mark_action "docker"
             sleep 10
             return
         }
     done
-    log_alert "Docker failed to start in 90s"
+    log_alert "Docker failed to recover in 120s — escalating"
+    # Escalate: touch a breadcrumb the notification-hub / task-runner picks up
+    mkdir -p "$REPO_DIR/ops/alerts" 2>/dev/null
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z') docker_recover_failed" \
+        >> "$REPO_DIR/ops/alerts/bob_watchdog.alerts"
     mark_action "docker"
 }
 
@@ -187,6 +238,51 @@ check_email_dns() {
     mark_action "email_dns"
 }
 
+# --- CHECK 7: X-intake HTTP health (lane listener can wedge even when container is "healthy") ---
+# A healthcheck that exercises the FastAPI /health endpoint the iPhone / iPad
+# shortcut ultimately depends on. Two strikes restarts the container.
+check_x_intake() {
+    docker info >/dev/null 2>&1 || return
+    local strike_file="$STATE_DIR/x_intake_strike"
+    if curl -fsS --max-time 5 http://127.0.0.1:8101/health >/dev/null 2>&1; then
+        rm -f "$strike_file" 2>/dev/null
+        return
+    fi
+
+    # Increment strike counter
+    local strikes=1
+    [[ -f "$strike_file" ]] && strikes=$(( $(cat "$strike_file") + 1 ))
+    echo "$strikes" > "$strike_file"
+    log_alert "x-intake /health failed (strike $strikes/2)"
+
+    (( strikes < 2 )) && return
+
+    in_cooldown "x_intake" 180 && { log "  x-intake cooldown, skip"; return; }
+
+    log_alert "Restarting x-intake container"
+    docker restart x-intake 2>>"$LOG"
+    mark_action "x_intake"
+    rm -f "$strike_file" 2>/dev/null
+
+    # Give listener 20s to reattach to Redis, then re-probe.
+    sleep 20
+    if curl -fsS --max-time 5 http://127.0.0.1:8101/health >/dev/null 2>&1; then
+        log "  x-intake recovered after restart"
+    else
+        log_alert "x-intake still failing after restart — escalating"
+        mkdir -p "$REPO_DIR/ops/alerts" 2>/dev/null
+        echo "$(date '+%Y-%m-%dT%H:%M:%S%z') x_intake_recover_failed" \
+            >> "$REPO_DIR/ops/alerts/bob_watchdog.alerts"
+    fi
+}
+
+# Heartbeat file so we can see from the outside the watchdog is actually
+# running, even when the stack is otherwise silent.
+write_heartbeat() {
+    mkdir -p "$REPO_DIR/data/task_runner" 2>/dev/null
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z')" > "$REPO_DIR/data/task_runner/bob_watchdog_heartbeat.txt"
+}
+
 # --- MAIN ---
 log "--- tick ---"
 check_tailscale
@@ -196,4 +292,6 @@ check_docker
 check_containers
 check_unhealthy
 check_email_dns
+check_x_intake
+write_heartbeat
 log "--- done ---"
