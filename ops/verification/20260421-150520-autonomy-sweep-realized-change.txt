@@ -1,0 +1,148 @@
+==============================================================================
+AUTONOMY SWEEP — 20260421-150520
+==============================================================================
+trigger: launchd-watchpath
+host:    Bobs-Mac-mini.local
+repo:    /Users/bob/AI-Server
+python:  /opt/homebrew/opt/python@3.14/bin/python3.14
+
+=== trigger ===
+trigger file: ops/realized_changes/20260418-bootstrap.change
+---
+realized-change: bootstrap
+by:              cline-init
+at:              2026-04-18T19:05:50Z
+summary:         first sweep from autonomy bootstrap prompt
+---
+
+=== git state ===
+head:   e424d21
+branch: main
+dirty:  12 changed files
+last 5 commits:
+  e424d21 2026-04-21 14:55:25 -0600 ops: task-runner tick 20260421-145525 — heartbeat
+  90164e5 2026-04-21 14:55:24 -0600 ops: task-runner preflight — preflight auto-heal
+  b57abe9 2026-04-21 14:50:55 -0600 auto: local changes before pull
+  4a60921 2026-04-21 14:39:23 -0600 auto: local changes before pull
+  7e3d5e1 2026-04-21 14:39:16 -0600 ops(full-sweep): state-of-stack snapshot 20260421
+
+dirty files:
+  M STATUS_REPORT.md
+   M data/clawwork/data/clawwork_state.json
+   M data/clawwork/data/sector_performance.json
+   M data/task_runner/bob-watchdog-state/containers
+   M data/task_runner/bob_watchdog_heartbeat.txt
+   M data/task_runner/watchdog_heartbeat.txt
+   M openclaw/follow_up_engine.py
+   M openclaw/orchestrator.py
+   M scripts/verify-deploy.sh
+  ?? openclaw/verify_follow_up_log.py
+  ?? scripts/verify_follow_up_log.py
+  ?? setup/launchd/com.symphony.approval-drainer.plist
+
+=== prompt index ===
+exit=0
+wrote .cursor/prompts/INDEX.md (64 prompts)
+
+=== work queue ===
+pending    0
+completed  21
+rejected   0
+failed     0
+blocked    0
+
+=== recent verification ===
+last 8 files (of 1203):
+  2026-04-21T14:54:10       830  20260421-205410-watchdog-install.txt
+  2026-04-21T14:54:20       829  20260421-205420-watchdog-install.txt
+  2026-04-21T14:54:31       830  20260421-205431-watchdog-install.txt
+  2026-04-21T14:54:41       830  20260421-205441-watchdog-install.txt
+  2026-04-21T14:54:52       830  20260421-205452-watchdog-install.txt
+  2026-04-21T14:55:03       830  20260421-205503-watchdog-install.txt
+  2026-04-21T14:55:13       830  20260421-205513-watchdog-install.txt
+  2026-04-18T11:31:21      4604  INDEX.txt
+
+=== task runner health ===
+exit=0
+task-runner: healthy (report=/Users/bob/AI-Server/ops/verification/20260421-150520-task-runner-health.txt)
+  OK launchd.loaded: launchctl list: -	0	com.symphony.task-runner
+  OK heartbeat.fresh: heartbeat age=594s; content='last-heartbeat: 2026-04-21T14:55:25-06:00'
+  OK queue.not_stuck: pending=0
+  OK verification.recent: newest=20260421-205513-watchdog-install.txt age=606s
+  OK preflight.seen: newest preflight=20260421-145059-preflight.txt age=861s
+  OK disk.pressure: free=18.60 GiB / total=228.3 GiB (used 91.9%) at /Users/bob/AI-Server
+
+=== status report summary ===
+exit=0
+# STATUS_REPORT summary
+
+_Generated: 2026-04-21 15:05 MDT · repo commit: `e424d21b274f` · STATUS_REPORT last touched: 2026-04-21_
+
+This digest is produced by `ops/status_report_summarizer.py` from `STATUS_REPORT.md`. See `ops/AGENT_VERIFICATION_PROTOCOL.md` for the tagging conventions (`[FOLLOWUP]`, `[NEEDS_MATT]`).
+
+## Headline
+
+- **Open items:** 11 across 3 actionable sections
+- **Follow-ups:** 9
+- **Needs Matt:** 1
+- **Completed (in Done section):** 24
+
+## What changed since last summary
+
+_No prior snapshot or no detectable changes._
+
+## Current open items by category
+
+### Now (1)
+
+- 🧑 [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategie…
+
+### Next (1)
+
+- **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot…
+
+### Later (9)
+
+- 🔁 **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- 🔁 **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- 🔁 **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- 🔁 **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- 🔁 **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- 🔁 **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- 🔁 **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- 🔁 **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- 🔁 **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Follow-ups
+
+- _Later_: **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- _Later_: **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- _Later_: **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- _Later_: **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- _Later_: **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- _Later_: **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- _Later_: **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- _Later_: **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- _Later_: **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Needs Matt
+
+_Items that require Matt's real-world decision or input._
+
+- _Now_: [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code chan…
+
+## Top 3 next actions
+
+1. _Now_ (🧑 needs Matt): [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_ban…
+2. _Next_: **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot 2>&1 | grep redeeme…
+3. _Later_ (🔁 follow-up): **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compose healthcheck. See…
+
+## Reference sections (historical)
+
+STATUS_REPORT.md contains 19 reference sections (detailed incident reports / historical snapshots). They are not enumerated here; run `grep '^## Reference' STATUS_REPORT.md` to list them.
+
+---
+
+_Produced by `ops/status_report_summarizer.py`. Snapshot written to `data/status_report_summarizer/last_snapshot.json`; next run will diff against it._
+
+### sweep finished 2026-04-21T15:05:20-06:00 ok=True
