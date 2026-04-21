@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-18 09:04 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -78,6 +78,83 @@ bash setup/install_realized_change_watcher.sh --status
 ```
 
 Full evidence: `ops/verification/20260421-114916-x-intake-and-autonomy-lane-health.txt`.
+
+---
+
+## BlueBubbles integration + hardening (2026-04-21 13:02 MDT, Cline)
+
+**Why:** BlueBubbles Server has been live on Bob since 2026-04-17 (see Done ✅
+row below), but nothing inside AI-Server was actually consuming its webhooks
+or sending replies through it — the existing `imessage-server.py` bridge at
+:8199 was still the only iMessage lane. This pass finishes the wiring per
+`.cursor/prompts/bluebubbles-integration-and-hardening.md` so BlueBubbles is
+a first-class channel.
+
+### IN PLACE
+
+- **Inbound webhook:** `POST /hooks/bluebubbles` on Cortex (:8102). Parses
+  BlueBubbles' `new-message` / `updated-message` shape into a stable internal
+  event (`channel="bluebubbles-imessage"`, `id`, `timestamp`, `chat_id`,
+  `sender_id`, `sender_display`, `direction`, `body_text`, `in_reply_to`,
+  `attachments[]`). Accepted inbound events fan out to Redis on
+  `events:bluebubbles` (all directions) AND `events:imessage` (inbound-only,
+  non-empty body) so existing x-intake / openclaw / approval-bridge
+  subscribers pick up the traffic with zero code changes on their side.
+- **Normalized message event path:** live — one structured log per event
+  (`bluebubbles_webhook type=… chat=… sender=… allowed=… body=…` truncated).
+  Counter + last-event-timestamp surfaced in the health endpoint.
+- **Outbound BlueBubbles client:** `cortex.bluebubbles.BlueBubblesClient` with
+  `ping()` and `send_text(chat_guid=/phone=, body=)` → POSTs to
+  `/api/v1/message/text` with `method=apple-script` (SIP stays on; Private API
+  not required). Exposed internally as `POST /api/bluebubbles/send` on Cortex
+  for other services, with outbound allowlist enforcement (HTTP 403 on
+  disallowed recipients).
+- **Routing / identity rules:** `config/bluebubbles_routing.json` (bind-mounted
+  read-only into Cortex; hot-reloaded every 15 s). Policy `allow_owner_only`.
+  Inbound requires source-host match (127.0.0.1, localhost,
+  host.docker.internal, 172.18.0.1 = Docker bridge gateway, 100.89.1.51, Bob
+  tailnet FQDN) AND sender match (phones, emails, or chat GUIDs allow-lists,
+  with a blocked_phones kill switch). Outbound requires `chat_guid` or `phone`
+  in an allow-list. Optional `X-BB-Webhook-Secret` header if
+  `BLUEBUBBLES_WEBHOOK_SECRET` is set in `.env`.
+- **Basic health check:** `GET /api/bluebubbles/health` on Cortex — enriched
+  surface with ping latency, server_version, private_api flag, routing
+  summary, counters (inbound, outbound, outbound_failures),
+  `last_inbound_event_at`, `last_outbound_send_at`, `last_outbound_error`,
+  `last_ping_ok_at`, `last_ping_latency_ms`. The existing
+  `/api/symphony/bluebubbles/health` (dashboard tile) is unchanged.
+- **Host CLI:** `scripts/bluebubbles-health.sh` (and `--json` mode) — probes
+  both the Cortex aggregate and the BlueBubbles server directly. Exits 0 iff
+  both pass. Safe to wire into bob-watchdog / launchd later. Never prints the
+  API password.
+
+### PARTIAL or MISSING
+
+- [FOLLOWUP] **BlueBubbles Server webhook URL not configured yet on Bob's
+  side.** BlueBubbles Server app → Webhooks → add
+  `http://host.docker.internal:8102/hooks/bluebubbles` for `message.new` /
+  `message.updated`; optionally set `X-BB-Webhook-Secret`. Until this is
+  wired, only synthetic POSTs exercise `/hooks/bluebubbles`.
+- [FOLLOWUP] **Outbound reply paths in other services still prefer the
+  legacy imessage-server.py bridge at :8199.** Only `POST
+  /api/bluebubbles/send` uses BlueBubbles today. Deliberate — keeps this pass
+  small. Next pass: wire x-intake reply leg, openclaw approval-bridge, and
+  daily-briefing to prefer BlueBubbles with `imessage-server.py` as fallback.
+- [FOLLOWUP] **Attachment bodies not downloaded** — only metadata (guid,
+  mime_type, filename, byte_size) is captured. Images / videos from iMessage
+  are still image-less on the AI-Server side.
+- [FOLLOWUP] **No launchd plist for `scripts/bluebubbles-health.sh` yet** —
+  the CLI is there but not scheduled. Bob-watchdog is the natural home.
+- Private API / reactions / tapbacks / send-effects still unavailable (SIP
+  stays enabled on Bob — policy decision, not a bug).
+- No dedicated migration/backup runbook for the BlueBubbles Server itself
+  (config.json, SQLite db, credentials). Covered by Bob's macOS backup but
+  undocumented as a named runbook.
+
+Full evidence: `ops/verification/20260421-130213-bluebubbles-integration.txt`
+(9 passing unit tests, 5 live webhook smoke tests, enriched health response,
+Cortex uvicorn access log showing 200s + 403s where expected, host-CLI
+bidirectional check).
 
 ---
 

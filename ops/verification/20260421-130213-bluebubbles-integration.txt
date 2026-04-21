@@ -1,0 +1,361 @@
+================================================================================
+BlueBubbles → AI-Server integration — verification artifact
+================================================================================
+
+Stamp:            2026-04-21 13:02:13 MDT (UTC 2026-04-21T19:02:13Z)
+Host:             Bob (Mac Mini M4), tailnet bobs-mac-mini.tailbcf3fe.ts.net
+AI-Server commit: d64c44a2166f07cb70739394133136335d45171d  (pre-push, working tree
+                  additions listed below; this artifact will be committed along
+                  with those files in the same commit)
+Prompt:           .cursor/prompts/bluebubbles-integration-and-hardening.md
+Driver:           Cline (Act mode)
+
+Scope:            finish the BlueBubbles → AI-Server integration so that
+                  (a) inbound webhooks become normalized events,
+                  (b) AI-Server can reply into correct chats,
+                  (c) routing/identity rules are explicit,
+                  (d) a basic health surface exists,
+                  (e) this artifact + STATUS_REPORT.md update reflect reality.
+
+================================================================================
+1. BlueBubbles bridge configuration
+================================================================================
+
+- Server URL (from .env, redacted):
+    BLUEBUBBLES_SERVER_URL=https://bobs-mac-mini.REDACTED:8443
+- Auth password: stored in .env as BLUEBUBBLES_API_PASSWORD (not printed here).
+- Direct ping result:
+    server_version = 1.9.9
+    private_api    = false        (expected — SIP stays enabled on Bob)
+    latency_ms     = ~290–575 ms (over Tailscale serve)
+- Bridge processes still untouched:
+    * scripts/imessage-server.py on :8199 (legacy iMessage bridge) — unchanged.
+    * launchd com.symphony.bluebubbles-watchdog — unchanged.
+
+================================================================================
+2. Files added / changed in this pass
+================================================================================
+
+New:
+  cortex/bluebubbles.py                    — main integration module
+  config/bluebubbles_routing.json          — inbound/outbound allowlist (JSON)
+  scripts/bluebubbles-health.sh            — host-side CLI health check (chmod +x)
+  ops/verification/20260421-130213-bluebubbles-integration.txt  (this file)
+
+Modified:
+  cortex/engine.py                         — import + register_bluebubbles_routes
+  docker-compose.yml                       — add ./config:/app/config:ro mount
+                                             to the cortex service
+
+No changes to: scripts/imessage-server.py, notification-hub, email-monitor,
+polymarket-bot, openclaw, x-intake, voice-receptionist, email template config,
+or any other service. No secrets were modified.
+
+================================================================================
+3. Inbound webhook endpoint
+================================================================================
+
+Module:   cortex/bluebubbles.py  (register_bluebubbles_routes)
+Endpoint: POST /hooks/bluebubbles   (served from the Cortex FastAPI app on 8102)
+Auth:     Optional shared secret header  X-BB-Webhook-Secret
+            — controlled by env  BLUEBUBBLES_WEBHOOK_SECRET  (default off).
+Source:   Requests must originate from an allow-listed host
+          (config/bluebubbles_routing.json → inbound.allowed_webhook_source_hosts).
+          Current list includes 127.0.0.1, ::1, localhost, host.docker.internal,
+          172.18.0.1 (Docker bridge gateway — where Bob’s BlueBubbles server
+          reaches cortex via host.docker.internal), 100.89.1.51, and the Bob
+          tailnet FQDN.
+
+Normalization (normalize_webhook_payload → internal "message event"):
+  {
+    "id":              <BlueBubbles message guid>,
+    "timestamp":       <ISO-8601 UTC from dateCreated>,
+    "channel":         "bluebubbles-imessage",
+    "raw_event_type":  "new-message" | "updated-message" | ...,
+    "chat_id":         <iMessage chat GUID>,
+    "sender_id":       <handle address, e.g. "+19705193013">,
+    "sender_display":  <handle.displayName>,
+    "direction":       "inbound" | "outbound",
+    "body_text":       <message text>,
+    "in_reply_to":     <threadOriginatorGuid or "">,
+    "attachments":     [ { guid, mime_type, filename, byte_size }, … ]
+  }
+
+Forwarded to (Redis publish, fire-and-forget):
+  * events:bluebubbles           — raw normalized event (all directions)
+  * events:imessage              — compact shape matching the existing iMessage
+                                    lane (only inbound + non-empty body). This
+                                    is how x-intake, openclaw follow-up, and
+                                    the approval bridge pick up bluebubbles
+                                    traffic without any code changes on their
+                                    side — they already subscribe to
+                                    events:imessage.
+
+================================================================================
+4. Outbound client
+================================================================================
+
+Class:    cortex.bluebubbles.BlueBubblesClient
+Methods:
+  * ping()                              → /api/v1/server/info (health)
+  * send_text(chat_guid=, phone=, body=, method="apple-script")
+                                        → POST /api/v1/message/text
+
+HTTP endpoint (for other AI-Server services to use):
+  POST /api/bluebubbles/send
+    body: { "chat_guid" or "phone", "body" }
+    checks routing.is_outbound_allowed() before dispatching;
+    returns HTTP 403 {"detail": "outbound blocked: <reason>"} on reject.
+
+Defaults to method="apple-script" because SIP stays enabled on Bob (Private
+API unavailable). Retries are intentionally minimal per prompt ("no complex
+backoff in this first pass"). Secrets are never logged.
+
+================================================================================
+5. Routing / identity rules
+================================================================================
+
+File:     config/bluebubbles_routing.json  (bind-mounted read-only into
+          /app/config in the cortex container; hot-reloaded every 15 s).
+Policy:   allow_owner_only  (inbound rejects anything not matching owner.
+                             outbound rejects anything not in outbound lists.)
+
+Current inbound allowlist:
+  allowed_phones:        ["+19705193013"]              (Matt’s phone)
+  allowed_emails:        ["mearley24@me.com"]          (Matt’s Apple ID)
+  allowed_chat_guids:    []
+  blocked_phones:        []
+  allowed_webhook_source_hosts: [127.0.0.1, ::1, localhost,
+                                 host.docker.internal, 172.18.0.1,
+                                 100.89.1.51,
+                                 bobs-mac-mini.tailbcf3fe.ts.net]
+
+Current outbound allowlist:
+  allowed_phones:        ["+19705193013"]
+  allowed_chat_guids:    []
+
+To widen either list (e.g. add a shared chat GUID for a client thread):
+  edit config/bluebubbles_routing.json — no code change or rebuild needed.
+
+================================================================================
+6. Health / monitoring
+================================================================================
+
+Cortex HTTP (existing, unchanged):
+  GET /api/symphony/bluebubbles/health   — the compact dashboard tile shape.
+
+Cortex HTTP (new, this pass):
+  GET /api/bluebubbles/health            — enriched surface:
+    { status, reason, ping:{ok, latency_ms, server_version, private_api,
+                             macos_version},
+      configured, server_url_configured,
+      webhook_endpoint,
+      routing: { policy, inbound/outbound lists, config_path, loaded },
+      counters: { inbound_count, outbound_count, outbound_failure_count },
+      last_inbound_event_at, last_outbound_send_at, last_outbound_error,
+      last_ping_ok_at, last_ping_error, last_ping_latency_ms }
+
+Host CLI:
+  scripts/bluebubbles-health.sh
+  scripts/bluebubbles-health.sh --json
+    — exits 0 iff both the Cortex aggregate and a direct BlueBubbles ping pass.
+    — safe to schedule from launchd / bob-watchdog; never echoes the password.
+
+================================================================================
+7. Verification evidence
+================================================================================
+
+# 7.1 Host-side Python unit tests (cortex/bluebubbles.py isolated, no container)
+[1] normalize new-message: OK
+[2] normalize outbound: OK
+[3] inbound allowed: True reason=sender_allowlisted
+[4] outbound allowed: True reason=phone_allowed
+[5] outbound rejected: False reason=recipient_not_allowed
+[6] unknown inbound rejected: False reason=sender_not_allowed:policy=allow_owner_only
+[7] routing summary: policy=allow_owner_only phones=['+19705193013']
+[8] empty payload safe: OK
+[9] unconfigured client: OK
+ALL_TESTS_PASSED
+
+
+# 7.2 Cortex container restart (bind-mount reloaded, healthy)
+NAMES                STATUS
+cortex               Up 40 minutes (healthy)         ← before restart
+cortex               Up 15 seconds (healthy)         ← after restart
+
+
+# 7.3 Routes registered in FastAPI openapi
+/api/bluebubbles/health
+/api/bluebubbles/send
+/api/symphony/bluebubbles/health
+/hooks/bluebubbles
+
+
+# 7.4 GET /api/bluebubbles/health (post-test, counters populated)
+{
+  "status": "healthy",
+  "reason": null,
+  "ping": {
+    "ok": true,
+    "latency_ms": 575.5,
+    "server_version": "1.9.9",
+    "private_api": false,
+    "macos_version": "26.3.0"
+  },
+  "configured": true,
+  "server_url_configured": true,
+  "webhook_endpoint": "/hooks/bluebubbles",
+  "routing": {
+    "policy": "allow_owner_only",
+    "inbound_allowed_phones": ["+19705193013"],
+    "inbound_allowed_emails": ["mearley24@me.com"],
+    "inbound_allowed_chat_guids": [],
+    "inbound_blocked_phones": [],
+    "outbound_allowed_phones": ["+19705193013"],
+    "outbound_allowed_chat_guids": [],
+    "config_path": "/app/config/bluebubbles_routing.json",
+    "loaded": true
+  },
+  "counters": { "inbound_count": 6, "outbound_count": 0, "outbound_failure_count": 0 },
+  "last_inbound_event_at": "2026-04-21T19:01:41.705512+00:00",
+  "last_ping_ok_at":       "2026-04-21T18:46:44.963506+00:00",
+  "last_ping_latency_ms":  291.0,
+  "last_outbound_error":   null
+}
+
+
+# 7.5 Live webhook smoke tests (POST /hooks/bluebubbles)
+=== TEST A: valid inbound webhook (owner phone) ===
+{ "status": "accepted",
+  "event_id": "verif-inbound-1",
+  "chat_id": "iMessage;-;+19705193013",
+  "forwarded_to": ["events:bluebubbles", "events:imessage"] }
+
+=== TEST B: unknown sender rejected ===
+{ "status": "rejected",
+  "reason": "sender_not_allowed:policy=allow_owner_only",
+  "event_id": "verif-inbound-2" }
+
+=== TEST C: outbound (isFromMe=true) event ignored ===
+{ "status": "ignored",
+  "reason": "non_inbound_or_empty_body",
+  "event_id": "verif-inbound-3" }
+
+
+# 7.6 Outbound /send allowlist enforcement (POST /api/bluebubbles/send)
+=== TEST D: /send to unknown phone blocked ===
+HTTP_STATUS 403
+{ "detail": "outbound blocked: recipient_not_allowed" }
+
+
+# 7.7 Cortex uvicorn access log (routes wired, counters incrementing)
+INFO:     172.18.0.1 - "GET  /api/bluebubbles/health         HTTP/1.1" 200 OK
+INFO:     172.18.0.1 - "POST /hooks/bluebubbles              HTTP/1.1" 200 OK (A)
+INFO:     172.18.0.1 - "POST /hooks/bluebubbles              HTTP/1.1" 200 OK (B — rejected payload)
+INFO:     172.18.0.1 - "POST /hooks/bluebubbles              HTTP/1.1" 200 OK (C — ignored outbound)
+bluebubbles_send_rejected reason=recipient_not_allowed chat= phone=+15551234567
+INFO:     172.18.0.1 - "POST /api/bluebubbles/send           HTTP/1.1" 403 Forbidden
+
+
+# 7.8 Host CLI health check
+$ bash scripts/bluebubbles-health.sh
+cortex bluebubbles health: healthy
+bluebubbles server ping:   healthy version=1.9.9 private_api=false
+
+$ bash scripts/bluebubbles-health.sh --json
+{"cortex_health": {"status": "healthy", "reason": null},
+ "bluebubbles_server": {"status": "healthy", "reason": null,
+                        "server_version": "1.9.9", "private_api": false}}
+
+
+# 7.9 docker compose snapshot (messaging-relevant services)
+cortex               Up 15 seconds (healthy)
+cortex-autobuilder   Up About an hour (healthy)
+(no other services restarted; notification-hub / openclaw / email-monitor /
+ x-intake were not touched)
+
+
+================================================================================
+8. What is IN PLACE after this pass
+================================================================================
+
+[x] POST /hooks/bluebubbles                         (normalized events)
+[x] GET  /api/bluebubbles/health                    (enriched health surface)
+[x] POST /api/bluebubbles/send                      (outbound client + allow-
+                                                      list enforcement)
+[x] BlueBubblesClient.send_text() usable as a Python import from inside
+    cortex code (e.g. openclaw/notification-hub via HTTP, cortex dashboard
+    directly).
+[x] config/bluebubbles_routing.json (hot-reloaded allowlists for inbound +
+    outbound, with source-host and optional webhook-secret enforcement).
+[x] scripts/bluebubbles-health.sh host CLI (safe for launchd / watchdog).
+[x] Redis fan-out: normalized events published to events:bluebubbles AND
+    (inbound-only, non-empty) events:imessage so existing subscribers pick it
+    up with zero code changes.
+
+
+================================================================================
+9. PARTIAL / MISSING (explicit punch-list for the next pass)
+================================================================================
+
+[ ] No BlueBubbles Server webhook URL configured yet on Bob's side.
+    The BlueBubbles Server app needs a webhook row added:
+        URL: http://host.docker.internal:8102/hooks/bluebubbles
+        Event types: message.new, message.updated
+        Optional header: X-BB-Webhook-Secret: <pick a secret and set
+                         BLUEBUBBLES_WEBHOOK_SECRET=<secret> in .env>.
+    Once added, real iMessages will exercise the live path end-to-end. Until
+    then, the only traffic on /hooks/bluebubbles is the smoke tests above.
+
+[ ] BlueBubbles Server webhook signature verification is not implemented —
+    we use (a) source-host allowlist and (b) optional shared-secret header.
+    If BlueBubbles ever exposes HMAC signing, add it here.
+
+[ ] Outbound reply paths in other services still prefer the legacy
+    imessage-server.py bridge at :8199. Only the new /api/bluebubbles/send
+    endpoint uses BlueBubbles. Wiring x-intake / openclaw approval /
+    daily-briefing to prefer BlueBubbles with imessage-server as fallback is
+    deliberately deferred to keep this pass small.
+
+[ ] Attachment bodies are captured as metadata only (type / filename /
+    byte_size). Downloading the actual attachment file is not implemented.
+
+[ ] No launchd plist for scripts/bluebubbles-health.sh yet. Bob-watchdog is
+    a natural place to wire it in (was not touched in this pass).
+
+[ ] BlueBubbles Private API is intentionally not enabled (SIP stays on);
+    reactions / tapbacks / send-effects therefore still do not work. This is
+    a policy decision, not a bug.
+
+[ ] No migration / backup runbook specifically for the BlueBubbles Server
+    itself (config.json, SQLite dbs, credentials). Covered by the macOS-level
+    Bob backup but not documented as a dedicated runbook.
+
+
+================================================================================
+10. How to reproduce / reuse
+================================================================================
+
+# Host-only health check (no container restart needed):
+bash scripts/bluebubbles-health.sh
+bash scripts/bluebubbles-health.sh --json
+
+# Cortex aggregate (includes routing + counters):
+curl -s http://127.0.0.1:8102/api/bluebubbles/health | python3 -m json.tool
+
+# Send a test iMessage to Matt (goes through BlueBubbles, not imessage-server):
+curl -s -X POST http://127.0.0.1:8102/api/bluebubbles/send \
+     -H 'Content-Type: application/json' \
+     -d '{"phone":"+19705193013","body":"test from BlueBubbles bridge"}'
+
+# Simulate an inbound webhook (e.g. for regression tests):
+curl -s -X POST http://127.0.0.1:8102/hooks/bluebubbles \
+     -H 'Content-Type: application/json' \
+     -d @/tmp/bb_wh_ok.json
+
+# Widen the allowlist:
+#   edit config/bluebubbles_routing.json (hot-reloaded within 15 s — no restart).
+
+================================================================================
+End of artifact.
+================================================================================
