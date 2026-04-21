@@ -1,0 +1,632 @@
+==============================================================================
+AUTONOMY SWEEP — 20260421-130536
+==============================================================================
+trigger: launchd-watchpath
+host:    Bobs-Mac-mini.local
+repo:    /Users/bob/AI-Server
+python:  /opt/homebrew/opt/python@3.14/bin/python3.14
+
+=== trigger ===
+trigger file: ops/realized_changes/20260418-bootstrap.change
+---
+realized-change: bootstrap
+by:              cline-init
+at:              2026-04-18T19:05:50Z
+summary:         first sweep from autonomy bootstrap prompt
+---
+
+=== git state ===
+head:   d64c44a
+branch: main
+dirty:  495 changed files
+last 5 commits:
+  d64c44a 2026-04-21 11:50:17 -0600 ops: task-runner preflight — preflight auto-heal
+  64b5895 2026-04-21 11:40:53 -0600 auto: local changes before pull
+  7a444c9 2026-04-21 11:39:55 -0600 ops: task-runner preflight — 1 state files synced
+  10e3f17 2026-04-21 08:34:41 -0600 Resolve merge conflicts in runtime data files
+  a9d95f6 2026-04-21 08:34:10 -0600 auto: local changes before pull
+
+dirty files:
+  M STATUS_REPORT.md
+   M cortex/engine.py
+   M data/clawwork/data/clawwork_state.json
+   M data/clawwork/data/sector_performance.json
+   M data/task_runner/watchdog_heartbeat.txt
+   M docker-compose.yml
+   M ops/verification/20260417-170500-install-watchdog-result.txt
+  ?? .cursor/prompts/bluebubbles-integration-and-hardening.md
+  ?? config/bluebubbles_routing.json
+  ?? cortex/bluebubbles.py
+  ?? data/task_runner/bob-watchdog-state/
+  ?? data/task_runner/bob_watchdog_heartbeat.txt
+  ?? ops/verification/20260421-114101-preflight.txt
+  ?? ops/verification/20260421-114955-autonomy-sweep-realized-change.txt
+  ?? ops/verification/20260421-114955-task-runner-health.txt
+  ?? ops/verification/20260421-130213-bluebubbles-integration.txt
+  ?? ops/verification/20260421-130406-autonomy-sweep-realized-change.txt
+  ?? ops/verification/20260421-130407-task-runner-health.txt
+  ?? ops/verification/20260421-174103-watchdog-install.txt
+  ?? ops/verification/20260421-174111-watchdog-install.txt
+  ?? ops/verification/20260421-174122-watchdog-install.txt
+  ?? ops/verification/20260421-174133-watchdog-install.txt
+  ?? ops/verification/20260421-174143-watchdog-install.txt
+  ?? ops/verification/20260421-174155-watchdog-install.txt
+  ?? ops/verification/20260421-174205-watchdog-install.txt
+  ?? ops/verification/20260421-174216-watchdog-install.txt
+  ?? ops/verification/20260421-174227-watchdog-install.txt
+  ?? ops/verification/20260421-174237-watchdog-install.txt
+  ?? ops/verification/20260421-174248-watchdog-install.txt
+  ?? ops/verification/20260421-174259-watchdog-install.txt
+  ?? ops/verification/20260421-174310-watchdog-install.txt
+  ?? ops/verification/20260421-174320-watchdog-install.txt
+  ?? ops/verification/20260421-174335-watchdog-install.txt
+  ?? ops/verification/20260421-174342-watchdog-install.txt
+  ?? ops/verification/20260421-174352-watchdog-install.txt
+  ?? ops/verification/20260421-174404-watchdog-install.txt
+  ?? ops/verification/20260421-174413-watchdog-install.txt
+  ?? ops/verification/20260421-174424-watchdog-install.txt
+  ?? ops/verification/20260421-174435-watchdog-install.txt
+  ?? ops/verification/20260421-174445-watchdog-install.txt
+  ?? ops/verification/20260421-174456-watchdog-install.txt
+  ?? ops/verification/20260421-174507-watchdog-install.txt
+  ?? ops/verification/20260421-174518-watchdog-install.txt
+  ?? ops/verification/20260421-174529-watchdog-install.txt
+  ?? ops/verification/20260421-174539-watchdog-install.txt
+  ?? ops/verification/20260421-174550-watchdog-install.txt
+  ?? ops/verification/20260421-174601-watchdog-install.txt
+  ?? ops/verification/20260421-174611-watchdog-install.txt
+  ?? ops/verification/20260421-174622-watchdog-install.txt
+  ?? ops/verification/20260421-174633-watchdog-install.txt
+  ?? ops/verification/20260421-174643-watchdog-install.txt
+  ?? ops/verification/20260421-174654-watchdog-install.txt
+  ?? ops/verification/20260421-174705-watchdog-install.txt
+  ?? ops/verification/20260421-174715-watchdog-install.txt
+  ?? ops/verification/20260421-174726-watchdog-install.txt
+  ?? ops/verification/20260421-174737-watchdog-install.txt
+  ?? ops/verification/20260421-174748-watchdog-install.txt
+  ?? ops/verification/20260421-174758-watchdog-install.txt
+  ?? ops/verification/20260421-174809-watchdog-install.txt
+  ?? ops/verification/20260421-174820-watchdog-install.txt
+  ?? ops/verification/20260421-174831-watchdog-install.txt
+  ?? ops/verification/20260421-174841-watchdog-install.txt
+  ?? ops/verification/20260421-174852-watchdog-install.txt
+  ?? ops/verification/20260421-174903-watchdog-install.txt
+  ?? ops/verification/20260421-174914-watchdog-install.txt
+  ?? ops/verification/20260421-174924-watchdog-install.txt
+  ?? ops/verification/20260421-174935-watchdog-install.txt
+  ?? ops/verification/20260421-174946-watchdog-install.txt
+  ?? ops/verification/20260421-174956-watchdog-install.txt
+  ?? ops/verification/20260421-175007-watchdog-install.txt
+  ?? ops/verification/20260421-175019-watchdog-install.txt
+  ?? ops/verification/20260421-175028-watchdog-install.txt
+  ?? ops/verification/20260421-175038-watchdog-install.txt
+  ?? ops/verification/20260421-175049-watchdog-install.txt
+  ?? ops/verification/20260421-175100-watchdog-install.txt
+  ?? ops/verification/20260421-175110-watchdog-install.txt
+  ?? ops/verification/20260421-175121-watchdog-install.txt
+  ?? ops/verification/20260421-175132-watchdog-install.txt
+  ?? ops/verification/20260421-175142-watchdog-install.txt
+  ?? ops/verification/20260421-175153-watchdog-install.txt
+  ?? ops/verification/20260421-175204-watchdog-install.txt
+  ?? ops/verification/20260421-175215-watchdog-install.txt
+  ?? ops/verification/20260421-175225-watchdog-install.txt
+  ?? ops/verification/20260421-175236-watchdog-install.txt
+  ?? ops/verification/20260421-175247-watchdog-install.txt
+  ?? ops/verification/20260421-175257-watchdog-install.txt
+  ?? ops/verification/20260421-175308-watchdog-install.txt
+  ?? ops/verification/20260421-175319-watchdog-install.txt
+  ?? ops/verification/20260421-175330-watchdog-install.txt
+  ?? ops/verification/20260421-175340-watchdog-install.txt
+  ?? ops/verification/20260421-175351-watchdog-install.txt
+  ?? ops/verification/20260421-175402-watchdog-install.txt
+  ?? ops/verification/20260421-175412-watchdog-install.txt
+  ?? ops/verification/20260421-175423-watchdog-install.txt
+  ?? ops/verification/20260421-175434-watchdog-install.txt
+  ?? ops/verification/20260421-175444-watchdog-install.txt
+  ?? ops/verification/20260421-175455-watchdog-install.txt
+  ?? ops/verification/20260421-175506-watchdog-install.txt
+  ?? ops/verification/20260421-175516-watchdog-install.txt
+  ?? ops/verification/20260421-175527-watchdog-install.txt
+  ?? ops/verification/20260421-175538-watchdog-install.txt
+  ?? ops/verification/20260421-175548-watchdog-install.txt
+  ?? ops/verification/20260421-175559-watchdog-install.txt
+  ?? ops/verification/20260421-175610-watchdog-install.txt
+  ?? ops/verification/20260421-175620-watchdog-install.txt
+  ?? ops/verification/20260421-175631-watchdog-install.txt
+  ?? ops/verification/20260421-175642-watchdog-install.txt
+  ?? ops/verification/20260421-175653-watchdog-install.txt
+  ?? ops/verification/20260421-175703-watchdog-install.txt
+  ?? ops/verification/20260421-175714-watchdog-install.txt
+  ?? ops/verification/20260421-175725-watchdog-install.txt
+  ?? ops/verification/20260421-175735-watchdog-install.txt
+  ?? ops/verification/20260421-175746-watchdog-install.txt
+  ?? ops/verification/20260421-175757-watchdog-install.txt
+  ?? ops/verification/20260421-175808-watchdog-install.txt
+  ?? ops/verification/20260421-175818-watchdog-install.txt
+  ?? ops/verification/20260421-175829-watchdog-install.txt
+  ?? ops/verification/20260421-175840-watchdog-install.txt
+  ?? ops/verification/20260421-175850-watchdog-install.txt
+  ?? ops/verification/20260421-175901-watchdog-install.txt
+  ?? ops/verification/20260421-175912-watchdog-install.txt
+  ?? ops/verification/20260421-175923-watchdog-install.txt
+  ?? ops/verification/20260421-175933-watchdog-install.txt
+  ?? ops/verification/20260421-175944-watchdog-install.txt
+  ?? ops/verification/20260421-175955-watchdog-install.txt
+  ?? ops/verification/20260421-180005-watchdog-install.txt
+  ?? ops/verification/20260421-180016-watchdog-install.txt
+  ?? ops/verification/20260421-180027-watchdog-install.txt
+  ?? ops/verification/20260421-180039-watchdog-install.txt
+  ?? ops/verification/20260421-180048-watchdog-install.txt
+  ?? ops/verification/20260421-180059-watchdog-install.txt
+  ?? ops/verification/20260421-180109-watchdog-install.txt
+  ?? ops/verification/20260421-180120-watchdog-install.txt
+  ?? ops/verification/20260421-180131-watchdog-install.txt
+  ?? ops/verification/20260421-180141-watchdog-install.txt
+  ?? ops/verification/20260421-180152-watchdog-install.txt
+  ?? ops/verification/20260421-180203-watchdog-install.txt
+  ?? ops/verification/20260421-180213-watchdog-install.txt
+  ?? ops/verification/20260421-180224-watchdog-install.txt
+  ?? ops/verification/20260421-180235-watchdog-install.txt
+  ?? ops/verification/20260421-180245-watchdog-install.txt
+  ?? ops/verification/20260421-180256-watchdog-install.txt
+  ?? ops/verification/20260421-180307-watchdog-install.txt
+  ?? ops/verification/20260421-180317-watchdog-install.txt
+  ?? ops/verification/20260421-180328-watchdog-install.txt
+  ?? ops/verification/20260421-180339-watchdog-install.txt
+  ?? ops/verification/20260421-180349-watchdog-install.txt
+  ?? ops/verification/20260421-180400-watchdog-install.txt
+  ?? ops/verification/20260421-180411-watchdog-install.txt
+  ?? ops/verification/20260421-180421-watchdog-install.txt
+  ?? ops/verification/20260421-180432-watchdog-install.txt
+  ?? ops/verification/20260421-180443-watchdog-install.txt
+  ?? ops/verification/20260421-180453-watchdog-install.txt
+  ?? ops/verification/20260421-180504-watchdog-install.txt
+  ?? ops/verification/20260421-180515-watchdog-install.txt
+  ?? ops/verification/20260421-180525-watchdog-install.txt
+  ?? ops/verification/20260421-180536-watchdog-install.txt
+  ?? ops/verification/20260421-180547-watchdog-install.txt
+  ?? ops/verification/20260421-180557-watchdog-install.txt
+  ?? ops/verification/20260421-180608-watchdog-install.txt
+  ?? ops/verification/20260421-180619-watchdog-install.txt
+  ?? ops/verification/20260421-180629-watchdog-install.txt
+  ?? ops/verification/20260421-180640-watchdog-install.txt
+  ?? ops/verification/20260421-180651-watchdog-install.txt
+  ?? ops/verification/20260421-180701-watchdog-install.txt
+  ?? ops/verification/20260421-180712-watchdog-install.txt
+  ?? ops/verification/20260421-180723-watchdog-install.txt
+  ?? ops/verification/20260421-180734-watchdog-install.txt
+  ?? ops/verification/20260421-180744-watchdog-install.txt
+  ?? ops/verification/20260421-180755-watchdog-install.txt
+  ?? ops/verification/20260421-180806-watchdog-install.txt
+  ?? ops/verification/20260421-180816-watchdog-install.txt
+  ?? ops/verification/20260421-180827-watchdog-install.txt
+  ?? ops/verification/20260421-180838-watchdog-install.txt
+  ?? ops/verification/20260421-180848-watchdog-install.txt
+  ?? ops/verification/20260421-180859-watchdog-install.txt
+  ?? ops/verification/20260421-180910-watchdog-install.txt
+  ?? ops/verification/20260421-180920-watchdog-install.txt
+  ?? ops/verification/20260421-180931-watchdog-install.txt
+  ?? ops/verification/20260421-180942-watchdog-install.txt
+  ?? ops/verification/20260421-180952-watchdog-install.txt
+  ?? ops/verification/20260421-181003-watchdog-install.txt
+  ?? ops/verification/20260421-181014-watchdog-install.txt
+  ?? ops/verification/20260421-181024-watchdog-install.txt
+  ?? ops/verification/20260421-181035-watchdog-install.txt
+  ?? ops/verification/20260421-181046-watchdog-install.txt
+  ?? ops/verification/20260421-181057-watchdog-install.txt
+  ?? ops/verification/20260421-181107-watchdog-install.txt
+  ?? ops/verification/20260421-181118-watchdog-install.txt
+  ?? ops/verification/20260421-181129-watchdog-install.txt
+  ?? ops/verification/20260421-181140-watchdog-install.txt
+  ?? ops/verification/20260421-181150-watchdog-install.txt
+  ?? ops/verification/20260421-181200-watchdog-install.txt
+  ?? ops/verification/20260421-181211-watchdog-install.txt
+  ?? ops/verification/20260421-181222-watchdog-install.txt
+  ?? ops/verification/20260421-181233-watchdog-install.txt
+  ?? ops/verification/20260421-181244-watchdog-install.txt
+  ?? ops/verification/20260421-181254-watchdog-install.txt
+  ?? ops/verification/20260421-181305-watchdog-install.txt
+  ?? ops/verification/20260421-181316-watchdog-install.txt
+  ?? ops/verification/20260421-181327-watchdog-install.txt
+  ?? ops/verification/20260421-181337-watchdog-install.txt
+  ?? ops/verification/20260421-181348-watchdog-install.txt
+  ?? ops/verification/20260421-181358-watchdog-install.txt
+  ?? ops/verification/20260421-181409-watchdog-install.txt
+  ?? ops/verification/20260421-181420-watchdog-install.txt
+  ?? ops/verification/20260421-181430-watchdog-install.txt
+  ?? ops/verification/20260421-181441-watchdog-install.txt
+  ?? ops/verification/20260421-181452-watchdog-install.txt
+  ?? ops/verification/20260421-181503-watchdog-install.txt
+  ?? ops/verification/20260421-181514-watchdog-install.txt
+  ?? ops/verification/20260421-181523-watchdog-install.txt
+  ?? ops/verification/20260421-181534-watchdog-install.txt
+  ?? ops/verification/20260421-181545-watchdog-install.txt
+  ?? ops/verification/20260421-181556-watchdog-install.txt
+  ?? ops/verification/20260421-181606-watchdog-install.txt
+  ?? ops/verification/20260421-181617-watchdog-install.txt
+  ?? ops/verification/20260421-181628-watchdog-install.txt
+  ?? ops/verification/20260421-181639-watchdog-install.txt
+  ?? ops/verification/20260421-181649-watchdog-install.txt
+  ?? ops/verification/20260421-181700-watchdog-install.txt
+  ?? ops/verification/20260421-181711-watchdog-install.txt
+  ?? ops/verification/20260421-181722-watchdog-install.txt
+  ?? ops/verification/20260421-181732-watchdog-install.txt
+  ?? ops/verification/20260421-181743-watchdog-install.txt
+  ?? ops/verification/20260421-181753-watchdog-install.txt
+  ?? ops/verification/20260421-181804-watchdog-install.txt
+  ?? ops/verification/20260421-181814-watchdog-install.txt
+  ?? ops/verification/20260421-181825-watchdog-install.txt
+  ?? ops/verification/20260421-181836-watchdog-install.txt
+  ?? ops/verification/20260421-181846-watchdog-install.txt
+  ?? ops/verification/20260421-181857-watchdog-install.txt
+  ?? ops/verification/20260421-181908-watchdog-install.txt
+  ?? ops/verification/20260421-181919-watchdog-install.txt
+  ?? ops/verification/20260421-181929-watchdog-install.txt
+  ?? ops/verification/20260421-181940-watchdog-install.txt
+  ?? ops/verification/20260421-181951-watchdog-install.txt
+  ?? ops/verification/20260421-182002-watchdog-install.txt
+  ?? ops/verification/20260421-182012-watchdog-install.txt
+  ?? ops/verification/20260421-182023-watchdog-install.txt
+  ?? ops/verification/20260421-182034-watchdog-install.txt
+  ?? ops/verification/20260421-182045-watchdog-install.txt
+  ?? ops/verification/20260421-182055-watchdog-install.txt
+  ?? ops/verification/20260421-182106-watchdog-install.txt
+  ?? ops/verification/20260421-182117-watchdog-install.txt
+  ?? ops/verification/20260421-182128-watchdog-install.txt
+  ?? ops/verification/20260421-182139-watchdog-install.txt
+  ?? ops/verification/20260421-182149-watchdog-install.txt
+  ?? ops/verification/20260421-182159-watchdog-install.txt
+  ?? ops/verification/20260421-182210-watchdog-install.txt
+  ?? ops/verification/20260421-182221-watchdog-install.txt
+  ?? ops/verification/20260421-182231-watchdog-install.txt
+  ?? ops/verification/20260421-182242-watchdog-install.txt
+  ?? ops/verification/20260421-182253-watchdog-install.txt
+  ?? ops/verification/20260421-182303-watchdog-install.txt
+  ?? ops/verification/20260421-182314-watchdog-install.txt
+  ?? ops/verification/20260421-182325-watchdog-install.txt
+  ?? ops/verification/20260421-182335-watchdog-install.txt
+  ?? ops/verification/20260421-182346-watchdog-install.txt
+  ?? ops/verification/20260421-182357-watchdog-install.txt
+  ?? ops/verification/20260421-182407-watchdog-install.txt
+  ?? ops/verification/20260421-182418-watchdog-install.txt
+  ?? ops/verification/20260421-182428-watchdog-install.txt
+  ?? ops/verification/20260421-182439-watchdog-install.txt
+  ?? ops/verification/20260421-182450-watchdog-install.txt
+  ?? ops/verification/20260421-182500-watchdog-install.txt
+  ?? ops/verification/20260421-182511-watchdog-install.txt
+  ?? ops/verification/20260421-182522-watchdog-install.txt
+  ?? ops/verification/20260421-182532-watchdog-install.txt
+  ?? ops/verification/20260421-182543-watchdog-install.txt
+  ?? ops/verification/20260421-182553-watchdog-install.txt
+  ?? ops/verification/20260421-182604-watchdog-install.txt
+  ?? ops/verification/20260421-182615-watchdog-install.txt
+  ?? ops/verification/20260421-182625-watchdog-install.txt
+  ?? ops/verification/20260421-182636-watchdog-install.txt
+  ?? ops/verification/20260421-182647-watchdog-install.txt
+  ?? ops/verification/20260421-182657-watchdog-install.txt
+  ?? ops/verification/20260421-182708-watchdog-install.txt
+  ?? ops/verification/20260421-182719-watchdog-install.txt
+  ?? ops/verification/20260421-182729-watchdog-install.txt
+  ?? ops/verification/20260421-182740-watchdog-install.txt
+  ?? ops/verification/20260421-182750-watchdog-install.txt
+  ?? ops/verification/20260421-182801-watchdog-install.txt
+  ?? ops/verification/20260421-182812-watchdog-install.txt
+  ?? ops/verification/20260421-182822-watchdog-install.txt
+  ?? ops/verification/20260421-182833-watchdog-install.txt
+  ?? ops/verification/20260421-182844-watchdog-install.txt
+  ?? ops/verification/20260421-182854-watchdog-install.txt
+  ?? ops/verification/20260421-182905-watchdog-install.txt
+  ?? ops/verification/20260421-182916-watchdog-install.txt
+  ?? ops/verification/20260421-182926-watchdog-install.txt
+  ?? ops/verification/20260421-182937-watchdog-install.txt
+  ?? ops/verification/20260421-182948-watchdog-install.txt
+  ?? ops/verification/20260421-182958-watchdog-install.txt
+  ?? ops/verification/20260421-183009-watchdog-install.txt
+  ?? ops/verification/20260421-183019-watchdog-install.txt
+  ?? ops/verification/20260421-183030-watchdog-install.txt
+  ?? ops/verification/20260421-183041-watchdog-install.txt
+  ?? ops/verification/20260421-183051-watchdog-install.txt
+  ?? ops/verification/20260421-183102-watchdog-install.txt
+  ?? ops/verification/20260421-183113-watchdog-install.txt
+  ?? ops/verification/20260421-183123-watchdog-install.txt
+  ?? ops/verification/20260421-183134-watchdog-install.txt
+  ?? ops/verification/20260421-183144-watchdog-install.txt
+  ?? ops/verification/20260421-183155-watchdog-install.txt
+  ?? ops/verification/20260421-183206-watchdog-install.txt
+  ?? ops/verification/20260421-183216-watchdog-install.txt
+  ?? ops/verification/20260421-183227-watchdog-install.txt
+  ?? ops/verification/20260421-183238-watchdog-install.txt
+  ?? ops/verification/20260421-183248-watchdog-install.txt
+  ?? ops/verification/20260421-183259-watchdog-install.txt
+  ?? ops/verification/20260421-183309-watchdog-install.txt
+  ?? ops/verification/20260421-183320-watchdog-install.txt
+  ?? ops/verification/20260421-183331-watchdog-install.txt
+  ?? ops/verification/20260421-183341-watchdog-install.txt
+  ?? ops/verification/20260421-183352-watchdog-install.txt
+  ?? ops/verification/20260421-183403-watchdog-install.txt
+  ?? ops/verification/20260421-183413-watchdog-install.txt
+  ?? ops/verification/20260421-183424-watchdog-install.txt
+  ?? ops/verification/20260421-183435-watchdog-install.txt
+  ?? ops/verification/20260421-183445-watchdog-install.txt
+  ?? ops/verification/20260421-183456-watchdog-install.txt
+  ?? ops/verification/20260421-183506-watchdog-install.txt
+  ?? ops/verification/20260421-183517-watchdog-install.txt
+  ?? ops/verification/20260421-183528-watchdog-install.txt
+  ?? ops/verification/20260421-183538-watchdog-install.txt
+  ?? ops/verification/20260421-183549-watchdog-install.txt
+  ?? ops/verification/20260421-183600-watchdog-install.txt
+  ?? ops/verification/20260421-183610-watchdog-install.txt
+  ?? ops/verification/20260421-183621-watchdog-install.txt
+  ?? ops/verification/20260421-183632-watchdog-install.txt
+  ?? ops/verification/20260421-183642-watchdog-install.txt
+  ?? ops/verification/20260421-183653-watchdog-install.txt
+  ?? ops/verification/20260421-183703-watchdog-install.txt
+  ?? ops/verification/20260421-183714-watchdog-install.txt
+  ?? ops/verification/20260421-183725-watchdog-install.txt
+  ?? ops/verification/20260421-183735-watchdog-install.txt
+  ?? ops/verification/20260421-183746-watchdog-install.txt
+  ?? ops/verification/20260421-183757-watchdog-install.txt
+  ?? ops/verification/20260421-183807-watchdog-install.txt
+  ?? ops/verification/20260421-183818-watchdog-install.txt
+  ?? ops/verification/20260421-183829-watchdog-install.txt
+  ?? ops/verification/20260421-183839-watchdog-install.txt
+  ?? ops/verification/20260421-183850-watchdog-install.txt
+  ?? ops/verification/20260421-183900-watchdog-install.txt
+  ?? ops/verification/20260421-183911-watchdog-install.txt
+  ?? ops/verification/20260421-183922-watchdog-install.txt
+  ?? ops/verification/20260421-183932-watchdog-install.txt
+  ?? ops/verification/20260421-183943-watchdog-install.txt
+  ?? ops/verification/20260421-183954-watchdog-install.txt
+  ?? ops/verification/20260421-184004-watchdog-install.txt
+  ?? ops/verification/20260421-184015-watchdog-install.txt
+  ?? ops/verification/20260421-184026-watchdog-install.txt
+  ?? ops/verification/20260421-184036-watchdog-install.txt
+  ?? ops/verification/20260421-184047-watchdog-install.txt
+  ?? ops/verification/20260421-184057-watchdog-install.txt
+  ?? ops/verification/20260421-184108-watchdog-install.txt
+  ?? ops/verification/20260421-184119-watchdog-install.txt
+  ?? ops/verification/20260421-184129-watchdog-install.txt
+  ?? ops/verification/20260421-184140-watchdog-install.txt
+  ?? ops/verification/20260421-184151-watchdog-install.txt
+  ?? ops/verification/20260421-184201-watchdog-install.txt
+  ?? ops/verification/20260421-184212-watchdog-install.txt
+  ?? ops/verification/20260421-184222-watchdog-install.txt
+  ?? ops/verification/20260421-184233-watchdog-install.txt
+  ?? ops/verification/20260421-184244-watchdog-install.txt
+  ?? ops/verification/20260421-184254-watchdog-install.txt
+  ?? ops/verification/20260421-184305-watchdog-install.txt
+  ?? ops/verification/20260421-184316-watchdog-install.txt
+  ?? ops/verification/20260421-184326-watchdog-install.txt
+  ?? ops/verification/20260421-184337-watchdog-install.txt
+  ?? ops/verification/20260421-184348-watchdog-install.txt
+  ?? ops/verification/20260421-184358-watchdog-install.txt
+  ?? ops/verification/20260421-184409-watchdog-install.txt
+  ?? ops/verification/20260421-184419-watchdog-install.txt
+  ?? ops/verification/20260421-184430-watchdog-install.txt
+  ?? ops/verification/20260421-184441-watchdog-install.txt
+  ?? ops/verification/20260421-184451-watchdog-install.txt
+  ?? ops/verification/20260421-184502-watchdog-install.txt
+  ?? ops/verification/20260421-184513-watchdog-install.txt
+  ?? ops/verification/20260421-184523-watchdog-install.txt
+  ?? ops/verification/20260421-184534-watchdog-install.txt
+  ?? ops/verification/20260421-184545-watchdog-install.txt
+  ?? ops/verification/20260421-184555-watchdog-install.txt
+  ?? ops/verification/20260421-184606-watchdog-install.txt
+  ?? ops/verification/20260421-184616-watchdog-install.txt
+  ?? ops/verification/20260421-184627-watchdog-install.txt
+  ?? ops/verification/20260421-184638-watchdog-install.txt
+  ?? ops/verification/20260421-184649-watchdog-install.txt
+  ?? ops/verification/20260421-184659-watchdog-install.txt
+  ?? ops/verification/20260421-184710-watchdog-install.txt
+  ?? ops/verification/20260421-184721-watchdog-install.txt
+  ?? ops/verification/20260421-184731-watchdog-install.txt
+  ?? ops/verification/20260421-184742-watchdog-install.txt
+  ?? ops/verification/20260421-184753-watchdog-install.txt
+  ?? ops/verification/20260421-184803-watchdog-install.txt
+  ?? ops/verification/20260421-184814-watchdog-install.txt
+  ?? ops/verification/20260421-184825-watchdog-install.txt
+  ?? ops/verification/20260421-184835-watchdog-install.txt
+  ?? ops/verification/20260421-184846-watchdog-install.txt
+  ?? ops/verification/20260421-184856-watchdog-install.txt
+  ?? ops/verification/20260421-184907-watchdog-install.txt
+  ?? ops/verification/20260421-184918-watchdog-install.txt
+  ?? ops/verification/20260421-184928-watchdog-install.txt
+  ?? ops/verification/20260421-184939-watchdog-install.txt
+  ?? ops/verification/20260421-184950-watchdog-install.txt
+  ?? ops/verification/20260421-185000-watchdog-install.txt
+  ?? ops/verification/20260421-185011-watchdog-install.txt
+  ?? ops/verification/20260421-185022-watchdog-install.txt
+  ?? ops/verification/20260421-185032-watchdog-install.txt
+  ?? ops/verification/20260421-185043-watchdog-install.txt
+  ?? ops/verification/20260421-185054-watchdog-install.txt
+  ?? ops/verification/20260421-185104-watchdog-install.txt
+  ?? ops/verification/20260421-185115-watchdog-install.txt
+  ?? ops/verification/20260421-185126-watchdog-install.txt
+  ?? ops/verification/20260421-185136-watchdog-install.txt
+  ?? ops/verification/20260421-185147-watchdog-install.txt
+  ?? ops/verification/20260421-185157-watchdog-install.txt
+  ?? ops/verification/20260421-185208-watchdog-install.txt
+  ?? ops/verification/20260421-185219-watchdog-install.txt
+  ?? ops/verification/20260421-185229-watchdog-install.txt
+  ?? ops/verification/20260421-185240-watchdog-install.txt
+  ?? ops/verification/20260421-185251-watchdog-install.txt
+  ?? ops/verification/20260421-185301-watchdog-install.txt
+  ?? ops/verification/20260421-185312-watchdog-install.txt
+  ?? ops/verification/20260421-185323-watchdog-install.txt
+  ?? ops/verification/20260421-185333-watchdog-install.txt
+  ?? ops/verification/20260421-185344-watchdog-install.txt
+  ?? ops/verification/20260421-185354-watchdog-install.txt
+  ?? ops/verification/20260421-185405-watchdog-install.txt
+  ?? ops/verification/20260421-185416-watchdog-install.txt
+  ?? ops/verification/20260421-185426-watchdog-install.txt
+  ?? ops/verification/20260421-185437-watchdog-install.txt
+  ?? ops/verification/20260421-185448-watchdog-install.txt
+  ?? ops/verification/20260421-185459-watchdog-install.txt
+  ?? ops/verification/20260421-185509-watchdog-install.txt
+  ?? ops/verification/20260421-185520-watchdog-install.txt
+  ?? ops/verification/20260421-185531-watchdog-install.txt
+  ?? ops/verification/20260421-185541-watchdog-install.txt
+  ?? ops/verification/20260421-185552-watchdog-install.txt
+  ?? ops/verification/20260421-185602-watchdog-install.txt
+  ?? ops/verification/20260421-185613-watchdog-install.txt
+  ?? ops/verification/20260421-185624-watchdog-install.txt
+  ?? ops/verification/20260421-185634-watchdog-install.txt
+  ?? ops/verification/20260421-185645-watchdog-install.txt
+  ?? ops/verification/20260421-185656-watchdog-install.txt
+  ?? ops/verification/20260421-185706-watchdog-install.txt
+  ?? ops/verification/20260421-185717-watchdog-install.txt
+  ?? ops/verification/20260421-185728-watchdog-install.txt
+  ?? ops/verification/20260421-185738-watchdog-install.txt
+  ?? ops/verification/20260421-185749-watchdog-install.txt
+  ?? ops/verification/20260421-185759-watchdog-install.txt
+  ?? ops/verification/20260421-185810-watchdog-install.txt
+  ?? ops/verification/20260421-185821-watchdog-install.txt
+  ?? ops/verification/20260421-185831-watchdog-install.txt
+  ?? ops/verification/20260421-185842-watchdog-install.txt
+  ?? ops/verification/20260421-185853-watchdog-install.txt
+  ?? ops/verification/20260421-185903-watchdog-install.txt
+  ?? ops/verification/20260421-185914-watchdog-install.txt
+  ?? ops/verification/20260421-185925-watchdog-install.txt
+  ?? ops/verification/20260421-185935-watchdog-install.txt
+  ?? ops/verification/20260421-185946-watchdog-install.txt
+  ?? ops/verification/20260421-185956-watchdog-install.txt
+  ?? ops/verification/20260421-190007-watchdog-install.txt
+  ?? ops/verification/20260421-190017-watchdog-install.txt
+  ?? ops/verification/20260421-190028-watchdog-install.txt
+  ?? ops/verification/20260421-190039-watchdog-install.txt
+  ?? ops/verification/20260421-190049-watchdog-install.txt
+  ?? ops/verification/20260421-190100-watchdog-install.txt
+  ?? ops/verification/20260421-190111-watchdog-install.txt
+  ?? ops/verification/20260421-190121-watchdog-install.txt
+  ?? ops/verification/20260421-190132-watchdog-install.txt
+  ?? ops/verification/20260421-190143-watchdog-install.txt
+  ?? ops/verification/20260421-190153-watchdog-install.txt
+  ?? ops/verification/20260421-190204-watchdog-install.txt
+  ?? ops/verification/20260421-190214-watchdog-install.txt
+  ?? ops/verification/20260421-190225-watchdog-install.txt
+  ?? ops/verification/20260421-190236-watchdog-install.txt
+  ?? ops/verification/20260421-190246-watchdog-install.txt
+  ?? ops/verification/20260421-190257-watchdog-install.txt
+  ?? ops/verification/20260421-190308-watchdog-install.txt
+  ?? ops/verification/20260421-190318-watchdog-install.txt
+  ?? ops/verification/20260421-190329-watchdog-install.txt
+  ?? ops/verification/20260421-190340-watchdog-install.txt
+  ?? ops/verification/20260421-190350-watchdog-install.txt
+  ?? ops/verification/20260421-190401-watchdog-install.txt
+  ?? ops/verification/20260421-190411-watchdog-install.txt
+  ?? ops/verification/20260421-190422-watchdog-install.txt
+  ?? ops/verification/20260421-190433-watchdog-install.txt
+  ?? ops/verification/20260421-190443-watchdog-install.txt
+  ?? ops/verification/20260421-190454-watchdog-install.txt
+  ?? ops/verification/20260421-190505-watchdog-install.txt
+  ?? ops/verification/20260421-190515-watchdog-install.txt
+  ?? ops/verification/20260421-190526-watchdog-install.txt
+  ?? scripts/bluebubbles-health.sh
+
+=== prompt index ===
+exit=0
+wrote .cursor/prompts/INDEX.md (64 prompts)
+
+=== work queue ===
+pending    1
+           20260417-170500-install-watchdog.json
+completed  20
+rejected   0
+failed     0
+blocked    0
+
+=== recent verification ===
+last 8 files (of 574):
+  2026-04-21T13:04:22       891  20260421-190422-watchdog-install.txt
+  2026-04-21T13:04:33       891  20260421-190433-watchdog-install.txt
+  2026-04-21T13:04:43       891  20260421-190443-watchdog-install.txt
+  2026-04-21T13:04:54       891  20260421-190454-watchdog-install.txt
+  2026-04-21T13:05:05       891  20260421-190505-watchdog-install.txt
+  2026-04-21T13:05:15       891  20260421-190515-watchdog-install.txt
+  2026-04-21T13:05:26       891  20260421-190526-watchdog-install.txt
+  2026-04-18T11:31:21      4604  INDEX.txt
+
+=== task runner health ===
+exit=1
+task-runner: UNHEALTHY (report=/Users/bob/AI-Server/ops/verification/20260421-130536-task-runner-health.txt)
+  OK launchd.loaded: launchctl list: 78494	-15	com.symphony.task-runner
+  !! heartbeat.fresh: heartbeat is 275997s old (>900s); content='last-heartbeat: 2026-04-18T08:15:00-06:00'
+  !! queue.not_stuck: 1 pending task(s) older than 3600s: 20260417-170500-install-watchdog.json age=276001s
+  OK verification.recent: newest=20260421-190526-watchdog-install.txt age=10s
+  OK preflight.seen: newest preflight=20260421-114101-preflight.txt age=5075s
+  OK disk.pressure: free=21.99 GiB / total=228.3 GiB (used 90.4%) at /Users/bob/AI-Server
+
+=== status report summary ===
+exit=0
+# STATUS_REPORT summary
+
+_Generated: 2026-04-21 13:05 MDT · repo commit: `d64c44a2166f` · STATUS_REPORT last touched: 2026-04-21_
+
+This digest is produced by `ops/status_report_summarizer.py` from `STATUS_REPORT.md`. See `ops/AGENT_VERIFICATION_PROTOCOL.md` for the tagging conventions (`[FOLLOWUP]`, `[NEEDS_MATT]`).
+
+## Headline
+
+- **Open items:** 11 across 3 actionable sections
+- **Follow-ups:** 9
+- **Needs Matt:** 1
+- **Completed (in Done section):** 24
+
+## What changed since last summary
+
+_No prior snapshot or no detectable changes._
+
+## Current open items by category
+
+### Now (1)
+
+- 🧑 [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategie…
+
+### Next (1)
+
+- **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot…
+
+### Later (9)
+
+- 🔁 **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- 🔁 **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- 🔁 **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- 🔁 **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- 🔁 **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- 🔁 **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- 🔁 **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- 🔁 **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- 🔁 **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Follow-ups
+
+- _Later_: **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- _Later_: **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- _Later_: **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- _Later_: **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- _Later_: **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- _Later_: **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- _Later_: **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- _Later_: **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- _Later_: **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Needs Matt
+
+_Items that require Matt's real-world decision or input._
+
+- _Now_: [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code chan…
+
+## Top 3 next actions
+
+1. _Now_ (🧑 needs Matt): [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_ban…
+2. _Next_: **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot 2>&1 | grep redeeme…
+3. _Later_ (🔁 follow-up): **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compose healthcheck. See…
+
+## Reference sections (historical)
+
+STATUS_REPORT.md contains 19 reference sections (detailed incident reports / historical snapshots). They are not enumerated here; run `grep '^## Reference' STATUS_REPORT.md` to list them.
+
+---
+
+_Produced by `ops/status_report_summarizer.py`. Snapshot written to `data/status_report_summarizer/last_snapshot.json`; next run will diff against it._
+
+### sweep finished 2026-04-21T13:05:36-06:00 ok=True
