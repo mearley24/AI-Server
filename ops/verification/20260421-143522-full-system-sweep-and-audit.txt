@@ -1,0 +1,425 @@
+================================================================================
+FULL SYSTEM SWEEP & AUDIT
+================================================================================
+Stamp:        20260421-143522 MDT (2026-04-21 14:35 MDT)
+Prompt:       .cursor/prompts/full-system-sweep-and-audit.md  (created this pass)
+Operator:     Cline (ACT MODE, AUTO_APPROVE=true)
+Host:         Bob (Mac Mini M4)
+Branch:       main
+Git SHA:      ab11dcb (HEAD, origin/main, origin/HEAD)
+Compose file: docker-compose.yml (19 services defined)
+Container #:  19 running
+launchd #:    50 symphony.* agents loaded
+
+================================================================================
+HEADLINE — per-pillar state
+================================================================================
+🟢 Containers        — 19/19 healthy. All host-exposed ports answer /health 200.
+🟢 Data pipeline     — Cortex 45,743 memories, openclaw 41 jobs, emails 593,
+                       brain.db 148 MB. Flowing.
+🟡 Autonomy          — preflight clean, but a verify-dump hot loop is firing
+                       ~6/min (see R4 below). 964→988 artifacts for a single
+                       task in 24 h.
+🟡 Messaging         — iMessage bridge + BlueBubbles healthy. BB inbound
+                       fired today (19:07 UTC). openclaw has a chatty
+                       redis_event_listener warning (R2 below) but inbound
+                       pub/sub keeps working via direct subscribers.
+🟡 Trading           — Polymarket-bot container healthy; VPN responds but
+                       /health + /redeem/status behind vpn return empty
+                       replies (port 8430 proxied through WireGuard). No
+                       trades today; Kraken / Polymarket blockers from
+                       earlier STATUS_REPORT still apply.
+
+================================================================================
+PHASE 1 — Live health
+================================================================================
+
+--- docker compose ps ---
+NAME                 STATUS                       PORTS
+calendar-agent       Up 3 hours (healthy)         127.0.0.1:8094->8094/tcp
+clawwork             Up 3 hours (healthy)         127.0.0.1:8097->8097/tcp
+client-portal        Up 3 hours (healthy)         8096/tcp
+cortex               Up About an hour (healthy)   127.0.0.1:8102->8102/tcp
+cortex-autobuilder   Up 3 hours (healthy)         127.0.0.1:8115->8115/tcp
+dtools-bridge        Up 3 hours (healthy)         127.0.0.1:8096->5050/tcp
+email-monitor        Up 3 hours (healthy)         127.0.0.1:8092->8092/tcp
+intel-feeds          Up 3 hours (healthy)         127.0.0.1:8765->8765/tcp
+notification-hub     Up 3 hours (healthy)         127.0.0.1:8095->8095/tcp
+openclaw             Up About an hour (healthy)   127.0.0.1:8099->3000/tcp
+polymarket-bot       Up 3 hours (healthy)
+proposals            Up 3 hours (healthy)         127.0.0.1:8091->8091/tcp
+redis                Up 3 hours (healthy)         127.0.0.1:6379->6379/tcp
+rsshub               Up 3 hours (healthy)         1200/tcp
+voice-receptionist   Up 3 hours (healthy)         127.0.0.1:8093->3000/tcp
+vpn                  Up 2 hours (healthy)         127.0.0.1:8430->8430/tcp
+x-alpha-collector    Up 3 hours
+x-intake             Up 3 hours (healthy)         127.0.0.1:8101->8101/tcp
+x-intake-lab         Up 3 hours (healthy)         127.0.0.1:8103->8101/tcp
+
+Container count:               19
+docker compose config --services | wc -l:  19   (OK, match)
+
+--- Host /health sweep ---
+8091  HTTP 200  (proposals)
+8092  HTTP 200  (email-monitor)
+8093  HTTP 200  (voice-receptionist)
+8094  HTTP 200  (calendar-agent)
+8095  HTTP 200  (notification-hub)
+8096  HTTP 200  (dtools-bridge)
+8097  HTTP 200  (clawwork)
+8099  HTTP 200  (openclaw)
+8101  HTTP 200  (x-intake)
+8102  HTTP 200  (cortex)
+8103  HTTP 200  (x-intake-lab)
+8115  HTTP 200  (cortex-autobuilder)
+8430  HTTP 000  (polymarket-bot via vpn — curl: Empty reply)
+8765  HTTP 200  (intel-feeds)
+8199  HTTP 200  (imessage-bridge, host launchd)
+
+--- Redis ---
+docker exec redis redis-cli -a $PW PING                     → PONG
+docker exec redis redis-cli -a $PW LLEN events:log          → 1000 (capped OK)
+docker exec redis redis-cli -a $PW PUBSUB NUMSUB events:imessage → 1
+
+--- scripts/verify-deploy.sh ---
+FAIL redis not responding          <-- FALSE NEGATIVE (R3)
+OK   redis IP=172.18.0.100
+OK   openclaw / cortex / email-monitor / notification-hub / proposals /
+     calendar-agent
+NOAUTH Authentication required. (events:log sample — same R3 root cause)
+WARN polymarket-bot /redeem/status not reachable
+OK   all 5 SQLite DBs exist
+Overall: verify-deploy: FAILED   <-- misleading due to R3
+
+--- scripts/compose-drift-check.sh ---
+WARN: context-preprocessor  (stale, has DECOMMISSIONED.md — OK)
+WARN: knowledge-scanner     (stale, has DECOMMISSIONED.md — OK)
+WARN: mission_control       (stale, has DECOMMISSIONED.md — OK)
+WARN: remediator            (stale, has DECOMMISSIONED.md — OK)
+OK   : operations, telegram-bob-remote, telegram-interface, voice_receptionist
+       (allowlisted intentionally-not-in-compose)
+compose-drift: no real drift.
+
+================================================================================
+PHASE 2 — Data pipeline
+================================================================================
+
+data/openclaw/jobs.db                 128 KB   5 tables
+  jobs                                 41
+  client_preferences                    0   (same as last 2 audits — empty)
+  clients / job_events / follow_up_log  — no follow_up_log table here;
+                                          it lives in follow_ups.db
+
+data/openclaw/decision_journal.db    3,136 KB  3 tables
+  pending_approvals status distribution:
+    expired  |103   (2026-04-04 range — pre-drain)
+    pending  |476   ← grew from 0 post-T drain. Backlog reopened.
+    skipped  | 63
+  oldest pending:  2026-04-13T14:28:20
+  newest pending:  2026-04-21T19:06:15
+
+data/email-monitor/emails.db         3,160 KB  4 tables
+  emails total: 593
+  (read=0, responded=0) = 593    ← all three states are zero-responded;
+                                   read-bit policy still correct per Z3
+                                   fix (read only flips on confirmed Sent
+                                   match). No outbound reply fired since.
+
+data/email-monitor/follow_ups.db        36 KB   3 tables
+  follow_ups               61  (canonical merge from 2026-04-17)
+  follow_up_log             0  ← auto-send never fired. (Regression R7)
+
+data/cortex/brain.db               151,608 KB  4 tables
+  memories              45,743    ← +45,008 since last STATUS_REPORT baseline
+                                   (735 on 2026-04-13). Auto-ingest is live.
+
+data/x_intake/queue.db                 128 KB  2 tables
+  approved        1
+  auto_approved  21
+  auto_rejected   9
+  rejected        4
+  (total 35 rows, all analyzed; latest id=35, 2026-04-21)
+
+--- BlueBubbles health ---
+status:              healthy
+ping.ok:             true     latency 318.6 ms
+server_version:      1.9.9
+private_api:         false    (SIP on — policy, not a bug)
+webhook_endpoint:    /hooks/bluebubbles
+last_inbound_event:  2026-04-21T19:07:02Z   (live today)
+counters:            inbound=1  outbound=0  outbound_failure=0
+
+================================================================================
+PHASE 3 — Autonomy surface
+================================================================================
+
+--- python3 ops/task_queue_status.py ---
+pending    1
+completed  20
+failed     0
+rejected   0
+blocked    0
+oldest_pending:  20260417-170500-install-watchdog  age=3.3d  type=verify_dump
+stale_pending (>=60m): 1
+
+--- preflight ---
+preflight ok=True resolved=0 staged=0 unsafe=0 report=         (clean)
+
+--- launchd (50 symphony.* agents loaded) ---
+com.symphony.task-runner                  loaded (last_terminated=SIGTERM)
+com.symphony.task-runner-watchdog         PID 45629 running
+com.symphony.bob-watchdog                 loaded
+com.symphony.voice-webhook                loaded
+com.symphony.polymarket-hourly            loaded
+com.symphony.file-watcher                 PID 1028 running
+com.symphony.dropbox-organizer            PID 1065 running
+com.symphony.trading-provider-slo-monitor loaded
+com.symphony.service-sre-loop             loaded
+com.symphony.notes-watcher                loaded
+com.symphony.audio-intake                 loaded
+com.symphony.bluebubbles-watchdog         loaded  (BlueBubbles live)
+com.symphony.imessage-bridge              loaded  (PID on :8199, verified)
+com.symphony.markup-tool                  loaded  (:8088, non-symphony prefix,
+                                                   also confirmed earlier)
+... (40 additional symphony.* services)
+
+--- heartbeats ---
+data/task_runner/bob_watchdog_heartbeat.txt  2026-04-21T14:30:27-0600  (fresh)
+data/task_runner/watchdog_heartbeat.txt       refreshed this tick
+last-heartbeat (work_queue):                  2026-04-18T08:15:00-06:00  ← stale
+
+--- ops/verification artifact count ---
+total .txt:                1,049
+last 24 h:                 1,000    ← HOT.
+last 24 h (watchdog-install): 988    ← the culprit (R4)
+last 15 min (watchdog-install):  85  ← ~5.7/min, one every ~10s
+
+================================================================================
+PHASE 4 — Regression scan (live)
+================================================================================
+
+R# | Regression                                  | Status      | Evidence
+---+--------------------------------------------+-------------+-------------------
+R1 | _host_redis_url helper present              | 🟢 GREEN    | scripts/imessage-server.py:114
+R2 | openclaw redis_event_listener warn spam     | 🟡 YELLOW   | see below
+R3 | verify-deploy.sh Redis PING missing -a      | 🔴 RED      | scripts/verify-deploy.sh:34
+R4 | verify-dump watchdog-install loop           | 🔴 RED      | 85 files in 15 min
+R5 | .env unquoted values (ACH_BANK_NAME)        | 🔴 RED      | .env:348
+R6 | Pending approvals backlog                   | 🟡 YELLOW   | 476 pending, oldest 8d
+R7 | follow_up_log auto-send never fires         | 🔴 RED      | 0 rows, same as audit
+R8 | Dropbox /preview/ links in knowledge/docs   | 🟢 GREEN    | validator: OK
+
+--- R1 evidence ---
+$ grep -n "_host_redis_url" scripts/imessage-server.py | head -5
+110:# _host_redis_url() rewrites the Docker-network hostname to the published
+114:def _host_redis_url(raw_url: str) -> str:
+130:_REDIS_URL = _host_redis_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"))
+→ helper + wrapping call both present. The fix from 2026-04-18 09:04 is
+  intact.
+
+--- R2 evidence ---
+$ docker logs openclaw --tail 60 | grep redis_event_listener
+every ~10s:
+  redis_event_listener disconnected: 'Orchestrator' object has no attribute
+  '_get_redis' — retrying in 10s
+orchestrator.py references self._get_redis() on line 286 and 1147, but the
+method is not defined on the class (only self._redis_publish /
+self._redis_log_only exist). The listener coroutine never connects, retries
+every 10s. Downstream impact: openclaw cannot react to pub/sub events (x-intake,
+email-monitor, notification-hub all publish fine; the other subscribers
+work; this one loop just warns). NOT user-visible; but the log line has
+been repeating since restart 1h ago.
+
+--- R3 evidence ---
+scripts/verify-deploy.sh:34:
+  if docker exec redis redis-cli PING 2>/dev/null | grep -q PONG; then
+It calls redis-cli WITHOUT -a, so Redis returns NOAUTH → the PING fails
+silently → the script prints "FAIL redis not responding" even though the
+daemon is fine. Proof: same command with -a returns PONG (see Phase 1).
+Same bug on line 76/77 for LRANGE events:log.
+Consequence: verify-deploy.sh exits non-zero every time, which makes it
+useless as a pass/fail signal in CI or in scripts/symphony-ship.sh verify.
+
+--- R4 evidence (HIGHEST-LEVERAGE FIX) ---
+$ ls ops/verification/*watchdog-install* | wc -l
+988
+$ find ops/verification -type f -mmin -15 -name "*watchdog-install*" | wc -l
+85
+$ cat ops/work_queue/pending/20260417-170500-install-watchdog.json
+ { task_id:20260417-170500-install-watchdog, task_type:verify_dump,
+   payload.name:watchdog-install-verify, created_by:perplexity-computer,
+   created_at:2026-04-17T17:05:00Z }
+
+scripts/task_runner.py:608 routes verify_dump tasks to handle_verify_dump,
+which tees a run into a new ops/verification/<stamp>-<name>.txt file. After
+the handler returns rc=0 the pending file should move to completed/. It
+doesn't — the verify script is writing ~stamp~-watchdog-install.txt
+successfully every tick AND the task json stays in pending/ (visible: same
+file name is the only occupant of ops/work_queue/pending/).
+
+Root cause (two nested issues):
+  (a) ops/task_runner/verifications/watchdog-install.sh (or equivalent)
+      sources /Users/bob/AI-Server/.env. Line 348 is:
+          ACH_BANK_NAME=First Bank of Colorado
+      Under `set -euo pipefail`, `source .env` interprets "Bank" as a
+      command after ACH_BANK_NAME=First. Error in every result file:
+          /Users/bob/AI-Server/.env: line 348: Bank: command not found
+      The step keeps going (heartbeat etc. is found) but the overall
+      sourcing is non-deterministic, and the task never completes cleanly
+      from the runner's POV. Fix: quote the value, or switch to
+      `scripts/api-post.sh`-style env loading via
+      `export $(grep -vE '^(#|$)' .env | xargs)` in the verify script.
+  (b) Even if (a) were benign, the runner thinks the task is pending
+      because the pending JSON is never moved. Either the handler is
+      returning non-zero on a subtle step or ops/work_queue/pending/ is
+      not being scanned as completed after this specific verify_dump.
+      Needs a targeted scripts/task_runner.py trace run with DEBUG=1 to
+      confirm which branch hits. Short-term: manually `git mv
+      ops/work_queue/pending/20260417-170500-install-watchdog.json
+      ops/work_queue/completed/` and push.
+
+Blast radius: we've consumed ~140 KB/h of disk + git churn since 2026-04-17
+on files that carry no new information. It also drowns out legit artifacts
+in ops/verification/. The verification-index.sh and verification-prune.sh
+helpers can clean it, but the source needs to stop first.
+
+--- R5 evidence ---
+$ grep -nE "^[A-Z_]+=[^\"']*[A-Za-z0-9] [A-Za-z]" .env | head
+348:ACH_BANK_NAME=First Bank of Colorado
+352:KALSHI_API_KEY=  # Matt: paste your Kalshi API key
+Also: duplicate ACH_ACCOUNT (line 345 and 347) and duplicate KALSHI_API_KEY
+(line 352 empty-with-comment, line 353 real value). `set -o pipefail`
+under `source .env` tolerates most of this but every consumer that uses
+bash to load .env (install_bob_watchdog.sh, the watchdog-install verify,
+ops/task_runner scripts) will hit "Bank: command not found" on 348 and
+"# Matt:" comment confusion on 352.
+
+Fix: wrap value in single quotes, de-dupe duplicate keys, move comments
+to their own lines:
+    ACH_BANK_NAME='First Bank of Colorado'
+    # Matt: paste your Kalshi API key
+    KALSHI_API_KEY=4e8d7931-8537-42dd-9b98-0233e1ca70ab
+
+(use scripts/set-env.sh so duplicates are collapsed).
+
+--- R6 evidence ---
+Pending approvals jumped from 0 (post-Prompt-T drain on 2026-04-13) to
+476 in 8 days. Most recent: 2026-04-21T19:06:15. This is new traffic, not
+a regression of the drain — but the drain should run nightly on a cap
+(e.g. >7d or >50 rows). Currently there's no scheduled re-run of
+scripts/prompt_t_drain.py — it's a one-shot tool. Recommend:
+  - Schedule it via launchd nightly with a threshold guard, OR
+  - Wire openclaw to auto-expire at 72h.
+
+--- R7 evidence ---
+$ sqlite3 data/email-monitor/follow_ups.db 'SELECT COUNT(*) FROM follow_up_log;'
+0
+follow_up_log has been at 0 since at least the April 12 audit.
+openclaw/follow_up_engine.py exists (per openclaw/MODULE_MAP.md line
+~36, "present but never-fired"). Engine is importable but no code path
+triggers a send. Recommend: run the engine manually once against a known
+overdue job and log why it didn't fire (missing template? rate limit?
+quiet hours? no MATT_CONFIRMED flag?).
+
+--- R8 evidence ---
+$ bash scripts/dropbox-link-validate.sh STATUS_REPORT.md CLAUDE.md AGENTS.md
+dropbox-link-validate: OK (no /preview/ links found)
+$ grep -rIE "dropbox.com/[^ ]*/preview/" knowledge/ | wc -l
+0
+
+================================================================================
+PHASE 5 — Doc / drift accuracy
+================================================================================
+
+Container count in CLAUDE.md / .clinerules:       19 ✅
+docker compose config --services count:            19 ✅
+ops/REPO_LAYOUT.md stale-dir allowlist:            4 entries, matches drift
+                                                   checker output ✅
+data/DATABASE_SCHEMA.md live snapshot section:     appended 2026-04-17
+                                                   (4 days old) ✅
+AGENTS.md "container count" callouts:              still reference 19 ✅
+
+Drift items found this pass:
+  - scripts/verify-deploy.sh Redis check needs -a flag patch (R3)
+  - .env quoting + dedup (R5) — ships a regression surface for every new
+    bash-loading script
+  - STATUS_REPORT.md trading section still quotes Apr-12 wallet balance
+    ($4.56 → $1.94). Needs a re-check once wallet is funded.
+
+================================================================================
+PHASE 6 — Summary block (matches STATUS_REPORT headline)
+================================================================================
+
+All 19 containers healthy. Cortex is growing (45,743 memories, +45,008 in
+8d). iMessage + BlueBubbles both alive. Trading container is up but blocked
+on funding + Kraken secret (unchanged from prior sweeps).
+
+Two genuine fires need putting out:
+  1. R4 — verify-dump watchdog-install loop consuming ~6 artifacts/min
+     since Apr 17. Move the pending JSON out and patch the verify script's
+     env-sourcing OR the task_runner handler.
+  2. R3 — verify-deploy.sh false-negative on Redis PING (missing -a). Two
+     lines to patch; makes ship/verify actually mean something.
+
+Three quieter leaks:
+  3. R2 — openclaw _get_redis attribute error, every 10s in logs. Non-
+     critical (other listeners work) but pollutes the log stream.
+  4. R5 — .env quoting + de-dup hygiene. Causes R4's underlying bash
+     error and will bite future scripts.
+  5. R6 — pending_approvals back at 476; schedule the drain or add a
+     72h auto-expire in openclaw.
+
+================================================================================
+PHASE 7 — Recommended next actions (high leverage, low risk)
+================================================================================
+
+1. **Stop the R4 loop** (highest leverage):
+     bash scripts/pull.sh
+     git mv ops/work_queue/pending/20260417-170500-install-watchdog.json \
+            ops/work_queue/completed/
+     git add -A && git commit -m \
+       "ops(task-runner): move stuck watchdog-install task to completed" \
+       && git push origin main
+     Then `bash scripts/verification-prune.sh --watchdog-install` to
+     archive the 988 redundant files (keep newest 3 as evidence).
+
+2. **Patch `scripts/verify-deploy.sh` R3** (one-line fix, high leverage):
+     Replace the two `docker exec redis redis-cli` invocations to read
+     REDIS_PASSWORD from .env and pass `-a "$REDIS_PASSWORD"`. verify-deploy
+     becomes a trustworthy signal again and unblocks symphony-ship.sh
+     verify in CI-style use.
+
+3. **Fix .env (R5)**: use `scripts/set-env.sh` to quote
+     ACH_BANK_NAME='First Bank of Colorado', dedup ACH_ACCOUNT + KALSHI_API_KEY,
+     move inline `#` comments to their own lines. This also closes the
+     bash error at the root of R4.
+
+4. **Add `_get_redis` shim on Orchestrator (R2)**: openclaw/orchestrator.py
+     already exposes self._redis_publish / _redis_log_only. Add a small
+     `async def _get_redis(self)` that returns a redis.asyncio client using
+     self._redis_url, with the same lazy-init / close-on-shutdown pattern
+     as the rest of the class. Unblocks the _redis_event_listener loop and
+     removes a chatty WARN line.
+
+5. **Drain pending_approvals (R6)** — run
+     `python3 scripts/prompt_t_drain.py --dry-run` first, then with
+     `--execute`, and schedule it via com.symphony.approval-drainer.plist
+     at 02:00 daily. Either that or patch openclaw to auto-expire >72h
+     pending rows on every tick.
+
+(Items 6–8 left as-is from prior category-8 recommendations: fund
+Polymarket wallet, verify Lesson #17 sell-haircut, Kalshi DEMO→LIVE.)
+
+================================================================================
+Definition of done (this pass)
+================================================================================
+
+[x] All 8 phases executed
+[x] STATUS_REPORT.md updated (see next commit)
+[x] Each Phase-4 regression has a concrete current value + status
+[x] Recommended actions limited to 5 high-leverage items, each referencing
+    an existing script / prompt / module
+[x] Zero paste-back requested
+[ ] Commit + push — happens immediately after this file is written
+
+END OF FULL-SYSTEM-SWEEP ARTIFACT

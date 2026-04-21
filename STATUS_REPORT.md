@@ -1,8 +1,8 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-18 09:04 MDT
+Generated: 2026-04-11 | Last updated: 2026-04-21 14:35 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,73 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## Full system sweep (2026-04-21 14:35 MDT, Cline)
+
+End-to-end pass against the new `.cursor/prompts/full-system-sweep-and-audit.md`
+(this prompt was missing at run time — drafted this pass from `cline-prompt-Q-full-audit.md`
++ the 10-category campaign template). Full evidence:
+`ops/verification/20260421-143522-full-system-sweep-and-audit.txt`.
+
+### Headline
+
+| Pillar            | State | Evidence                                                                    |
+|-------------------|-------|-----------------------------------------------------------------------------|
+| Containers        | 🟢    | 19/19 healthy (`docker compose ps`); all host-exposed ports 200 on /health |
+| Data pipeline     | 🟢    | cortex 45 743 memories, jobs 41, emails 593, brain.db 148 MB, x_intake 35  |
+| Autonomy          | 🟡    | preflight clean; verify-dump loop firing ~6/min (R4 below)                  |
+| Messaging         | 🟡    | iMessage + BlueBubbles live (last BB inbound 2026-04-21T19:07Z); openclaw  |
+|                   |       | `_get_redis` attribute warn every 10 s (R2 below)                          |
+| Trading           | 🟡    | polymarket-bot container up; :8430 via VPN empty-reply; Kraken + funding   |
+|                   |       | blockers unchanged from Reference: Trading State                           |
+
+### Regressions table (see verification artifact for full evidence)
+
+| R# | Regression                                  | Status    | Current value / location                                     |
+|----|---------------------------------------------|-----------|--------------------------------------------------------------|
+| R1 | `_host_redis_url` helper in imessage bridge | 🟢 GREEN  | `scripts/imessage-server.py:114` — helper + wrap call intact |
+| R2 | openclaw `_get_redis` attribute missing     | 🟡 YELLOW | `Orchestrator` never defines `_get_redis`; warn every 10 s   |
+| R3 | `verify-deploy.sh` Redis PING missing `-a`  | 🔴 RED    | `scripts/verify-deploy.sh:34` — false negative every run     |
+| R4 | verify-dump watchdog-install hot loop       | 🔴 RED    | 988 artifacts in 24 h (85 in last 15 min, ~5.7/min)          |
+| R5 | `.env` unquoted ACH_BANK_NAME + dup keys    | 🔴 RED    | `.env:348 ACH_BANK_NAME=First Bank of Colorado` (no quotes)  |
+| R6 | `pending_approvals` backlog re-accumulated  | 🟡 YELLOW | 476 pending (0 post-Prompt-T drain Apr 13); oldest 8 d old   |
+| R7 | `follow_up_log` auto-send never fires       | 🔴 RED    | 0 rows in `data/email-monitor/follow_ups.db` (unchanged)     |
+| R8 | Dropbox `/preview/` links anywhere          | 🟢 GREEN  | `scripts/dropbox-link-validate.sh` → OK across root + knowledge/ |
+
+### New follow-ups
+
+- [FOLLOWUP] **Stop the R4 verify-dump hot loop** — move
+  `ops/work_queue/pending/20260417-170500-install-watchdog.json` to
+  `ops/work_queue/completed/`, then `scripts/verification-prune.sh` the
+  ~988 redundant `*-watchdog-install.txt` artifacts (keep newest 3 as
+  evidence). Root cause is two nested: install_bob_watchdog.sh sources
+  `.env` which fails on line 348 (R5), AND the task runner is not
+  promoting this specific `verify_dump` out of `pending/`.
+- [FOLLOWUP] **Patch R3** — add `-a "$REDIS_PASSWORD"` to the two
+  `docker exec redis redis-cli` calls in `scripts/verify-deploy.sh`
+  (lines 34 and 76/77). Makes `symphony-ship.sh verify` a trustworthy
+  signal again.
+- [FOLLOWUP] **Fix R5 .env hygiene** — run `scripts/set-env.sh` to quote
+  `ACH_BANK_NAME='First Bank of Colorado'`, dedup `ACH_ACCOUNT` +
+  `KALSHI_API_KEY`, move inline `# Matt:` comment to its own line. Also
+  closes the bash error underpinning R4(a).
+- [FOLLOWUP] **Add `_get_redis` shim on Orchestrator (R2)** — small
+  `async def _get_redis(self)` in `openclaw/orchestrator.py` using
+  `self._redis_url` with the same lazy-init + close-on-shutdown pattern
+  as `_redis_publish` / `_redis_log_only`. Silences the 10 s warn spam
+  and unblocks pub/sub subscribers in openclaw.
+- [FOLLOWUP] **Drain pending_approvals on a schedule (R6)** — either
+  schedule `python3 scripts/prompt_t_drain.py --execute` nightly via a
+  new `com.symphony.approval-drainer.plist`, or wire openclaw to auto-
+  expire `pending_approvals.status='pending'` rows older than 72 h on
+  every tick. Without one of these, the backlog recurs after every drain.
+- [FOLLOWUP] **Fire follow_up_engine once manually (R7)** — run
+  `python3 -m openclaw.follow_up_engine --once --debug` against an
+  overdue row and capture why it doesn't fire (missing template? quiet
+  hours? approval gate?). If it's approval-gated, the drain in the
+  previous bullet unblocks it automatically.
 
 ---
 
