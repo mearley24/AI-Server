@@ -35,7 +35,7 @@ Stage results (updated progressively):
 | 1 — Approval Drainer LaunchAgent | ✅ PASS | ops/verification/20260421-193143-approval-drainer-launchagent.md |
 | 2 — BlueBubbles Webhook | ✅ PASS (partial) | ops/verification/20260421-193143-bluebubbles-webhook.md |
 | 3 — Direct Claude Code 1M Docs | ✅ PASS | ops/verification/20260421-193143-direct-claude-1m-docs.md |
-| 4 — Polymarket Funding Blocker | pending | — |
+| 4 — Polymarket Funding Blocker | ❌ FAIL | ops/verification/20260421-193143-polymarket-funding-blocker.md |
 
 ### Stage 1 detail (2026-04-21 19:31 MDT)
 LaunchAgent `com.symphony.approval-drainer` confirmed loaded. Plist at
@@ -54,6 +54,19 @@ at `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md`.
 `docs/priority1-direct-runner.md` and `scripts/run-priority1-1m.sh` both exist.
 Source prompt `.cursor/prompts/direct/priority1-stage-gate.md` exists. Added
 Priority 1 runner discovery note to top of `AGENTS.md`.
+
+### Stage 4 detail (2026-04-21 19:31 MDT)
+3 active blockers — see artifact for full detail:
+1. **DNS failure from VPN container (CRITICAL)**: polymarket-bot can't resolve external
+   hostnames (`api.polymarket.com`, `api.kraken.com`, Polygon RPC). Blocks all strategy
+   execution and on-chain reads. Fix: investigate WireGuard DNS config.
+2. **MATIC gas = 0**: redeemer fires but can't submit on-chain txns.
+3. **Wallet USDC unverified**: internal tracker shows 500.0 USDC but can't read on-chain
+   due to DNS failure. Prior check (2026-04-17) showed $1.94 actual. Funding may still be
+   needed.
+- [NEEDS_MATT] Fund wallet `0xa791E3090312981A1E18ed93238e480a03E7C0d2` with USDC once DNS fixed.
+- [NEEDS_MATT] Send ~0.5 MATIC/POL to same wallet for gas.
+- [FOLLOWUP] Fix VPN DNS — check WireGuard DNS config in docker-compose.yml vpn service.
 
 ---
 
