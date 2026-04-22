@@ -26,6 +26,37 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Autonomous LLM orchestration layer (2026-04-22, direct Claude Code)
+
+Added a repo-owned autonomous execution layer so the system can run without
+Perplexity / Cline handholding and can route across Claude Code 1M, Cline
+(200k, small tasks only), and local LLMs (summarization / planning / draft
+prompts only — not authoritative for commits).
+
+New files:
+
+- `docs/autonomous-llm-orchestration.md` — routing rules + source-of-truth
+  model (GitHub `origin/main` + `STATUS_REPORT.md` + `ops/verification/`).
+- `docs/away-workflow.md` — practical SSH/Tailscale/VPN runbook for Matt.
+- `scripts/ai-dispatch.sh` — single stable entry point. Modes: `status`,
+  `models`, `run-priority1`, `run-prompt <file>`, `local-prompt <file>`.
+  Prefers `claude-sonnet-4-6[1m]`, falls back to `claude-sonnet-4-20250514`,
+  detects ollama / llama.cpp without requiring them. Logs to
+  `ops/verification/dispatch-<ts>-<mode>.txt`. Never prints secrets.
+
+Usage from Bob (or SSHed into Bob):
+
+```bash
+cd ~/AI-Server
+bash scripts/ai-dispatch.sh status
+bash scripts/ai-dispatch.sh run-priority1
+```
+
+- [FOLLOWUP] Optional: wire future connector lanes (Linear, Twilio, Zoho) as
+  additional dispatcher modes rather than new entry points.
+
+---
+
 ## Full system sweep (2026-04-21 14:35 MDT, Cline)
 
 End-to-end pass against the new `.cursor/prompts/full-system-sweep-and-audit.md`
