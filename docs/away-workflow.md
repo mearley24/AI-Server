@@ -104,6 +104,30 @@ when Matt is remote, prefer the dispatcher. Rule of thumb: if the task
 fits comfortably in 200k tokens and is a tight diff, Cline is fine; if
 it is 1M-shaped, go direct via `run-prompt` or `run-priority1`.
 
+## 5b. Feed X links / automation ideas into self-improvement
+
+When Matt sees an X/Twitter post or has an automation idea he wants
+AI-Server to eventually evaluate, the away flow is:
+
+```bash
+# On Bob, after SSH
+cd ~/AI-Server
+
+# Capture — URL with a short "why", or free-form note
+bash scripts/self-improve.sh add-url 'https://x.com/<handle>/status/<id>' 'why this matters'
+bash scripts/self-improve.sh add-note 'idea: nightly digest of Cortex memory deltas'
+
+# Turn captures into scored improvement cards (bounded, single-shot)
+bash scripts/self-improve.sh process
+```
+
+`process` routes through `scripts/ai-dispatch.sh run-prompt
+.cursor/prompts/self-improvement/process-inbox.md`, so normal dispatcher
+logging and `ops/verification/` artifacts apply. X links are inspiration
+and evidence — never executed. See `docs/self-improvement-loop.md` for
+the full loop, scoring rubric, safety rules, and the print-only
+`promote` semantics.
+
 ## 6. Source of truth reminder
 
 - `origin/main` on GitHub — canonical code + docs + `STATUS_REPORT.md`.

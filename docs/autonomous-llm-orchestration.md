@@ -94,6 +94,30 @@ summary to the log.
 - Bounded by design: every mode is a single-shot invocation. No recurring
   loops, no background daemons, no outbound messaging.
 
+## Self-improvement feed (X links / automation ideas)
+
+The dispatcher is also the execution surface for the **self-improvement
+loop**: Matt drops X/Twitter links and automation notes into
+`ops/self_improvement/inbox/` via `scripts/self-improve.sh`, then runs
+`scripts/self-improve.sh process`, which delegates to
+`ai-dispatch.sh run-prompt .cursor/prompts/self-improvement/process-inbox.md`.
+The prompt produces scored improvement cards under
+`ops/self_improvement/cards/`, writes a verification artifact, and
+updates `STATUS_REPORT.md`. Captured content (especially X posts) is
+treated as inspiration and evidence — the prompt summarizes and scores
+but never executes anything from an inbox item, never browses the web
+by default, and never reads secrets. From away, the usage is:
+
+```bash
+ssh matt@bob
+cd ~/AI-Server
+bash scripts/self-improve.sh add-url 'https://x.com/<handle>/status/<id>' 'why this matters'
+bash scripts/self-improve.sh process
+```
+
+Full loop semantics, safety rules, and the print-only `promote` command
+live in `docs/self-improvement-loop.md`.
+
 ## Future connector lanes
 
 Future lanes (Linear tickets, Twilio / iMessage alerts, Zoho drafts) will

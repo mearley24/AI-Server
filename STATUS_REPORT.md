@@ -1926,3 +1926,37 @@ curl "http://127.0.0.1:8102/api/meetings/recent" | python3 -m json.tool
 - Worker timeout on whisper is 2 hours per file. Multi-hour recordings may need splitting upstream.
 
 _Built by Cline on 2026-04-17 per `.cursor/prompts/cline-prompt-meeting-audio-intake.md` (AUTO_APPROVE=true). Acceptance criteria all green at commit time: whisper-cli installed; `ggml-large-v3.bin` 2.9G on disk; all 4 intake dirs created; queue schema applied; launchd job loaded; empty-queue worker run completes in <0.1s; `/api/meetings/recent` returns `[]`._
+
+## Self-improvement loop (2026-04-22, autonomous subagent)
+
+Added a bounded, repo-safe self-improvement workflow so Matt can capture
+X/Twitter links and automation ideas on the fly and have Claude Code
+turn them into scored improvement cards without any external
+execution. Captured content is inspiration/evidence only — never run.
+
+- **Docs:** `docs/self-improvement-loop.md` — full loop (capture →
+  archive → summarize → classify/score → card → decide → record),
+  safety rules, directory map, commands, and explicit mention that
+  Linear/Twilio/Zoho are future routing targets, not active.
+- **Prompt:** `.cursor/prompts/self-improvement/process-inbox.md` —
+  bounded prompt that reads up to 20 small inbox files, archives them
+  verbatim, emits one card per item under `ops/self_improvement/cards/`
+  with impact/effort/risk scoring and a recommended next action, and
+  writes a verification artifact. No web browsing by default, no secret
+  reads, no outbound messaging.
+- **Script:** `scripts/self-improve.sh` — `add-url`, `add-note`, `list`,
+  `process`, `promote`. `process` routes through
+  `scripts/ai-dispatch.sh run-prompt` and falls back to direct `claude`
+  1M if the dispatcher is absent. `promote` is print-only — it surfaces
+  the proposed next command/prompt path for Matt to review and run
+  manually, never executes the change itself.
+- **Directories:** `ops/self_improvement/{inbox,cards,archive}/` plus
+  `.cursor/prompts/self-improvement/`, all with `.gitkeep` where
+  appropriate.
+- **Docs updated:** `docs/away-workflow.md` §5b and
+  `docs/autonomous-llm-orchestration.md` — both include the away-mode
+  SSH recipe (`ssh matt@bob`, `add-url`, `process`).
+
+No recurring scheduled tasks were created. No external connectors were
+wired. The loop explicitly depends on existing dispatcher / verification
+/ STATUS_REPORT gates for anything that would actually change the repo.
