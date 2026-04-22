@@ -28,7 +28,9 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ## Priority 1 Run — 2026-04-21T19:31 MDT (direct Claude Code, Sonnet 4.6 [1M])
 
-Stage results (updated progressively):
+**Run complete.** Commits: d0c0a27 (S1), dda86bd (S2), 6fa5188 (S3), bd10d07 (S4).
+
+Stage results (final):
 
 | Stage | Status | Artifact |
 |---|---|---|
