@@ -1,0 +1,50 @@
+=== task-runner preflight ===
+started_at: 2026-04-22T05:31:25-06:00
+finished_at: 2026-04-22T05:31:26-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-22.md
+
+unsafe conflicts: 0
+
+commit: 4005cf101e1a6bbb99da33743116a73bdae9643a pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M STATUS_REPORT.md
+ M data/clawwork/data/clawwork_state.json
+ M data/clawwork/data/sector_performance.json
+ M data/task_runner/bob-watchdog-state/containers
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+ M scripts/cline-claude-code-wrapper.sh
+?? .cursor/prompts/direct/
+?? data/task_runner/bob-watchdog-state/uh_openclaw
+?? data/task_runner/bob-watchdog-state/x_intake
+?? ops/self_improvement/archive/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+?? ops/self_improvement/cards/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md
+?? ops/self_improvement/inbox/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "4005cf101e1a6bbb99da33743116a73bdae9643a",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-22.md"
+  ],
+  "finished_at": "2026-04-22T05:31:26-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-22T05:31:25-06:00",
+  "unsafe_conflicts": []
+}
