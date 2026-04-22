@@ -36,6 +36,10 @@ STALE_SECONDS=300
 PREFLIGHT_STUCK_TICKS=3
 MATT_PHONE="${MATT_PHONE_NUMBER:-}"
 BRIDGE_URL="${IMESSAGE_BRIDGE_URL:-http://localhost:8199}"
+# Hard rate-limit on outbound watchdog texts, independent of the per-event
+# one-shot state. Prevents a flapping heartbeat (fresh/stale oscillation)
+# from repeatedly re-texting Matt about the same class of event.
+NOTIFY_COOLDOWN_SECONDS="${WATCHDOG_NOTIFY_COOLDOWN_SECONDS:-3600}"
 
 mkdir -p "$LOG_DIR"
 
@@ -140,6 +144,21 @@ print(json.dumps(req))
 
 notify_matt(){
   local title="$1" body="$2"
+  # Rate-limit: only one outbound text per NOTIFY_COOLDOWN_SECONDS for a
+  # given title class (e.g. "runner wedge"). Suppressed notifications are
+  # still logged to $WATCHDOG_LOG so you can see what would have fired.
+  local key_raw key last_ts now
+  key_raw="$(printf '%s' "$title" | tr -cs '[:alnum:]' '_' | tr '[:upper:]' '[:lower:]' | sed 's/_*$//')"
+  key="last_notify_${key_raw}"
+  now="$(date +%s)"
+  last_ts="$(read_state_key "$key")"
+  if [ -n "$last_ts" ]; then
+    local delta=$(( now - last_ts ))
+    if [ "$delta" -lt "$NOTIFY_COOLDOWN_SECONDS" ]; then
+      log "notify SUPPRESSED (cooldown ${delta}s < ${NOTIFY_COOLDOWN_SECONDS}s) title='${title}' body='${body:0:120}'"
+      return 0
+    fi
+  fi
   local a=1 b=1
   notify_direct_bridge "$title" "$body" && a=0
   notify_redis_hub     "$title" "$body" && b=0
@@ -147,6 +166,7 @@ notify_matt(){
     log "ALL notification paths failed for: $title"
     return 1
   fi
+  write_state "$key" "$now"
   return 0
 }
 
@@ -166,8 +186,23 @@ main(){
     if [ -z "$wedged_since" ]; then
       wedged_since="$(date +%s)"
       write_state wedged_since "$wedged_since"
-      log "NEW WEDGE detected: heartbeat ${age}s stale, pending=$pending"
-      notify_matt "runner wedge" "task-runner heartbeat ${age}s stale. pending=${pending}. kicking via launchctl."
+      log "NEW WEDGE detected: heartbeat ${age}s stale, pending=$pending last_msg='${last_msg:0:80}'"
+      # Suppress the outbound text when the last commit was a plain
+      # heartbeat tick and no work is pending: healthy idle runner, not a
+      # user-actionable wedge. Still kick the runner so the heartbeat
+      # refreshes. Matt should only be paged on genuine stuck-work.
+      case "$last_msg" in
+        *"— heartbeat"*|*"-- heartbeat"*)
+          if [ "$pending" -eq 0 ]; then
+            log "wedge notify SUPPRESSED: last tick was heartbeat-only and pending=0 (healthy idle)"
+          else
+            notify_matt "runner wedge" "task-runner heartbeat ${age}s stale. pending=${pending}. last='${last_msg:0:80}'. kicking via launchctl."
+          fi
+          ;;
+        *)
+          notify_matt "runner wedge" "task-runner heartbeat ${age}s stale. pending=${pending}. last='${last_msg:0:80}'. kicking via launchctl."
+          ;;
+      esac
     else
       log "wedge ongoing: age=${age}s wedged_since=${wedged_since}"
     fi

@@ -201,6 +201,37 @@ bash scripts/self-improve.sh scan-bluebubbles
 bash setup/install_self_improvement_watcher.sh --dry-run
 ```
 
+### Enablement (Bob, manual) and rollback
+
+The installer never invokes `launchctl`. It only stages the plist into
+`~/Library/LaunchAgents/` and prints the bootstrap command for you to run
+knowingly.
+
+Enable:
+
+```bash
+cd ~/AI-Server
+git pull --ff-only
+bash scripts/self-improve.sh sources         # sanity
+bash scripts/self-improve.sh scan            # sanity
+bash scripts/self-improve.sh daemon-once     # sanity (one real tick)
+bash setup/install_self_improvement_watcher.sh --install
+# Installer prints the next two commands; run them yourself:
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.symphony.self-improvement.plist
+launchctl kickstart -k gui/$(id -u)/com.symphony.self-improvement
+
+# Watch:
+tail -f ~/AI-Server/data/task_runner/self-improvement.out.log
+tail -f ~/AI-Server/data/task_runner/self-improvement.err.log
+```
+
+Rollback:
+
+```bash
+launchctl bootout gui/$(id -u)/com.symphony.self-improvement || true
+bash setup/install_self_improvement_watcher.sh --uninstall
+```
+
 ## Future routing targets (not wired)
 
 Still listed so the loop stays extensible, not because any of these are

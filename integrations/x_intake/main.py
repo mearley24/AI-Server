@@ -53,6 +53,36 @@ CORTEX_URL = os.getenv("CORTEX_URL", "http://cortex:8102")
 
 _TWEET_RE = re.compile(r"https?://(?:x\.com|twitter\.com)/\S+/status/\d+\S*", re.I)
 
+# Per-URL idempotency guard — suppresses duplicate processing when the same
+# link is delivered twice (e.g. legacy bridge + BlueBubbles webhook both
+# publishing to events:imessage, or Redis redelivering on reconnect).
+_PROCESSED_URL_TTL_SECONDS = int(os.getenv("X_INTAKE_DEDUP_TTL_SECONDS", "600"))
+_PROCESSED_URLS: dict[str, float] = {}
+_PROCESSED_URLS_LOCK = asyncio.Lock()
+
+
+def _canonical_tweet_url(url: str) -> str:
+    """Normalize a tweet URL so x.com/twitter.com and trailing junk collapse."""
+    m = re.match(r"https?://(?:x\.com|twitter\.com)/([^/]+)/status/(\d+)", url, re.I)
+    if not m:
+        return url.strip().rstrip("/?#")
+    return f"https://x.com/{m.group(1).lower()}/status/{m.group(2)}"
+
+
+async def _claim_url(url: str) -> bool:
+    """First-writer-wins lock on a tweet URL. Returns True on first claim."""
+    import time as _time
+    key = _canonical_tweet_url(url)
+    now = _time.time()
+    async with _PROCESSED_URLS_LOCK:
+        for k, ts in list(_PROCESSED_URLS.items()):
+            if now - ts > _PROCESSED_URL_TTL_SECONDS:
+                _PROCESSED_URLS.pop(k, None)
+        if key in _PROCESSED_URLS:
+            return False
+        _PROCESSED_URLS[key] = now
+        return True
+
 MATT_PROFILE = """You are analyzing X/Twitter posts for Matt Earley, owner of Symphony Smart Homes.
 
 Matt's interests and what he finds relevant (score HIGH):
@@ -715,6 +745,9 @@ async def _deep_research(topic: str, url: str) -> str:
 
 async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
     """Analyze a tweet URL, queue for review, publish signals, send iMessage reply."""
+    if not await _claim_url(url):
+        logger.info("duplicate_url_suppressed", url=_canonical_tweet_url(url), source=source)
+        return
     try:
         result = await _analyze_url(url)
         summary = ""
@@ -779,7 +812,6 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                 await _ingest_to_knowledge(url, author, summary, poly_signals)
 
         if summary:
-            await _send_reply(f"X Analysis:\n{summary}")
             # Save ALL posts to Cortex for long-term memory (Phase 4A)
             await _save_to_cortex(url, author, {
                 "relevance": relevance,
@@ -787,8 +819,13 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                 "type": result.get("post_type", "info") if isinstance(result, dict) else "info",
                 "summary": summary,
             }, poly_signals)
-            # Deep research for high-relevance actionable posts via Perplexity
+            # Deep research for high-relevance actionable posts via Perplexity.
+            # Single-reply policy: compute research first, then send one merged
+            # iMessage so Matt never sees two texts for the same link. To
+            # restore the old two-message behavior temporarily, set
+            # X_INTAKE_SPLIT_REPLIES=1.
             _post_type = result.get("post_type", "info") if isinstance(result, dict) else "info"
+            research_section = ""
             if relevance >= 70 and _post_type in ("build", "alpha", "tool"):
                 _topic = (result.get("action", "") if isinstance(result, dict) else "") or summary[:200]
                 research = await _deep_research(_topic, url)
@@ -799,8 +836,14 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                         "type": "research",
                         "summary": f"DEEP RESEARCH: {research[:2000]}",
                     }, poly_signals)
-                    research_msg = f"Deep dive on @{author}'s post:\n\n{research[:1500]}\n\nSource: {url}"
-                    await _send_reply(research_msg)
+                    research_section = f"\n\nDeep dive:\n{research[:1500]}"
+            split_replies = os.getenv("X_INTAKE_SPLIT_REPLIES", "0") == "1"
+            if split_replies:
+                await _send_reply(f"X Analysis:\n{summary}")
+                if research_section:
+                    await _send_reply(f"Deep dive on @{author}'s post:{research_section}\n\nSource: {url}")
+            else:
+                await _send_reply(f"X Analysis:\n{summary}{research_section}")
             # Enqueue high-relevance actionable posts (Phase 4C)
             _action = result.get("action", "none") if isinstance(result, dict) else "none"
             if action_queue is not None and relevance >= 60 and _action.lower() != "none":

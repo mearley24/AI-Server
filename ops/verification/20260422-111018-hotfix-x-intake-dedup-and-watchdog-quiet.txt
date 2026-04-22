@@ -1,0 +1,170 @@
+operational hotfix — 2026-04-22T11:10:18Z
+================================================================
+
+scope
+-----
+Matt asked for three things on AI-Server:
+  1. Enable the self-improvement watcher safely.
+  2. Permanently fix "duplicate text on last link" at the source.
+  3. Permanently fix "task-runner heartbeat texts" at the source.
+
+No secrets were inspected or committed. No external messages were
+sent from the sandbox. No launchd was loaded; the installer remains
+dry-run-by-default and still prints the manual `launchctl bootstrap`
+command that Matt must run on Bob.
+
+changes in this commit
+----------------------
+integrations/x_intake/main.py
+  - Added a process-local URL idempotency guard at the top of
+    `_process_url_and_reply`. First-writer-wins with a TTL
+    (`X_INTAKE_DEDUP_TTL_SECONDS`, default 600s). Canonicalizes
+    x.com / twitter.com forms to one key. This collapses the case
+    where the same inbound text reaches the `events:imessage`
+    channel from two publishers (legacy iMessage bridge
+    `scripts/imessage-server.py monitor_loop` + BlueBubbles webhook
+    `cortex/bluebubbles.py _publish_event`), or where Redis
+    redelivers on reconnect.
+  - Merged the deep-research reply into the primary X Analysis
+    reply, gated by `X_INTAKE_SPLIT_REPLIES` (default 0 = single
+    reply). Previously, high-relevance posts would trigger TWO
+    iMessages for the same link — an "X Analysis" summary and a
+    separate "Deep dive" text. Matt perceived this as a "duplicate
+    text on the last link." It is now one merged reply per URL.
+
+ops/task_runner/scripts/watchdog.sh
+  - Added a hard rate-limit on outbound watchdog texts
+    (`WATCHDOG_NOTIFY_COOLDOWN_SECONDS`, default 3600s). Independent
+    of the existing per-event one-shot state. Prevents a flapping
+    heartbeat (fresh/stale oscillation) from repeatedly re-paging
+    Matt about the same class of wedge.
+  - Suppress the wedge notification when the last commit was a
+    plain `— heartbeat` tick AND `pending=0`. That combination
+    means "healthy idle runner, nothing stuck" and should not
+    generate a user-facing text. The watchdog still kicks the
+    runner to refresh the heartbeat; only the iMessage is
+    suppressed. The suppression is logged to watchdog.log.
+
+docs/self-improvement-loop.md
+  - Added an "Enablement (Bob, manual) and rollback" block with
+    the exact `bootstrap` / `kickstart` / `bootout` commands Matt
+    should run on Bob.
+
+root-cause writeups
+-------------------
+1. duplicate text on last link
+   HYPOTHESIS A — two publishers on `events:imessage`:
+     - scripts/imessage-server.py:monitor_loop() polls chat.db and
+       publishes inbound text to `events:imessage` (host-side).
+     - cortex/bluebubbles.py:_publish_event() publishes inbound
+       webhook messages to BOTH `events:bluebubbles` AND
+       `events:imessage`.
+     If both paths are active for the same inbound message (legacy
+     bridge + BlueBubbles webhook), integrations/x_intake/main.py
+     receives the text twice and spawns
+     `_process_url_and_reply(url)` twice. No URL dedup existed.
+     FIX: `_claim_url()` in x-intake. The second call short-
+     circuits with an `duplicate_url_suppressed` log line.
+
+   HYPOTHESIS B — intentional double-reply for high-relevance:
+     - `_send_reply("X Analysis:\n...")` then a SEPARATE
+       `_send_reply(research_msg)` when relevance>=70 and
+       post_type in {build,alpha,tool}. Two iMessages per URL by
+       design, always about the same link.
+     FIX: merge into a single reply by default. Set
+     `X_INTAKE_SPLIT_REPLIES=1` to restore the old behavior.
+
+   HYPOTHESIS C — Redis pubsub redelivery on listener reconnect:
+     - `_redis_listener()` reconnects after errors (`await
+       asyncio.sleep(5)`), and the watchdog `_listener_watchdog()`
+       restarts it if it dies. If a message is redelivered after
+       reconnect, x-intake would re-process. TTL guard addresses
+       this too.
+
+2. task-runner heartbeat texts
+   The task_runner itself does NOT send iMessages. It writes
+   data/task_runner/heartbeat.txt and commits/pushes with message
+   `ops: task-runner tick <stamp> — heartbeat`. The only path from
+   task-runner state to Matt's iMessage is
+   ops/task_runner/scripts/watchdog.sh, which POSTs to the legacy
+   bridge (http://localhost:8199) and publishes to
+   `notifications:ops:send`. notification-hub routes `:send`
+   channels through `execute_hermes()` → iMessage.
+   Texts can fire on:
+     (a) heartbeat age > 300s (wedge), or
+     (b) `preflight-blocked heartbeat` for 3+ consecutive ticks.
+   Both are one-shot per event, but a flapping heartbeat can
+   re-arm the one-shot repeatedly, and a clock skew / slow push
+   can put a healthy idle runner over the 300s threshold.
+   FIX: (1) add a 1-hour cross-event cooldown on watchdog outbound
+   texts; (2) suppress wedge texts specifically when the last
+   commit was heartbeat-only AND pending=0 (healthy idle); still
+   kick the runner either way.
+
+tests run
+---------
+bash -n ops/task_runner/scripts/watchdog.sh  → OK
+python3 -m py_compile integrations/x_intake/main.py  → OK
+
+(No project pytest suite covers these code paths today. The
+watchdog changes are behavior-only in bash control flow; the
+x-intake changes are local to `_process_url_and_reply` and do
+not change the public interface.)
+
+Bob commands — pull and enable
+------------------------------
+# 1. Pull the fix.
+cd ~/AI-Server
+git pull --ff-only
+
+# 2. Restart x-intake so the dedup + merged-reply change takes effect.
+docker compose restart x-intake
+docker logs --tail=80 x-intake | grep -E 'listener|duplicate_url_suppressed|tweet_detected_from_redis' || true
+
+# 3. Verify a link: send yourself one X link via iMessage. You should
+#    see ONE reply beginning "X Analysis:". If it was a high-relevance
+#    build/alpha/tool post the same reply will end with a "Deep dive:"
+#    section. You should NOT see a second separate "Deep dive on ..."
+#    text. If you do, check x-intake logs for `X_INTAKE_SPLIT_REPLIES`.
+
+# 4. Verify no more task-runner heartbeat texts. Leave Bob idle for
+#    30 min. The watchdog will still run every 90s and still kick the
+#    runner on genuine wedges, but it will no longer text Matt when
+#    the only "activity" has been `ops: task-runner tick ... —
+#    heartbeat` commits with pending=0.
+
+# 5. Enable the self-improvement watcher (DRY-RUN first).
+bash setup/install_self_improvement_watcher.sh --dry-run
+# If the dry-run output looks correct:
+bash setup/install_self_improvement_watcher.sh --install
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.symphony.self-improvement.plist
+launchctl kickstart -k gui/$(id -u)/com.symphony.self-improvement
+tail -f ~/AI-Server/data/task_runner/self-improvement.out.log
+
+Rollback
+--------
+# Disable the self-improvement watcher.
+launchctl bootout gui/$(id -u)/com.symphony.self-improvement || true
+bash setup/install_self_improvement_watcher.sh --uninstall
+
+# Restore the old double-reply behavior in x-intake (temporary).
+#   In your x-intake env: X_INTAKE_SPLIT_REPLIES=1
+#   Then: docker compose restart x-intake
+
+# Disable the URL dedup entirely (not recommended).
+#   Set X_INTAKE_DEDUP_TTL_SECONDS=0 and restart x-intake — the guard
+#   becomes a no-op because each call canonicalizes its URL before
+#   checking and a 0-second TTL expires immediately on the next call.
+
+# Revert watchdog quiet policy (restore old paging cadence).
+#   Set WATCHDOG_NOTIFY_COOLDOWN_SECONDS=0 in the task-runner-watchdog
+#   launchd env; the cooldown short-circuit becomes a no-op. The
+#   heartbeat-only suppression is code-level — revert this commit to
+#   restore the prior behavior.
+
+changed files
+-------------
+M integrations/x_intake/main.py
+M ops/task_runner/scripts/watchdog.sh
+M docs/self-improvement-loop.md
+A ops/verification/20260422-111018-hotfix-x-intake-dedup-and-watchdog-quiet.txt
