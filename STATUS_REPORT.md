@@ -33,7 +33,7 @@ Stage results (updated progressively):
 | Stage | Status | Artifact |
 |---|---|---|
 | 1 — Approval Drainer LaunchAgent | ✅ PASS | ops/verification/20260421-193143-approval-drainer-launchagent.md |
-| 2 — BlueBubbles Webhook | pending | — |
+| 2 — BlueBubbles Webhook | ✅ PASS (partial) | ops/verification/20260421-193143-bluebubbles-webhook.md |
 | 3 — Direct Claude Code 1M Docs | pending | — |
 | 4 — Polymarket Funding Blocker | pending | — |
 
@@ -43,6 +43,12 @@ LaunchAgent `com.symphony.approval-drainer` confirmed loaded. Plist at
 `/app/approval_drain.py` exists in openclaw container (11677 bytes). No log
 yet — first run at 02:00 MT Apr 22. Checks: loaded ✅, plist ✅, script ✅,
 log N/A (pre-first-run).
+
+### Stage 2 detail (2026-04-21 19:31 MDT)
+BlueBubbles: server healthy (v1.9.9), Cortex aggregate healthy. Webhook endpoint
+`/hooks/bluebubbles`. `inbound_count=0` — no messages since fresh install. Safe
+synthetic ping not available without iMessage side-effect; manual test doc created
+at `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md`.
 
 ---
 
