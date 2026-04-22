@@ -26,6 +26,26 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Priority 1 Run — 2026-04-21T19:31 MDT (direct Claude Code, Sonnet 4.6 [1M])
+
+Stage results (updated progressively):
+
+| Stage | Status | Artifact |
+|---|---|---|
+| 1 — Approval Drainer LaunchAgent | ✅ PASS | ops/verification/20260421-193143-approval-drainer-launchagent.md |
+| 2 — BlueBubbles Webhook | pending | — |
+| 3 — Direct Claude Code 1M Docs | pending | — |
+| 4 — Polymarket Funding Blocker | pending | — |
+
+### Stage 1 detail (2026-04-21 19:31 MDT)
+LaunchAgent `com.symphony.approval-drainer` confirmed loaded. Plist at
+`~/Library/LaunchAgents/com.symphony.approval-drainer.plist`. Script
+`/app/approval_drain.py` exists in openclaw container (11677 bytes). No log
+yet — first run at 02:00 MT Apr 22. Checks: loaded ✅, plist ✅, script ✅,
+log N/A (pre-first-run).
+
+---
+
 ## Autonomous LLM orchestration layer (2026-04-22, direct Claude Code)
 
 Added a repo-owned autonomous execution layer so the system can run without
