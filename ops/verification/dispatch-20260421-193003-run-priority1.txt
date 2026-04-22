@@ -8,3 +8,46 @@
 [run-priority1-1m] writing staged prompt: .cursor/prompts/direct/priority1-stage-gate.md
 [run-priority1-1m] prompt written (    5106 bytes)
 [run-priority1-1m] launching: claude --model claude-sonnet-4-6[1m] -p <staged prompt>
+All done. Here is the final report:
+
+---
+
+## Priority 1 Run — Final Report
+
+### Commit hashes (in order)
+| Commit | Stage |
+|---|---|
+| `d0c0a27` | Stage 1 — Approval Drainer LaunchAgent — PASS |
+| `dda86bd` | Stage 2 — BlueBubbles Webhook — PASS (partial) |
+| `6fa5188` | Stage 3 — Direct Claude Code 1M Docs — PASS |
+| `bd10d07` | Stage 4 — Polymarket Funding Blocker — FAIL |
+| `d9d585f` | Run summary commit |
+
+### Artifact paths
+- `ops/verification/20260421-193143-approval-drainer-launchagent.md`
+- `ops/verification/20260421-193143-bluebubbles-webhook.md`
+- `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md` ← created this run
+- `ops/verification/20260421-193143-direct-claude-1m-docs.md`
+- `ops/verification/20260421-193143-polymarket-funding-blocker.md`
+
+### Stage outcomes
+
+**Stage 1 — PASS.** `com.symphony.approval-drainer` LaunchAgent is loaded, plist valid, `approval_drain.py` exists in openclaw container. No log yet — first execution at 02:00 MT Apr 22 (plist was installed at 18:50, after that day's 2 AM slot).
+
+**Stage 2 — PASS (partial).** BlueBubbles server v1.9.9 is healthy, Cortex aggregate health endpoint returns healthy. `inbound_count=0` (no iMessages received on fresh install). No safe zero-side-effect automated webhook ping exists; manual test procedure documented in `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md`. **Recommend**: send a test iMessage from a second device to confirm end-to-end delivery.
+
+**Stage 3 — PASS.** `docs/priority1-direct-runner.md` and `scripts/run-priority1-1m.sh` both exist and are correct. Added a "Priority 1 Direct Runner" discovery section to `AGENTS.md` — it was missing before this run.
+
+**Stage 4 — FAIL (3 blockers identified):**
+1. **DNS failure from VPN container (CRITICAL)** — polymarket-bot can't resolve external hostnames (`api.polymarket.com`, Polygon RPC, `api.kraken.com`). Blocks all strategy execution and on-chain balance reads. Run `docker exec polymarket-bot nslookup api.polymarket.com` to confirm, then check WireGuard DNS config in `docker-compose.yml`.
+2. **MATIC gas = 0** — `redeemer_low_gas` fires every tick; no on-chain txns possible. Requires Matt to send ~0.5 POL to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon.
+3. **Wallet USDC unverified** — internal tracker shows 500.0 USDC but can't confirm on-chain due to DNS failure. Last known actual balance was $1.94 (Apr 17).
+
+### Recommended next human actions
+1. Fix VPN DNS (no approval needed — infra fix, medium risk): investigate `dns:` setting in the `vpn` service in `docker-compose.yml` and the WireGuard peer config.
+2. After DNS fixed, confirm actual on-chain USDC balance.
+3. If balance < $50: deposit USDC on Polygon (high-risk gate, needs Matt).
+4. Send ~0.5 POL for gas to the same wallet (high-risk gate, needs Matt).
+5. After 02:00 MT Apr 22, verify `~/AI-Server/logs/approval-drain.log` is non-empty (Stage 1 follow-up).
+6. Run `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md` Option A or B to confirm webhook delivery (Stage 2 follow-up).
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260421-193003-run-priority1.txt
