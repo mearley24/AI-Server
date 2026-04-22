@@ -34,7 +34,7 @@ Stage results (updated progressively):
 |---|---|---|
 | 1 — Approval Drainer LaunchAgent | ✅ PASS | ops/verification/20260421-193143-approval-drainer-launchagent.md |
 | 2 — BlueBubbles Webhook | ✅ PASS (partial) | ops/verification/20260421-193143-bluebubbles-webhook.md |
-| 3 — Direct Claude Code 1M Docs | pending | — |
+| 3 — Direct Claude Code 1M Docs | ✅ PASS | ops/verification/20260421-193143-direct-claude-1m-docs.md |
 | 4 — Polymarket Funding Blocker | pending | — |
 
 ### Stage 1 detail (2026-04-21 19:31 MDT)
@@ -49,6 +49,11 @@ BlueBubbles: server healthy (v1.9.9), Cortex aggregate healthy. Webhook endpoint
 `/hooks/bluebubbles`. `inbound_count=0` — no messages since fresh install. Safe
 synthetic ping not available without iMessage side-effect; manual test doc created
 at `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md`.
+
+### Stage 3 detail (2026-04-21 19:31 MDT)
+`docs/priority1-direct-runner.md` and `scripts/run-priority1-1m.sh` both exist.
+Source prompt `.cursor/prompts/direct/priority1-stage-gate.md` exists. Added
+Priority 1 runner discovery note to top of `AGENTS.md`.
 
 ---
 

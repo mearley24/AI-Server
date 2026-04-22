@@ -23,6 +23,22 @@ Persistent context for AI agents (Cursor, Bob, OpenClaw) working in this repo.
 
 ---
 
+## Priority 1 — Direct Claude Code Sonnet 4.6 [1M] Runner
+
+For high-stakes or multi-stage Priority 1 work that needs the full 1M context window, run:
+
+```bash
+bash scripts/run-priority1-1m.sh
+```
+
+This launches Claude Code directly against `claude-sonnet-4-6[1m]`, loads the stage-gated
+prompt from `.cursor/prompts/direct/priority1-stage-gate.md`, and gates each stage on a
+committed verification artifact + `git push` before proceeding.
+
+Full docs: `docs/priority1-direct-runner.md`
+
+---
+
 ## Pre-Ultra Setup & Autonomous Runbook
 
 **Before upgrading to Cursor Ultra**, prepare the system so agents run at full power:
