@@ -1,0 +1,10 @@
+[ai-dispatch] mode=run-priority1 role=bob ts=20260421-193003
+
+=== run-priority1 ===
+[ai-dispatch] exec: bash scripts/run-priority1-1m.sh
+[run-priority1-1m] repo root: /Users/bob/AI-Server
+[run-priority1-1m] smoke-testing model: claude-sonnet-4-6[1m]
+[run-priority1-1m] smoke test passed
+[run-priority1-1m] writing staged prompt: .cursor/prompts/direct/priority1-stage-gate.md
+[run-priority1-1m] prompt written (    5106 bytes)
+[run-priority1-1m] launching: claude --model claude-sonnet-4-6[1m] -p <staged prompt>

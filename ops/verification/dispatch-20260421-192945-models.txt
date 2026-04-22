@@ -1,0 +1,14 @@
+[ai-dispatch] mode=models role=bob ts=20260421-192945
+
+=== model lanes ===
+[ai-dispatch] lane A (direct 1M) claude-sonnet-4-6[1m]: OK
+[ai-dispatch] lane B (fallback)  claude-sonnet-4-20250514: OK
+[ai-dispatch] lane C (Cline): 200k context — small tasks only, driven by IDE, not this script
+
+=== local lanes ===
+[ai-dispatch] local LLM: ollama detected (ollama version is 0.17.4)
+ollama models:
+NAME           ID              SIZE      MODIFIED   
+qwen3:8b       500a1f067a9f    5.2 GB    4 days ago    
+llama3.2:3b    a80c4f17acd5    2.0 GB    5 days ago    
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260421-192945-models.txt
