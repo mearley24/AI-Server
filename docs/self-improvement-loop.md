@@ -1,114 +1,213 @@
 # Self-Improvement Loop
 
-A bounded, repo-safe loop that lets AI-Server ingest ideas Matt captures
-on the fly — X/Twitter links, automation riffs, snippets from other
-projects — and turn them into concrete, reviewable improvement proposals
-without letting any of that external input execute blindly.
+A bounded, repo-safe, **always-on** loop that watches AI-Server's existing
+intake streams — `x_intake` (X/Twitter links and automation threads),
+BlueBubbles/iMessage (links, notes, voice-to-text captures Matt sends
+himself), and future read-only connector lanes — and turns the incoming
+signal into concrete, reviewable improvement proposals.
 
-The loop is **inspiration-in, proposal-out**. X links and other captured
-notes are treated as *evidence*, never as instructions. Actual changes
-only land through the existing dispatcher / verification / STATUS_REPORT
-gates.
+The loop is **stream-driven first, manual fallback second.** Incoming
+links and messages are treated as *evidence*, never as instructions.
+Actual code changes still only land through the existing dispatcher /
+verification / `STATUS_REPORT.md` gates.
 
-## Operating loop
+> Why: Matt is already firing items into `x_intake` and BlueBubbles all
+> day. The self-improvement loop should read those streams continuously,
+> find the items that describe automation patterns or efficiency wins,
+> and feed them into the card pipeline. Manual `add-url` / `add-note`
+> modes remain as a fallback for items that come from outside those
+> streams.
 
-1. **Capture** — Matt (or a future connector) drops an item into
-   `ops/self_improvement/inbox/` via `scripts/self-improve.sh add-url`
-   or `add-note`. Each item is a small markdown file with a timestamped
-   name, the raw source (URL / text), and an optional "why this matters"
-   hint. Items are append-only.
-2. **Archive raw input** — when `process` runs, the original inbox file
-   is copied verbatim into `ops/self_improvement/archive/` before any
-   summarization, so the untouched input is always recoverable.
-3. **Summarize** — an LLM pass (Claude Code via `ai-dispatch.sh`, or
-   local LLM fallback) produces a short factual summary of what the
-   link/note is about. No fetching of external URLs unless the run is
-   an explicit direct-Claude session with web access; otherwise the
-   item is marked `needs fetch` and Matt can paste the content later.
-4. **Classify & score** — each item gets three 1–5 scores (impact,
-   effort, risk) and a category tag (e.g. `ingest`, `ops`, `dashboard`,
-   `trading`, `knowledge`, `infra`). Scoring is bounded and conservative:
-   when unsure, assume **higher effort and higher risk**.
-5. **Create improvement card** — a markdown card lands in
-   `ops/self_improvement/cards/` with: source URL, summary, automation
-   pattern observed, applicability to AI-Server, impact / effort / risk,
-   recommended next action, and — if the action is *auto-safe* — a
-   proposed implementation prompt path Matt can hand to the dispatcher.
-6. **Decide action** — each card ends with one of:
-   - **auto-safe prompt** — small, bounded, repo-local change; a
-     `.cursor/prompts/<name>.md` is drafted and referenced. Still
-     requires Matt to run it through `ai-dispatch.sh run-prompt`.
-   - **needs Matt** — architectural or ambiguous; card flagged for
-     human decision, no prompt drafted.
-   - **reject / defer** — not applicable, duplicate, or out of scope;
-     card records the reason so we don't re-triage the same link later.
-   - **external connector follow-up** — requires a connector we have
-     not yet built (Linear ticket, Twilio alert, Zoho draft, etc.).
-     Card names the future lane but does nothing else — those lanes
-     are deliberately out of scope for this loop.
-7. **Record** — `process` updates `STATUS_REPORT.md` with summary
-   counts (`N inbox → M cards: a auto-safe / b needs-Matt / c deferred`)
-   and writes a verification artifact under
-   `ops/verification/self-improve-<ts>.txt` with the card filenames and
-   decisions.
+## Sources
+
+The collector reads **local-only**, read-only, already-present data.
+Nothing in this loop opens a new external service.
+
+### Primary (on by default)
+
+- **`x_intake`** — local X/Twitter intake pipeline.
+  - SQLite queue: `integrations/x_intake/queue_db.py` → `/data/x_intake/queue.db`.
+    Table `x_intake_queue(url, author, summary, status, source, created_at, …)`.
+  - Action queue (rejected / deferred): `/data/x_intake/action_queue.db`.
+  - Scan window: last 24 h of rows with `status in ('pending','auto_approved','approved')`.
+  - Filter: items whose `summary` or `url` matches automation / agent /
+    tooling / workflow / pipeline / scraper / efficiency keywords.
+
+- **BlueBubbles / iMessage** — already-wired bridge.
+  - Inbound events land on Redis channel `events:imessage`
+    (duplicate on `events:bluebubbles`) via `cortex/bluebubbles.py`.
+  - Routing config (owner allowlist): `config/bluebubbles_routing.json`.
+  - Local iMessage SQLite (read-only, when available) is exposed by
+    `scripts/imessage-server.py` via `IMESSAGE_DB_PATH`.
+  - Scan window: last 24 h of events. Only messages from the owner
+    allowlist (already enforced by the bridge) are considered.
+  - Filter: messages containing a URL, a `TODO:` / `IDEA:` prefix, or
+    automation/efficiency keywords. Voice-to-text notes surface here
+    too — BlueBubbles dictations arrive as normal text messages.
+
+### Future connector lanes (read-only first, gated, **not** enabled here)
+
+These are named so the collector stays extensible. None are wired by
+this loop; each will be a separate, reviewed connector.
+
+- **Zoho Mail** — starred / labeled "ideas" threads, read-only.
+- **Twilio** — inbound SMS log (same shape as iMessage).
+- **Linear** — comments on issues tagged `automation-idea`, read-only.
+- **GitHub** — `@matt/ideas` discussions or a specific issue label,
+  read-only.
+- **Web fetch / search** — only inside an explicit direct-Claude turn
+  with web access. Never part of the always-on collector.
+
+Each future lane must land as a new `scan-<lane>` mode in
+`scripts/self-improvement-collect.sh`, behind feature detection, with
+**read-only credentials** and bounded windows.
+
+## Always-on loop
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  discover  →  fetch/normalize  →  summarize  →  classify  →     │
+│  score (impact/effort/risk)  →  create card  →  propose prompt  │
+│  →  safe auto-run via ai-dispatch.sh    OR    flag for Matt     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+1. **Discover** — `scripts/self-improvement-collect.sh daemon-once`
+   (or the launchd watcher, once Matt enables it on Bob) runs
+   `scan-x`, `scan-bluebubbles`, and any future `scan-<lane>`.
+   Each source emits candidate items with `{source, source_url,
+   captured_at, raw_excerpt, why_relevant, origin_stream, confidence}`.
+2. **Dedupe** — the collector hashes `(source_url || raw_excerpt)` and
+   skips items whose hash already appears in `inbox/`, `archive/`, or
+   `cards/`. Hashes are kept in an inline fenced block at the top of
+   each inbox file so `grep` can find them without a side-channel DB.
+3. **Fetch / normalize** — the collector writes a bounded markdown
+   file into `ops/self_improvement/inbox/` with the frontmatter above.
+   It does **not** browse the web and does **not** call any third-party
+   API. The raw excerpt is whatever was already stored locally
+   (x_intake summary, iMessage text body).
+4. **Summarize + classify** — `scripts/self-improve.sh process` invokes
+   `.cursor/prompts/self-improvement/process-inbox.md` via
+   `scripts/ai-dispatch.sh run-prompt`. The prompt turns each inbox
+   item into a card with an **automation hypothesis** and an
+   **efficiency lever** (what AI-Server could do faster / cheaper /
+   more reliably).
+5. **Score** — each card gets 1–5 scores for impact, effort, and risk.
+   When unsure, assume higher effort and higher risk.
+6. **Propose** — if the card is *auto-safe* (repo-local, bounded, no
+   secrets, no new external service, no trading/auth/launchd surgery),
+   the prompt drafts a `.cursor/prompts/self-improvement/<slug>.md`
+   and records the exact `bash scripts/ai-dispatch.sh run-prompt …`
+   command. Otherwise the card is flagged `needs Matt`.
+7. **Run or wait** — the loop never auto-executes on its own. The
+   dispatcher still decides when to run. An auto-safe card *may* be
+   picked up by the dispatcher's normal run; a `needs Matt` card sits
+   until Matt reviews it.
+
+## `scripts/self-improvement-collect.sh` modes
+
+| Mode                | What it does                                                                  |
+| ------------------- | ----------------------------------------------------------------------------- |
+| `scan`              | Runs every available `scan-<lane>` in order. Prints a summary at the end.     |
+| `scan-x`            | Reads `x_intake` SQLite queue (read-only) and emits inbox items.              |
+| `scan-bluebubbles`  | Reads BlueBubbles events / iMessage DB / Redis channel if already available.  |
+| `sources`           | Prints detected sources and what is missing (without failing).                |
+| `daemon-once`       | Runs `scan`, then `scripts/self-improve.sh process` once. No looping.         |
+
+All modes are **bounded**: row limits, byte caps, time windows. No mode
+opens an outbound connection.
+
+## `scripts/self-improve.sh` modes
+
+| Mode                                                 | What it does                                                                     |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `process`                                            | Runs `daemon-once` (collector first, then the `process-inbox` prompt).           |
+| `scan`                                               | Runs `self-improvement-collect.sh scan` only (no LLM pass).                      |
+| `scan-x` / `scan-bluebubbles`                        | Runs the single-source scan.                                                     |
+| `sources`                                            | Runs `self-improvement-collect.sh sources`.                                      |
+| `add-url <url> [note...]`                            | **Fallback**: manual inbox item with a URL.                                      |
+| `add-note <text...>`                                 | **Fallback**: manual inbox item with free text.                                  |
+| `list`                                               | Inbox, card, and archive counts and recent entries.                              |
+| `promote <card-file>`                                | Prints the proposed next command; never executes.                                |
+
+`add-url` and `add-note` remain supported so Matt can drop in something
+that came from outside the wired streams (a podcast, a blog, a
+conversation). Stream-driven ingest covers the bulk of the signal.
 
 ## Safety rules
 
-- **No blind execution of external content.** X posts, blog snippets,
-  and scraped text are inputs to *summarize and score*, never to
-  `curl | bash`-style runs.
-- **No web browsing by default.** The `process` prompt does not fetch
-  URLs. If content is missing, the card is marked `needs fetch` and
-  Matt provides the text, or he re-runs the prompt in an explicit
-  direct-Claude session where web access is allowed for that turn.
-- **No secrets touched.** The prompt and script never read, print, or
-  log environment variables, API keys, or credential files. Presence
-  checks only, and only if strictly required (they aren't, for this
-  loop).
+- **No blind execution of external content.** X posts, iMessage text,
+  and any future connector payload are inputs to *summarize and score*,
+  never to `curl | bash`-style runs.
+- **No web browsing by default.** The process prompt does not fetch
+  URLs. If content is missing, the card is marked `needs fetch`.
+- **No secrets touched.** Neither the collector nor the prompt opens
+  `.env`, `.env.*`, `*.key`, `*.pem`, `~/.ssh/`, or anything that
+  smells like a credential. The collector only reads from locations
+  already used by the repo's existing scripts/config, and it never
+  prints environment-variable values. Presence/absence of a config
+  is reported as a source, not a value.
 - **No outbound communication.** The loop does not post to X, send
-  email, DM Slack, or call any external API. Future connectors will
-  be separate, explicit dispatcher lanes.
-- **Bounded reads.** The `process` prompt reads at most N small files
-  from `ops/self_improvement/inbox/` per run (default 20, each capped
-  at ~10 KB). Large payloads should be summarized by Matt before
-  capture.
-- **Promote ≠ execute.** `scripts/self-improve.sh promote <card>` only
-  *prints* the proposed next command and prompt path. It never runs
-  it. Matt still has to copy the command and run it through the normal
-  dispatcher, which enforces verify / commit / push gating.
-- **X links are inspiration.** A viral tweet showing an automation
-  pattern is a data point, not a design. The card captures *what the
-  pattern is* and *whether AI-Server already has something similar*
-  before proposing anything new.
+  email, DM Slack, send SMS, or call any third-party API. Every future
+  connector lane starts as read-only and requires an explicit new
+  dispatcher lane.
+- **Bounded reads.** Each source has a row cap (default 200) and a
+  per-item byte cap (default 10 KB). Larger payloads are summarized
+  before capture, or dropped.
+- **Dedupe.** Items whose content hash is already present in inbox /
+  archive / cards are skipped silently.
+- **No auto-enable of launchd / cron.** The launchd template and
+  installer in `setup/launchd/` ship with a `--dry-run` installer.
+  Matt enables recurring local jobs on Bob manually after reviewing.
+  Recurring local jobs consume local compute and — when `process`
+  invokes Claude Code — API budget.
+- **Promote ≠ execute.** `scripts/self-improve.sh promote <card>`
+  only *prints* the proposed next command and prompt path.
 
 ## Directory map
 
 ```
 ops/self_improvement/
-  inbox/     # timestamped raw captures (url + why)
+  inbox/     # normalized markdown captures from streams + manual
   cards/     # generated improvement proposals (markdown)
   archive/   # verbatim copies of processed inbox items
+scripts/
+  self-improve.sh                 # user-facing entry point
+  self-improvement-collect.sh     # stream collector (scan/daemon-once)
+setup/launchd/
+  com.symphony.self-improvement.plist        # launchd template (NOT loaded)
+setup/
+  install_self_improvement_watcher.sh        # dry-run installer
 .cursor/prompts/self-improvement/
-  process-inbox.md   # the prompt Claude Code runs to do steps 2–7
+  process-inbox.md                # LLM pass that turns inbox → cards
 ```
 
-## Commands
+## Commands (cheat sheet for Bob)
 
-| Command                                              | What it does                                                      |
-| ---------------------------------------------------- | ----------------------------------------------------------------- |
-| `bash scripts/self-improve.sh add-url <url> [note]`  | Writes a timestamped inbox item with the URL and optional note.   |
-| `bash scripts/self-improve.sh add-note <text...>`    | Writes a timestamped inbox item with free text (no URL required). |
-| `bash scripts/self-improve.sh list`                  | Lists inbox, card, and archive counts and recent entries.         |
-| `bash scripts/self-improve.sh process`               | Runs the `process-inbox.md` prompt via the dispatcher.            |
-| `bash scripts/self-improve.sh promote <card-file>`   | Prints the proposed next command for the card; never executes.    |
+```bash
+cd ~/AI-Server
+
+# What does the collector see today?
+bash scripts/self-improve.sh sources
+
+# Pull candidates from streams, then process them once.
+bash scripts/self-improve.sh daemon-once           # (equivalent to `process`)
+
+# Single-source scan, no LLM pass.
+bash scripts/self-improve.sh scan-x
+bash scripts/self-improve.sh scan-bluebubbles
+
+# Dry-run the launchd watcher installer. Does NOT load anything.
+bash setup/install_self_improvement_watcher.sh --dry-run
+```
 
 ## Future routing targets (not wired)
 
-These are mentioned so the loop stays extensible, not because they are
+Still listed so the loop stays extensible, not because any of these are
 active:
 
 - **Linear** — ticketize `needs Matt` cards.
-- **Twilio / iMessage** — alert on high-impact auto-safe cards.
+- **Twilio / iMessage outbound** — alert on high-impact auto-safe cards.
 - **Zoho** — draft client-facing follow-ups when a card maps to a
   client ask.
 

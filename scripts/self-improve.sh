@@ -1,15 +1,31 @@
 #!/usr/bin/env bash
-# self-improve.sh — capture X/Twitter links and automation ideas into
-# a bounded, repo-safe self-improvement inbox, and route processing
-# through the existing ai-dispatch.sh gates.
+# self-improve.sh — the user-facing entry point for the stream-driven
+# self-improvement loop.
+#
+# The primary model is stream-driven: the collector
+# (scripts/self-improvement-collect.sh) scans existing local intake
+# streams (x_intake, BlueBubbles/iMessage, future read-only connector
+# lanes) and drops normalized markdown items into
+# ops/self_improvement/inbox/. The `process` mode here then summarizes
+# and scores them through ai-dispatch.sh. Manual add-url / add-note
+# remain as fallbacks for signal that didn't come through a stream.
 #
 # Modes:
-#   add-url <url> [note...]  Write a timestamped inbox item with URL + note.
-#   add-note <text...>       Write a timestamped inbox item with free text.
+#   process                  Run the collector (daemon-once) first, then
+#                            the process-inbox prompt via ai-dispatch.sh.
+#                            Set SELF_IMPROVE_SKIP_COLLECT=1 to skip the
+#                            collector step (used by daemon-once to avoid
+#                            recursion).
+#   daemon-once              Alias for `process` — kept explicit because
+#                            the launchd watcher calls it by name.
+#   scan                     Run the collector's `scan` mode only (no LLM
+#                            pass). Populates inbox without summarizing.
+#   scan-x                   Collector `scan-x` only.
+#   scan-bluebubbles         Collector `scan-bluebubbles` only.
+#   sources                  Collector `sources` — print detected sources.
+#   add-url <url> [note...]  FALLBACK: manual inbox item with URL + note.
+#   add-note <text...>       FALLBACK: manual inbox item with free text.
 #   list                     Show inbox/card/archive counts and recent items.
-#   process                  Run the process-inbox prompt via ai-dispatch.sh
-#                            (falls back to `claude` direct if dispatcher
-#                            is absent).
 #   promote <card-file>      Print the proposed next command for a card.
 #                            Never executes anything.
 #
@@ -18,6 +34,7 @@
 #   - Does not browse the web.
 #   - Does not send external communications.
 #   - `promote` is print-only; it does not run the proposed command.
+#   - Does NOT enable any recurring launchd / cron job.
 
 set -euo pipefail
 
@@ -68,14 +85,34 @@ slugify() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage:
+Usage (stream-driven first):
+  scripts/self-improve.sh process             # scan streams, then process inbox
+  scripts/self-improve.sh daemon-once         # alias for process
+  scripts/self-improve.sh scan                # collector-only, no LLM pass
+  scripts/self-improve.sh scan-x
+  scripts/self-improve.sh scan-bluebubbles
+  scripts/self-improve.sh sources             # what streams are detected?
+
+Fallback (manual capture):
   scripts/self-improve.sh add-url <url> [note...]
   scripts/self-improve.sh add-note <text...>
+
+Review:
   scripts/self-improve.sh list
-  scripts/self-improve.sh process
   scripts/self-improve.sh promote <card-file>
 EOF
   exit 2
+}
+
+COLLECTOR="scripts/self-improvement-collect.sh"
+
+run_collector() {
+  local mode="$1"
+  if [ ! -f "$COLLECTOR" ]; then
+    echo "[self-improve] WARN: $COLLECTOR missing; skipping collector $mode" >&2
+    return 0
+  fi
+  bash "$COLLECTOR" "$mode"
 }
 
 cmd_add_url() {
@@ -168,6 +205,14 @@ cmd_process() {
     exit 1
   fi
 
+  # Stream-driven by default: run the collector first so the inbox
+  # reflects whatever has arrived in x_intake / BlueBubbles since the
+  # last run. Skip when the collector itself invoked us (daemon-once).
+  if [ "${SELF_IMPROVE_SKIP_COLLECT:-0}" != "1" ] && [ -f "$COLLECTOR" ]; then
+    echo "[self-improve] running collector scan before LLM pass"
+    bash "$COLLECTOR" scan || echo "[self-improve] WARN: collector scan returned non-zero" >&2
+  fi
+
   if [ -x "scripts/ai-dispatch.sh" ] || [ -f "scripts/ai-dispatch.sh" ]; then
     echo "[self-improve] dispatching via scripts/ai-dispatch.sh run-prompt"
     exec bash scripts/ai-dispatch.sh run-prompt "$PROMPT_PATH"
@@ -224,11 +269,16 @@ cmd_promote() {
 }
 
 case "$MODE" in
-  add-url)   cmd_add_url "$@" ;;
-  add-note)  cmd_add_note "$@" ;;
-  list)      cmd_list ;;
-  process)   cmd_process ;;
-  promote)   cmd_promote "$@" ;;
-  ""|-h|--help|help) usage ;;
+  add-url)            cmd_add_url "$@" ;;
+  add-note)           cmd_add_note "$@" ;;
+  list)               cmd_list ;;
+  process)            cmd_process ;;
+  daemon-once)        cmd_process ;;
+  scan)               run_collector scan ;;
+  scan-x)             run_collector scan-x ;;
+  scan-bluebubbles)   run_collector scan-bluebubbles ;;
+  sources)            run_collector sources ;;
+  promote)            cmd_promote "$@" ;;
+  ""|-h|--help|help)  usage ;;
   *) echo "[self-improve] unknown mode: $MODE" >&2; usage ;;
 esac

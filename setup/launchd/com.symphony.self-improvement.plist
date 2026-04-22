@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.symphony.self-improvement — launchd template for periodic
+  stream-driven self-improvement scans on Bob.
+
+  IMPORTANT: This file is a TEMPLATE. It is NOT loaded automatically
+  and is NOT committed with a pre-baked load step. Install via
+  `bash setup/install_self_improvement_watcher.sh --dry-run` first,
+  then (if Matt approves) run the printed `launchctl bootstrap`
+  command manually on Bob.
+
+  What it does when loaded:
+    - Every StartInterval seconds (default 1800 = 30 min), runs
+      `scripts/self-improve.sh daemon-once`, which:
+        1. Scans x_intake / BlueBubbles / iMessage streams
+           (bounded, read-only).
+        2. Populates ops/self_improvement/inbox/.
+        3. Invokes the process-inbox prompt via ai-dispatch.sh.
+
+  Cost / footprint:
+    - Local compute: each scan is a few sqlite reads; negligible.
+    - API budget: the `process` step calls Claude Code. At 30-min
+      cadence that's up to 48 invocations/day. Keep an eye on
+      ai-dispatch logs under ops/verification/.
+    - Do NOT drop StartInterval below 1800 without considering cost.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.symphony.self-improvement</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/bob/AI-Server/scripts/self-improve.sh</string>
+    <string>daemon-once</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AI_SERVER_ROOT</key><string>/Users/bob/AI-Server</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <!-- Bounded defaults; override here if needed. -->
+    <key>SELF_IMPROVE_ROW_CAP</key><string>200</string>
+    <key>SELF_IMPROVE_BYTE_CAP</key><string>10240</string>
+    <key>SELF_IMPROVE_LOOKBACK_HOURS</key><string>24</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/bob/AI-Server</string>
+
+  <!--
+    30-minute cadence. Do NOT set below 1800 unless you've measured
+    API cost. 3600 (hourly) is also a sensible starting value.
+  -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/bob/AI-Server/data/task_runner/self-improvement.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/bob/AI-Server/data/task_runner/self-improvement.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>

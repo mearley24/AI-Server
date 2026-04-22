@@ -26,6 +26,48 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Self-improvement loop — stream-driven intake (2026-04-22, direct Claude Code)
+
+The self-improvement loop is now **source-driven from existing intake
+streams** (x_intake + BlueBubbles/iMessage) rather than primarily
+manual `add-url` captures. The always-on discovery → fetch/normalize →
+summarize → classify → score → card → propose-prompt pipeline is
+documented end-to-end in `docs/self-improvement-loop.md`.
+
+New / changed:
+
+- `scripts/self-improvement-collect.sh` — read-only, bounded collector
+  with modes `scan`, `scan-x`, `scan-bluebubbles`, `sources`,
+  `daemon-once`. Reads `x_intake/queue.db` and (on Bob) the local
+  iMessage SQLite via `IMESSAGE_DB_PATH`. Never opens a network
+  connection, never reads secrets, dedupes via content hash.
+- `scripts/self-improve.sh` — `process` now runs the collector first.
+  Added `scan`, `scan-x`, `scan-bluebubbles`, `sources`, `daemon-once`.
+  Manual `add-url` / `add-note` kept as fallbacks.
+- `.cursor/prompts/self-improvement/process-inbox.md` — cards now
+  include source stream, original URL/excerpt, automation hypothesis,
+  efficiency lever, affected subsystem, safe next prompt, and an
+  explicit can-this-auto-run flag; output is prioritized by auto-run-
+  eligible → Impact/Effort ratio, biased toward operational efficiency.
+- `setup/launchd/com.symphony.self-improvement.plist` + `setup/install_self_improvement_watcher.sh`
+  — launchd template (30-min cadence) and **dry-run-default** installer.
+  The watcher is **not** loaded by this change. Recurring local jobs
+  consume local compute and API budget; Matt enables on Bob manually
+  after review.
+- `docs/self-improvement-loop.md`, `docs/away-workflow.md`,
+  `docs/autonomous-llm-orchestration.md` — updated to describe
+  stream-driven ingest and the optional local watcher.
+
+Safety constraints preserved: no blind execution of captured content,
+no web browse by default, no secrets touched, no outbound
+communications, no auto-enable of recurring jobs.
+
+- [FOLLOWUP] After enabling the watcher on Bob, tighten `StartInterval`
+  in the plist if 30 minutes proves too frequent given observed API
+  spend in `ops/verification/dispatch-*` logs.
+
+---
+
 ## Priority 1 Run — 2026-04-21T19:31 MDT (direct Claude Code, Sonnet 4.6 [1M])
 
 **Run complete.** Commits: d0c0a27 (S1), dda86bd (S2), 6fa5188 (S3), bd10d07 (S4).

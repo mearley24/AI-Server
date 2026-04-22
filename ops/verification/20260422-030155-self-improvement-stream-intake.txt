@@ -1,0 +1,145 @@
+Self-improvement stream intake — verification artifact
+=======================================================
+
+Timestamp (UTC):   2026-04-22T03:01:55Z
+Branch:            main
+Generated-by:      direct Claude Code (autonomous subagent)
+
+Summary
+-------
+The self-improvement loop was rebuilt to be **source-driven from
+existing intake streams** (x_intake, BlueBubbles/iMessage), not
+primarily manual `add-url`. Manual capture remains as a fallback.
+
+Nothing in this change enables a recurring launchd/cron job, opens an
+outbound connection, reads secrets, or sends an external communication.
+
+Sources detected in this repo checkout
+--------------------------------------
+(Output of `bash scripts/self-improve.sh sources`, run from the
+worktree at /home/user/workspace/AI-Server-a8fda0e4. On Bob the
+readiness of the data paths will differ — see "Expected on Bob"
+below.)
+
+  repo_root:       /home/user/workspace/AI-Server-a8fda0e4
+  row_cap:         200
+  byte_cap:        10240
+  lookback_hours:  24
+
+  -- x_intake --
+  x_intake.queue.db: MISSING (/data/x_intake/queue.db)
+  x_intake.action_queue.db: MISSING (/data/x_intake/action_queue.db)
+
+  -- bluebubbles / imessage --
+  bluebubbles.routing: OK (config/bluebubbles_routing.json)
+  imessage.chat.db: MISSING (/home/user/Library/Messages/chat.db)
+  redis.url: not configured (REDIS_URL unset) — bluebubbles Redis scan skipped
+  sqlite3: OK
+
+  -- notes --
+  Secrets: none opened. Config paths are reported without values.
+  Outbound network: disabled.
+
+Expected on Bob
+---------------
+On Bob (`~/AI-Server`), the same command should report:
+  - x_intake.queue.db: OK if `/data/x_intake/queue.db` is bind-mounted
+    or symlinked (matches `integrations/x_intake/queue_db.py`).
+  - imessage.chat.db: OK if Terminal/python has Full Disk Access
+    (matches `scripts/imessage-server.py`).
+  - bluebubbles.routing: OK (committed at `config/bluebubbles_routing.json`).
+  - redis.url: configured if the env sets REDIS_URL (same env the
+    existing repo scripts already consume).
+
+Files added
+-----------
+- scripts/self-improvement-collect.sh
+- setup/launchd/com.symphony.self-improvement.plist
+- setup/install_self_improvement_watcher.sh
+- ops/verification/20260422-030155-self-improvement-stream-intake.txt (this file)
+
+Files modified
+--------------
+- docs/self-improvement-loop.md
+- .cursor/prompts/self-improvement/process-inbox.md
+- scripts/self-improve.sh
+- docs/away-workflow.md
+- docs/autonomous-llm-orchestration.md
+- STATUS_REPORT.md
+
+Collector modes (scripts/self-improvement-collect.sh)
+-----------------------------------------------------
+- scan              : run every available scan-<lane> in order.
+- scan-x            : read x_intake queue.db (read-only); filter by
+                      automation/efficiency keywords and status in
+                      (pending, auto_approved, approved).
+- scan-bluebubbles  : read Messages.app chat.db (read-only) if
+                      IMESSAGE_DB_PATH is readable; report routing
+                      config presence; do not subscribe to Redis.
+- sources           : print detected sources + missing config;
+                      never prints env-var values.
+- daemon-once       : scan, then invoke scripts/self-improve.sh
+                      process with SELF_IMPROVE_SKIP_COLLECT=1 to
+                      avoid recursion.
+
+self-improve.sh mode changes
+----------------------------
+- process           : now runs collector scan first (unless
+                      SELF_IMPROVE_SKIP_COLLECT=1), then the
+                      process-inbox prompt via ai-dispatch.sh.
+- daemon-once       : alias for process.
+- scan / scan-x /
+  scan-bluebubbles /
+  sources           : delegate to the collector.
+- add-url / add-note: preserved as fallbacks.
+
+Launchd watcher
+---------------
+- setup/launchd/com.symphony.self-improvement.plist:
+    StartInterval=1800 (30 min), RunAtLoad=false, no automatic load.
+- setup/install_self_improvement_watcher.sh:
+    default mode is --dry-run; --install only stages the plist and
+    prints the launchctl commands for Matt to run manually. This
+    script NEVER calls launchctl itself.
+
+Safety constraints (re-verified)
+--------------------------------
+- No secrets opened (`.env`, `*.key`, `*.pem`, `~/.ssh/`).
+- No outbound network call. Redis path skipped unless REDIS_URL is
+  already set in the env; even then only presence is reported, not
+  a subscription.
+- Bounded reads: row cap 200, byte cap 10 KB, 24h lookback window
+  (all env-overridable).
+- Content dedupe via sha256 prefix hash stored as HTML comment in
+  each inbox file, grep-checked across inbox/, archive/, cards/.
+- No recurring launchd/cron job enabled. Plist ships unloaded.
+- No external communication (no iMessage send, no X post, no email).
+- Process-inbox prompt re-asserts: no browse, no secrets, no execute
+  of captured content, bounded repo-safe outputs only.
+
+Quick syntax / smoke check (this checkout)
+------------------------------------------
+- `bash -n scripts/self-improvement-collect.sh`  OK
+- `bash -n scripts/self-improve.sh`              OK
+- `bash -n setup/install_self_improvement_watcher.sh`  OK
+- `bash scripts/self-improve.sh sources`         OK (see output above)
+- `bash scripts/self-improve.sh scan`            OK (0 items written;
+                                                    no data sources
+                                                    available on this
+                                                    host, as expected)
+- `bash setup/install_self_improvement_watcher.sh --dry-run`  OK
+
+Commands for Matt on Bob
+------------------------
+  cd ~/AI-Server
+
+  # What streams are present right now?
+  bash scripts/self-improve.sh sources
+
+  # Run one scan + LLM process pass.
+  bash scripts/self-improve.sh daemon-once
+
+  # (Optional) Review what enabling the 30-min watcher would do.
+  bash setup/install_self_improvement_watcher.sh --dry-run
+
+STATUS: OK

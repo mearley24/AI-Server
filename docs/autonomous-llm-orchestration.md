@@ -97,26 +97,41 @@ summary to the log.
 ## Self-improvement feed (X links / automation ideas)
 
 The dispatcher is also the execution surface for the **self-improvement
-loop**: Matt drops X/Twitter links and automation notes into
-`ops/self_improvement/inbox/` via `scripts/self-improve.sh`, then runs
-`scripts/self-improve.sh process`, which delegates to
-`ai-dispatch.sh run-prompt .cursor/prompts/self-improvement/process-inbox.md`.
-The prompt produces scored improvement cards under
-`ops/self_improvement/cards/`, writes a verification artifact, and
-updates `STATUS_REPORT.md`. Captured content (especially X posts) is
-treated as inspiration and evidence — the prompt summarizes and scores
-but never executes anything from an inbox item, never browses the web
-by default, and never reads secrets. From away, the usage is:
+loop (stream-driven)**: the primary ingest is automated.
+`scripts/self-improvement-collect.sh` reads already-wired local intake
+streams — `x_intake` (X/Twitter links, automation threads) and
+BlueBubbles/iMessage (links, notes, voice-to-text Matt sends himself) —
+and writes normalized markdown items into
+`ops/self_improvement/inbox/`. `scripts/self-improve.sh process`
+(aliased as `daemon-once`) runs the collector first and then delegates
+to `ai-dispatch.sh run-prompt
+.cursor/prompts/self-improvement/process-inbox.md`. The prompt produces
+scored improvement cards under `ops/self_improvement/cards/`, writes a
+verification artifact, and updates `STATUS_REPORT.md`. Captured content
+(X posts, iMessage bodies) is treated as evidence — the prompt
+summarizes and scores but never executes anything from an inbox item,
+never browses the web by default, and never reads secrets. Manual
+`add-url` / `add-note` stay supported as fallbacks.
+
+From away:
 
 ```bash
 ssh matt@bob
 cd ~/AI-Server
+bash scripts/self-improve.sh sources           # what streams are present?
+bash scripts/self-improve.sh daemon-once       # scan + process once
+# (fallback only)
 bash scripts/self-improve.sh add-url 'https://x.com/<handle>/status/<id>' 'why this matters'
-bash scripts/self-improve.sh process
 ```
 
-Full loop semantics, safety rules, and the print-only `promote` command
-live in `docs/self-improvement-loop.md`.
+Matt can also enable a periodic local watcher on Bob (launchd, 30-min
+cadence) after reviewing, via
+`bash setup/install_self_improvement_watcher.sh --dry-run` followed by
+the printed `launchctl` commands. The repo does **not** enable this
+automatically, because recurring local jobs consume local compute and
+— via `ai-dispatch.sh` — API budget. Full loop semantics, safety rules,
+and the print-only `promote` command live in
+`docs/self-improvement-loop.md`.
 
 ## Future connector lanes
 

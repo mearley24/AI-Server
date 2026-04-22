@@ -104,29 +104,56 @@ when Matt is remote, prefer the dispatcher. Rule of thumb: if the task
 fits comfortably in 200k tokens and is a tight diff, Cline is fine; if
 it is 1M-shaped, go direct via `run-prompt` or `run-priority1`.
 
-## 5b. Feed X links / automation ideas into self-improvement
+## 5b. Stream-driven self-improvement (collect from x_intake + BlueBubbles)
 
-When Matt sees an X/Twitter post or has an automation idea he wants
-AI-Server to eventually evaluate, the away flow is:
+The self-improvement loop is **stream-driven**: when Matt is away, the
+system can keep pulling candidate items from the intake streams that
+are already wired up — `x_intake` (X/Twitter links + automation threads)
+and BlueBubbles/iMessage (links and notes Matt sends himself, including
+voice-to-text). Manual `add-url` / `add-note` stay as fallbacks.
 
 ```bash
 # On Bob, after SSH
 cd ~/AI-Server
 
-# Capture — URL with a short "why", or free-form note
+# What streams are present right now?
+bash scripts/self-improve.sh sources
+
+# Run one scan + process pass: pulls from x_intake / BlueBubbles into
+# ops/self_improvement/inbox/, then turns each item into a scored card.
+bash scripts/self-improve.sh daemon-once
+
+# (Fallback) Capture something that didn't come through a stream.
 bash scripts/self-improve.sh add-url 'https://x.com/<handle>/status/<id>' 'why this matters'
 bash scripts/self-improve.sh add-note 'idea: nightly digest of Cortex memory deltas'
-
-# Turn captures into scored improvement cards (bounded, single-shot)
-bash scripts/self-improve.sh process
 ```
 
-`process` routes through `scripts/ai-dispatch.sh run-prompt
-.cursor/prompts/self-improvement/process-inbox.md`, so normal dispatcher
-logging and `ops/verification/` artifacts apply. X links are inspiration
-and evidence — never executed. See `docs/self-improvement-loop.md` for
-the full loop, scoring rubric, safety rules, and the print-only
-`promote` semantics.
+### Optional: enable the periodic local watcher (manual, reviewed)
+
+If Matt wants the loop to run every 30–60 minutes while he is away, he
+can review and enable the launchd watcher on Bob. The repo ships a
+**dry-run installer** — nothing is loaded automatically:
+
+```bash
+# Review what would happen (no changes made).
+bash setup/install_self_improvement_watcher.sh --dry-run
+
+# Stage the plist under ~/Library/LaunchAgents/ (still no launchctl call).
+bash setup/install_self_improvement_watcher.sh --install
+# Then run the printed `launchctl bootstrap ...` command manually.
+```
+
+Recurring local jobs consume local compute and — because `process`
+invokes Claude Code via `ai-dispatch.sh` — API budget. The default
+cadence is 30 minutes; tighten to 60 by editing `StartInterval` in
+`setup/launchd/com.symphony.self-improvement.plist` before bootstrapping.
+
+`process` / `daemon-once` route through `scripts/ai-dispatch.sh
+run-prompt .cursor/prompts/self-improvement/process-inbox.md`, so normal
+dispatcher logging and `ops/verification/` artifacts apply. X posts and
+iMessage bodies are inspiration and evidence — never executed. See
+`docs/self-improvement-loop.md` for the full loop, scoring rubric,
+safety rules, and the print-only `promote` semantics.
 
 ## 6. Source of truth reminder
 
