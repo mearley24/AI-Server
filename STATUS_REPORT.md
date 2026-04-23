@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)** → **network-dropout-watch LaunchAgent plist added + network-guard crash documented (2026-04-23 09:15, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)** → **network-dropout-watch LaunchAgent plist added + network-guard crash documented (2026-04-23 09:15, Claude Code)** → **network-monitoring phase-2 Cline prompt drafted — arm dropout-watch + fix security_utils import (2026-04-23 15:26, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,54 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## network-monitoring phase-2 prompt drafted — arm dropout-watch + fix security_utils import (2026-04-23 15:26 MDT, Claude Code)
+
+Repo-only planning pass following the Phase-1 commit `9e12fc6`. Reviewed the
+two outstanding `[NEEDS_MATT]` blockers against the current tree and
+produced a durable Cline prompt + planning artifact so Phase-2 can run on
+Bob without another round-trip.
+
+**Review findings (sandbox read-only, no Bob access):**
+- Commit `9e12fc6` correctly established both blockers. `git log --all --
+  oneline -- '**/security_utils*'` returns empty; the module was never
+  committed. Two callers import it: `tools/network_guard_daemon.py:32`
+  (`sanitize_for_telegram`) and `tools/imessage_watcher.py:22`
+  (`hash_text, mask_contact, mask_name, redact_text`). Any fix must keep
+  imessage_watcher working.
+- Phase-1 artifacts (plist + audit doc + verification txt + STATUS_REPORT
+  entry) are internally consistent and cross-link cleanly.
+
+**New artifacts this pass:**
+- `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md` —
+  copy-paste-minimal Cline task for Bob. Follows
+  `.cursor/prompts/AUTONOMOUS_PROMPT_STANDARD.md` (Category: ops, Risk
+  tier: medium, Trigger: manual, Status: active). Covers both blockers in
+  one bounded run: create `tools/security_utils.py` as a stdlib-only shim,
+  apply a 3-line `sys.path` bootstrap to both callers, dry-run
+  `network_guard_daemon.py --once` with Telegram env unset, bootstrap
+  dropout-watch, bootout+bootstrap network-guard, verify state files and
+  fresh log lines, prune the 8 MB `.err`, commit and push.
+- `ops/verification/20260423-152628-network-monitoring-phase2-plan.txt` —
+  planning/verification artifact documenting this review and the Phase-2
+  rationale.
+
+- [FOLLOWUP] Run `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`
+  on Bob via Cline. Expected commit message:
+  `ops(network-mon): fix security_utils import + arm dropout-watch (phase-2)`.
+
+- [NEEDS_MATT] Still the same two blockers from the Phase-1 section below,
+  now bundled into a single Cline task. If Matt wants to arm dropout-watch
+  standalone without the full Cline task, the existing one-liner still
+  works (no sudo):
+  `launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist`
+  The network-guard security_utils fix still requires the full Cline task.
+
+Review artifact: `ops/verification/20260423-152628-network-monitoring-phase2-plan.txt`
+Phase-2 Cline prompt: `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`
+Phase-1 audit doc: `docs/audits/2026-04-23-network-monitoring-launchd-verification.md`
 
 ---
 

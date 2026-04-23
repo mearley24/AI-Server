@@ -1,0 +1,150 @@
+===============================================================================
+NETWORK MONITORING PHASE-2 — REVIEW & NEXT-STEP PLAN
+===============================================================================
+Stamp (UTC):      2026-04-23 15:26:28
+Author:           Claude Code (autonomous repo-only pass)
+Working branch:   main
+Commit under review:   9e12fc6  "ops(network-mon): add network-dropout-watch
+                                  LaunchAgent plist + verification (not loaded)"
+Paired Phase-1 docs:
+  - docs/audits/2026-04-23-network-monitoring-launchd-verification.md
+  - ops/verification/20260423-091516-network-monitoring-launchd.txt
+  - setup/launchd/com.symphony.network-dropout-watch.plist
+  - STATUS_REPORT.md  (dated section 2026-04-23 09:15)
+
+===============================================================================
+1. REVIEW — does commit 9e12fc6 correctly establish the two blockers?
+===============================================================================
+
+YES. Phase-1 established:
+
+  A.  A committed, lint-clean LaunchAgent plist for the dropout-watch tool
+      (setup/launchd/com.symphony.network-dropout-watch.plist), intentionally
+      NOT loaded on Bob.
+
+  B.  A verification artifact confirming that the already-loaded
+      com.symphony.network-guard LaunchAgent is in a crash-loop state with
+      `ModuleNotFoundError: No module named 'security_utils'`, with .log
+      frozen at 2026-04-03 and .err at ~8 MB of repeated tracebacks.
+
+Both blockers are tagged [NEEDS_MATT] in STATUS_REPORT.md and both Phase-1
+docs cross-link correctly.
+
+Sandbox-side confirmation (read-only; no Bob access):
+
+  - `git show --stat 9e12fc6`  ➜ 4 files, +375/-1 (matches the claim).
+  - `grep -rn 'from security_utils' tools/` ➜
+      tools/network_guard_daemon.py:32: from security_utils import sanitize_for_telegram
+      tools/imessage_watcher.py:22:     from security_utils import hash_text, mask_contact, mask_name, redact_text
+  - `git log --all --oneline -- '**/security_utils*' '**/security_utils.py'`
+    ➜ empty.  The module was never committed to this repo.
+  - `find . -name 'security_utils*'`  ➜ no file present in working tree.
+
+Conclusion: the Phase-1 diagnosis is accurate and the repo is consistent with
+the STATUS_REPORT description.  Neither tool will produce live data until the
+two [NEEDS_MATT] steps are run.
+
+===============================================================================
+2. NEXT-STEP RATIONALE — what should Phase-2 do, and in what order?
+===============================================================================
+
+The two blockers are linked: arming the dropout-watch LaunchAgent is safe in
+isolation, but it only gives us a *second* monitoring channel.  The
+network-guard crash is the root cause of the Apr-3-onward health-record gap,
+and fixing it requires a new repo-owned file (tools/security_utils.py) plus a
+small sys.path bootstrap in two callers.
+
+Therefore Phase-2 should:
+
+  Step 1.  Create tools/security_utils.py as a minimal, stdlib-only shim
+           providing the five symbols the two callers import:
+             - sanitize_for_telegram
+             - hash_text, mask_contact, mask_name, redact_text
+
+  Step 2.  Insert a 3-line sys.path bootstrap at the top of both
+           tools/network_guard_daemon.py and tools/imessage_watcher.py so the
+           LaunchAgent-invoked script finds security_utils without adding
+           PYTHONPATH to the plist (smaller blast radius than env munging).
+
+  Step 3.  Dry-run the network guard in --once mode with Telegram env vars
+           unset to prove the import works without triggering an external
+           send.
+
+  Step 4.  launchctl bootstrap the dropout-watch LaunchAgent; verify
+           data/network_watch/dropout_watch_status.json shows
+           running=true and health=healthy.
+
+  Step 5.  launchctl bootout + bootstrap the existing network-guard
+           LaunchAgent so it picks up the fixed import; wait one 60 s tick
+           and verify a fresh log line + data/network_guard_state.json mtime.
+
+  Step 6.  Truncate logs/network-guard.err (8 MB of stale tracebacks).
+
+  Step 7.  Commit the repo changes (security_utils.py + two caller patches +
+           verification artifact + audit doc + STATUS_REPORT update) and
+           push to origin/main.
+
+All of Phase-2 happens on Bob (Cline-first) because this sandbox cannot
+launchctl bootstrap anything.  The durable repo artifact that drives it is
+the new prompt at:
+
+  .cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md
+
+===============================================================================
+3. WHY A BOB-CLINE TASK AND NOT A SANDBOX FIX
+===============================================================================
+
+  - launchctl bootstrap / bootout must run on Bob as user `bob`.
+  - The acceptance criteria depend on live log files and live state JSON
+    that only exist on Bob (logs/network-guard.log,
+    data/network_watch/dropout_watch_status.json,
+    data/network_guard_state.json).
+  - Any security_utils file the sandbox creates without Bob-side evidence
+    risks either (a) duplicating an existing Bob-local copy the author
+    forgot to commit, or (b) shipping a shim that silently changes
+    Telegram-bound message shape.  The Phase-2 prompt explicitly searches
+    Bob for a pre-existing security_utils.py BEFORE writing the shim, and
+    requires sha256 of anything found.
+
+===============================================================================
+4. SAFETY POSTURE FOR THIS SANDBOX PASS
+===============================================================================
+
+This sandbox pass is repo-docs-only:
+
+  [x]  No launchctl command was run.
+  [x]  No sudo.
+  [x]  No secret or .env file was read or printed.
+  [x]  No inbound port opened; no external message sent; no Docker mutation.
+  [x]  No runtime service on Bob was touched.
+  [x]  Files written are limited to:
+         .cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md
+         ops/verification/20260423-152628-network-monitoring-phase2-plan.txt
+         STATUS_REPORT.md  (appended dated section, no rewrites)
+  [x]  The harness-modified files at the top of `git status` (CLAUDE.md,
+       .mcp.json, .claude/*) are NOT included in the planned commit.
+
+===============================================================================
+5. FILES EMITTED BY THIS PASS
+===============================================================================
+
+  NEW     .cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md
+  NEW     ops/verification/20260423-152628-network-monitoring-phase2-plan.txt  (this file)
+  MODIFY  STATUS_REPORT.md  (append dated "Phase-2 prompt drafted" section)
+
+===============================================================================
+6. THE ONE COMMAND MATT CAN RUN NOW (OR HAND TO CLINE)
+===============================================================================
+
+If Matt wants to arm dropout-watch immediately without running the full Cline
+task (the network-guard crash fix still requires the Cline task):
+
+  launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist
+
+Otherwise, the recommended path is to hand the new prompt to Cline on Bob:
+
+  .cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md
+
+===============================================================================
+END
+===============================================================================
