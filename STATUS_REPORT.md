@@ -26,6 +26,20 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Cortex Dedup — re-run verification (2026-04-23 10:34 MDT, Claude Code)
+
+Re-run confirming all prior dedup work intact. 12 tests pass (0.03s). Dry-run backfill
+produces correct merge plan. Docker not running so V6 live DB inspection deferred.
+
+- [NEEDS_MATT] Live backfill (after Docker up):
+  `cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)`
+  `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`
+- [FOLLOWUP] V6 live index verification once Cortex container is running.
+
+Verification: `ops/verification/20260423-103428-cortex-dedup.txt`
+
+---
+
 ## Cortex Dedup (UNIQUE/Upsert) Phase-1 Author+Test (2026-04-23 10:32 MDT, Claude Code)
 
 Commits: `716b14a`, `da532f3`, `758b31f`

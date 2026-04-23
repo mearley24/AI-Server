@@ -1,0 +1,94 @@
+Cortex Cross-Source Dedup — Re-run Verification (Run 2)
+=======================================================
+Date (UTC): Thu Apr 23 16:34:28 UTC 2026
+Date (local): 2026-04-23T10:34:28 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server  branch: main
+Git HEAD: bc8ffdf8eb3632163b1ef569cf843fc69d570563
+uname: Darwin Bobs-Mac-mini.local 25.3.0 arm64
+Triggered by: .cursor/prompts/2026-04-23-cline-cortex-dedup-upsert.md (re-run)
+
+Prior commits (all on main):
+  716b14a  feat(cortex): add dedupe_key column + partial UNIQUE index + store_or_update upsert path
+  da532f3  feat(cortex): /remember accepts dedupe_hint, routes through store_or_update
+  758b31f  feat(cortex): dedup backfill script (dry-run default) + 12 tests
+  bc8ffdf  docs(cortex): dedup verification receipt + STATUS_REPORT
+
+---
+
+V1 — Static checks
+
+python3 -m py_compile cortex/memory.py cortex/engine.py cortex/migrate.py scripts/cortex_dedup_backfill.py
+Result: ALL_COMPILE_PASS
+
+Key symbols confirmed in cortex/memory.py:
+  L37:  dedupe_key TEXT DEFAULT NULL             (in _SCHEMA CREATE TABLE)
+  L43:  CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_dedupe_key ... WHERE dedupe_key IS NOT NULL
+  L90:  ALTER TABLE memories ADD COLUMN dedupe_key TEXT DEFAULT NULL  (_MIGRATE_COLUMNS)
+  L203: def _canonical_key(...)
+  L241: def store_or_update(...)
+  L273: SELECT ... WHERE dedupe_key = ?
+  L295: UPDATE memories SET ... (upsert path)
+
+---
+
+V2 — Tests (12 passed in 0.03s)
+
+test_canonical_key_uses_hint_first                              PASSED
+test_canonical_key_canonicalizes_url_host_and_strips_utm        PASSED
+test_canonical_key_strips_trailing_slash                        PASSED
+test_canonical_key_msg_prefix                                   PASSED
+test_canonical_key_returns_none_when_source_unrecognized        PASSED
+test_canonical_key_hint_wins_over_url                           PASSED
+test_store_or_update_inserts_on_new_key                         PASSED
+test_store_or_update_merges_on_collision                        PASSED
+test_store_or_update_preserves_content_unless_overwrite         PASSED
+test_partial_unique_index_allows_multiple_null_keys             PASSED
+test_backfill_dry_run_writes_no_rows                            PASSED
+test_backfill_apply_collapses_duplicates_and_keeps_oldest       PASSED
+
+---
+
+V3 — Path existence
+
+ok-memory  ok-engine  ok-backfill  ok-tests  (all present)
+
+---
+
+V4 — Dry-run backfill against fresh fixture (/tmp/cortex-sample-rerun.db)
+
+Output:
+  Backup command: cp /tmp/cortex-sample-rerun.db /tmp/cortex-sample-rerun.db.bak.20260423-163427
+  Found 2 duplicate group(s), 2 redundant row(s).
+  Group 1: key=97457668… — Keep r3 (Jan 1), Delete r4 (Jan 2) — importance merges to max(5,6)=6
+  Group 2: key=dcb45c96… — Keep r1 (Jan 1), Delete r2 (Jan 2) — importance merges to max(5,7)=7
+  DRY RUN complete. Pass --apply to merge 2 duplicate(s).
+Result: PASS — stable keys, oldest-row-kept, no writes
+
+---
+
+V6 — Live Bob DB inspection ([BOB_CLINE_ONLY])
+
+DB_PATH = /data/cortex/brain.db
+exists  = False (inside Docker container — not on host filesystem)
+Docker Desktop: not running at time of this verification.
+
+V6 deferred — to run after docker compose up -d --build cortex:
+  timeout 20 sqlite3 /data/cortex/brain.db "SELECT COUNT(*) FROM memories WHERE dedupe_key IS NULL;"
+  timeout 20 sqlite3 /data/cortex/brain.db "SELECT COUNT(*) FROM memories WHERE dedupe_key IS NOT NULL;"
+  timeout 20 sqlite3 /data/cortex/brain.db "SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_memories_dedupe_key';"
+
+---
+
+CLOSING CHECKLIST:
+[x] All prior work confirmed intact — no regressions.
+[x] 12 tests pass (0.03s, faster than prior run).
+[x] Dry-run backfill produces correct merge plan.
+[x] V6 deferred — Docker not available.
+[x] STATUS_REPORT entry written.
+[x] This artifact committed and pushed.
+
+STILL NEEDS MATT ([NEEDS_MATT] + [BOB_CLINE_ONLY]):
+  1. cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)
+  2. docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply
+  (or: CORTEX_DATA_DIR=/data/cortex python3 scripts/cortex_dedup_backfill.py --apply)
