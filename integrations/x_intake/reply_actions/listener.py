@@ -57,10 +57,10 @@ async def process_message(
 
     ctx = store.lookup_by_slot(thread_guid, parsed.slot)
     if ctx is None:
-        logger.debug("reply_no_context", thread=thread_guid, slot=parsed.slot)
+        logger.debug("reply_no_context thread=%s slot=%s", thread_guid, parsed.slot)
         return
     if ctx.expired:
-        logger.debug("reply_expired", action_id=ctx.action_id, slot=parsed.slot)
+        logger.debug("reply_expired action_id=%s slot=%s", ctx.action_id, parsed.slot)
         return
 
     try:
@@ -72,9 +72,9 @@ async def process_message(
             dry_run=dry_run,
         )
     except AlreadyUsed:
-        logger.info("reply_already_used", action_id=ctx.action_id, slot=parsed.slot)
+        logger.info("reply_already_used action_id=%s slot=%s", ctx.action_id, parsed.slot)
     except Exception as exc:
-        logger.warning("reply_dispatch_error", error=str(exc)[:200])
+        logger.warning("reply_dispatch_error error=%s", str(exc)[:200])
 
 
 async def run_listener(
@@ -101,7 +101,7 @@ async def run_listener(
             client = aioredis.from_url(redis_url, decode_responses=True)
             pubsub = client.pubsub()
             await pubsub.subscribe(channel)
-            logger.info("reply_listener_started", channel=channel, dry_run=dry_run)
+            logger.info("reply_listener_started channel=%s dry_run=%s", channel, dry_run)
 
             async for message in pubsub.listen():
                 if message.get("type") != "message":
@@ -110,7 +110,7 @@ async def run_listener(
                 try:
                     await process_message(raw, store, dispatcher, send_ack, dry_run=dry_run)
                 except Exception as exc:
-                    logger.warning("reply_message_error", error=str(exc)[:200])
+                    logger.warning("reply_message_error error=%s", str(exc)[:200])
         except Exception as exc:
-            logger.warning("reply_listener_reconnecting", error=str(exc)[:200])
+            logger.warning("reply_listener_reconnecting error=%s", str(exc)[:200])
             await asyncio.sleep(_RECONNECT_BACKOFF)

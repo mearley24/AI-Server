@@ -135,7 +135,7 @@ class Dispatcher:
     ) -> None:
         # Rate limit
         if author_handle and not self._rate.is_allowed(author_handle):
-            logger.warning("reply_rate_limited", handle=author_handle[:40])
+            logger.warning("reply_rate_limited handle=%s", author_handle[:40])
             await send_ack(ctx.context.get("thread_guid", ""), "Too many actions — slow down.", dry_run=dry_run)
             return
 
@@ -148,11 +148,8 @@ class Dispatcher:
         slot_map: Dict[str, str] = ctx.context.get("slot_handler_map", {})
         handler_name = slot_map.get(str(slot)) or slot_map.get(slot)  # type: ignore[arg-type]
         if handler_name not in HANDLER_REGISTRY:
-            logger.warning(
-                "reply_unknown_handler",
-                handler=str(handler_name)[:40],
-                action_id=ctx.action_id,
-            )
+            logger.warning("reply_unknown_handler handler=%s action_id=%s",
+                           str(handler_name)[:40], ctx.action_id)
             await send_ack(
                 ctx.context.get("thread_guid", ""),
                 "Action not recognized.",
@@ -165,10 +162,10 @@ class Dispatcher:
             result = await asyncio.wait_for(handler(ctx), timeout=_HANDLER_TIMEOUT)
             ack_text = _ack_text(handler_name, result)
         except asyncio.TimeoutError:
-            logger.warning("reply_handler_timeout", handler=handler_name)
+            logger.warning("reply_handler_timeout handler=%s", handler_name)
             ack_text = "Action timed out — Bob will retry."
         except Exception as exc:
-            logger.warning("reply_handler_error", handler=handler_name, error=str(exc)[:100])
+            logger.warning("reply_handler_error handler=%s error=%s", handler_name, str(exc)[:100])
             ack_text = "Action failed — Bob logged it."
 
         thread_guid = ctx.context.get("thread_guid", "")

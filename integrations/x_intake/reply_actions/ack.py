@@ -68,13 +68,13 @@ async def send_ack(
             with _ACK_LOG_PATH.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry) + "\n")
         except Exception as exc:
-            logger.debug("ack_log_write_failed", error=str(exc)[:100])
-        logger.info("ack_dry_run", thread=thread_guid[:40], text=text[:80])
+            logger.debug("ack_log_write_failed error=%s", str(exc)[:100])
+        logger.info("ack_dry_run thread=%s text=%s", thread_guid[:40], text[:80])
         return {"ok": True, "dry_run": True}
 
     # Live mode — validate recipient before sending.
     if _ALLOWED_RECIPIENTS and thread_guid not in _ALLOWED_RECIPIENTS:
-        logger.warning("ack_blocked_not_allowlisted", thread=thread_guid[:40])
+        logger.warning("ack_blocked_not_allowlisted thread=%s", thread_guid[:40])
         return {"ok": False, "dry_run": False, "error": "recipient_not_allowlisted"}
 
     try:
@@ -85,10 +85,10 @@ async def send_ack(
             return {"ok": False, "dry_run": False, "error": "not_configured"}
         result = await client.send_text(chat_guid=thread_guid, body=text)
         if not result.get("ok"):
-            logger.warning("ack_send_failed", error=str(result)[:100])
+            logger.warning("ack_send_failed error=%s", str(result)[:100])
             return {"ok": False, "dry_run": False, "error": str(result.get("error", "unknown"))}
-        logger.info("ack_sent", thread=thread_guid[:40])
+        logger.info("ack_sent thread=%s", thread_guid[:40])
         return {"ok": True, "dry_run": False}
     except Exception as exc:
-        logger.warning("ack_exception", error=str(exc)[:100])
+        logger.warning("ack_exception error=%s", str(exc)[:100])
         return {"ok": False, "dry_run": False, "error": str(exc)[:100]}
