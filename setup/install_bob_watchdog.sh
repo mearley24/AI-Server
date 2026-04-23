@@ -47,6 +47,7 @@ LABEL="com.symphony.bob-watchdog"
 REPO_PLIST="${REPO_ROOT}/ops/launchd/${LABEL}.plist"
 SYSTEM_REPO_PLIST="${REPO_ROOT}/scripts/${LABEL}.plist"
 WATCHDOG_SH="${REPO_ROOT}/scripts/bob-watchdog.sh"
+REQUIRED_FILE="${REPO_ROOT}/ops/bob-watchdog.required"
 
 # System path used by the root LaunchDaemon plist.
 DAEMON_SH="/usr/local/bin/bob-watchdog.sh"
@@ -133,6 +134,21 @@ if [ "${mode}" = "status" ]; then
   else
     echo "${DAEMON_SH} not found — run install to deploy."
   fi
+  echo ""
+  echo "=== Required-services override file ==="
+  if [ -f "${REQUIRED_FILE}" ]; then
+    required_lines=$(grep -cvE '^[[:space:]]*(#|$)' "${REQUIRED_FILE}" 2>/dev/null || echo 0)
+    printf 'path:   %s\n' "${REQUIRED_FILE}"
+    printf 'lines:  %s\n' "${required_lines}"
+    if [ -r "${REQUIRED_FILE}" ]; then
+      echo "status: READABLE"
+    else
+      echo "status: UNREADABLE (permission issue)"
+    fi
+  else
+    echo "path:   ${REQUIRED_FILE}"
+    echo "status: MISSING — watchdog will fall back to compose discovery (fails under root)"
+  fi
   exit 0
 fi
 
@@ -166,6 +182,14 @@ if [ "${mode}" = "deploy-system" ]; then
       exit 3
     fi
   done
+
+  # Non-fatal: warn if the required-services override file is absent from
+  # the repo. Without it the watchdog falls back to `docker compose config
+  # --services`, which fails under the root LaunchDaemon environment and
+  # leaves the container check silently disabled (source=none).
+  if [ ! -f "${REQUIRED_FILE}" ]; then
+    echo "warning: ${REQUIRED_FILE} missing — watchdog container check will have no authoritative list under root" >&2
+  fi
 
   install -m 0755 "${WATCHDOG_SH}" "${SYSTEM_WATCHDOG_SH}"
   cp "${SYSTEM_REPO_PLIST}" "${SYSTEM_TARGET_PLIST}"

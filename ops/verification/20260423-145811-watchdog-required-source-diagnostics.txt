@@ -1,0 +1,144 @@
+watchdog required-services source=none — root cause + fix
+===========================================================
+
+Date: 2026-04-23 14:58 UTC
+Repo: AI-Server
+Files touched:
+  scripts/bob-watchdog.sh          (v=2026-04-23.4-required-source-fix)
+  setup/install_bob_watchdog.sh    (status + deploy-system validation)
+  ops/verification/20260423-145811-watchdog-required-source-diagnostics.txt
+
+--------------------------------------------------------------------
+SYMPTOM (from Bob, commit ba3c298 live)
+--------------------------------------------------------------------
+
+  2026-04-23 08:52:52 [watchdog] --- tick --- v=2026-04-23.3-bash3-required repo=/Users/bob/AI-Server resolved=1
+  2026-04-23 08:52:54 [watchdog]   required services source=none
+  2026-04-23 08:52:55 [watchdog] --- done ---
+
+Repo root resolved correctly (resolved=1) but the override file was reported
+as not in use. No `[FOLLOWUP]` or diagnostic line followed, so the prior tick
+logic silently skipped the container check.
+
+--------------------------------------------------------------------
+ROOT CAUSE
+--------------------------------------------------------------------
+
+`resolve_required()` was called via command substitution:
+
+    required=$(resolve_required)
+
+This runs the function in a SUBSHELL. Inside resolve_required() we set:
+
+    REQUIRED_SOURCE="override:$REQUIRED_OVERRIDE_FILE"     # or "compose"
+
+But that assignment lives in the subshell and is discarded when the
+subshell exits. The parent shell's REQUIRED_SOURCE stays at its module
+default of "none" — which is what gets logged in the next line:
+
+    log "  required services source=${REQUIRED_SOURCE}"
+
+So the override file IS being read (grep output feeds the `required`
+variable, which is why no [FOLLOWUP] alert fired and the watchdog
+believed everything was fine) — but the *source* was always misreported.
+
+Secondary issue: on Bob, the override file *may* actually be present and
+working (we cannot confirm from the truncated log). A tick that logs
+source=none provides no diagnostic to tell ops whether the list was
+empty-because-missing-file or populated-but-misreported. Fixed below.
+
+--------------------------------------------------------------------
+FIX
+--------------------------------------------------------------------
+
+1) Write the resolved source to a tiny state file
+   ($STATE_DIR/required_source) from inside resolve_required(), then read
+   it back in the parent shell in check_containers(). Subshell-safe.
+
+2) Clear the state file at the top of each tick (MAIN) so stale values
+   from a previous tick cannot leak in when resolve_required() is never
+   entered (e.g., if docker is down and check_containers returns early).
+
+3) Widen diagnostics in the "no compose services resolved" branch:
+      resolved, repo_dir, cwd, compose_yml (present/missing),
+      override_path, override_exists, override_readable, override_lines,
+      source
+
+4) Add `[FOLLOWUP] required service override missing: <path> ...` alert
+   when the repo root is resolved but the override file is missing or
+   unreadable. source=none is no longer allowed to pass silently.
+
+5) Prefer `$REPO_DIR/ops/bob-watchdog.required` when $REPO_DIR is
+   resolved — already the behavior, now explicit via the readable check.
+
+6) install_bob_watchdog.sh:
+      - --status now shows the override file: path, line count, readable?,
+        or MISSING with a note that compose fallback fails under root.
+      - --deploy-system warns (non-fatal) if the repo override file is
+        absent so the sysadmin sees the risk before relaunching the
+        daemon under root.
+
+Version bumped: WATCHDOG_VERSION="2026-04-23.4-required-source-fix".
+
+--------------------------------------------------------------------
+CHECKS RUN
+--------------------------------------------------------------------
+
+$ bash -n scripts/bob-watchdog.sh                 -> OK
+$ bash -n setup/install_bob_watchdog.sh           -> OK
+$ bash scripts/bob-watchdog.sh --check            -> "bob-watchdog.sh: syntax OK"
+
+Sandbox tick simulation (stub docker, --dry-run):
+
+  Case A: override file present
+    log: required services source=override:/tmp/wd-sim/AI-Server/ops/bob-watchdog.required
+    Missing containers list populated correctly (18 required services
+    minus the stub's running set).
+
+  Case B: override file moved aside
+    log: required services source=compose
+    log: container check skipped (no compose services resolved) —
+         resolved=1 repo_dir=/tmp/wd-sim/AI-Server cwd=/tmp/wd-sim/AI-Server
+         compose_yml=present
+         override_path=/tmp/wd-sim/AI-Server/ops/bob-watchdog.required
+         override_exists=no override_readable=no override_lines=0
+         source=compose
+    log: [ALERT] [FOLLOWUP] required service override missing:
+         /tmp/wd-sim/AI-Server/ops/bob-watchdog.required
+         (exists=no readable=no)
+
+Both branches behave correctly. source=none cannot happen silently:
+either the override is used and logged as "override:<path>", or the
+compose path is used and logged as "compose", or the [FOLLOWUP] alert
+fires with full diagnostics.
+
+--------------------------------------------------------------------
+EXPECTED BOB LOG AFTER DEPLOY
+--------------------------------------------------------------------
+
+With /Users/bob/AI-Server/ops/bob-watchdog.required present (it was
+committed in ba3c298):
+
+  2026-04-23 HH:MM:SS [watchdog] --- tick --- v=2026-04-23.4-required-source-fix repo=/Users/bob/AI-Server resolved=1
+  2026-04-23 HH:MM:SS [watchdog]   required services source=override:/Users/bob/AI-Server/ops/bob-watchdog.required
+  2026-04-23 HH:MM:SS [watchdog] --- done ---
+
+If the required file is somehow absent on Bob (deploy/pull issue), the
+[FOLLOWUP] alert will fire and show the exact missing path.
+
+--------------------------------------------------------------------
+DEPLOY / VERIFY TASK FOR CLINE (BOB)
+--------------------------------------------------------------------
+
+1. cd /Users/bob/AI-Server && git pull --ff-only
+2. ls -l ops/bob-watchdog.required                           # expect present
+3. bash setup/install_bob_watchdog.sh --status               # expect Required-services block: READABLE, lines >= 17
+4. sudo bash setup/install_bob_watchdog.sh --deploy-system   # reloads LaunchDaemon with new script
+5. sudo launchctl kickstart -k system/com.symphony.bob-watchdog
+6. sleep 65 && tail -n 20 /usr/local/var/log/bob-watchdog.log
+   Expect:
+     - v=2026-04-23.4-required-source-fix
+     - required services source=override:/Users/bob/AI-Server/ops/bob-watchdog.required
+     - No [FOLLOWUP] alert for missing override.
+
+No secrets handled. No destructive unrelated changes.

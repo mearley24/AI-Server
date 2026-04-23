@@ -4,7 +4,7 @@
 #
 # Version marker: bump on every deploy-relevant change so a stale
 # /usr/local/bin copy is easy to spot in the log ("watchdog vX starting").
-WATCHDOG_VERSION="2026-04-23.3-bash3-required"
+WATCHDOG_VERSION="2026-04-23.4-required-source-fix"
 
 # --- Repo root resolution ---
 # The script can be invoked from three places:
@@ -318,14 +318,29 @@ compose_file_args() {
 #   2) `docker compose -f <repo>/docker-compose.yml config --services`
 #   3) empty — skip the check (never page on a stale hard-coded list)
 #
-# Also records the source used into $REQUIRED_SOURCE so check_containers can
-# log it on every tick. Writes "override:<path>", "compose", or "none".
+# IMPORTANT: this function is called via command substitution —
+# required=$(resolve_required) — which runs it in a SUBSHELL. Any plain
+# variable assignment inside is lost when the subshell exits. That is why
+# source was historically logged as "none" even when the override file was
+# present (REQUIRED_SOURCE was mutated only in the child shell).
+#
+# Fix: write the source to a small state file ($STATE_DIR/required_source)
+# from inside resolve_required, then read it back in the parent shell. The
+# state file is written on every tick so it always reflects the current
+# resolution, not a stale value.
+#
+# Values written: "override:<path>", "compose", or "none".
 # Uses Bash-3.2-compatible idioms (macOS system bash): no mapfile/readarray,
 # no associative arrays.
 REQUIRED_SOURCE="none"
+REQUIRED_SOURCE_FILE="$STATE_DIR/required_source"
+write_required_source() {
+    # Best-effort; STATE_DIR may not be writable in some odd install modes.
+    echo "$1" > "$REQUIRED_SOURCE_FILE" 2>/dev/null || true
+}
 resolve_required() {
-    if [[ -f "$REQUIRED_OVERRIDE_FILE" ]]; then
-        REQUIRED_SOURCE="override:$REQUIRED_OVERRIDE_FILE"
+    if [[ -f "$REQUIRED_OVERRIDE_FILE" && -r "$REQUIRED_OVERRIDE_FILE" ]]; then
+        write_required_source "override:$REQUIRED_OVERRIDE_FILE"
         grep -vE '^[[:space:]]*(#|$)' "$REQUIRED_OVERRIDE_FILE"
         return
     fi
@@ -335,12 +350,13 @@ resolve_required() {
         while IFS= read -r line; do
             [[ -n "$line" ]] && file_args+=("$line")
         done < <(compose_file_args)
-        REQUIRED_SOURCE="compose"
+        write_required_source "compose"
         ( cd "$REPO_DIR" 2>/dev/null && \
           bounded 15 "${COMPOSE[@]}" "${file_args[@]}" config --services 2>/dev/null ) \
           | grep -vE '^[[:space:]]*$'
         return
     fi
+    write_required_source "none"
 }
 
 # Optional services — missing is reported but never pages. Decommissioned or
@@ -373,23 +389,37 @@ check_containers() {
     local running required
     running=$(docker ps --format '{{.Names}}' 2>/dev/null)
     required=$(resolve_required)
+    # Read the source written by the subshell-invoked resolve_required.
+    # Default back to "none" if the state file was not writable.
+    if [[ -f "$REQUIRED_SOURCE_FILE" ]]; then
+        REQUIRED_SOURCE=$(cat "$REQUIRED_SOURCE_FILE" 2>/dev/null || echo "none")
+    else
+        REQUIRED_SOURCE="none"
+    fi
     log "  required services source=${REQUIRED_SOURCE}"
 
     if [[ -z "$required" ]]; then
         # No authoritative list — skip to avoid paging on a stale hard-coded set.
         # Emit actionable diagnostics so a broken deployment is obvious in logs.
-        local diag="resolved=${REPO_RESOLVED} repo_dir=${REPO_DIR} cwd=$(pwd) source=${REQUIRED_SOURCE}"
-        if [[ ! -f "$REPO_DIR/docker-compose.yml" ]]; then
-            diag+=" compose_yml=missing"
-        else
-            diag+=" compose_yml=present"
-            if [[ -f "$REQUIRED_OVERRIDE_FILE" ]]; then
-                diag+=" override=$REQUIRED_OVERRIDE_FILE"
-            else
-                diag+=" override=none"
-            fi
+        local override_exists="no" override_readable="no" override_lines=0
+        if [[ -e "$REQUIRED_OVERRIDE_FILE" ]]; then
+            override_exists="yes"
+            [[ -r "$REQUIRED_OVERRIDE_FILE" ]] && override_readable="yes"
+            override_lines=$(grep -cvE '^[[:space:]]*(#|$)' "$REQUIRED_OVERRIDE_FILE" 2>/dev/null || echo 0)
         fi
+        local compose_yml="missing"
+        [[ -f "$REPO_DIR/docker-compose.yml" ]] && compose_yml="present"
+        local diag
+        diag="resolved=${REPO_RESOLVED} repo_dir=${REPO_DIR} cwd=$(pwd)"
+        diag+=" compose_yml=${compose_yml} override_path=${REQUIRED_OVERRIDE_FILE}"
+        diag+=" override_exists=${override_exists} override_readable=${override_readable}"
+        diag+=" override_lines=${override_lines} source=${REQUIRED_SOURCE}"
         log "  container check skipped (no compose services resolved) — $diag"
+        # FOLLOWUP: if we believe we should have an override (resolved repo)
+        # but the file is missing/unreadable, shout loudly so ops notices.
+        if (( REPO_RESOLVED == 1 )) && [[ "$override_exists" != "yes" || "$override_readable" != "yes" ]]; then
+            log_alert "[FOLLOWUP] required service override missing: $REQUIRED_OVERRIDE_FILE (exists=$override_exists readable=$override_readable)"
+        fi
         return
     fi
 
@@ -539,6 +569,9 @@ write_heartbeat() {
 }
 
 # --- MAIN ---
+# Clear stale per-tick state so source=<prev> from an earlier tick cannot
+# leak into this tick if resolve_required() is never entered.
+rm -f "$REQUIRED_SOURCE_FILE" 2>/dev/null || true
 log "--- tick --- v=${WATCHDOG_VERSION} repo=${REPO_DIR} resolved=${REPO_RESOLVED}"
 [[ "$MODE" == "dry-run" ]] && log "  MODE=dry-run (no side effects)"
 if (( REPO_RESOLVED == 0 )); then

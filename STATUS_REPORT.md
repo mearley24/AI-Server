@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,67 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## bob-watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)
+
+Bob deployed ba3c298 (the bash-3.2 hotfix) and the log showed:
+
+```
+2026-04-23 08:52:52 [watchdog] --- tick --- v=2026-04-23.3-bash3-required repo=/Users/bob/AI-Server resolved=1
+2026-04-23 08:52:54 [watchdog]   required services source=none
+2026-04-23 08:52:55 [watchdog] --- done ---
+```
+
+Repo root resolved, but `source=none` instead of
+`override:/Users/bob/AI-Server/ops/bob-watchdog.required`.
+
+**Root cause.** `resolve_required()` is called via command substitution
+(`required=$(resolve_required)`) which runs it in a subshell. Assignments
+to `REQUIRED_SOURCE` inside the function are discarded when the subshell
+exits — the parent shell's copy stays at its module-scoped default of
+`"none"`. The override file was being read (grep output populated
+`required`), but the source label was always reported wrong.
+
+**Fix (version `2026-04-23.4-required-source-fix`).**
+
+1. `scripts/bob-watchdog.sh` — write the resolved source to
+   `$STATE_DIR/required_source` from inside `resolve_required()`, read it
+   back in the parent shell in `check_containers()`. Subshell-safe.
+   Clear the state file at the top of each tick so a stale value from
+   the previous tick cannot leak through if `resolve_required()` is
+   never reached (e.g., docker down).
+2. `scripts/bob-watchdog.sh` — widen the "no services resolved"
+   diagnostic to include `compose_yml`, `override_path`,
+   `override_exists`, `override_readable`, `override_lines`. When the
+   repo is resolved but the override file is missing/unreadable, emit
+   `[FOLLOWUP] required service override missing: <path>` so the
+   watchdog cannot silently pass the check. Also require the override
+   file be readable, not just present.
+3. `setup/install_bob_watchdog.sh` — `--status` now prints the override
+   file path, line count, and readable/missing status; `--deploy-system`
+   warns (non-fatal) when the override file is absent from the repo.
+
+**Checks run locally.** `bash -n` on both scripts, `--check` passes,
+sandbox tick simulation (stub docker, --dry-run) confirms:
+- override present → `source=override:<path>` and the missing-container
+  list is populated correctly;
+- override absent → `source=compose`, detailed diag line, and
+  `[FOLLOWUP] required service override missing` alert fire as expected.
+
+- [FOLLOWUP] Cline / Bob: pull, run `bash setup/install_bob_watchdog.sh
+  --status` (expect Required-services READABLE with lines ≥ 17), then
+  `sudo bash setup/install_bob_watchdog.sh --deploy-system`, kickstart
+  the daemon, tail `/usr/local/var/log/bob-watchdog.log` and confirm
+  `v=2026-04-23.4-required-source-fix` and
+  `required services source=override:/Users/bob/AI-Server/ops/bob-watchdog.required`.
+  If the line instead shows `source=compose` with a `[FOLLOWUP]` alert,
+  the override file failed to land in the pull — investigate and deploy
+  manually.
+
+Verification artifact:
+`ops/verification/20260423-145811-watchdog-required-source-diagnostics.txt`.
 
 ---
 
