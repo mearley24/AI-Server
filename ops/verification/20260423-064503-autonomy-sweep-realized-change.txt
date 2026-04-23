@@ -1,0 +1,153 @@
+==============================================================================
+AUTONOMY SWEEP — 20260423-064503
+==============================================================================
+trigger: launchd-watchpath
+host:    Bobs-Mac-mini.local
+repo:    /Users/bob/AI-Server
+python:  /opt/homebrew/opt/python@3.14/bin/python3.14
+
+=== trigger ===
+trigger file: ops/realized_changes/20260418-bootstrap.change
+---
+realized-change: bootstrap
+by:              cline-init
+at:              2026-04-18T19:05:50Z
+summary:         first sweep from autonomy bootstrap prompt
+---
+
+=== git state ===
+head:   73f4adf
+branch: main
+dirty:  17 changed files
+last 5 commits:
+  73f4adf 2026-04-23 06:44:30 -0600 docs(audit): X-intake deep-dive, reply-action design, testbed spec
+  4c8847f 2026-04-23 06:40:04 -0600 ops: task-runner tick 20260423-064003 — heartbeat
+  808a0b7 2026-04-23 12:35:41 +0000 docs(prompts): add x-intake deep-dive audit + reply-actions + docker testbed prompt
+  ed529c9 2026-04-23 06:29:59 -0600 ops: task-runner tick 20260423-062959 — heartbeat
+  99cb9e2 2026-04-23 06:19:49 -0600 ops: task-runner tick 20260423-061949 — heartbeat
+
+dirty files:
+  M data/clawwork/data/clawwork_state.json
+   M data/clawwork/data/sector_performance.json
+   M data/task_runner/bob-watchdog-state/containers
+   M data/task_runner/bob-watchdog-state/uh_vpn
+   M data/task_runner/bob_watchdog_heartbeat.txt
+   M data/task_runner/watchdog_heartbeat.txt
+   M ops/verification/dispatch-20260423-063714-run-prompt.txt
+   M scripts/cline-claude-code-wrapper.sh
+  ?? .cursor/prompts/direct/
+  ?? data/task_runner/bob-watchdog-state/uh_openclaw
+  ?? data/task_runner/bob-watchdog-state/x_intake
+  ?? data/task_runner/bob-watchdog.log.1
+  ?? ops/self_improvement/archive/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+  ?? ops/self_improvement/cards/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md
+  ?? ops/self_improvement/inbox/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+  ?? ops/verification/20260423-064403-autonomy-sweep-realized-change.txt
+  ?? ops/verification/20260423-064403-task-runner-health.txt
+
+=== prompt index ===
+exit=0
+wrote .cursor/prompts/INDEX.md (65 prompts)
+
+=== work queue ===
+pending    0
+completed  21
+rejected   0
+failed     0
+blocked    0
+
+=== recent verification ===
+last 8 files (of 1248):
+  2026-04-23T06:44:03      1824  20260423-064403-task-runner-health.txt
+  2026-04-18T11:31:21      4604  INDEX.txt
+  2026-04-21T19:29:18        56  dispatch-20260421-192918-statuscd.txt
+  2026-04-21T19:29:57       660  dispatch-20260421-192945-models.txt
+  2026-04-21T19:37:21      3652  dispatch-20260421-193003-run-priority1.txt
+  2026-04-22T05:19:19      1003  dispatch-20260422-051725-run-prompt.txt
+  2026-04-23T06:44:52      2698  dispatch-20260423-063714-run-prompt.txt
+  2026-04-22T05:19:13      1385  self-improve-20260422T120000Z.txt
+
+=== task runner health ===
+exit=0
+task-runner: healthy (report=/Users/bob/AI-Server/ops/verification/20260423-064504-task-runner-health.txt)
+  OK launchd.loaded: launchctl list: -	0	com.symphony.task-runner
+  OK heartbeat.fresh: heartbeat age=300s; content='last-heartbeat: 2026-04-23T06:40:03-06:00'
+  OK queue.not_stuck: pending=0
+  OK verification.recent: newest=20260423-064403-autonomy-sweep-realized-change.txt age=60s
+  OK preflight.seen: newest preflight=20260423-053254-preflight.txt age=4330s
+  OK disk.pressure: free=42.26 GiB / total=228.3 GiB (used 81.5%) at /Users/bob/AI-Server
+
+=== status report summary ===
+exit=0
+# STATUS_REPORT summary
+
+_Generated: 2026-04-23 06:45 MDT · repo commit: `73f4adf0e90a` · STATUS_REPORT last touched: 2026-04-23_
+
+This digest is produced by `ops/status_report_summarizer.py` from `STATUS_REPORT.md`. See `ops/AGENT_VERIFICATION_PROTOCOL.md` for the tagging conventions (`[FOLLOWUP]`, `[NEEDS_MATT]`).
+
+## Headline
+
+- **Open items:** 11 across 3 actionable sections
+- **Follow-ups:** 9
+- **Needs Matt:** 1
+- **Completed (in Done section):** 24
+
+## What changed since last summary
+
+_No prior snapshot or no detectable changes._
+
+## Current open items by category
+
+### Now (1)
+
+- 🧑 [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategie…
+
+### Next (1)
+
+- **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot…
+
+### Later (9)
+
+- 🔁 **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- 🔁 **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- 🔁 **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- 🔁 **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- 🔁 **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- 🔁 **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- 🔁 **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- 🔁 **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- 🔁 **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Follow-ups
+
+- _Later_: **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- _Later_: **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- _Later_: **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- _Later_: **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- _Later_: **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- _Later_: **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- _Later_: **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- _Later_: **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- _Later_: **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Needs Matt
+
+_Items that require Matt's real-world decision or input._
+
+- _Now_: [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code chan…
+
+## Top 3 next actions
+
+1. _Now_ (🧑 needs Matt): [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_ban…
+2. _Next_: **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot 2>&1 | grep redeeme…
+3. _Later_ (🔁 follow-up): **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compose healthcheck. See…
+
+## Reference sections (historical)
+
+STATUS_REPORT.md contains 19 reference sections (detailed incident reports / historical snapshots). They are not enumerated here; run `grep '^## Reference' STATUS_REPORT.md` to list them.
+
+---
+
+_Produced by `ops/status_report_summarizer.py`. Snapshot written to `data/status_report_summarizer/last_snapshot.json`; next run will diff against it._
+
+### sweep finished 2026-04-23T06:45:04-06:00 ok=True

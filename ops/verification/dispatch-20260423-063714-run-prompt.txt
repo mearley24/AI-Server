@@ -2,3 +2,39 @@
 [ai-dispatch] run-prompt file=.cursor/prompts/audit-x-intake-deep-dive-reply-actions-and-docker-testbed.md model=claude-sonnet-4-6[1m] bytes=    9959
 
 === claude output ===
+Done. Here's what was produced and committed:
+
+---
+
+## Deliverables (committed to `origin/main`)
+
+### `docs/audits/x-intake-deep-dive-audit.md`
+Full pipeline audit covering:
+- **Fetch depth**: 4-method fallback chain (fxtwitter → vxtwitter → nitter → direct x.com), RSSHub + x-alpha-collector polling 40+ handles every 10 min
+- **Thread context**: 1 level of parent hydration only; no multi-level chains; quoted tweets via fxtwitter payload
+- **Link expansion**: Minimal — no dedicated unfurler; short URLs (bit.ly, t.co) not resolved
+- **Summarization**: Ollama qwen3:8b primary → OpenAI gpt-4o-mini fallback → keyword heuristic; 8 000-char context window; thread included, linked-article content not
+- **Cortex writes**: All posts to `/remember`; categories (`x_intel`, `x_intel_actionable`, etc.); no UNIQUE constraint → duplicates accumulate; no embeddings; write-only (not closed-loop)
+- **Latency bottleneck**: Synchronous Ollama call at 4–12 s median is the dominant cost; p95 ~25–45 s
+- **Mermaid event-path diagram** with per-hop file/function, queue/channel, state, and silent-failure modes
+- **10 identified gaps** (G-01 through G-10), including the missing reply-action parser
+
+### `config/reply_actions.schema.json`
+Machine-readable action catalog with 6 actions:
+
+| Slot | Key | Risky | Confirm required |
+|------|-----|-------|-----------------|
+| 1 | `build_card` | No | No |
+| 2 | `deep_research` | No | No |
+| 3 | `prototype` (testbed) | Yes | Yes |
+| 4 | `save_to_cortex` | No | No |
+| 5 | `mute_author` | No | Yes |
+| 6 | `open_thread` | No | No |
+
+Also includes: parsing rules, hard denylist (trading, money movement, external sends), testbed isolation spec (network-none-by-default, ro mounts, 512 MB memory limit), outbound template format, and extension pattern.
+
+### `ops/verification/20260423-reply-actions-design-verification.md`
+Lists 13 files read, 14 greps run, 5 assumptions with confidence levels, 6 open questions, and the full 6-phase implementation plan (Phase 0 = this audit → Phase 6 = production rollout, each with artifacts, review checkpoint, and gate).
+
+**Next action for Matt**: Review the audit gaps and the action catalog in `config/reply_actions.schema.json` — particularly which actions need confirmation and the testbed resource limits — then give a "LGTM on design" signal to unlock Phase 1.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260423-063714-run-prompt.txt
