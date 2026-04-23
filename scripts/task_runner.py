@@ -85,9 +85,48 @@ LOCK_PATH = DATA_DIR / ".runner.lock"
 HEARTBEAT_PATH = DATA_DIR / "heartbeat.txt"
 HEARTBEAT_EVERY = 600  # seconds
 TASK_TIMEOUT = 2 * 60 * 60  # 2 hours
+GIT_TIMEOUT = 60  # seconds; cap every git subprocess so a stalled
+                  # network/auth/credential helper can never wedge the
+                  # runner's fcntl lock (see docs/audits/bob-freezing-
+                  # runtime-hangs-2026-04-23.md).
 
 GIT_AUTHOR_NAME = "Perplexity Computer"
 GIT_AUTHOR_EMAIL = "earleystream@gmail.com"
+
+# Non-interactive git environment. GIT_TERMINAL_PROMPT=0 makes git fail
+# fast instead of blocking on a credential prompt; GIT_ASKPASS=/usr/bin/true
+# short-circuits any helper that would otherwise pop a GUI/TTY dialog;
+# SSH flags force batch mode with pinned host-key checking so git+ssh
+# can't stall on "Are you sure you want to continue connecting?" either.
+GIT_NONINTERACTIVE_ENV = {
+    "GIT_TERMINAL_PROMPT": "0",
+    "GIT_ASKPASS": "/usr/bin/true",
+    "SSH_ASKPASS": "/usr/bin/true",
+    "GIT_SSH_COMMAND": (
+        "ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "
+        "-o ConnectTimeout=10 -o ServerAliveInterval=5 "
+        "-o ServerAliveCountMax=2"
+    ),
+}
+
+
+def _git_env() -> dict:
+    """Return os.environ merged with the non-interactive git overrides."""
+    env = os.environ.copy()
+    env.update(GIT_NONINTERACTIVE_ENV)
+    return env
+
+
+def _git_timeout_result(
+    cmd: list[str], elapsed: float
+) -> subprocess.CompletedProcess:
+    """Shape a TimeoutExpired into a CompletedProcess so callers keep working."""
+    return subprocess.CompletedProcess(
+        args=cmd,
+        returncode=124,
+        stdout="",
+        stderr=f"git timeout after {elapsed:.1f}s (limit {GIT_TIMEOUT}s)",
+    )
 
 ALLOWED_TASK_TYPES = {
     "git_pull",
@@ -117,7 +156,15 @@ def log(msg: str) -> None:
 
 
 def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
-    """Run a git command in the repo root with Perplexity Computer identity."""
+    """Run a git command in the repo root with Perplexity Computer identity.
+
+    Bounded by GIT_TIMEOUT and run with a non-interactive environment so a
+    stalled network, credential helper, or SSH prompt cannot wedge the
+    runner lock. On timeout the call returns a CompletedProcess with
+    returncode=124 instead of raising, so callers treat it as a plain
+    non-zero exit (matches how pre-existing "nothing to commit" / rc!=0
+    branches already behave).
+    """
     cmd = [
         "git",
         "-C",
@@ -128,7 +175,23 @@ def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
         f"user.email={GIT_AUTHOR_EMAIL}",
         *args,
     ]
-    return subprocess.run(cmd, check=check, capture_output=True, text=True)
+    try:
+        return subprocess.run(
+            cmd,
+            check=check,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            env=_git_env(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        log(f"git timed out after {GIT_TIMEOUT}s: {' '.join(args)}")
+        result = _git_timeout_result(cmd, float(exc.timeout or GIT_TIMEOUT))
+        if check:
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, output=result.stdout, stderr=result.stderr
+            )
+        return result
 
 
 def ensure_dirs() -> None:
@@ -213,13 +276,23 @@ def _stringify_args(args) -> list[str]:
 
 
 def handle_git_pull(payload: dict, result_path: Path) -> int:
+    argv = ["git", "-C", str(REPO_ROOT), "pull", "--ff-only", "origin", "main"]
     with result_path.open("a", encoding="utf-8") as fh:
         fh.write(f"=== git_pull @ {now_iso()} ===\n")
-        proc = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "pull", "--ff-only", "origin", "main"],
-            capture_output=True,
-            text=True,
-        )
+        try:
+            proc = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=GIT_TIMEOUT,
+                env=_git_env(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            fh.write(f"TIMEOUT after {float(exc.timeout or GIT_TIMEOUT):.1f}s\n")
+            if exc.output:
+                fh.write(exc.output if isinstance(exc.output, str) else "")
+            fh.write("exit=124\n")
+            return 124
         fh.write(proc.stdout)
         fh.write(proc.stderr)
         fh.write(f"exit={proc.returncode}\n")
@@ -648,22 +721,33 @@ def maybe_update_heartbeat() -> bool:
 
 
 def has_changes() -> bool:
-    """Return True if git has staged/unstaged changes under our tracked dirs."""
-    proc = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(REPO_ROOT),
-            "status",
-            "--porcelain",
-            "--",
-            "ops/verification",
-            "ops/work_queue",
-            "data/task_runner/heartbeat.txt",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    """Return True if git has staged/unstaged changes under our tracked dirs.
+
+    A hanging `git status` (e.g. stalled index.lock) would otherwise wedge
+    the tick — skip the commit phase on timeout and let the next tick
+    retry once the underlying issue clears.
+    """
+    try:
+        proc = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "status",
+                "--porcelain",
+                "--",
+                "ops/verification",
+                "ops/work_queue",
+                "data/task_runner/heartbeat.txt",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            env=_git_env(),
+        )
+    except subprocess.TimeoutExpired:
+        log(f"git status timed out after {GIT_TIMEOUT}s; skipping commit this tick")
+        return False
     return bool(proc.stdout.strip())
 
 
@@ -719,11 +803,20 @@ def pull_latest() -> None:
          the heartbeat, and commits. A future tick (or a human running
          ``bash scripts/pull.sh``) will heal the divergence.
     """
-    proc = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "pull", "--ff-only", "origin", "main"],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "pull", "--ff-only", "origin", "main"],
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            env=_git_env(),
+        )
+    except subprocess.TimeoutExpired:
+        log(
+            f"pull --ff-only timed out after {GIT_TIMEOUT}s "
+            "(continuing tick; run `bash scripts/pull.sh` to recover)"
+        )
+        return
     if proc.returncode == 0:
         tail = proc.stdout.strip().splitlines()[-1:] or ["(no output)"]
         log(f"pull ok: {tail[0]}")
@@ -740,21 +833,30 @@ def pull_latest() -> None:
         return
 
     log(f"pull --ff-only diverged; retrying with --rebase --autostash")
-    proc2 = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(REPO_ROOT),
-            "-c",
-            "rebase.autoStash=true",
-            "pull",
-            "--rebase",
-            "origin",
-            "main",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc2 = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "-c",
+                "rebase.autoStash=true",
+                "pull",
+                "--rebase",
+                "origin",
+                "main",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            env=_git_env(),
+        )
+    except subprocess.TimeoutExpired:
+        log(
+            f"pull --rebase timed out after {GIT_TIMEOUT}s "
+            "(continuing tick; run `bash scripts/pull.sh` to recover)"
+        )
+        return
     if proc2.returncode == 0:
         tail = proc2.stdout.strip().splitlines()[-1:] or ["(no output)"]
         log(f"pull rebase ok: {tail[0]}")

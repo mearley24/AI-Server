@@ -30,6 +30,42 @@ fi
 log()       { echo "$(date '+%Y-%m-%d %H:%M:%S') [watchdog] $*" >> "$LOG"; }
 log_alert() { echo "$(date '+%Y-%m-%d %H:%M:%S') [ALERT]    $*" >> "$LOG"; }
 
+# Resolve a bounded-runner. Prefer GNU `timeout` (coreutils) or `gtimeout`
+# (brew's coreutils) when available; otherwise fall back to a background+kill
+# helper so a zombie Docker daemon (documented 2026-04-21) can never wedge
+# the watchdog. Both paths return 124 on timeout.
+if command -v timeout >/dev/null 2>&1; then
+    BOUNDED_RUN=(timeout)
+elif command -v gtimeout >/dev/null 2>&1; then
+    BOUNDED_RUN=(gtimeout)
+else
+    BOUNDED_RUN=()
+fi
+
+bounded() {
+    # Usage: bounded <seconds> <cmd...>
+    # Runs cmd with a wall-clock cap; exits 124 on timeout (coreutils convention).
+    local secs="$1"; shift
+    if (( ${#BOUNDED_RUN[@]} > 0 )); then
+        "${BOUNDED_RUN[@]}" "$secs" "$@"
+        return $?
+    fi
+    # Fallback: no `timeout` binary — use a background job + watcher.
+    "$@" &
+    local pid=$!
+    local waited=0
+    while (( waited < secs )); do
+        kill -0 "$pid" 2>/dev/null || { wait "$pid"; return $?; }
+        sleep 1
+        waited=$((waited + 1))
+    done
+    kill -TERM "$pid" 2>/dev/null
+    sleep 1
+    kill -KILL "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    return 124
+}
+
 mark_action() {
     echo "$(date +%s)" > "$STATE_DIR/$1"
 }
@@ -132,12 +168,15 @@ restore_tailscale_dns() {
 #      with exit 1 even though the socket file exists. This mode is what
 #      stranded Bob on 2026-04-21; we explicitly test for it now.
 docker_healthy() {
+    # Bound every docker probe at 10s so a zombie daemon can't wedge the tick.
     local out err rc
-    out=$(docker info --format '{{.ServerVersion}}' 2>/tmp/docker_info.err)
+    out=$(bounded 10 docker info --format '{{.ServerVersion}}' 2>/tmp/docker_info.err)
     rc=$?
     err=$(cat /tmp/docker_info.err 2>/dev/null)
     rm -f /tmp/docker_info.err 2>/dev/null
     if (( rc != 0 )); then
+        # rc=124 means the probe hit the timeout — still "unhealthy"; recovery
+        # logic below handles it the same way as a hard failure.
         return 1
     fi
     # Exit 0 but empty ServerVersion or EOF in stderr = zombie daemon.
@@ -145,7 +184,7 @@ docker_healthy() {
         return 1
     fi
     # Final smoke: must be able to list containers without EOF.
-    if ! docker ps -q >/dev/null 2>/tmp/docker_ps.err; then
+    if ! bounded 10 docker ps -q >/dev/null 2>/tmp/docker_ps.err; then
         return 1
     fi
     err=$(cat /tmp/docker_ps.err 2>/dev/null)

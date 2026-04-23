@@ -2074,3 +2074,19 @@ Static-analysis pass per `.cursor/prompts/diagnose-bob-freezing-and-runtime-hang
 - [FOLLOWUP] Resolve pre-existing merge conflict in `ios-app/SymphonyOps/SymphonyOps/ContentView.swift` (UU on Matt's MacBook during this pass; not touched per prompt guardrails).
 
 _Diagnosed by Claude Code on 2026-04-23 (static-only). Committed via a clean `git worktree` at origin/main because the main checkout carried the above unresolved conflict._
+
+---
+
+## Phase 1 Fix — Bob Runner/Watchdog Bounded (2026-04-23)
+
+Implements Option A + B from `docs/audits/bob-freezing-runtime-hangs-2026-04-23.md` per `.cursor/prompts/fix-bob-freezing-phase-1-runner-git-timeouts.md`.
+
+- **scripts/task_runner.py** — added `GIT_TIMEOUT=60` + `GIT_NONINTERACTIVE_ENV` (`GIT_TERMINAL_PROMPT=0`, `GIT_ASKPASS=/usr/bin/true`, `GIT_SSH_COMMAND` with `BatchMode=yes`, `ConnectTimeout=10`, `ServerAliveInterval=5`). Every git `subprocess.run` (git() helper, handle_git_pull, has_changes, pull_latest ff-only, pull_latest rebase fallback) now passes `timeout=GIT_TIMEOUT` + `env=_git_env()` and returns gracefully on `TimeoutExpired` — rc=124 shaped into a `CompletedProcess` so the tick releases its `fcntl.flock` cleanly.
+- **scripts/bob-watchdog.sh** — added a portable `bounded` helper (prefers `timeout`/`gtimeout`, falls back to background+kill) and wrapped the `docker info` + `docker ps -q` probes in `bounded 10`. Zombie-daemon mode documented 2026-04-21 can no longer hang the watchdog.
+- **ops/tests/test_task_runner_git_timeouts.py** — new smoke test. Monkey-patches `subprocess.run` to raise `TimeoutExpired` and asserts each helper degrades gracefully; also asserts `GIT_TERMINAL_PROMPT=0` + SSH `BatchMode=yes` land in the runner env. 15/15 assertions pass. Pre-existing `ops/tests/test_task_runner_gates.py` still passes.
+- **Verification:** `ops/verification/20260423-134031-bob-freeze-fix1.txt`
+- **Audit:** `docs/audits/bob-freezing-runtime-hangs-2026-04-23.md`
+- [FOLLOWUP] Run on Bob: `bash scripts/pull.sh` → `pgrep -fl scripts/task_runner.py` (identify any wedged tick) → `kill <PID>` (only if one is > 10 min old) → `timeout 30 python3 scripts/task_runner.py` (one-shot re-prime) → confirm `tail -n 5 data/task_runner/heartbeat.txt` advanced. Full commands in the fix prompt's Phase 5.
+- **Scope respected:** no launchd plist edit, no Docker/Redis/secrets/messaging changes; the lock semantics (`fcntl.flock`) are unchanged — only the subprocesses inside the tick are bounded.
+
+_Implemented by Claude Code on 2026-04-23 (AUTO_APPROVE). Committed via clean `git worktree` at origin/main because the main checkout on Matt's MacBook carried a pre-existing unresolved merge conflict in `ios-app/SymphonyOps/SymphonyOps/ContentView.swift` that must not be touched per the prompt's guardrail._
