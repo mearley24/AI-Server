@@ -27,6 +27,7 @@ heartbeat_reports/*.json
 data/**/*.db
 data/**/*.db-shm
 data/**/*.db-wal
+data/**/*.db.bak.*
 
 # Network watch + intake (updated by daemons)
 data/network_watch/
