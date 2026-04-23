@@ -4,8 +4,18 @@
 Category: data
 Risk tier: medium
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-23 by Claude Code (Bob, Mac Mini M4).
+Commits: `9f0b7c4`, `89ad9fc`, `814f746`, `7eab1eb`.
+Tests: 8/8 pass (`ops/tests/test_cortex_embeddings.py`, NullProvider, no network).
+Verification receipt: `ops/verification/20260423-105744-cortex-embeddings.txt`.
+Default posture: `CORTEX_EMBEDDINGS_ENABLED=0` (disabled until Matt arms it).
+Runtime arm sequence: see `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`
+(`[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`; not auto-run by Computer/Cline).
+<!-- closure: end -->
 
 # Cortex Embeddings — Local-First Vector Index for Memories (Cline-first, Phase-1 Author+Test)
 

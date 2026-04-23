@@ -1,0 +1,186 @@
+Cortex Embeddings Reconciliation — Verification
+================================================
+Date (UTC): 2026-04-23T17:06:02Z
+Author: Claude Code (parent-agent pass, bounded)
+Repo: /home/user/workspace/AI-Server-31a85137  branch: main
+Triggered by: parent-agent reconciliation instructions after the
+  embeddings Cline prompt ran on Bob.
+
+Scope: docs/gates reconciliation only. No runtime action taken.
+  No docker, no model pull, no env flip, no service restart,
+  no external messages, no sudo, no new ports, no secrets read.
+  Harness-owned dirty files (.claude/, .mcp.json, CLAUDE.md)
+  preserved as instructed.
+
+---
+
+V1 — Git state
+
+git remote: origin -> https://git-agent-proxy.perplexity.ai/mearley24/AI-Server
+git status -sb (before this pass):
+  ## main...origin/main          [in sync, 0 ahead, 0 behind]
+   M .claude/agents/data-model-explorer.md
+   M .claude/skills/INSTRUCTIONS.md
+   M .claude/skills/code-review/SKILL.md
+   M .claude/skills/coding-workflow/SKILL.md
+   M .claude/skills/data-workflow/SKILL.md
+   M .mcp.json
+   M CLAUDE.md
+
+Recent commits (main, relevant window):
+  f1a2a64 ops: task-runner tick 20260423-110054 — heartbeat
+  7983149 auto: local changes before pull
+  7eab1eb test(cortex): embeddings + backfill (8 tests — NullProvider, no network)
+  814f746 feat(cortex): semantic search endpoint + embed backfill script (dry-run default)
+  89ad9fc feat(cortex): embeddings module (ollama/openai/null providers + async writer task)
+  9f0b7c4 feat(cortex): memory_embeddings table + schema + writer hook gated by feature flag
+  11cd0c2 ops: task-runner tick 20260423-104658 — heartbeat
+  10ed661 docs(reconciliation): five-prompt audit — 4/5 completed, embeddings unrun
+   ^-- commit 10ed661 predates the embeddings run in wall-clock but
+       its timestamp is recorded in UTC (16:50) while the embedding
+       commits are recorded in MDT (10:56 = 16:56 UTC). The reconciliation
+       receipt written in that commit is therefore STALE for prompt #4.
+
+---
+
+V2 — Embeddings deliverables: path existence
+
+  test -f cortex/embeddings.py              -> ok-emb
+  test -f scripts/cortex_embed_backfill.py  -> ok-backfill
+  test -f ops/tests/test_cortex_embeddings.py -> ok-tests
+  test -f ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md -> ok-runbook (new, this pass)
+  test -f ops/verification/20260423-105744-cortex-embeddings.txt -> present (prior run receipt)
+  test -f ops/verification/20260423-165728-cortex-embed-backfill.json -> present
+
+---
+
+V3 — Static compile
+
+  python3 -m py_compile cortex/memory.py cortex/engine.py \
+    cortex/embeddings.py cortex/config.py \
+    scripts/cortex_embed_backfill.py
+  -> PY_COMPILE_OK (all 5 modules parse)
+
+---
+
+V4 — Safety-posture checks
+
+  grep -n "CORTEX_EMBEDDINGS_ENABLED" cortex/config.py
+  -> 43:CORTEX_EMBEDDINGS_ENABLED = os.environ.get("CORTEX_EMBEDDINGS_ENABLED", "0") == "1"
+  Writer hook defaults to disabled — confirmed.
+
+  grep -n "CORTEX_EMBED_OPENAI_OK" cortex/config.py
+  -> 47:CORTEX_EMBED_OPENAI_OK = os.environ.get("CORTEX_EMBED_OPENAI_OK", "0") == "1"
+  OpenAI fallback opt-in gate present — confirmed.
+
+---
+
+V5 — Test file shape (did not execute; pytest not available in
+  this sandbox, and instructions say tests only if safe and not
+  runtime-dependent — the authoritative run is the 8/8 PASS already
+  captured on Bob at ops/verification/20260423-105744-cortex-embeddings.txt)
+
+  grep -c "^def test_" ops/tests/test_cortex_embeddings.py -> 8
+  Tests import: NullProvider, OllamaProvider, pack_vector,
+    unpack_vector, embed_worker from cortex.embeddings. No real
+    Ollama or OpenAI SDK import in the test file.
+
+  Authoritative test evidence (from prior run on Bob):
+    test_pack_unpack_roundtrip_preserves_floats            PASSED
+    test_null_provider_is_deterministic                    PASSED
+    test_writer_is_noop_when_disabled                      PASSED
+    test_writer_writes_row_when_enabled_with_null_provider PASSED
+    test_writer_skips_on_provider_timeout                  PASSED (10s)
+    test_search_semantic_returns_top_k_by_cosine           PASSED
+    test_backfill_dry_run_writes_no_rows                   PASSED
+    test_backfill_apply_populates_missing_rows_only        PASSED
+
+---
+
+V6 — Prompt header state
+
+  Before this pass:
+    grep -n "^Status:" .cursor/prompts/2026-04-23-cline-cortex-embeddings.md
+    -> Status:    active
+  After this pass:
+    grep -c "Status:    done"  -> 1
+    grep -c "Status:    active" -> 0
+  Also added a closure block pointing at the runbook.
+
+---
+
+V7 — Doc reconciliation changes this pass
+
+  .cursor/prompts/2026-04-23-cline-cortex-embeddings.md
+    - flipped Status: active -> Status: done
+    - added closure block with commits / tests / verification /
+      default posture / runbook reference
+  ops/verification/20260423-164850-five-prompt-reconciliation.md
+    - added superseded banner at top
+    - appended 17:05 UTC addendum noting prompt #4 is complete,
+      with commit hashes and the new runbook reference
+  docs/audits/2026-04-23-unfinished-setup-audit.md
+    - struck the §1 bullet "Cortex cross-source dedup (UNIQUE/upsert)
+      and embeddings", added CLOSED repo-side marker with commits
+      and runbook reference
+    - added an "Update (2026-04-23 17:05 UTC)" note after the five-
+      prompt list noting all five are done + pointing at the runbook
+  STATUS_REPORT.md
+    - added "Cortex Embeddings Reconciliation (2026-04-23 17:05 UTC)"
+      entry immediately before the existing 10:57 MDT author+test
+      entry
+  ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md  (NEW)
+    - human-approved runbook, explicitly NOT auto-run by Computer /
+      Cline / task-runner / self-improvement loop
+    - prechecks, ordered arm sequence, verification receipt
+      requirements, rollback / stop conditions
+  ops/verification/20260423-170602-cortex-embeddings-reconciliation.txt (this file)
+
+---
+
+V8 — Final reconciliation table
+
+  Item                                        State
+  ------------------------------------------- ----------------------
+  Embeddings code + schema                    LANDED (9f0b7c4, 89ad9fc, 814f746)
+  Embeddings tests (8/8)                      PASS on Bob at 10:57 MDT
+  Default CORTEX_EMBEDDINGS_ENABLED=0         CONFIRMED in cortex/config.py:43
+  Dedup prerequisite                          LANDED (716b14a/da532f3/758b31f)
+  STATUS_REPORT 10:57 MDT entry               PRESENT (authored by Cline)
+  STATUS_REPORT reconciliation entry          ADDED (this pass, 17:05 UTC)
+  Verification receipt (author+test run)      PRESENT (20260423-105744)
+  Verification receipt (reconciliation)       ADDED (this file)
+  Prompt Status flipped                       DONE (this pass)
+  Bob-runtime arm sequence documented         STATUS_REPORT inline + now
+                                              dedicated runbook (this pass)
+  [NEEDS_MATT] Bob live --apply embeddings    OPEN (gated, runbook ready)
+
+---
+
+V9 — Explicit non-actions (per parent-agent instructions)
+
+  Did NOT run:
+    docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply
+    ollama pull nomic-embed-text
+    bash scripts/set-env.sh CORTEX_EMBEDDINGS_ENABLED 1
+    docker compose restart cortex
+    docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --apply --provider ollama
+  Did NOT touch: .claude/*, .mcp.json, CLAUDE.md (harness state).
+  Did NOT read secrets. Did NOT send messages. Did NOT use sudo.
+  Did NOT open ports. Did NOT pull Docker images.
+
+---
+
+V10 — Remaining gates (for the next human pass on Bob)
+
+  1. Precheck against ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md.
+  2. Dedup --apply on brain.db with backup-first (step 1-2 in runbook).
+  3. ollama pull nomic-embed-text on Bob.
+  4. Flip CORTEX_EMBEDDINGS_ENABLED=1 via scripts/set-env.sh.
+  5. docker compose restart cortex.
+  6. Run scripts/cortex_embed_backfill.py --apply --provider ollama.
+  7. Capture live-arm verification receipt and STATUS_REPORT entry.
+
+  Do NOT re-run the embeddings Cline prompt — it is Status: done.
+
+Closing signature: Claude Code parent-agent, 2026-04-23T17:06:02Z.

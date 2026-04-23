@@ -53,6 +53,16 @@ the repo confirms them.
 > 4. `.cursor/prompts/2026-04-23-cline-cortex-embeddings.md`
 > 5. `.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md`
 >
+> **Update (2026-04-23 17:05 UTC):** All five prompts are now
+> `Status: done` and verified repo-side. The only remaining items are
+> human-gated runtime arms on Bob. Track them via:
+> - `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` (new;
+>   supersedes inline arm notes for embeddings).
+> - The `[NEEDS_MATT]` / `[BOB_CLINE_ONLY]` gates already recorded in
+>   the STATUS_REPORT entries for the other four prompts.
+> - `ops/verification/20260423-164850-five-prompt-reconciliation.md`
+>   (plus its 17:05 addendum) for the full per-prompt outcome table.
+>
 > ---
 >
 > *Original TL;DR (preserved for history):* "No committed launchd plist
@@ -91,9 +101,17 @@ the Apr-23 bob-freezing audit.
   `scripts/bluebubbles-health.sh`, no `com.symphony.bluebubbles-health.plist`
   in `setup/launchd/`. Memory noted this as a known absence; repo confirms.
 - **Cortex cross-source dedup (UNIQUE/upsert) and embeddings.**
-  Evidence: prior x-intake deep-dive lists both as open gaps; no
+  ~~Evidence: prior x-intake deep-dive lists both as open gaps; no
   `UNIQUE` constraint on `cortex_events` in `cortex/engine.py` schema
-  grep, no embedding write-path file in `cortex/`.
+  grep, no embedding write-path file in `cortex/`.~~
+  **CLOSED repo-side 2026-04-23.** Dedup: commits `716b14a` (schema +
+  UNIQUE index), `da532f3` (remember upsert), `758b31f` (backfill +
+  12 tests), `bc8ffdf` + `50feea8` (verification). Embeddings: commits
+  `9f0b7c4` (schema), `89ad9fc` (module), `814f746` (search + backfill),
+  `7eab1eb` (8 tests). Default posture `CORTEX_EMBEDDINGS_ENABLED=0`.
+  Live `--apply` on Bob `brain.db` is `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`
+  and tracked in the runbook
+  `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`.
 
 ## 2. Partially Set Up (meaningful hooks exist; end-state not evidenced)
 

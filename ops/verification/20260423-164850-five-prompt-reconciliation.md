@@ -1,5 +1,13 @@
 # Five-Prompt Reconciliation — 2026-04-23 16:48 UTC
 
+> **Superseded in part by 2026-04-23 17:05 UTC addendum at the
+> bottom of this file.** Prompt #4 (`cortex-embeddings`) is no longer
+> "unrun" — commits `9f0b7c4`/`89ad9fc`/`814f746`/`7eab1eb` landed at
+> 10:56 MDT (16:56 UTC) and the verification receipt
+> `ops/verification/20260423-105744-cortex-embeddings.txt` is on disk.
+> Read the addendum before acting on the "Exact next command" block.
+
+
 Parent-agent review of the five Cline prompts added in commit `361ac56`
 (`.cursor/prompts/2026-04-23-*`). Authored by Claude Code on the
 MacBook checkout; every commit hash below is also visible on `origin/main`.
@@ -95,3 +103,52 @@ bash ops/cline-run-prompt.sh .cursor/prompts/2026-04-23-cline-cortex-embeddings.
 prompts. Running this will author Phase 1 code + tests + dry-run
 backfill; the live `--apply` + feature-flag flip on Bob are
 explicitly deferred per the prompt's `[NEEDS_MATT]` ordering.)
+
+---
+
+## Addendum — 2026-04-23 17:05 UTC (Claude Code)
+
+Written after the embeddings prompt was executed and the results
+landed on `origin/main`. The tables above are frozen for history; the
+current state is captured here.
+
+### Prompt #4 is now complete
+
+| Field | Value |
+|-------|-------|
+| Commits | `9f0b7c4`, `89ad9fc`, `814f746`, `7eab1eb` (2026-04-23 10:56–10:57 MDT) |
+| Tests | 8/8 pass in `ops/tests/test_cortex_embeddings.py` (NullProvider, no network) |
+| Verification receipt | `ops/verification/20260423-105744-cortex-embeddings.txt` |
+| STATUS_REPORT entry | "Cortex Embeddings Phase-1 Author+Test (2026-04-23 10:57 MDT, Claude Code)" |
+| Default posture | `CORTEX_EMBEDDINGS_ENABLED=0` (disabled in PR) |
+| Prompt header | flipped `Status: active` → `Status: done` in this pass |
+| Runtime arm runbook | `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` (`[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`, explicitly NOT auto-run) |
+
+### What this means for "remaining open"
+
+- **Repo-authorable section:** empty. All five prompts are complete
+  + verified repo-side.
+- **Bob-live / Matt section:** unchanged except that the embeddings
+  arm is now on the list alongside the other four live-arms. Order of
+  operations on Bob is still: dedup `--apply` → pull model → flip
+  flag → restart Cortex → embed backfill `--apply`. Exact commands
+  are in the new runbook referenced above.
+
+### Commits that landed after this receipt was first written
+
+```
+7eab1eb test(cortex): embeddings + backfill (8 tests — NullProvider, no network)
+814f746 feat(cortex): semantic search endpoint + embed backfill script (dry-run default)
+89ad9fc feat(cortex): embeddings module (ollama/openai/null providers + async writer task)
+9f0b7c4 feat(cortex): memory_embeddings table + schema + writer hook gated by feature flag
+```
+
+(Timestamps are MDT local. The reconciliation body above was written
+in UTC, which is why it appears "after" these commits in the raw
+git log — it was a parent-agent pass authored on the MacBook while
+the embeddings run was still in flight on Bob.)
+
+### Why the "Exact next command" block above is superseded
+
+Do **not** run `bash ops/cline-run-prompt.sh .cursor/prompts/2026-04-23-cline-cortex-embeddings.md` again — the prompt is now `Status: done` and the dispatcher would re-author code that is already merged. The only remaining action is the human arm sequence in
+`ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`.

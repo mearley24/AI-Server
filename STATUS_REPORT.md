@@ -26,6 +26,48 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Cortex Embeddings Reconciliation (2026-04-23 17:05 UTC, Claude Code)
+
+Parent-agent pass after the embeddings Cline prompt ran. No code
+paths touched; no runtime action taken. Harness-owned dirty files
+(`.claude/`, `.mcp.json`, `CLAUDE.md`) preserved.
+
+Reviewed state:
+
+- Embeddings code/tests **landed** on `origin/main`: `9f0b7c4`,
+  `89ad9fc`, `814f746`, `7eab1eb`. 8/8 tests pass (`NullProvider`, no
+  network).
+- Default posture confirmed: `CORTEX_EMBEDDINGS_ENABLED=0`
+  (`cortex/config.py:43`). Writer hook is a no-op until armed.
+- Dedup prerequisite **satisfied** repo-side
+  (`716b14a`/`da532f3`/`758b31f`/`bc8ffdf`/`50feea8`); live `--apply`
+  on `brain.db` is still `[NEEDS_MATT]`.
+- Five-prompt reconciliation receipt
+  `ops/verification/20260423-164850-five-prompt-reconciliation.md`
+  was written in a window where embeddings were still "unrun";
+  addendum appended with the correct outcome.
+- Embeddings prompt header flipped `Status: active` → `Status: done`
+  with a closure block pointing at the runbook.
+- Unfinished-setup audit §1 "Cortex cross-source dedup (UNIQUE/upsert)
+  and embeddings" now marks repo-side closure and references the new
+  runbook.
+
+Added:
+
+- `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` — gated
+  runtime arm runbook (`[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`, explicitly
+  NOT auto-run by Computer / Cline / task-runner / self-improvement
+  loop). Includes prechecks, ordered arm sequence, verification
+  receipt requirements, and rollback/stop conditions.
+- Reconciliation receipt
+  `ops/verification/20260423-170500-cortex-embeddings-reconciliation.txt`.
+
+- [NEEDS_MATT] Remaining action is the runtime arm sequence on Bob.
+  Start from `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`;
+  do not re-run the Cline prompt.
+
+---
+
 ## Cortex Embeddings Phase-1 Author+Test (2026-04-23 10:57 MDT, Claude Code)
 
 Commits: `9f0b7c4`, `89ad9fc`, `814f746`, `7eab1eb`
