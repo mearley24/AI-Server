@@ -289,7 +289,11 @@ async def remember(request: dict) -> dict[str, Any]:
     missing = required - set(request.keys())
     if missing:
         raise HTTPException(status_code=400, detail=f"Missing fields: {missing}")
-    mem_id = engine.memory.remember(**request)
+    dedupe_hint = request.pop("dedupe_hint", "") or ""
+    overwrite_content = bool(request.pop("overwrite_content", False))
+    mem_id = engine.memory.store_or_update(
+        **request, dedupe_hint=dedupe_hint, overwrite_content=overwrite_content
+    )
     return {"id": mem_id}
 
 
