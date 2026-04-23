@@ -25,6 +25,7 @@ _DEFAULT_DB = Path("/data/x_intake/reply_actions.db")
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS action_contexts (
     action_id    TEXT    PRIMARY KEY,
+    thread_guid  TEXT    DEFAULT NULL,
     created_at   REAL    NOT NULL,
     expires_at   REAL    NOT NULL,
     slots_json   TEXT    NOT NULL,
@@ -32,8 +33,18 @@ CREATE TABLE IF NOT EXISTS action_contexts (
     used_at      REAL,
     used_slot    INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_ac_expires ON action_contexts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_ac_expires    ON action_contexts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_ac_thread     ON action_contexts(thread_guid);
 """
+
+# Idempotent migrations for DBs created before thread_guid was added.
+_MIGRATE_SQL = [
+    "ALTER TABLE action_contexts ADD COLUMN thread_guid TEXT DEFAULT NULL",
+]
+
+
+class AlreadyUsed(Exception):
+    """Raised when a caller tries to mark an already-consumed action."""
 
 
 @dataclass(frozen=True)
@@ -62,6 +73,7 @@ class ActionStore:
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
+        self._migrate_db()
 
     # ------------------------------------------------------------------
     # Public API
@@ -72,6 +84,7 @@ class ActionStore:
         valid_slots: List[int],
         context: Dict[str, Any],
         expiry_seconds: int = 86400,
+        thread_guid: Optional[str] = None,
     ) -> str:
         """
         Store a new action context and return its opaque action_id (12-char hex).
@@ -85,9 +98,12 @@ class ActionStore:
         expires_at = now + expiry_seconds
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO action_contexts VALUES (?,?,?,?,?,NULL,NULL)",
+                "INSERT INTO action_contexts"
+                " (action_id, thread_guid, created_at, expires_at, slots_json, context_json)"
+                " VALUES (?,?,?,?,?,?)",
                 (
                     action_id,
+                    thread_guid,
                     now,
                     expires_at,
                     json.dumps(sorted(valid_slots)),
@@ -121,13 +137,62 @@ class ActionStore:
             used_slot=row[6],
         )
 
-    def mark_used(self, action_id: str, slot: int) -> bool:
-        """
-        Mark an action ID as consumed so it cannot be executed again.
+    def list_open_slots(
+        self,
+        thread_guid: str,
+        now: Optional[float] = None,
+    ) -> FrozenSet[int]:
+        """Return the valid, unexpired, unused slots for the most recent action in a thread.
 
-        Returns True if the row was updated, False if not found or already used.
+        Returns an empty frozenset if no open context exists.
         """
+        cutoff = now if now is not None else time.time()
         with self._connect() as conn:
+            row = conn.execute(
+                "SELECT slots_json FROM action_contexts"
+                " WHERE thread_guid=? AND expires_at>? AND used_at IS NULL"
+                " ORDER BY created_at DESC LIMIT 1",
+                (thread_guid, cutoff),
+            ).fetchone()
+        if row is None:
+            return frozenset()
+        return frozenset(json.loads(row[0]))
+
+    def lookup_by_slot(
+        self,
+        thread_guid: str,
+        slot: int,
+        now: Optional[float] = None,
+    ) -> Optional["ActionContext"]:
+        """Return the most recent open ActionContext for *thread_guid* that contains *slot*."""
+        cutoff = now if now is not None else time.time()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT action_id,created_at,expires_at,slots_json,context_json,"
+                "used_at,used_slot FROM action_contexts"
+                " WHERE thread_guid=? AND expires_at>? AND used_at IS NULL"
+                " ORDER BY created_at DESC LIMIT 10",
+                (thread_guid, cutoff),
+            ).fetchall()
+        for row in rows:
+            if slot in frozenset(json.loads(row[3])):
+                return ActionContext(
+                    action_id=row[0], created_at=row[1], expires_at=row[2],
+                    valid_slots=frozenset(json.loads(row[3])),
+                    context=json.loads(row[4]),
+                    used_at=row[5], used_slot=row[6],
+                )
+        return None
+
+    def mark_used(self, action_id: str, slot: int) -> bool:
+        """Mark an action ID as consumed. Raises AlreadyUsed if already consumed."""
+        with self._connect() as conn:
+            # Check current state first
+            row = conn.execute(
+                "SELECT used_at FROM action_contexts WHERE action_id=?", (action_id,)
+            ).fetchone()
+            if row is not None and row[0] is not None:
+                raise AlreadyUsed(f"action {action_id} already used at {row[0]}")
             cur = conn.execute(
                 "UPDATE action_contexts SET used_at=?,used_slot=? "
                 "WHERE action_id=? AND used_at IS NULL",
@@ -156,3 +221,12 @@ class ActionStore:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
+
+    def _migrate_db(self) -> None:
+        for sql in _MIGRATE_SQL:
+            try:
+                with self._connect() as conn:
+                    conn.execute(sql)
+            except Exception as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
