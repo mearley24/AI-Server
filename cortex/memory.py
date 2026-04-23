@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import structlog
 
@@ -31,12 +33,14 @@ CREATE TABLE IF NOT EXISTS memories (
     access_count INTEGER DEFAULT 0,
     last_accessed TEXT DEFAULT NULL,
     tags TEXT DEFAULT '[]',
-    metadata TEXT DEFAULT '{}'
+    metadata TEXT DEFAULT '{}',
+    dedupe_key TEXT DEFAULT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_dedupe_key ON memories(dedupe_key) WHERE dedupe_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS decisions (
     id TEXT PRIMARY KEY,
@@ -79,6 +83,28 @@ CREATE TABLE IF NOT EXISTS improvement_log (
     status TEXT DEFAULT 'proposed'
 );
 """
+
+# Idempotent ALTER TABLE statements for existing DBs that predate _SCHEMA additions.
+# Each statement is attempted; "duplicate column name" errors are silently swallowed.
+_MIGRATE_COLUMNS = [
+    "ALTER TABLE memories ADD COLUMN dedupe_key TEXT DEFAULT NULL",
+]
+
+# Idempotent index creation run after column migrations.
+_MIGRATE_INDEXES = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_dedupe_key"
+    " ON memories(dedupe_key) WHERE dedupe_key IS NOT NULL",
+]
+
+# URL query params stripped during canonicalization.
+_URL_STRIP_PARAMS: frozenset[str] = frozenset(
+    ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+     "utm_id", "utm_source_platform", "fbclid", "gclid", "msclkid"]
+)
+
+# Source prefixes that yield a stable dedupe key even without a URL.
+_MSG_PREFIXES = ("msg:", "imessage:", "bluebubbles:", "x:")
+
 
 # Valid memory categories
 CATEGORIES = {
@@ -124,8 +150,18 @@ class MemoryStore:
         logger.info("memory_store_initialized", db=str(DB_PATH))
 
     def _init_schema(self) -> None:
-        """Create tables if they don't exist."""
+        """Create tables + apply idempotent column/index migrations."""
         self.conn.executescript(_SCHEMA)
+        self.conn.commit()
+        for sql in _MIGRATE_COLUMNS:
+            try:
+                self.conn.execute(sql)
+                self.conn.commit()
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+        for sql in _MIGRATE_INDEXES:
+            self.conn.execute(sql)
         self.conn.commit()
 
     # ── Write ──────────────────────────────────────────────────────────────────
@@ -161,6 +197,130 @@ class MemoryStore:
         )
         self.conn.commit()
         logger.debug("memory_stored", id=mem_id, category=category, title=title[:50])
+        return mem_id
+
+    @staticmethod
+    def _canonical_key(
+        category: str,
+        source: str,
+        subcategory: str,
+        dedupe_hint: str,
+    ) -> str | None:
+        """Derive a stable SHA-256 dedupe key, or None if undetermined.
+
+        Priority order:
+        1. Explicit dedupe_hint → sha256("hint:" + hint)
+        2. URL source → sha256("url:" + canonicalized_url)
+        3. Known msg-prefix source → sha256(category + ":" + source + ":" + subcategory)
+        4. None — row stored without dedup
+        """
+        if dedupe_hint:
+            return hashlib.sha256(f"hint:{dedupe_hint}".encode()).hexdigest()
+
+        src = (source or "").strip()
+        if src.startswith(("http://", "https://")):
+            try:
+                p = urlparse(src)
+                host = (p.netloc or "").lower()
+                path = p.path.rstrip("/") if p.path != "/" else "/"
+                params = sorted(
+                    (k, v) for k, v in parse_qsl(p.query)
+                    if k not in _URL_STRIP_PARAMS
+                )
+                canonical = urlunparse((p.scheme, host, path, "", urlencode(params), ""))
+                return hashlib.sha256(f"url:{canonical}".encode()).hexdigest()
+            except Exception:
+                pass
+
+        if src.startswith(_MSG_PREFIXES):
+            key_str = f"{category}:{src}:{subcategory or ''}"
+            return hashlib.sha256(key_str.encode()).hexdigest()
+
+        return None
+
+    def store_or_update(
+        self,
+        category: str,
+        title: str,
+        content: str,
+        source: str = "",
+        confidence: float = 0.5,
+        importance: int = 5,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+        ttl_days: int | None = None,
+        subcategory: str = "",
+        dedupe_hint: str = "",
+        overwrite_content: bool = False,
+    ) -> str:
+        """Insert a memory, or update an existing one with the same dedupe_key.
+
+        Returns the memory ID (existing on collision, new on insert).
+        """
+        key = self._canonical_key(category, source, subcategory, dedupe_hint)
+
+        if key is None:
+            return self.remember(
+                category=category, title=title, content=content,
+                source=source, confidence=confidence, importance=importance,
+                tags=tags, metadata=metadata, ttl_days=ttl_days,
+                subcategory=subcategory,
+            )
+
+        now = datetime.now(timezone.utc).isoformat()
+        existing = self.conn.execute(
+            "SELECT id, importance, access_count, tags, metadata, content"
+            " FROM memories WHERE dedupe_key = ? LIMIT 1",
+            (key,),
+        ).fetchone()
+
+        if existing:
+            mem_id = existing["id"]
+            merged_importance = max(int(existing["importance"] or 0), importance)
+            new_count = int(existing["access_count"] or 0) + 1
+
+            existing_tags: list[str] = json.loads(existing["tags"] or "[]")
+            new_tags: list[str] = tags or []
+            merged_tags = list(dict.fromkeys(existing_tags + new_tags))
+
+            existing_meta: dict[str, Any] = json.loads(existing["metadata"] or "{}")
+            new_meta: dict[str, Any] = metadata or {}
+            merged_meta = {**existing_meta, **new_meta}
+
+            new_content = existing["content"]
+            if overwrite_content and len(content) > len(new_content):
+                new_content = content
+
+            self.conn.execute(
+                """UPDATE memories
+                   SET updated_at = ?, importance = ?, access_count = ?,
+                       tags = ?, metadata = ?, content = ?
+                   WHERE id = ?""",
+                (now, merged_importance, new_count,
+                 json.dumps(merged_tags), json.dumps(merged_meta),
+                 new_content, mem_id),
+            )
+            self.conn.commit()
+            logger.debug("memory_deduped", id=mem_id, key=key[:12])
+            return mem_id
+
+        # New row
+        mem_id = str(uuid.uuid4())[:8]
+        self.conn.execute(
+            """INSERT INTO memories
+               (id, created_at, updated_at, category, subcategory, title, content,
+                source, confidence, importance, tags, metadata, ttl_days, dedupe_key)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                mem_id, now, now, category, subcategory, title, content,
+                source, confidence, importance,
+                json.dumps(tags or []),
+                json.dumps(metadata or {}),
+                ttl_days, key,
+            ),
+        )
+        self.conn.commit()
+        logger.debug("memory_stored_with_key", id=mem_id, key=key[:12])
         return mem_id
 
     # ── Read ───────────────────────────────────────────────────────────────────
