@@ -4,19 +4,42 @@
 Category: ops
 Risk tier: medium
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
 
 # Network Monitoring Phase-2 — Fix network-guard security_utils crash (Bob, Cline-first)
 
-> **Status update 2026-04-23 15:30:** Origin/main advanced while this prompt
-> was drafted. Commit `4dbd996` already armed the
+> **Closed 2026-04-23 09:43 MDT.** Both blockers this prompt targets are ✅.
+> Do **not** re-run this prompt.
+>
+> - Blocker #1 (arm dropout-watch): closed by commit `4dbd996` — the plist now
+>   includes `/sbin:/usr/sbin` in PATH so `/sbin/ping` resolves under the
+>   LaunchAgent. `data/network_watch/dropout_watch_status.json` reports
+>   `running: true`, `health: healthy`.
+> - Blocker #2 (`security_utils` import): closed by commit `329ea8c` —
+>   `tools/network_guard_daemon.py` now inlines `sanitize_for_telegram` and the
+>   dangling `from security_utils import sanitize_for_telegram` is gone.
+>   `tools/imessage_watcher.py` is untouched; no `tools/security_utils.py`
+>   shim was needed.
+>
+> Superseded by: Run-4 verification at
+> `ops/verification/20260423-094342-network-monitoring-launchd.txt`
+> (`com.symphony.network-guard` PID 56949, exit=0, healthy records every 60s;
+> `com.symphony.network-dropout-watch` PID 52527, exit=0, gateway 0.6 ms,
+> WAN 13 ms, `.err` empty). See
+> `docs/audits/2026-04-23-04-network-monitoring-launchd-verification.md`.
+>
+> The two remaining `[FOLLOWUP]` items (prune 8 MB pre-fix `.err`, and the
+> optional `~/Library/LaunchAgents/` copy) are already tracked in
+> STATUS_REPORT and do not need this prompt to run.
+
+> **Prior status update (historical, 2026-04-23 15:30):** Origin/main advanced
+> while this prompt was drafted. Commit `4dbd996` already armed the
 > `com.symphony.network-dropout-watch` LaunchAgent and added `/sbin:/usr/sbin`
 > to its PATH so `/sbin/ping` resolves. `data/network_watch/dropout_watch_status.json`
-> on Bob reports `running: true`, `health: healthy`. **Blocker #1 is closed.**
-> This prompt is now scoped to blocker #2 only: the `security_utils` import
-> fix and the network-guard reload. Phase 4 below is downgraded to a
-> verification-only check — do not bootstrap dropout-watch again.
+> on Bob reports `running: true`, `health: healthy`. **Blocker #1 was
+> closed then.** At drafting time this prompt was scoped to blocker #2 only —
+> that is now also ✅ (see the "Closed" note above).
 
 ## Goal
 

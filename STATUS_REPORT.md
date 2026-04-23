@@ -26,6 +26,53 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## unfinished-setup audit reconciliation — network-monitoring closed, stale prompts marked done (2026-04-23 09:50 MDT, Claude Code)
+
+Review-first docs-only pass per parent workflow: inspect what has already
+been fixed before acting on the prior "top gap." The review confirmed that
+the `docs/audits/2026-04-23-unfinished-setup-audit.md` TL;DR gap
+(host-network monitoring supervision) is ✅ as of commit `cece843` and the
+Run-4 verification. No runtime work was done on Bob; no launchctl / sudo /
+Docker / Redis / external-message action was taken.
+
+**What changed (repo-only, docs + prompt status + verification receipt):**
+- `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`
+  flipped `Status: active` → `Status: done` with a "Closed" block linking
+  to `ops/verification/20260423-094342-network-monitoring-launchd.txt`.
+- `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`
+  same flip, noting both blockers closed (arm via `4dbd996`; `security_utils`
+  via `329ea8c` — inlined, not shimmed).
+- `docs/audits/2026-04-23-unfinished-setup-audit.md` TL;DR now has a
+  CLOSED block at the top with evidence; original text preserved below it.
+- New artifact: `ops/verification/20260423-155053-unfinished-setup-reconciliation.txt`
+  (full review + audit-item reconciliation + safety checklist).
+
+**What was NOT changed:** no edits to `tools/network_guard_daemon.py`,
+`tools/network_dropout_watch.py`, or either plist — Run-4 already proved
+they are correct. Unrelated sandbox dirty-tree items
+(`.claude/**`, `.mcp.json`, `CLAUDE.md`) preserved, not staged.
+
+**Why this, not another gap:** the remaining audit items (BlueBubbles
+health plist, Cortex UNIQUE/embeddings, X-intake reply-leg Phases 2–6)
+each need more scope than a bounded review pass can safely carry. The
+only real durable-artifact risk from the current tree was two
+`Status: active` prompts whose goals were already met — leaving them
+active would let a future agent re-patch already-correct code or churn
+Bob's LaunchAgent state.
+
+- [FOLLOWUP] Housekeeping only (unchanged): prune `logs/network-guard.err`
+  (8 MB pre-fix) after a stable day: `cp /dev/null logs/network-guard.err`.
+- [FOLLOWUP] Housekeeping only (unchanged): optional
+  `cp setup/launchd/com.symphony.network-dropout-watch.plist ~/Library/LaunchAgents/`
+  for standard agents-dir visibility.
+
+Verification: `ops/verification/20260423-155053-unfinished-setup-reconciliation.txt`
+Source audit: `docs/audits/2026-04-23-unfinished-setup-audit.md`
+Closure evidence: `docs/audits/2026-04-23-04-network-monitoring-launchd-verification.md`
+                  + `ops/verification/20260423-094342-network-monitoring-launchd.txt`
+
+---
+
 ## network-monitoring run 4 — FULL PASS, both agents healthy (2026-04-23 09:43 MDT, Claude Code)
 
 First run where both network-monitoring agents are armed, running, and healthy.

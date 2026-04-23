@@ -4,10 +4,27 @@
 Category: ops
 Risk tier: low
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
 
 # Network Monitoring LaunchDaemon Setup & Verification (Bob, Cline-first)
+
+> **Closed 2026-04-23 09:43 MDT.** All four goals below are satisfied by the
+> Phase-1 → Phase-2 → Run-4 chain that landed on `origin/main` the same day.
+> Do **not** re-run this prompt; the plist, verification artifacts, audit
+> doc, and STATUS_REPORT entry it asked for are already in-tree.
+>
+> - Plist: `setup/launchd/com.symphony.network-dropout-watch.plist` (commit `9e12fc6`, PATH fix `4dbd996`).
+> - Plist (paired): `setup/launchd/com.symphony.network-guard.plist` (pre-existing; `security_utils` crash fixed in commit `329ea8c`).
+> - Verification artifacts: `ops/verification/20260423-091516-`, `-093448-`, `-093828-`, `-094342-network-monitoring-launchd.txt`.
+> - Audit docs: `docs/audits/2026-04-23-network-monitoring-launchd-verification.md` (+ `-02-`, `-03-`, `-04-` runs).
+> - STATUS_REPORT: dated section `network-monitoring run 4 — FULL PASS, both agents healthy` (2026-04-23 09:43 MDT).
+> - Live state at closure: both agents `exit=0`, `.err` stopped growing, dropout-watch `health=healthy`.
+>
+> Superseded by: the Run-4 verification artifact above. The only remaining
+> follow-ups are repo-safe housekeeping (`.err` prune after a stable day and
+> optional `~/Library/LaunchAgents/` copy for the dropout-watch plist),
+> both already captured as `[FOLLOWUP]` in STATUS_REPORT.
 
 ## Goal
 

@@ -1,0 +1,196 @@
+Unfinished-Setup Audit Reconciliation (docs-only, repo-safe)
+===========================================================
+Date (UTC):   Thu Apr 23 15:50:53 UTC 2026
+Date (local): 2026-04-23T09:50 MDT
+Repo HEAD:    cece843 (ops: task-runner tick 20260423-094455 — heartbeat)
+Branch:       main (clean vs. origin/main; unrelated sandbox churn in
+              .claude/**, .mcp.json, CLAUDE.md is preserved and NOT staged)
+Scope:        Review-first pass per parent instruction. No runtime mutation.
+              No sudo. No ports. No external messages. No secrets read.
+Triggered by: rerun of the unfinished-setup audit workflow — evidence check.
+
+---
+
+## Why this artifact exists
+
+The parent agent required a review-first workflow: inspect what is already
+fixed before assuming the prior "top gap" (network monitoring launchd) is
+still open. This file is the receipt of that review. It does not change
+behavior on Bob; it only reconciles the repo state against the audit,
+marks two stale Cline prompts as `Status: done`, and updates the source
+audit's TL;DR so future agents cannot accidentally re-run closed work.
+
+## What was reviewed
+
+- `docs/audits/2026-04-23-unfinished-setup-audit.md` (source audit, §1–§7)
+- `docs/audits/2026-04-23-network-monitoring-launchd-verification.md`
+  through `-04-` (four verification runs, 09:15 → 09:43)
+- `docs/audits/bob-freezing-runtime-hangs-2026-04-23.md`
+- `docs/audits/x-intake-deep-dive-audit.md`
+- `STATUS_REPORT.md` header + top ~230 lines (latest-first; through the
+  network-monitoring run 4 FULL PASS entry)
+- `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`
+- `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`
+- Repo state: `setup/launchd/` (both plists present), `tools/` (both tools
+  present and `py_compile`-clean per run-4), `ops/verification/` (four
+  network-mon run artifacts, 091516 / 093448 / 093828 / 094342).
+- `git log --oneline -30` on main
+
+## Reconciliation — audit items vs. current repo state
+
+### §0 TL;DR "Highest-Priority Next Setup Gap" — network monitoring launchd
+Status: **CLOSED** as of commit `cece843` / Run-4 verification at 09:43 MDT.
+Evidence:
+  - `setup/launchd/com.symphony.network-guard.plist`: committed (pre-existing).
+  - `setup/launchd/com.symphony.network-dropout-watch.plist`: committed `9e12fc6`,
+    PATH fix `4dbd996` (adds `/sbin:/usr/sbin` so `/sbin/ping` resolves under
+    the LaunchAgent).
+  - `tools/network_guard_daemon.py` `security_utils` crash: fixed by commit
+    `329ea8c` (inlined `sanitize_for_telegram`, removed dangling import).
+    `tools/imessage_watcher.py` imports from `security_utils` were not
+    touched — the shim path was not needed.
+  - Run-4 verification (`ops/verification/20260423-094342-network-monitoring-launchd.txt`):
+      * network-guard  PID 56949, exit=0, healthy every 60s.
+      * network-dropout-watch PID 52527, exit=0, gateway 0.6 ms, WAN 13 ms.
+      * `.err` stopped growing at 09:40 (pre-fix); no new errors since.
+      * `plutil -lint` PASS on both plists.
+      * `python3 -m py_compile` PASS on both tools.
+  - Run-4 audit doc: `docs/audits/2026-04-23-04-network-monitoring-launchd-verification.md`.
+  - STATUS_REPORT entry: "network-monitoring run 4 — FULL PASS, both agents
+    healthy (2026-04-23 09:43 MDT, Claude Code)".
+
+### §1 Not Set Up — items still open
+- Full LAN traffic-monitoring stack (ntopng / netdata / tcpdump): **still
+  absent by choice** per audit. Not a repo-only gap to close today.
+- End-to-end one-message X-intake reply-leg executor (Phases 2–6): **absent
+  by design** per audit; the testbed + reply-action schema is Phase-1 only.
+  Not a repo-safe next step without new design input.
+- BlueBubbles attachment bodies, outbound-reply consolidation, and a
+  `bluebubbles-health.sh` plist: **still absent**. `ls scripts/ | grep -i
+  bluebubbles-health` is empty; `ls setup/launchd/ | grep -i bluebubbles`
+  is empty. Repo-safe to spec but not the smallest durable artifact today.
+- Cortex UNIQUE/upsert + embeddings: **still absent**. A schema change
+  across deployed data needs more care than a single docs-only pass.
+
+### §2 Partially Set Up — status updates
+- Task-runner / autonomous execution pipeline git timeouts:
+  **Phase-1 fix landed** (STATUS_REPORT tail section: `scripts/task_runner.py`
+  now carries `GIT_TIMEOUT=60` + `GIT_NONINTERACTIVE_ENV`; verification at
+  `ops/verification/20260423-134031-bob-freeze-fix1.txt`). Phase-5 Bob
+  runtime capture is still a `[FOLLOWUP]` but is a runtime task.
+- Watchdog v3 on Bob: **hotfix chain complete** through commits `b0bb0ff`
+  / `ba3c298` / `4375e63`; `--check` passes locally. System-copy deploy
+  is already done per STATUS_REPORT §465 (`✅ Deployed at 08:08:23 MDT`);
+  remaining required-services override alert is a `[FOLLOWUP]` observable
+  signal only.
+- Reply-actions Phase 1: committed. Phases 2–6: absent by design.
+
+### §3 Set Up but Unverified — status updates
+- Network-guard plist verification: **now verified end-to-end** (Run-4,
+  this reconciliation makes that explicit in the source audit TL;DR).
+- Cline-first workflow / direct Claude runner receipts: still no single
+  end-to-end artifact; this is informational, not a blocker.
+- Watchdog fixes: re-verified against repo content by today's chain.
+
+### §4 Already Complete — unchanged, strong evidence.
+
+### §5 Unresolved / Cross-Cutting — mostly unchanged
+- STATUS_REPORT alignment on approval-drainer plist: still a known internal
+  contradiction; out of scope for this pass.
+- Polymarket funding / DNS: still `[NEEDS_MATT]`.
+
+## What changed in this pass (repo-only)
+
+1. `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`:
+   flipped `Status: active` → `Status: done`, added a "Closed" block with
+   commit hashes, evidence paths, and the Run-4 verification pointer.
+2. `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`:
+   same — `active` → `done`, with explicit confirmation that both blockers
+   (arm dropout-watch, fix security_utils) are ✅ and that the realized
+   fix took the "inline sanitize_for_telegram" path rather than the
+   `tools/security_utils.py` shim the prompt had drafted.
+3. `docs/audits/2026-04-23-unfinished-setup-audit.md`: inserted a CLOSED
+   block at the top of the TL;DR with the Run-4 evidence. Original TL;DR
+   text preserved verbatim underneath for history.
+4. `STATUS_REPORT.md`: new dated section documenting this reconciliation
+   so future agents see the closure story in the main status narrative.
+5. This verification artifact.
+
+## What was NOT changed — deliberately
+
+- No edits to `tools/network_guard_daemon.py`, `tools/network_dropout_watch.py`,
+  or either plist. The code/config is already correct per Run-4.
+- No launchctl operations of any kind. No sudo. No Bob runtime interaction.
+- No edits to the unrelated dirty working tree (`.claude/**`, `.mcp.json`,
+  `CLAUDE.md` sandbox churn) — preserved as instructed.
+- No changes to secrets, ports, external message surfaces, or Docker state.
+- No modifications to the other `docs/audits/2026-04-23-*-network-monitoring-
+  launchd-verification.md` run docs (they are historical receipts).
+- Did not delete the superseded Cline prompts — `Status: done` is the
+  durable way to mark them without losing the history or breaking the
+  prompt INDEX. `repo-skills` / `.cursor/prompts/INDEX.md` consumers can
+  still read them for context.
+
+## Why this is the right next step (vs. picking another gap)
+
+Per the parent instruction, the rule is "if the review shows a safe repo-
+only next step is still needed, implement the smallest durable artifact
+that follows from the reviewed state." After the review:
+
+- Network monitoring is ✅ — actioning its prompts again would be a
+  regression (they would try to re-patch already-correct code and churn
+  Bob's LaunchAgent state unnecessarily).
+- The largest *remaining* gaps (BlueBubbles health plist, Cortex dedup /
+  embeddings, X-intake reply-leg Phases 2–6) are all bigger than a single
+  bounded review pass can safely carry without design alignment.
+- Leaving two `Status: active` prompts whose goals are already met is
+  itself a hazard: any agent re-running them would clobber the closure.
+
+So the smallest durable artifact that follows from the reviewed state is
+exactly this: close the stale prompts, update the audit TL;DR, and write
+this receipt. Everything else is either already done or needs more scope.
+
+## Verification commands this pass ran (all repo-local, read-only)
+
+- `git status --short && git log --oneline -30`
+- `git diff --stat` (to confirm the dirty-tree items are sandbox churn,
+  not mine to commit)
+- `ls setup/launchd/ | grep -iE 'network|dropout'`
+  → both plists present.
+- `ls docs/audits/ | grep -E 'network-monitoring|2026-04-23'`
+  → four run docs + the source audit.
+- `ls ops/verification/ | grep -iE 'network|2026-04-23'`
+  → four launchd run artifacts + phase-2 planning note.
+- Inspection of the four artifacts + source audit + both Cline prompts.
+
+## Safety checklist
+
+[x] No launchctl state-changing command was run.
+[x] No sudo used; no ports opened.
+[x] No secrets printed, logged, or committed.
+[x] No Docker / Redis / Bob runtime mutated.
+[x] No external message / post / webhook sent.
+[x] Unrelated dirty working tree (`.claude/**`, `.mcp.json`, `CLAUDE.md`
+    sandbox churn) preserved — not staged, not reverted.
+[x] Only `.cursor/prompts/2026-04-23-cline-network-monitoring-*.md`,
+    `docs/audits/2026-04-23-unfinished-setup-audit.md`, this verification
+    txt, and STATUS_REPORT.md touched.
+[x] plutil / py_compile re-runs not needed — Run-4 already captures them
+    and no monitored file changed this pass.
+[x] Artifact filename follows `YYYYMMDD-HHMMSS-*.txt` stamp convention.
+[x] STATUS_REPORT entry uses `[FOLLOWUP]` tag only where appropriate.
+
+## Exact next Cline / Bob handoff (informational — not executed)
+
+There is no runtime change to make from this pass. The two real follow-ups
+are both housekeeping and remain as `[FOLLOWUP]` in STATUS_REPORT:
+
+- After network-guard runs cleanly for a full day on Bob, Matt (or Cline
+  on Bob) may prune the 8 MB `.err`:
+    cp /dev/null /Users/bob/AI-Server/logs/network-guard.err
+- Optionally, for standard agents-dir visibility:
+    cp /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist \
+       /Users/bob/Library/LaunchAgents/
+
+Both are no-op if skipped; neither is blocking. The network-monitoring
+supervision gap is considered fully closed.

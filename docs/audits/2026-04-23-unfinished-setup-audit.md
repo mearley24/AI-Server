@@ -21,23 +21,34 @@ the repo confirms them.
 
 ## TL;DR — Highest-Priority Next Setup Gap
 
-> **No committed launchd plist exists for `tools/network_dropout_watch.py`,
-> and there is no committed verification path that proves either
-> `tools/network_guard_daemon.py` or `tools/network_dropout_watch.py` is
-> actually loaded, supervised, and producing events on Bob today.**
-
-`setup/launchd/com.symphony.network-guard.plist` **is** committed (verified
-this pass — the prior summary that described it as "never committed" is
-outdated), but it has not been paired with a repo-owned verification artifact
-under `ops/verification/` proving it is loaded on Bob, nor a matching plist
-for `tools/network_dropout_watch.py`. Together those two tools form the
-LAN/WAN/gateway/Control4/Sonos reachability layer — right now half of that
-layer has a supervision contract and half does not, and neither half has an
-"it really is running on Bob" receipt. Closing this gap is the cheapest next
-win: two plists, one `ops/bob-network-monitoring.required`-style doc, one
-verification run, zero runtime behavior change for anything already working.
-
-The follow-up is scoped in `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`.
+> **CLOSED 2026-04-23 09:43 MDT.** The TL;DR gap this audit flagged is ✅ as of
+> commit `cece843`. The rest of §1–§5 below remain accurate for gaps that
+> were *not* the top priority. Do **not** use the text below this block as a
+> basis for reopening the network-monitoring work — use the Run-4 evidence.
+>
+> Network-monitoring supervision is complete:
+> - Both plists committed: `setup/launchd/com.symphony.network-guard.plist`
+>   (pre-existing) and `setup/launchd/com.symphony.network-dropout-watch.plist`
+>   (commit `9e12fc6`, PATH fix `4dbd996`).
+> - `security_utils` crash in `tools/network_guard_daemon.py` fixed by
+>   commit `329ea8c` (inlined `sanitize_for_telegram`).
+> - Both agents armed, running, `exit=0`, healthy — evidenced by
+>   `ops/verification/20260423-094342-network-monitoring-launchd.txt` and
+>   `docs/audits/2026-04-23-04-network-monitoring-launchd-verification.md`.
+> - Superseding prompts marked `Status: done`:
+>   `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`,
+>   `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`.
+>
+> Remaining items are `[FOLLOWUP]` housekeeping only (prune pre-fix `.err`
+> after a stable day; optional `~/Library/LaunchAgents/` copy).
+>
+> ---
+>
+> *Original TL;DR (preserved for history):* "No committed launchd plist
+> exists for `tools/network_dropout_watch.py`, and there is no committed
+> verification path that proves either `tools/network_guard_daemon.py` or
+> `tools/network_dropout_watch.py` is actually loaded, supervised, and
+> producing events on Bob today." This is no longer accurate — see above.
 
 ---
 
