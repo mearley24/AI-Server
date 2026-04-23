@@ -146,5 +146,35 @@ Otherwise, the recommended path is to hand the new prompt to Cline on Bob:
   .cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md
 
 ===============================================================================
+7. MERGE-TIME ADDENDUM (2026-04-23 15:30)
+===============================================================================
+
+Between drafting this plan and pushing, `origin/main` advanced with two
+new commits:
+
+  fa914c5  ops(network-mon): add network-dropout-watch LaunchAgent plist +
+           verification (not loaded)          # Phase-1 run-2 (duplicate intent)
+  4dbd996  fix(network-dropout-watch): add /sbin:/usr/sbin to PATH so ping
+           resolves
+
+Commit `4dbd996`:
+  - Bootstrapped the dropout-watch LaunchAgent on Bob.
+  - Added /sbin:/usr/sbin to the plist PATH (ping lives at /sbin/ping).
+  - STATUS_REPORT now shows running=true, health=healthy, with
+    gateway=0.6ms and WAN=16.5ms.
+  - Struck the [NEEDS_MATT] "Arm dropout-watch" blocker.
+
+Impact on this plan:
+
+  - Blocker #1 is now CLOSED upstream. The Phase-2 Cline prompt has been
+    edited in place to downgrade Phase 4 from "arm dropout-watch" to a
+    read-only "verify still healthy" check.
+  - Blocker #2 (security_utils import in network_guard_daemon.py) is
+    unchanged. Still requires the Cline run.
+  - Expected Cline commit message updated to
+    "ops(network-mon): fix security_utils import + reload network-guard
+    (phase-2)".
+
+===============================================================================
 END
 ===============================================================================

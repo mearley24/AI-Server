@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)** → **network-dropout-watch LaunchAgent plist added + network-guard crash documented (2026-04-23 09:15, Claude Code)** → **network-monitoring phase-2 Cline prompt drafted — arm dropout-watch + fix security_utils import (2026-04-23 15:26, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)** → **network-dropout-watch LaunchAgent plist added + network-guard crash documented (2026-04-23 09:15, Claude Code)** → **network-monitoring verification run 2 — plist spec confirmed, guard still broken (2026-04-23 09:34, Claude Code)** → **network-dropout-watch armed + PATH fix (2026-04-23 09:37, Claude Code)** → **network-monitoring phase-2 Cline prompt drafted — fix security_utils import (2026-04-23 15:26, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -26,7 +26,7 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
-## network-monitoring phase-2 prompt drafted — arm dropout-watch + fix security_utils import (2026-04-23 15:26 MDT, Claude Code)
+## network-monitoring phase-2 prompt drafted — fix security_utils import (2026-04-23 15:26 MDT, Claude Code)
 
 Repo-only planning pass following the Phase-1 commit `9e12fc6`. Reviewed the
 two outstanding `[NEEDS_MATT]` blockers against the current tree and
@@ -71,6 +71,47 @@ Bob without another round-trip.
 Review artifact: `ops/verification/20260423-152628-network-monitoring-phase2-plan.txt`
 Phase-2 Cline prompt: `.cursor/prompts/2026-04-23-cline-network-monitoring-arm-and-fix.md`
 Phase-1 audit doc: `docs/audits/2026-04-23-network-monitoring-launchd-verification.md`
+
+**Merge note (2026-04-23 15:30):** Between drafting this prompt and pushing,
+`origin/main` landed two new commits: `fa914c5` (Phase-1 run-2 verification)
+and `4dbd996` (dropout-watch armed + PATH fix — `/sbin:/usr/sbin` added so
+`/sbin/ping` resolves under the LaunchAgent). That closes blocker #1
+(`[NEEDS_MATT] Arm dropout-watch`) — already ✅ in the section below. The
+Phase-2 Cline prompt remains valid for **blocker #2 only** (fix
+`security_utils` import and reload `com.symphony.network-guard`). Phases 4
+and 6 of that prompt (arm dropout-watch, log prune) can now be skipped or
+downgraded to a verification-only check since dropout-watch is already
+running.
+
+---
+
+## network-dropout-watch armed + PATH fix (2026-04-23 09:37 MDT, Claude Code)
+
+`com.symphony.network-dropout-watch` LaunchAgent bootstrapped and running.
+Found `ping` not in PATH (lives at `/sbin/ping`); added `/sbin:/usr/sbin` to
+the plist and reloaded. Agent now reporting `health: healthy`:
+- Gateway 192.168.1.1: ok, 0.6 ms
+- WAN 1.1.1.1: ok, 16.5 ms
+
+State file: `data/network_watch/dropout_watch_status.json` — `running: true`.
+
+- ~~[NEEDS_MATT] Arm dropout-watch LaunchAgent~~ ✅ Done 2026-04-23 09:37 MDT
+
+---
+
+## network-monitoring launchd verification run 2 (2026-04-23 09:34 MDT, Claude Code)
+
+Re-execution of network-monitoring setup prompt. No new files created; all prior
+artifacts confirmed intact. Key findings unchanged: guard daemon still crash-looping
+on `security_utils` (143k+ err lines, no new log since Apr 3); dropout-watch plist
+spec verified key-by-key, all fields correct, not yet armed.
+
+- [FOLLOWUP] Arm dropout-watch and confirm `data/network_watch/dropout_watch_status.json` shows `running: true`.
+- [NEEDS_MATT] `launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist`
+- [NEEDS_MATT] Fix `tools/network_guard_daemon.py` `security_utils` import, then reload network-guard plist.
+
+Verification: `ops/verification/20260423-093448-network-monitoring-launchd.txt`
+Audit doc: `docs/audits/2026-04-23-02-network-monitoring-launchd-verification.md`
 
 ---
 

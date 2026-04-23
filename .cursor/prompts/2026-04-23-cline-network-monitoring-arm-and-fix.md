@@ -7,23 +7,30 @@ Trigger:   manual
 Status:    active
 <!-- autonomy: end -->
 
-# Network Monitoring Phase-2 — Arm dropout-watch & Fix network-guard security_utils crash (Bob, Cline-first)
+# Network Monitoring Phase-2 — Fix network-guard security_utils crash (Bob, Cline-first)
+
+> **Status update 2026-04-23 15:30:** Origin/main advanced while this prompt
+> was drafted. Commit `4dbd996` already armed the
+> `com.symphony.network-dropout-watch` LaunchAgent and added `/sbin:/usr/sbin`
+> to its PATH so `/sbin/ping` resolves. `data/network_watch/dropout_watch_status.json`
+> on Bob reports `running: true`, `health: healthy`. **Blocker #1 is closed.**
+> This prompt is now scoped to blocker #2 only: the `security_utils` import
+> fix and the network-guard reload. Phase 4 below is downgraded to a
+> verification-only check — do not bootstrap dropout-watch again.
 
 ## Goal
 
-Close the two `[NEEDS_MATT]` blockers left by the 2026-04-23 09:15 Phase-1
-pass (commit `9e12fc6`) **on Bob**, in a single bounded Cline run:
+Close the remaining `[NEEDS_MATT]` blocker left by the 2026-04-23 09:15
+Phase-1 pass (commit `9e12fc6`) **on Bob**, in a single bounded Cline run:
 
-1. Arm the already-committed `com.symphony.network-dropout-watch`
-   LaunchAgent (no `sudo` needed; it runs as user `bob`), verify it is
-   bootstrapped and producing `data/network_watch/dropout_watch_status.json`
-   with `"health": "healthy"`.
-2. Diagnose and fix the `ModuleNotFoundError: No module named
+1. Diagnose and fix the `ModuleNotFoundError: No module named
    'security_utils'` crash in `tools/network_guard_daemon.py` that has
    been running since ~2026-04-03, then reload the existing
    `com.symphony.network-guard` LaunchAgent and verify it produces a
    fresh healthy log line plus updates to
    `data/network_guard_state.json`.
+2. Verify (read-only) that the already-armed
+   `com.symphony.network-dropout-watch` LaunchAgent is still healthy.
 
 Both fixes must be committed to the repo (repo-owned durable artifacts,
 not one-off Bob-side patches) and pushed to `origin/main`.
@@ -273,41 +280,27 @@ choice and reasoning in the verification file.
    import errors (Redis, dotenv) are out of scope for this run — note
    them in the verification artifact as a `[FOLLOWUP]` if they appear.
 
-### Phase 4 — Arm the dropout-watch LaunchAgent (≤ 2 min)
+### Phase 4 — Verify dropout-watch already-armed state (≤ 1 min, read-only)
 
-Only after Phase 3 is green.
+Dropout-watch was armed by commit `4dbd996`. **Do not bootstrap or bootout
+it in this run.** Just confirm it is still healthy:
 
 ```
-ls -la setup/launchd/com.symphony.network-dropout-watch.plist
-plutil -lint setup/launchd/com.symphony.network-dropout-watch.plist
-launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist
 launchctl list | grep network-dropout-watch
-sleep 5
-launchctl list | grep network-dropout-watch
-ls -la data/network_watch/ 2>/dev/null
 sed -n '1,80p' data/network_watch/dropout_watch_status.json 2>/dev/null
-tail -n 40 logs/network-dropout-watch.log 2>/dev/null
-tail -n 40 logs/network-dropout-watch.err 2>/dev/null
+tail -n 40 logs/network-dropout-watch.err 2>/dev/null | head -n 40
 ```
 
 Acceptance:
 
-- `launchctl list | grep network-dropout-watch` shows a numeric PID in
-  column 1 (not `-`) on the second check.
-- `data/network_watch/dropout_watch_status.json` exists and parses; its
-  `"running"` is `true` and `"health"` is `"healthy"`
-  (or `"waiting_for_first_tick"` is acceptable on the very first
-  check — repeat the `sleep 5` and re-read once).
-- `logs/network-dropout-watch.err` is empty or contains only startup
-  lines. No Python traceback.
+- `launchctl list | grep network-dropout-watch` shows a numeric PID.
+- `dropout_watch_status.json` parses; `"running": true`,
+  `"health": "healthy"`.
+- `.err` is empty or contains only benign startup lines.
 
-If acceptance fails, `launchctl bootout` the agent, capture full logs,
-do **not** commit the armed state, and report what broke.
-
-```
-# only on failure:
-# launchctl bootout gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist
-```
+If dropout-watch has regressed, **stop and report** — do not try to fix
+it in the same run as the security_utils work. File a `[NEEDS_MATT]`
+and leave it alone.
 
 ### Phase 5 — Reload network-guard with the fix (≤ 3 min)
 
@@ -388,12 +381,13 @@ Must include, in order:
 
 Append a dated section to `STATUS_REPORT.md` with these bullets:
 
-- Headline: "network-guard import fixed + dropout-watch armed
+- Headline: "network-guard import fixed + reload verified
   (YYYY-MM-DD HH:MM MDT, Cline)".
 - Link the verification artifact and both audit docs.
-- `~~[NEEDS_MATT] Arm dropout-watch LaunchAgent~~ ✅` (strike through
-  the Phase-1 entry's NEEDS_MATT).
-- `~~[NEEDS_MATT] Fix network-guard crash~~ ✅` (same).
+- `~~[NEEDS_MATT] Fix network-guard crash~~ ✅` (strike through the
+  Phase-1 entry's NEEDS_MATT for the import fix).
+- Note that `[NEEDS_MATT] Arm dropout-watch` was already closed by
+  commit `4dbd996` on 2026-04-23 09:37.
 - `- [FOLLOWUP]` for ntopng/netdata cross-check if still unscheduled.
 - `- [FOLLOWUP]` for any new item surfaced (e.g., `imessage_watcher`
   Redis/dotenv imports if the Phase 3 step 5 check flagged them).
@@ -415,7 +409,7 @@ STATUS_REPORT.md
 git add <files above, explicitly — never git add -A>
 git status --short
 git diff --stat --cached
-git commit -m "ops(network-mon): fix security_utils import + arm dropout-watch (phase-2)"
+git commit -m "ops(network-mon): fix security_utils import + reload network-guard (phase-2)"
 git push origin main
 git log -1 --format='%h %s'
 ```

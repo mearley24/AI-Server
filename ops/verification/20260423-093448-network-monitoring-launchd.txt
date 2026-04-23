@@ -1,0 +1,147 @@
+Network Monitoring LaunchDaemon Setup & Verification (Run 2)
+============================================================
+Date (UTC): Thu Apr 23 15:34:37 UTC 2026
+Date (local): 2026-04-23T09:34:48 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server
+Git HEAD: d91c8aa6e9b8e6be01d05eb84ff9e53ea1bef85a
+uname: Darwin Bobs-Mac-mini.local 25.3.0 Darwin Kernel Version 25.3.0: Wed Jan 28 20:49:24 PST 2026; root:xnu-12377.81.4~5/RELEASE_ARM64_T8132 arm64
+Prior run commit: 9e12fc6 (ops(network-mon): add network-dropout-watch LaunchAgent plist + verification (not loaded))
+Triggered by: .cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md (re-run)
+
+---
+
+PHASE 1 — Existing network-guard plist (observe, no runtime mutation)
+
+## plutil -lint setup/launchd/com.symphony.network-guard.plist
+Result: OK — PASS
+
+## plutil -lint setup/launchd/com.symphony.network-dropout-watch.plist
+Result: OK — PASS
+
+## launchctl list | grep network-guard
+-	1	com.symphony.network-guard
+Interpretation: Loaded as user LaunchAgent. PID "-" = not currently running.
+Exit code = 1. Status unchanged from prior run.
+
+## Installed plist locations
+~/Library/LaunchAgents/com.symphony.network-guard.plist: EXISTS (mtime Mar 10 07:57)
+  — stale relative to repo; plist has not been reloaded since March 10.
+/Library/LaunchDaemons/com.symphony.network-guard.plist: NOT PRESENT (correct)
+
+## Log file state
+logs/network-guard.log: 4,287,214 bytes, 203,830 lines
+  Last entry: 2026-04-03T13:46:14 — UNCHANGED from prior observation (Apr 3 13:46).
+  Daemon has not written a new health record in 20 days.
+logs/network-guard.err: 8,030,773+ bytes (~143,399 lines, still growing)
+  mtime: 2026-04-23 09:32 — crash-loop continues.
+
+## Last healthy log entry (tail of network-guard.log)
+{
+  "timestamp": "2026-04-03T13:46:14.458802",
+  "status": "healthy", "fingerprint": "healthy", "reasons": [],
+  "checks": {
+    "gateway": {"host":"192.168.1.1","reachable":true,"packet_loss_pct":0.0,"avg_ms":0.43},
+    "dns": {"host":"google.com","ok":true,"ip":"142.251.35.142"},
+    "http": {"url":"http://connectivitycheck.gstatic.com/generate_204","ok":true,"status_code":204},
+    "docker_bridge": {"ok":true},
+    "docker_redis": {"ok":true,"redis_host":"172.18.0.100","redis_port":6379,
+                     "checked_containers":15,"failed_count":0},
+    "vpn": {"ok":true}
+  },
+  "consecutive_bad": 0, "incident_task_id": null
+}
+
+## Sample of network-guard.err (first 10 lines of last 100)
+Traceback (most recent call last):
+  File "/Users/bob/AI-Server/tools/network_guard_daemon.py", line 32, in <module>
+    from security_utils import sanitize_for_telegram
+ModuleNotFoundError: No module named 'security_utils'
+[... repeated ~143,000+ times ...]
+
+## Phase 1 Summary
+- Plist lint: PASS (both plists)
+- network-guard loaded: YES (launchctl shows it registered)
+- network-guard running: NO (exit=1, crash-loop on security_utils import)
+- Installed plist in sync with repo: NO (LaunchAgents copy is Mar 10; repo is newer)
+- Log producing: NO — last write 2026-04-03
+- Status vs prior run: UNCHANGED — same crash, same log stall
+
+---
+
+PHASE 2 — network_dropout_watch.py lint + bounded status probe
+
+## python3 -m py_compile tools/network_dropout_watch.py
+Result: PASS (exit 0)
+
+## python3 tools/network_dropout_watch.py --status --state-dir data/network_watch
+{
+  "success": true,
+  "running": false,
+  "pid": 24740,
+  "updated_at": "2026-04-04T18:56:51.720644",
+  "health": "lan_or_router_down",
+  "targets": {"gateway": "192.168.1.1", "wan": "1.1.1.1", "control4": "", "sonos": ""},
+  "stopped": true
+}
+events_file=/Users/bob/AI-Server/data/network_watch/dropout_watch_events.jsonl
+EXIT: 0
+Note: state file is stale (Apr 4, stopped=true). Unchanged from prior run —
+dropout-watch has not been armed since the prior state was written.
+
+---
+
+PHASE 3 — Verify setup/launchd/com.symphony.network-dropout-watch.plist
+
+File exists (committed at 9e12fc6). Contents verified against prompt spec:
+
+  Label:              com.symphony.network-dropout-watch              ✓
+  ProgramArguments:   /usr/bin/python3                                ✓
+                      /Users/bob/AI-Server/tools/network_dropout_watch.py ✓
+                      --watch --state-dir /Users/bob/AI-Server/data/network_watch ✓
+                      --interval-sec 2.0                              ✓
+  WorkingDirectory:   /Users/bob/AI-Server                           ✓
+  PATH env:           /Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin ✓
+  HOME env:           /Users/bob                                      ✓
+  RunAtLoad:          true                                            ✓
+  KeepAlive:          true                                            ✓
+  ThrottleInterval:   30                                              ✓
+  StandardOutPath:    /Users/bob/AI-Server/logs/network-dropout-watch.log ✓
+  StandardErrorPath:  /Users/bob/AI-Server/logs/network-dropout-watch.err ✓
+  UserName key:       absent (correct — user LaunchAgent)             ✓
+  StartInterval key:  absent (correct — continuous process)           ✓
+
+No changes required. Plist matches spec exactly.
+
+---
+
+NOT DONE IN THIS RUN — requires Matt:
+
+1. Arm dropout-watch LaunchAgent (no sudo):
+   launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist
+   Verify: cat data/network_watch/dropout_watch_status.json
+   Expected: "running": true, "health": "healthy"
+
+2. Fix network_guard_daemon.py crash (security_utils missing):
+   Resolve or remove the import, then reload:
+   launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist
+   launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-guard.plist
+
+3. Validate data/network_watch/ populated after arming.
+4. Cross-check ntopng/netdata stack (not yet scheduled).
+
+---
+
+Safety checklist:
+[x] No launchctl state-changing command was run.
+[x] No sudo was used.
+[x] No secrets, .env, keys, tokens, or Keychain contents were printed or committed.
+[x] No inbound port was opened; no public exposure added.
+[x] No runtime service on Bob was started, stopped, killed, or restarted.
+[x] No Docker state, Redis state, or launchd state was mutated.
+[x] No external message (iMessage, email, Slack, X) was sent.
+[x] Only ops/verification/, docs/audits/, STATUS_REPORT.md modified.
+[x] plutil -lint PASS on both plists.
+[x] python3 -m py_compile tools/network_dropout_watch.py PASS.
+[x] Verification artifact exists with standard stamp format.
+[x] STATUS_REPORT entry uses [FOLLOWUP] / [NEEDS_MATT] tags.
