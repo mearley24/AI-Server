@@ -1,0 +1,183 @@
+Bob watchdog LaunchDaemon repo-root resolution fix
+Timestamp: 2026-04-23 14:14:55 MDT
+Branch: main
+Author: Claude Code (autonomous subagent)
+
+============================================================
+ROOT CAUSE
+============================================================
+
+Live symptom after the user deployed the container-recovery hotfix to
+/usr/local/bin/bob-watchdog.sh:
+
+  2026-04-23 08:08:26 [watchdog] container check skipped
+  (no compose services resolved)
+
+This line is emitted by `check_containers` when `resolve_required`
+returns empty. Reading `resolve_required` showed the only ways to
+return empty:
+
+  (a) REQUIRED_OVERRIDE_FILE is missing AND
+  (b) "$REPO_DIR/docker-compose.yml" is missing, OR
+  (c) `docker compose config --services` produced no output
+
+REPO_DIR is derived from env:
+  REPO_DIR="${BOB_REPO_DIR:-/Users/bob/AI-Server}"
+
+The system LaunchDaemon plist at /Library/LaunchDaemons/ runs the
+script as root from a non-repo cwd. Two failure modes compound there:
+
+  1. The deployed system plist may pre-date the env vars being added
+     to scripts/com.symphony.bob-watchdog.plist. If BOB_REPO_DIR is
+     unset and /Users/bob/AI-Server happens to be inaccessible (root
+     vs user home permissions on some macOS releases, or a chown
+     accident), REPO_DIR resolution silently lands on a path that
+     does not contain docker-compose.yml.
+
+  2. Even when REPO_DIR is correct, the previous `resolve_required`
+     call relied on `cd "$REPO_DIR"` + implicit compose-file
+     discovery. If the root-owned LaunchDaemon's Docker CLI can't
+     negotiate the socket, or if the cwd-relative compose walk
+     misses the file for any reason, you get silent empty output.
+
+  3. The "skipped" log line had no diagnostics. An ops engineer
+     staring at the log has no way to tell WHY the services didn't
+     resolve — is the repo missing? Was docker not up yet? Did the
+     override file get truncated?
+
+============================================================
+FIX
+============================================================
+
+scripts/bob-watchdog.sh:
+  - Added explicit resolve_repo_root() function with a documented
+    preference order:
+      1) $AI_SERVER_ROOT (new canonical env, checked for docker-compose.yml)
+      2) $BOB_REPO_DIR (legacy env, same check)
+      3) /Users/bob/AI-Server if present and contains docker-compose.yml
+      4) Infer from ${BASH_SOURCE[0]} if the script sits inside a repo
+         (supports ad-hoc terminal invocation of scripts/bob-watchdog.sh)
+    Only a candidate that CONTAINS docker-compose.yml is accepted, so
+    a leftover empty dir won't satisfy the check.
+  - Added REPO_RESOLVED=0/1 flag. When 0, the main loop logs a clear
+    [ALERT] "AI-Server repo root not resolvable — set AI_SERVER_ROOT
+    or deploy to /Users/bob/AI-Server" and skips all container/stack
+    checks (preventing an infinite stream of skip-logs).
+  - Added WATCHDOG_VERSION constant. Every tick now logs
+    "--- tick --- v=<version> repo=<path> resolved=<0|1>" so a stale
+    /usr/local/bin copy is instantly visible in the daemon log.
+  - Added compose_file_args() helper. `resolve_required` and the
+    recovery path now pass `-f <repo>/docker-compose.yml` explicitly
+    so cwd-relative compose discovery is never depended on.
+  - `check_containers` now emits actionable diagnostics on the skip
+    path: "container check skipped (no compose services resolved)
+    — resolved=1 repo_dir=/Users/bob/AI-Server cwd=/Users/bob/AI-Server
+    compose_yml=present override=none". If compose.yml is missing,
+    it says so; if an override file is wired in, the path is shown.
+  - Hardened write_heartbeat() against a read-only REPO_DIR.
+
+scripts/com.symphony.bob-watchdog.plist (system LaunchDaemon):
+  - Added <WorkingDirectory>/Users/bob/AI-Server</WorkingDirectory>
+    so the daemon process starts with cwd inside the repo, not /.
+  - Added AI_SERVER_ROOT=/Users/bob/AI-Server to EnvironmentVariables
+    alongside the legacy BOB_REPO_DIR.
+
+ops/launchd/com.symphony.bob-watchdog.plist (user LaunchAgent):
+  - Mirrored the same WorkingDirectory + AI_SERVER_ROOT additions
+    so both install surfaces behave identically.
+
+setup/install_bob_watchdog.sh:
+  - Added a `--deploy-system` mode that handles the sudo-required
+    path: installs /usr/local/bin/bob-watchdog.sh with mode 0755,
+    copies scripts/com.symphony.bob-watchdog.plist to
+    /Library/LaunchDaemons/, sha256-verifies the system copy matches
+    the repo copy (stale-detection), reloads the daemon, and
+    kickstarts one tick. Refuses to run without root.
+  - Header comment extended to describe both install surfaces.
+
+============================================================
+FILES CHANGED
+============================================================
+
+  scripts/bob-watchdog.sh
+  scripts/com.symphony.bob-watchdog.plist
+  ops/launchd/com.symphony.bob-watchdog.plist
+  setup/install_bob_watchdog.sh
+  ops/verification/20260423-141455-watchdog-launchdaemon-root-fix.txt (new)
+  STATUS_REPORT.md
+
+============================================================
+STATIC CHECKS (run on the sandbox, linux)
+============================================================
+
+  $ bash -n scripts/bob-watchdog.sh                  -> PASS
+  $ bash scripts/bob-watchdog.sh --check             -> "syntax OK"
+  $ bash -n setup/install_bob_watchdog.sh            -> PASS
+  $ python3 -c 'import plistlib; plistlib.load(...)' -> both plists parse
+
+Functional smoke (no docker on sandbox, so only resolution + log
+shape was exercised):
+
+  # repo resolved via AI_SERVER_ROOT
+  $ cd /tmp && AI_SERVER_ROOT=/home/user/workspace/AI-Server-bd4b222a \
+      bash .../scripts/bob-watchdog.sh --dry-run
+  log: --- tick --- v=2026-04-23.2-root-resolve
+       repo=/home/user/workspace/AI-Server-bd4b222a resolved=1
+  (container check correctly skipped because docker is absent)
+
+  # repo UNresolvable (simulating bad deployment)
+  $ cp script.sh /tmp/copy.sh && env -i bash /tmp/copy.sh --dry-run
+  log: [ALERT] AI-Server repo root not resolvable — set AI_SERVER_ROOT
+       or deploy to /Users/bob/AI-Server. Skipping container/stack checks.
+  (clean actionable error instead of a silent skip-loop)
+
+============================================================
+DEPLOY / VERIFY ON BOB (Matt to run)
+============================================================
+
+Cline task: deploy Bob watchdog LaunchDaemon fix
+
+Cline run command (one-shot, requires sudo terminal):
+
+```
+cd /Users/bob/AI-Server && git fetch origin && git checkout main && git pull --ff-only origin main && \
+  sudo bash setup/install_bob_watchdog.sh --deploy-system && \
+  sleep 70 && tail -n 25 /usr/local/var/log/bob-watchdog.log
+```
+
+Expected result in the tailed log:
+
+  --- tick --- v=2026-04-23.2-root-resolve repo=/Users/bob/AI-Server resolved=1
+
+And NO lines matching:
+
+  container check skipped (no compose services resolved)
+  AI-Server repo root not resolvable
+  unknown shorthand flag: 'd'
+
+If `sudo bash setup/install_bob_watchdog.sh --deploy-system` prints a
+"sha mismatch after deploy" error, re-run it once — that indicates
+something raced against the install (extremely unlikely outside of
+another operator editing /usr/local/bin at the same instant).
+
+User-level LaunchAgent (no sudo) also picks up the fix from the same
+repo pull:
+
+```
+cd /Users/bob/AI-Server && bash setup/install_bob_watchdog.sh --install
+tail -n 25 data/task_runner/bob-watchdog.out.log
+```
+
+============================================================
+NOTES
+============================================================
+
+- No secrets or credentials are read, logged, or committed by this
+  change. The watchdog script already avoided secrets; this patch
+  only added path-resolution + diagnostic plumbing.
+- No destructive ops: the --deploy-system mode only writes two files
+  (both previously managed by hand) and reloads one LaunchDaemon.
+- Stale-copy detection is now automatic via the
+  WATCHDOG_VERSION line in every tick + the sha256 check in the
+  installer. A future version bump will show up in the log on the
+  very next tick after redeploy.

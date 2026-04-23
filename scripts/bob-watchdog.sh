@@ -1,14 +1,55 @@
 #!/usr/bin/env bash
 # bob-watchdog.sh — Self-healing watchdog for Bob (Mac Mini M4)
-# Runs every 60s via LaunchDaemon.
+# Runs every 60s via LaunchDaemon (system) or LaunchAgent (user).
+#
+# Version marker: bump on every deploy-relevant change so a stale
+# /usr/local/bin copy is easy to spot in the log ("watchdog vX starting").
+WATCHDOG_VERSION="2026-04-23.2-root-resolve"
 
-REPO_DIR="${BOB_REPO_DIR:-/Users/bob/AI-Server}"
+# --- Repo root resolution ---
+# The script can be invoked from three places:
+#   1) /Users/bob/AI-Server/scripts/bob-watchdog.sh (user LaunchAgent)
+#   2) /usr/local/bin/bob-watchdog.sh               (system LaunchDaemon copy)
+#   3) arbitrary cwd (ad-hoc terminal invocation)
+# Any of them must land on the AI-Server repo so `docker compose` can read
+# compose files. Preference order:
+#   a) $AI_SERVER_ROOT if it points at a repo (has docker-compose.yml)
+#   b) legacy $BOB_REPO_DIR if it points at a repo
+#   c) canonical /Users/bob/AI-Server if it exists
+#   d) infer from $0 if the script lives inside a repo (…/scripts/bob-watchdog.sh)
+#   e) unresolved — log with diagnostics, skip container-dependent checks
+resolve_repo_root() {
+    local candidate script_dir parent
+    for candidate in "${AI_SERVER_ROOT:-}" "${BOB_REPO_DIR:-}" "/Users/bob/AI-Server"; do
+        [[ -n "$candidate" && -f "$candidate/docker-compose.yml" ]] && { echo "$candidate"; return 0; }
+    done
+    # Infer from script path — works when scripts/bob-watchdog.sh is run in place.
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+    if [[ -n "$script_dir" ]]; then
+        parent="$(cd "$script_dir/.." 2>/dev/null && pwd)"
+        [[ -n "$parent" && -f "$parent/docker-compose.yml" ]] && { echo "$parent"; return 0; }
+    fi
+    return 1
+}
+
+REPO_DIR="$(resolve_repo_root || true)"
+REPO_RESOLVED=1
+if [[ -z "$REPO_DIR" ]]; then
+    # Keep REPO_DIR pointed at the canonical path so log/state/alerts under
+    # $REPO_DIR still land somewhere plausible for humans to find later.
+    REPO_DIR="/Users/bob/AI-Server"
+    REPO_RESOLVED=0
+fi
+
 # Use an array so word-splitting doesn't re-introduce a malformed
 # `docker -d ...` invocation (see ops/verification/…-watchdog-container-
 # recovery-hotfix.txt, 2026-04-23 — docker was rejecting `-d` because the
 # recovery path was expanding `$COMPOSE` in a context that dropped the
 # `compose` sub-command).
 COMPOSE=(docker compose)
+# Explicit compose files the watchdog should treat as authoritative. Only
+# files that actually exist under $REPO_DIR are passed to `docker compose`.
+COMPOSE_FILES=(docker-compose.yml)
 MAX_LOG_BYTES=2000000
 
 # Optional mode flags — used by install/CI to lint the script without
@@ -261,9 +302,20 @@ BOB_USER="bob"
 # this to temporarily pin the set without a code push.
 REQUIRED_OVERRIDE_FILE="${BOB_WATCHDOG_REQUIRED:-$REPO_DIR/ops/bob-watchdog.required}"
 
+# Build the compose-file flags for the current repo. Any file listed in
+# $COMPOSE_FILES that actually exists under $REPO_DIR is passed with an
+# explicit -f so `docker compose` never falls back to walking up from cwd.
+compose_file_args() {
+    local args=() f
+    for f in "${COMPOSE_FILES[@]}"; do
+        [[ -f "$REPO_DIR/$f" ]] && args+=(-f "$REPO_DIR/$f")
+    done
+    printf '%s\n' "${args[@]}"
+}
+
 # Resolve the list of required container names. Preference order:
 #   1) $REQUIRED_OVERRIDE_FILE (operator-controlled, hot-editable)
-#   2) `docker compose config --services` from $REPO_DIR/docker-compose.yml
+#   2) `docker compose -f <repo>/docker-compose.yml config --services`
 #   3) empty — skip the check (never page on a stale hard-coded list)
 resolve_required() {
     if [[ -f "$REQUIRED_OVERRIDE_FILE" ]]; then
@@ -271,8 +323,10 @@ resolve_required() {
         return
     fi
     if [[ -f "$REPO_DIR/docker-compose.yml" ]]; then
+        local file_args
+        mapfile -t file_args < <(compose_file_args)
         ( cd "$REPO_DIR" 2>/dev/null && \
-          bounded 15 "${COMPOSE[@]}" config --services 2>/dev/null ) \
+          bounded 15 "${COMPOSE[@]}" "${file_args[@]}" config --services 2>/dev/null ) \
           | grep -vE '^\s*$'
         return
     fi
@@ -300,7 +354,10 @@ is_optional() {
 # --- CHECK 4: Missing containers ---
 check_containers() {
     docker info >/dev/null 2>&1 || return
-    cd "$REPO_DIR" 2>/dev/null || return
+    if ! cd "$REPO_DIR" 2>/dev/null; then
+        log "  container check skipped (cannot cd to REPO_DIR=$REPO_DIR; cwd=$(pwd))"
+        return
+    fi
 
     local running required
     running=$(docker ps --format '{{.Names}}' 2>/dev/null)
@@ -308,7 +365,19 @@ check_containers() {
 
     if [[ -z "$required" ]]; then
         # No authoritative list — skip to avoid paging on a stale hard-coded set.
-        log "  container check skipped (no compose services resolved)"
+        # Emit actionable diagnostics so a broken deployment is obvious in logs.
+        local diag="resolved=${REPO_RESOLVED} repo_dir=${REPO_DIR} cwd=$(pwd)"
+        if [[ ! -f "$REPO_DIR/docker-compose.yml" ]]; then
+            diag+=" compose_yml=missing"
+        else
+            diag+=" compose_yml=present"
+            if [[ -f "$REQUIRED_OVERRIDE_FILE" ]]; then
+                diag+=" override=$REQUIRED_OVERRIDE_FILE"
+            else
+                diag+=" override=none"
+            fi
+        fi
+        log "  container check skipped (no compose services resolved) — $diag"
         return
     fi
 
@@ -347,9 +416,11 @@ check_containers() {
 
     # Recovery: bound the compose invocation and capture its exit code. Only
     # claim recovery when (a) exit 0 AND (b) every previously-missing required
-    # container is now running.
-    local rc=0
-    bounded 180 "${COMPOSE[@]}" up -d --no-build "${missing_required[@]}" >>"$LOG" 2>&1
+    # container is now running. Pass explicit -f so the recovery never depends
+    # on cwd-relative compose discovery.
+    local rc=0 file_args
+    mapfile -t file_args < <(compose_file_args)
+    bounded 180 "${COMPOSE[@]}" "${file_args[@]}" up -d --no-build "${missing_required[@]}" >>"$LOG" 2>&1
     rc=$?
     mark_action "containers"
 
@@ -449,19 +520,24 @@ check_x_intake() {
 # running, even when the stack is otherwise silent.
 write_heartbeat() {
     mkdir -p "$REPO_DIR/data/task_runner" 2>/dev/null
-    echo "$(date '+%Y-%m-%dT%H:%M:%S%z')" > "$REPO_DIR/data/task_runner/bob_watchdog_heartbeat.txt"
+    echo "$(date '+%Y-%m-%dT%H:%M:%S%z')" > "$REPO_DIR/data/task_runner/bob_watchdog_heartbeat.txt" 2>/dev/null || true
 }
 
 # --- MAIN ---
-log "--- tick ---"
+log "--- tick --- v=${WATCHDOG_VERSION} repo=${REPO_DIR} resolved=${REPO_RESOLVED}"
 [[ "$MODE" == "dry-run" ]] && log "  MODE=dry-run (no side effects)"
+if (( REPO_RESOLVED == 0 )); then
+    log_alert "AI-Server repo root not resolvable — set AI_SERVER_ROOT or deploy to /Users/bob/AI-Server. Skipping container/stack checks."
+fi
 check_tailscale
 check_dns
 restore_tailscale_dns
 check_docker
-check_containers
-check_unhealthy
-check_email_dns
-check_x_intake
+if (( REPO_RESOLVED == 1 )); then
+    check_containers
+    check_unhealthy
+    check_email_dns
+    check_x_intake
+fi
 write_heartbeat
 log "--- done ---"

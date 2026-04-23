@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,66 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## bob-watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)
+
+After the container-recovery hotfix was deployed to the system copy at
+`/usr/local/bin/bob-watchdog.sh`, the LaunchDaemon log began repeating:
+
+```
+2026-04-23 08:08:26 [watchdog] container check skipped (no compose services resolved)
+```
+
+Root cause: the script's repo-root resolution was fragile when the binary
+was run from `/usr/local/bin` by a root-owned LaunchDaemon. If
+`$BOB_REPO_DIR` was unset or pointed at an inaccessible path, the fallback
+`/Users/bob/AI-Server` silently failed the `docker-compose.yml` existence
+check, `resolve_required` returned empty, and `check_containers` emitted
+the terse skip line with no diagnostics.
+
+**Fix (this commit):**
+
+1. `scripts/bob-watchdog.sh` — new `resolve_repo_root()` with preference
+   order `AI_SERVER_ROOT` → `BOB_REPO_DIR` → `/Users/bob/AI-Server` →
+   inferred from `$BASH_SOURCE`. Only candidates that actually contain
+   `docker-compose.yml` are accepted. Added `WATCHDOG_VERSION` marker
+   (logged every tick — stale `/usr/local/bin` copies are now obvious).
+   Skip-path now emits diagnostics (`resolved=… repo_dir=… cwd=…
+   compose_yml=present/missing override=…`). When repo is unresolvable,
+   main loop logs an actionable `[ALERT]` and skips stack checks instead
+   of spinning on empty results. Recovery path now uses explicit
+   `-f <repo>/docker-compose.yml` so cwd-relative discovery is never
+   depended on.
+2. `scripts/com.symphony.bob-watchdog.plist` (LaunchDaemon) and
+   `ops/launchd/com.symphony.bob-watchdog.plist` (LaunchAgent) — added
+   `<WorkingDirectory>/Users/bob/AI-Server</WorkingDirectory>` and
+   `AI_SERVER_ROOT=/Users/bob/AI-Server` to `EnvironmentVariables`.
+3. `setup/install_bob_watchdog.sh` — new `--deploy-system` mode for the
+   sudo-required path. Installs `/usr/local/bin/bob-watchdog.sh` with
+   mode 0755, copies the LaunchDaemon plist, sha256-verifies the system
+   copy matches the repo copy (stale detection), reloads the daemon,
+   kickstarts one tick.
+
+**- [NEEDS_MATT] Deploy to Bob (one sudo command):**
+
+```
+cd /Users/bob/AI-Server && git pull --ff-only origin main && \
+  sudo bash setup/install_bob_watchdog.sh --deploy-system && \
+  sleep 70 && tail -n 25 /usr/local/var/log/bob-watchdog.log
+```
+
+Expected log shape after deploy:
+
+```
+--- tick --- v=2026-04-23.2-root-resolve repo=/Users/bob/AI-Server resolved=1
+```
+
+and NO `container check skipped` / `repo root not resolvable` / `unknown
+shorthand flag: 'd'` lines.
+
+Full report: `ops/verification/20260423-141455-watchdog-launchdaemon-root-fix.txt`
 
 ---
 

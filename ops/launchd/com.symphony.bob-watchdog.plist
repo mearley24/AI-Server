@@ -12,8 +12,12 @@
     <string>/Users/bob/AI-Server/scripts/bob-watchdog.sh</string>
   </array>
 
+  <key>WorkingDirectory</key>
+  <string>/Users/bob/AI-Server</string>
+
   <key>EnvironmentVariables</key>
   <dict>
+    <key>AI_SERVER_ROOT</key><string>/Users/bob/AI-Server</string>
     <key>BOB_REPO_DIR</key><string>/Users/bob/AI-Server</string>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>

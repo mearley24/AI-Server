@@ -11,6 +11,9 @@
         <string>/usr/local/bin/bob-watchdog.sh</string>
     </array>
 
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+
     <key>StartInterval</key>
     <integer>60</integer>
 
@@ -28,6 +31,8 @@
 
     <key>EnvironmentVariables</key>
     <dict>
+        <key>AI_SERVER_ROOT</key>
+        <string>/Users/bob/AI-Server</string>
         <key>BOB_REPO_DIR</key>
         <string>/Users/bob/AI-Server</string>
         <key>PATH</key>

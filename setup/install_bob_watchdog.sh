@@ -1,9 +1,14 @@
 #!/bin/bash
 # setup/install_bob_watchdog.sh
 #
-# Idempotent installer for com.symphony.bob-watchdog (user LaunchAgent).
+# Idempotent installer for com.symphony.bob-watchdog.
 #
-# What it does:
+# Two install surfaces — they are independent and can coexist:
+#   - user LaunchAgent (default): ~/Library/LaunchAgents, no sudo
+#   - system LaunchDaemon (--deploy-system): /Library/LaunchDaemons + system
+#     binary at /usr/local/bin/bob-watchdog.sh, sudo required
+#
+# What --install does (default, user LaunchAgent):
 #   - Makes the watchdog script executable.
 #   - Deploys scripts/bob-watchdog.sh to /usr/local/bin/bob-watchdog.sh
 #     (the path used by the system LaunchDaemon). Tries direct copy first;
@@ -16,6 +21,14 @@
 #     ~/Library/LaunchAgents/ and loads it as a user agent.
 #   - Kicks it once so the first tick runs immediately.
 #
+# What --deploy-system does (requires sudo):
+#   - Copies scripts/bob-watchdog.sh to /usr/local/bin/bob-watchdog.sh (755).
+#   - Copies scripts/com.symphony.bob-watchdog.plist to
+#     /Library/LaunchDaemons/com.symphony.bob-watchdog.plist.
+#   - Reloads the daemon and kickstarts one tick.
+#   - Verifies the system copy matches the repo copy (sha256) so a stale
+#     system binary is caught immediately.
+#
 # Safe to re-run. Uninstall with --uninstall. Status with --status.
 #
 # Exit codes:
@@ -23,7 +36,7 @@
 #   2   unsupported flag
 #   3   required repo file missing
 #   4   launchctl load failed
-#   5   checksum mismatch after deploy (deployed file differs from repo)
+#   5   checksum mismatch after deploy, or --deploy-system without root
 
 set -uo pipefail
 
@@ -32,6 +45,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 LABEL="com.symphony.bob-watchdog"
 REPO_PLIST="${REPO_ROOT}/ops/launchd/${LABEL}.plist"
+SYSTEM_REPO_PLIST="${REPO_ROOT}/scripts/${LABEL}.plist"
 WATCHDOG_SH="${REPO_ROOT}/scripts/bob-watchdog.sh"
 
 # System path used by the root LaunchDaemon plist.
@@ -40,13 +54,18 @@ DAEMON_SH="/usr/local/bin/bob-watchdog.sh"
 LAUNCH_AGENTS_DIR="${HOME}/Library/LaunchAgents"
 TARGET_PLIST="${LAUNCH_AGENTS_DIR}/${LABEL}.plist"
 
+SYSTEM_LAUNCH_DAEMONS_DIR="/Library/LaunchDaemons"
+SYSTEM_TARGET_PLIST="${SYSTEM_LAUNCH_DAEMONS_DIR}/${LABEL}.plist"
+SYSTEM_WATCHDOG_SH="/usr/local/bin/bob-watchdog.sh"
+
 mode="install"
 case "${1:-}" in
-  --uninstall) mode="uninstall" ;;
-  --status)    mode="status" ;;
-  ""|--install) mode="install" ;;
+  --uninstall)      mode="uninstall" ;;
+  --status)         mode="status" ;;
+  --deploy-system)  mode="deploy-system" ;;
+  ""|--install)     mode="install" ;;
   *) echo "error: unsupported flag ${1}" >&2
-     echo "usage: $0 [--install|--uninstall|--status]" >&2
+     echo "usage: $0 [--install|--uninstall|--status|--deploy-system]" >&2
      exit 2 ;;
 esac
 
@@ -126,6 +145,53 @@ if [ "${mode}" = "uninstall" ]; then
   rm -f "${TARGET_PLIST}"
   echo "uninstalled ${LABEL}"
   status_line
+  exit 0
+fi
+
+# ------------------------------------------------------------------
+# --deploy-system: install /usr/local/bin/bob-watchdog.sh AND the
+# /Library/LaunchDaemons plist, then reload the daemon. Requires root
+# (re-run via sudo). Unlike --install (which only handles the user
+# LaunchAgent + optional sudo-fallback for the binary), this mode also
+# replaces the system plist so AI_SERVER_ROOT / WorkingDirectory land.
+# ------------------------------------------------------------------
+if [ "${mode}" = "deploy-system" ]; then
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "error: --deploy-system requires sudo (re-run as: sudo $0 --deploy-system)" >&2
+    exit 5
+  fi
+  for required in "${SYSTEM_REPO_PLIST}" "${WATCHDOG_SH}"; do
+    if [ ! -f "${required}" ]; then
+      echo "error: missing required file: ${required}" >&2
+      exit 3
+    fi
+  done
+
+  install -m 0755 "${WATCHDOG_SH}" "${SYSTEM_WATCHDOG_SH}"
+  cp "${SYSTEM_REPO_PLIST}" "${SYSTEM_TARGET_PLIST}"
+  chmod 0644 "${SYSTEM_TARGET_PLIST}"
+
+  # Stale-copy guard: the system binary must byte-match the repo binary.
+  if ! verify_checksum "${WATCHDOG_SH}" "${SYSTEM_WATCHDOG_SH}"; then
+    echo "error: system copy sha mismatch after deploy" >&2
+    exit 5
+  fi
+
+  launchctl bootout "system/${LABEL}" 2>/dev/null || true
+  launchctl unload "${SYSTEM_TARGET_PLIST}" 2>/dev/null || true
+
+  if ! launchctl bootstrap system "${SYSTEM_TARGET_PLIST}"; then
+    if ! launchctl load "${SYSTEM_TARGET_PLIST}"; then
+      echo "error: launchctl load failed for ${SYSTEM_TARGET_PLIST}" >&2
+      exit 4
+    fi
+  fi
+  launchctl kickstart -k "system/${LABEL}" 2>/dev/null || true
+
+  echo "deployed system ${LABEL}"
+  echo "script: ${SYSTEM_WATCHDOG_SH}"
+  echo "plist:  ${SYSTEM_TARGET_PLIST}"
+  echo "log:    /usr/local/var/log/bob-watchdog.log"
   exit 0
 fi
 
