@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS memories (
 CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_dedupe_key ON memories(dedupe_key) WHERE dedupe_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS decisions (
     id TEXT PRIMARY KEY,
