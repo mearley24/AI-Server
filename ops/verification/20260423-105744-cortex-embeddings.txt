@@ -1,0 +1,117 @@
+Cortex Embeddings Phase-1 Author+Test — Verification
+======================================================
+Date (local): 2026-04-23T10:57:44 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server  branch: main
+Triggered by: .cursor/prompts/2026-04-23-cline-cortex-embeddings.md
+
+Commits:
+  9f0b7c4  feat(cortex): memory_embeddings table + schema + writer hook gated by feature flag
+  89ad9fc  feat(cortex): embeddings module (ollama/openai/null providers + async writer task)
+  814f746  feat(cortex): semantic search endpoint + embed backfill script (dry-run default)
+  7eab1eb  test(cortex): embeddings + backfill (8 tests — NullProvider, no network)
+
+Default posture: CORTEX_EMBEDDINGS_ENABLED=0 — embeddings disabled in this PR.
+
+---
+
+V1 — Static checks
+
+python3 -m py_compile cortex/memory.py cortex/engine.py cortex/embeddings.py
+  cortex/config.py scripts/cortex_embed_backfill.py → ALL PASS
+
+New / changed files:
+  cortex/config.py         — CORTEX_EMBEDDINGS_ENABLED, CORTEX_EMBED_OPENAI_OK, model/host vars
+  cortex/embeddings.py     — OllamaProvider, OpenAIProvider, NullProvider, pack_vector/unpack_vector,
+                             get_provider(), embed_worker()
+  cortex/memory.py         — memory_embeddings table in _SCHEMA; _embed_queue + set_embed_queue();
+                             _content_digest(); _cosine(); _maybe_enqueue() hook in store() +
+                             store_or_update(); search_semantic()
+  cortex/engine.py         — /memories?semantic=1 blended search; embed_worker task on startup
+  scripts/cortex_embed_backfill.py — --dry-run default, --apply, batch processing
+
+---
+
+V2 — Tests (8 passed in 10.24s)
+
+test_pack_unpack_roundtrip_preserves_floats            PASSED
+test_null_provider_is_deterministic                    PASSED
+test_writer_is_noop_when_disabled                      PASSED
+test_writer_writes_row_when_enabled_with_null_provider PASSED
+test_writer_skips_on_provider_timeout                  PASSED  (10s — exercises real 10s timeout)
+test_search_semantic_returns_top_k_by_cosine           PASSED
+test_backfill_dry_run_writes_no_rows                   PASSED
+test_backfill_apply_populates_missing_rows_only        PASSED
+
+All 8 tests use NullProvider — no Ollama, no OpenAI, no network.
+
+---
+
+V3 — Path existence
+
+test -f cortex/embeddings.py             → ok-emb
+test -f scripts/cortex_embed_backfill.py → ok-backfill
+test -f ops/tests/test_cortex_embeddings.py → ok-tests
+
+---
+
+V4 — Dry-run backfill (covered by test_backfill_dry_run_writes_no_rows)
+
+10 seeded memories → missing=10, written=0, dry_run=True. PASS
+
+---
+
+V5 — /memories?semantic=1 (covered by test_search_semantic_returns_top_k_by_cosine)
+
+5 seeded memories embedded with NullProvider, semantic query returns top-3 with
+score > 0. PASS
+
+---
+
+V6 — Live Ollama probe (BOB_CLINE_ONLY)
+
+curl -sS -m 5 http://127.0.0.1:11434/api/tags → REACHABLE
+Models present: qwen3:8b
+nomic-embed-text: NOT FOUND (not pulled yet)
+
+OllamaProvider will log embedding_error when nomic-embed-text is requested
+and gracefully skip the write (no crash, no retry beyond once per memory).
+
+To pull the model when embedding is enabled:
+  docker exec cortex ollama pull nomic-embed-text
+  (or: ollama pull nomic-embed-text on Bob's host)
+
+---
+
+CLOSING CHECKLIST:
+[x] memory_embeddings schema added.
+[x] cortex/embeddings.py with three providers (ollama/openai/null).
+[x] Writer hook gated by CORTEX_EMBEDDINGS_ENABLED (default OFF).
+[x] /memories?semantic=1 blended search path.
+[x] Backfill script with dry-run default.
+[x] All 8 tests pass with NullProvider.
+[x] STATUS_REPORT + verification artifact + push landed.
+[x] Ordered [NEEDS_MATT] arm sequence documented.
+
+---
+
+[NEEDS_MATT] Ordered arm sequence:
+
+1. Run dedup backfill FIRST (from cortex-dedup-upsert prompt):
+   cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)
+   docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply
+
+2. Pull the Ollama embedding model on Bob:
+   ollama pull nomic-embed-text
+
+3. Enable embeddings in Cortex env (after docker compose up -d --build cortex):
+   bash scripts/set-env.sh CORTEX_EMBEDDINGS_ENABLED 1
+
+4. Restart Cortex service to start the embed_worker:
+   docker compose restart cortex
+
+5. Run embedding backfill:
+   docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --apply --provider ollama
+
+6. Verify: docker exec cortex sqlite3 /data/cortex/brain.db
+   "SELECT COUNT(*) FROM memory_embeddings;"

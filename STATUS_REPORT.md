@@ -26,6 +26,32 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Cortex Embeddings Phase-1 Author+Test (2026-04-23 10:57 MDT, Claude Code)
+
+Commits: `9f0b7c4`, `89ad9fc`, `814f746`, `7eab1eb`
+
+- `cortex/config.py` — `CORTEX_EMBEDDINGS_ENABLED` (default `0`), `CORTEX_EMBED_OPENAI_OK`, model/host vars
+- `cortex/embeddings.py` — `OllamaProvider`, `OpenAIProvider`, `NullProvider`; `pack_vector`/`unpack_vector`; `embed_worker` async task
+- `cortex/memory.py` — `memory_embeddings` table; `_embed_queue` + `set_embed_queue()`; `_maybe_enqueue()` hook in `store()` + `store_or_update()`; `search_semantic()`
+- `cortex/engine.py` — `/memories?semantic=1` blended keyword+vector search; `embed_worker` task started on startup (guarded by flag)
+- `scripts/cortex_embed_backfill.py` — `--dry-run` default, `--apply`, batched, JSON summary
+- `ops/tests/test_cortex_embeddings.py` — 8 tests, all pass (NullProvider, no network)
+
+**Default posture: `CORTEX_EMBEDDINGS_ENABLED=0` — embeddings disabled in this PR.**
+Ollama is reachable on Bob but `nomic-embed-text` not yet pulled.
+
+- [NEEDS_MATT] Ordered arm sequence (do in order):
+  1. Run dedup backfill first: `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`
+  2. Pull embedding model: `ollama pull nomic-embed-text`
+  3. `bash scripts/set-env.sh CORTEX_EMBEDDINGS_ENABLED 1`
+  4. `docker compose restart cortex`
+  5. `docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --apply --provider ollama`
+  6. Verify: `docker exec cortex sqlite3 /data/cortex/brain.db "SELECT COUNT(*) FROM memory_embeddings;"`
+
+Verification: `ops/verification/20260423-105744-cortex-embeddings.txt`
+
+---
+
 ## Five-Prompt Reconciliation (2026-04-23 10:48 MDT, Claude Code)
 
 Parent-agent audit of the five prompts added in `361ac56`. MacBook
