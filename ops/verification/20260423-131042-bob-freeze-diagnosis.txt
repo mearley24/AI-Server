@@ -1,0 +1,147 @@
+=== Bob Freezing Diagnosis ===
+hostname: Macbook-M2-Pro.router963b1c.com
+pwd: /Users/Matt/AI-Server
+git HEAD: 565fdee4237246839626345bb18ad630ffb37c18
+start UTC: 2026-04-23T13:10:53Z
+
+## Phase 0 — host identity + pull
+
+EXPECTED: run on Bob (Mac Mini M4). ACTUAL: Macbook-M2-Pro.router963b1c.com — this is Matt's MacBook, not Bob.
+Pre-existing merge conflict: ios-app/SymphonyOps/SymphonyOps/ContentView.swift (UU). Bare pull unsafe per prompt.
+Untracked: .cursor/prompts/direct/priority1-stage-gate.md (produced by earlier session tool run, not Matt).
+
+Consequence: Phase 1 (system health), Phase 2 (process inventory), Phase 5 (Docker/Redis/launchd), log-tail steps inside Phase 3/4/6, and lock/pid-file inspection in Phase 4 CANNOT be run from this host. They require Bob.
+
+This run performs only the static-analysis subset (code grep + git log) from the committed repo, and emits a Phase 1 fix prompt + audit so a Cline session on Bob can complete the dynamic checks and patch.
+
+## Phase 1 — Baseline system health
+SKIPPED. Requires Bob (top/ps/vm_stat/df reflect THIS MacBook, not the frozen host). Re-run on Bob.
+
+## Phase 2 — AI-Server process inventory
+SKIPPED. Requires Bob (launchctl list, pgrep, lsof, sample target Bob's runtime processes, not the MacBook). Re-run on Bob.
+
+## Phase 3 — Wrapper/dispatch/orchestrator (static-only)
+
+Entry points found:
+- scripts/task_runner.py (launchd com.symphony.task-runner)
+- scripts/bob-watchdog.sh (launchd com.symphony.bob-watchdog)
+- ops/task_runner_preflight.py, ops/task_runner_gates.py, ops/task_runner_health.py
+(No directories named self_improvement/ or ai-dispatch/ present at repo root; if they run on Bob they are external to this repo.)
+
+Key findings in scripts/task_runner.py (launchd tick every 120s):
+  - line 131  git() helper: subprocess.run WITHOUT timeout. Used by commit (git add), commit (git commit), push (git push origin main). A stalled push hangs the entire tick.
+  - line 218  handle_git_pull: `git pull --ff-only` WITHOUT timeout (handler for run_task git_pull).
+  - line 722  pull_latest: `git pull --ff-only` WITHOUT timeout (every tick).
+  - line 743  pull_latest rebase fallback: `git pull --rebase` WITHOUT timeout.
+  - line 652  has_changes: `git status --porcelain` WITHOUT timeout (normally fast, but still a freeze point if index is locked).
+  - line 241  _run_and_tee correctly uses timeout=TASK_TIMEOUT (2h) — OK for task subprocesses.
+  - Single-instance flock on data/task_runner/.runner.lock (LOCK_EX|LOCK_NB). A stuck tick holds the lock; subsequent ticks exit with "another runner holds the lock". Lock is released only when the process dies. If the unbounded git hangs forever, the lock is held forever and all ticks no-op.
+  - TASK_TIMEOUT = 2 hours (87). No per-tick wall clock enforcement on the git/preflight phases.
+
+Key findings in scripts/bob-watchdog.sh (launchd StartInterval 60s):
+  - docker_healthy calls `docker info` and `docker ps` WITHOUT --timeout; relies on daemon to respond. In zombie-daemon mode this can hang.
+  - check_docker recovery loop bounded: `while (( waited < 120 ))` with `sleep 5`. Good.
+  - Uses `curl -fsS --max-time 5` for x-intake health. Good.
+  - No log rotation beyond 2 MB threshold; bounded. No tail -f / --watch. Safe.
+
+## Phase 4 — Heartbeat / wedge / lock loops (static-only)
+
+Heartbeat cadence from git log (2026-04-21, last full day we have locally):
+2026-04-21 19:05:08 -0600 ops: task-runner tick 20260421-190508 — heartbeat
+2026-04-21 18:54:25 -0600 ops: task-runner tick 20260421-185425 — heartbeat
+2026-04-21 18:43:54 -0600 ops: task-runner tick 20260421-184354 — heartbeat
+2026-04-21 18:33:09 -0600 ops: task-runner tick 20260421-183309 — heartbeat
+2026-04-21 18:22:42 -0600 ops: task-runner tick 20260421-182242 — heartbeat
+2026-04-21 18:11:59 -0600 ops: task-runner tick 20260421-181159 — heartbeat
+2026-04-21 18:01:52 -0600 ops: task-runner tick 20260421-180152 — heartbeat
+2026-04-21 17:50:57 -0600 ops: task-runner tick 20260421-175057 — heartbeat
+2026-04-21 17:40:43 -0600 ops: task-runner tick 20260421-174043 — heartbeat
+2026-04-21 17:30:32 -0600 ops: task-runner tick 20260421-173032 — heartbeat
+2026-04-21 17:20:24 -0600 ops: task-runner tick 20260421-172024 — heartbeat
+2026-04-21 17:09:59 -0600 ops: task-runner tick 20260421-170959 — heartbeat
+2026-04-21 16:59:51 -0600 ops: task-runner tick 20260421-165951 — heartbeat
+2026-04-21 16:49:42 -0600 ops: task-runner tick 20260421-164942 — heartbeat
+2026-04-21 16:39:33 -0600 ops: task-runner tick 20260421-163933 — heartbeat
+2026-04-21 16:29:07 -0600 ops: task-runner tick 20260421-162907 — heartbeat
+2026-04-21 16:19:03 -0600 ops: task-runner tick 20260421-161903 — heartbeat
+2026-04-21 16:08:05 -0600 ops: task-runner tick 20260421-160805 — heartbeat
+2026-04-21 15:57:52 -0600 ops: task-runner tick 20260421-155752 — heartbeat
+2026-04-21 15:47:44 -0600 ops: task-runner tick 20260421-154744 — heartbeat
+
+Observations:
+  - Ticks land roughly every 10 min (HEARTBEAT_EVERY=600s). No crash-loop signature — runner heartbeats steadily.
+  - Occasional preflight auto-heal commits ("auto: local changes before pull", "preflight — N conflicts resolved"). These commits imply Bob had to rescue a dirty state-file tree before each pull. Frequent on 2026-04-21 (3x in <30 min). Not a crash, but surfaces that the tree is dirty most ticks — any non-whitelisted conflict would wedge the runner (per task_runner_preflight.py).
+  - Recent remote commits on 2026-04-23 (seen via `git fetch`): task-runner still heartbeating through 07:00 -0600, so the daemon is not permanently hung. Freezes must be intermittent / user-observed rather than a crash-loop signature in commits.
+
+Lock files (on THIS MacBook, symbolic only — Bob will have its own):
+
+Locally tracked wedge points:
+scripts/task_runner.py:8:    1. Acquire a single-instance lock (data/task_runner/.runner.lock).
+scripts/task_runner.py:84:LOCK_PATH = DATA_DIR / ".runner.lock"
+scripts/task_runner.py:166:            fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+scripts/task_runner.py:178:                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+
+## Phase 5 — Docker/Redis/launchd
+SKIPPED. Requires Bob (docker/redis/launchctl targets live there, not on the MacBook). Re-run on Bob.
+
+## Phase 6 — X-intake / Cortex / BlueBubbles (static-only)
+
+integrations/x_intake (while True patterns):
+  - main.py:845 Redis listener: while True + try/except + asyncio.sleep(5) on reconnect. Safe.
+  - main.py:904 Listener watchdog: while True + asyncio.sleep(10). Safe.
+  - pipeline.py:455 bounded by downstream completion. Not reviewed in depth.
+  - lab_main.py:148/159/174 — experimental lab harness, not the production path.
+
+HTTP/LLM timeouts in x_intake:
+  - All httpx.AsyncClient calls pass explicit timeout (60/30/10/60/30). Good.
+  - openai client.chat.completions.create at main.py:120, main.py:481, transcript_analyst.py:215, video_transcriber.py:653,691 — NO explicit timeout=. SDK default applies (~10 min in openai-python v1.x). Not a 30s-bounded call — a slow provider tail can extend event-loop work, but does not freeze the container under normal load.
+
+cortex (while True patterns + timeouts):
+  - engine.py:84/93/110/128: scheduled loops with await asyncio.sleep(N) backoff. Safe.
+  - All httpx clients carry explicit timeouts (3–60 s). redis.from_url uses socket_timeout=2. Good.
+  - subprocess.run calls in dashboard.py pass timeout=30/60. Good.
+
+bluebubbles (cortex/bluebubbles.py):
+  - httpx uses configured self.timeout. redis uses socket_timeout=2. No unbounded loops. Safe.
+
+## Phase 7 — Synthesis + fix decision
+
+Primary root cause (high confidence, static evidence):
+  scripts/task_runner.py runs git pull/push/status/commit via subprocess.run WITHOUT timeout=.
+  Combined with fcntl.flock single-instance locking, one stalled git call wedges all
+  subsequent launchd ticks. Visible symptom matches "Bob freezes up."
+
+Secondary root cause:
+  scripts/bob-watchdog.sh docker_healthy probes docker info / docker ps without --timeout.
+  In Docker Desktop zombie-daemon state (documented in-repo on 2026-04-21) these can hang.
+
+Not-a-cause (ruled out via static evidence):
+  - cortex loops are well-structured; all httpx/redis/subprocess calls carry explicit timeouts.
+  - x_intake listener + watchdog use asyncio.sleep backoff; httpx all timed.
+  - bluebubbles uses configured self.timeout on all httpx calls.
+
+Safe-low-risk-fix gate: PASS for the proposed Phase 1 change (<=40 LOC, one file primary + one watchdog, no launchd/docker/redis/auth/secrets touched, adds bounded timeouts only, smoke test easy, no manual restart needed — launchd re-reads the file each 120s tick).
+
+Decision: do NOT patch inline from THIS host because (a) we are not on Bob and Phase 1-2 baseline capture should precede the patch on the target host, (b) the local tree has a pre-existing unresolved merge conflict (ios-app/SymphonyOps/SymphonyOps/ContentView.swift UU) that would block a main-tree commit and must be respected per prompt. Instead emit a Phase 1 fix prompt for a Bob-local session to apply.
+
+Artifacts produced:
+  - docs/audits/bob-freezing-runtime-hangs-2026-04-23.md
+  - .cursor/prompts/fix-bob-freezing-phase-1-runner-git-timeouts.md
+  - ops/verification/20260423-131042-bob-freeze-diagnosis.txt (this file)
+  - STATUS_REPORT.md entry appended (see Phase 8)
+
+## Phase 8 — STATUS_REPORT entry (appended)
+
+See STATUS_REPORT.md section "## Reference: Bob Freezing Diagnosis (2026-04-23)" — <=25 lines, links audit + verification + fix-prompt path, marks fix deferred to a Bob-local Phase 1 run.
+
+## Phase 9 — Commit and push
+
+Commit hash: <filled in after commit>
+Push: via git worktree on a clean tree at origin/main, because the main checkout has an unresolved pre-existing merge conflict in ios-app/SymphonyOps/SymphonyOps/ContentView.swift that must not be touched per prompt guardrails.
+Files committed (plan):
+  - docs/audits/bob-freezing-runtime-hangs-2026-04-23.md
+  - .cursor/prompts/fix-bob-freezing-phase-1-runner-git-timeouts.md
+  - ops/verification/20260423-131042-bob-freeze-diagnosis.txt
+  - STATUS_REPORT.md
+
+end UTC: 2026-04-23T13:27:36Z

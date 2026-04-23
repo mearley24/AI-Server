@@ -2057,3 +2057,20 @@ execution. Captured content is inspiration/evidence only — never run.
 No recurring scheduled tasks were created. No external connectors were
 wired. The loop explicitly depends on existing dispatcher / verification
 / STATUS_REPORT gates for anything that would actually change the repo.
+
+---
+
+## Reference: Bob Freezing Diagnosis (2026-04-23)
+
+Static-analysis pass per `.cursor/prompts/diagnose-bob-freezing-and-runtime-hangs.md`. Dynamic checks (phases 1/2/5 and lockfile/log tails) were **skipped** because this run executed on Matt's MacBook M2 Pro, not on Bob; a follow-up pass on Bob is required.
+
+- **Root cause (high confidence):** `scripts/task_runner.py` runs `git pull`/`push`/`commit`/`status` via `subprocess.run` with no `timeout=`. Combined with the `fcntl.flock` single-instance lock on `data/task_runner/.runner.lock`, one stalled git call wedges every subsequent launchd tick. Lines: task_runner.py:131, 218, 652, 722, 743.
+- **Secondary:** `scripts/bob-watchdog.sh` `docker_healthy` calls `docker info`/`docker ps` without `--timeout`; can hang on the Docker Desktop "zombie daemon" mode already documented in-repo on 2026-04-21.
+- **Ruled out (static):** Cortex loops + HTTP / x_intake listener / bluebubbles — all carry explicit `timeout=` on httpx, subprocess, and redis socket calls.
+- **Fix path:** Phase 1 prompt at `.cursor/prompts/fix-bob-freezing-phase-1-runner-git-timeouts.md` (low risk, ≤ 40 LOC across `scripts/task_runner.py` + `scripts/bob-watchdog.sh` + one pytest). Deferred to a Bob-local run so Phase 1/2 baseline capture can precede the patch.
+- **Audit:** `docs/audits/bob-freezing-runtime-hangs-2026-04-23.md`
+- **Verification:** `ops/verification/20260423-131042-bob-freeze-diagnosis.txt`
+- [FOLLOWUP] Run `.cursor/prompts/fix-bob-freezing-phase-1-runner-git-timeouts.md` on Bob to apply Option A+B from the audit.
+- [FOLLOWUP] Resolve pre-existing merge conflict in `ios-app/SymphonyOps/SymphonyOps/ContentView.swift` (UU on Matt's MacBook during this pass; not touched per prompt guardrails).
+
+_Diagnosed by Claude Code on 2026-04-23 (static-only). Committed via a clean `git worktree` at origin/main because the main checkout carried the above unresolved conflict._
