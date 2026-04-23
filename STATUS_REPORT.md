@@ -26,6 +26,57 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## NEEDS_MATT Clearance Artifacts — Bob Runtime Runbooks (2026-04-23 UTC, Claude Code)
+
+Parent-agent docs-only pass to cover the three outstanding
+`[NEEDS_MATT]` gates with human-approved runbooks under
+`ops/runbooks/` — same split-off pattern used for the (now-closed)
+Cortex embeddings arm. **No runtime actions were performed by this
+repo pass:** no docker, no launchctl, no env mutations, no sudo, no
+external sends, no posts/messages, no opened ports, no secrets read.
+Harness-owned dirty working-tree items (`.claude/**`, `.mcp.json`,
+`CLAUDE.md`) preserved as-is per parent instruction.
+
+Classification of current `[NEEDS_MATT]` items relevant to this pass:
+
+| Gate | Class | New artifact |
+|------|-------|--------------|
+| Cortex dedup live `--apply` on `brain.db` | (d) stale from evidence + (b) for future re-runs — prior `--apply` receipts already exist (`20260423-173120`, `20260423-173840` = `rows_deleted=1` each); runbook covers any future re-run with mandatory backup + dry-run + idempotency guards. | `ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md` |
+| Arm `com.symphony.bluebubbles-health.plist` | (b) local Bob runtime action — user-scope `launchctl bootstrap`; no sudo, no external surface. | `ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md` |
+| X-intake reply-leg live smoke | (c) external-send — kept gated behind Matt-only allowlist + DRY_RUN flip + immediate restore + emergency rollback one-liner. Safer dry-run-only alternative included. | `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md` |
+
+Each runbook:
+
+- Is explicitly marked `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` + "NOT
+  auto-run by Computer / Cline / Claude Code / task-runner /
+  self-improvement loop" in its header.
+- Has no `<!-- autonomy: start -->` metadata, so the autonomous
+  dispatchers skip it.
+- Carries: prechecks (clean tree, container health, schema state,
+  disabled-vs-loaded check, disk/lock check as applicable), an
+  ordered bounded arm sequence, required verification receipt path,
+  STATUS_REPORT entry template, commit message, rollback/stop
+  conditions, and an explicit forbids list.
+- Reuses existing helpers only (`scripts/set-env.sh`, the in-repo
+  backfill scripts, `docker compose`, `launchctl bootstrap` under
+  `gui/$(id -u)`). No new scripts authored.
+
+Out-of-scope for this pass (other open `[NEEDS_MATT]` markers
+unrelated to the three current gates, retained as-is):
+
+- Polymarket wallet funding (L994-995, L1662) — external economic
+  action, separate track.
+- Stale strikethroughs lower in the file (network-monitoring,
+  watchdog system-copy) are already marked `✅` and remain as
+  history.
+
+Verification this pass: path-exists for the three runbooks;
+`grep [NEEDS_MATT]` census; `xml.etree` parse of the already-lint-
+clean `setup/launchd/com.symphony.bluebubbles-health.plist` from the
+sandbox (plutil not available on Linux). No code or config changed.
+
+---
+
 ## Cortex Embeddings — Live Arm on Bob (2026-04-23 13:14 MDT, Claude Code)
 
 Runbook `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` executed.
