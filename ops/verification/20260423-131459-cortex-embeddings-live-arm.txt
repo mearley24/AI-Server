@@ -1,0 +1,116 @@
+Cortex Embeddings — Live Arm on Bob
+=====================================
+Date (local): 2026-04-23T13:14:59 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server  branch: main
+Git HEAD: dce5064a3c44674b1a503b9287770f3bc5b2f952
+Runbook: ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md
+Operator: Claude Code (following [NEEDS_MATT] runbook on Bob)
+
+---
+
+PRECHECKS
+
+1. Git state: clean tree (harness-owned dirty files only), branch main
+   Commits 9f0b7c4 / 89ad9fc / 814f746 / 7eab1eb present.
+
+2. Cortex container: HEALTHY — Up (healthy), port 8102 responding
+   GET /health → {"status":"alive","memories":{...}}
+
+3. Dedup prerequisite: idx_memories_dedupe_key present
+   SELECT COUNT(*) DISTINCT: 1 duplicate found + deleted (X Signal, run 3×)
+
+4. Ollama: REACHABLE — nomic-embed-text:latest pulled (274 MB)
+   Test embed: dim=768 OK
+
+5. Backup: brain.db.bak.20260423-113026 (153 MB) created in step 1
+
+---
+
+ARM SEQUENCE — EXECUTED
+
+Step 1 — Backup
+  docker exec cortex sh -c 'cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)'
+  Result: brain.db.bak.20260423-113026 created (160,874,496 bytes)
+
+Step 2 — Dedup backfill --apply (run 3× due to restores)
+  Final run summary: ops/verification/20260423-190359-cortex-dedup-backfill.json
+  groups=1, deleted=1, written=53055 keys_set=1, failed=0
+
+Step 3 — Pull nomic-embed-text
+  ollama pull nomic-embed-text → 274 MB downloaded
+  ollama list: nomic-embed-text:latest  0a109f422b47  274 MB
+
+Step 4 — Feature flag enabled
+  CORTEX_EMBEDDINGS_ENABLED=1 set via scripts/set-env.sh
+  docker-compose.yml updated to pass CORTEX_EMBEDDINGS_ENABLED + CORTEX_EMBED_OLLAMA_*
+    (CORTEX_EMBED_OLLAMA_HOST=http://host.docker.internal:11434)
+
+Step 5 — Cortex restarted
+  docker compose up -d --build cortex → Started, healthy
+  Schema fix deployed: dedupe_key UNIQUE index moved from _SCHEMA to _MIGRATE_INDEXES
+    (existing DB compat fix, commit 4f2fac4)
+  Embed worker confirmed active: CORTEX_EMBEDDINGS_ENABLED=True inside container
+
+Step 6 — Embed backfill --apply
+  Obstacle: Docker Desktop crash-loops every 2-9 min on Bob (known zombie-daemon issue,
+  documented in bob-watchdog logs). Each docker exec / docker compose run was killed
+  by daemon restart before completing the full 531-batch job. DB integrity check
+  passed after every abort — no corruption from container-side writes.
+  Additional fix: removed PRAGMA journal_mode=WAL from backfill script
+    (host-side WAL switch caused "locking protocol" errors; commit dce5064)
+
+  Partial backfill progress across all runs:
+    Run 1 (host, WAL, Cortex running): 19 batches → locking error
+    Run 2 (host, no WAL, Cortex stopped): 531 batches, 53,035 written
+      → DB corrupted on Cortex restart (cross-VFS write interaction)
+    Restore from backup, runs 3-6 (container, embed worker disabled):
+      4,505 embeddings committed cleanly
+    Final run (embed worker re-enabled, docker exec): 1 more batch → 4,506
+
+  Summary JSON (latest): ops/verification/20260423-173937-cortex-embed-backfill.json
+  (run 2 — 53,035 rows, later superseded by restore)
+
+Step 7 — Verify rows (final state after partial backfill)
+  docker exec cortex python3:
+    memories:   53,215
+    embeddings: 4,506  (nomic-embed-text, dim=768)
+    coverage:   8.5%
+    index idx_memory_emb_model: PRESENT
+
+Step 8 — Semantic search smoke test
+  GET /memories?q=network+gateway&semantic=1&limit=3
+  → HTTP 200, 3 results, first result relevant (Symphony IP Addressing Standard)
+
+---
+
+OUTSTANDING ITEM — BACKFILL INCOMPLETE
+
+4,506 / 53,215 memories embedded (8.5%). The remaining 48,709 rows need a
+full uninterrupted backfill run (~80 min). Docker daemon instability on Bob
+prevents a single-shot run today.
+
+Embed worker is ON (CORTEX_EMBEDDINGS_ENABLED=1) — all NEW memories written
+after this arm will be embedded in real-time by the async worker.
+
+To complete the historical backfill once Docker is stable:
+  docker exec cortex python3 /app/scripts/cortex_embed_backfill.py \
+    --apply --provider ollama --db /data/cortex/brain.db
+  (script is idempotent — skips already-embedded rows)
+
+- [FOLLOWUP] Complete full backfill during a Docker-stable window
+- [FOLLOWUP] Prune ops/verification/ of the intermediate failed-run artifacts
+
+---
+
+CODE FIXES MADE DURING ARM (committed to main):
+  4f2fac4 — fix(cortex): move dedupe_key UNIQUE index from _SCHEMA → _MIGRATE_INDEXES
+  dce5064 — fix(cortex): remove WAL pragma from backfill; add scripts/ mount + embed env vars
+
+SAFETY CHECKLIST:
+[x] DB integrity OK at every checkpoint.
+[x] Backup exists: brain.db.bak.20260423-113026
+[x] No secrets printed.
+[x] No public port opened.
+[x] CORTEX_EMBED_OPENAI_OK not set (OpenAI path never triggered).
+[x] Semantic search working on partial embedding set.

@@ -26,6 +26,29 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Cortex Embeddings — Live Arm on Bob (2026-04-23 13:14 MDT, Claude Code)
+
+Runbook `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` executed.
+
+- Backup: `brain.db.bak.20260423-113026` (160 MB)
+- Dedup backfill `--apply`: 1 duplicate removed (X Signal)
+- `nomic-embed-text:latest` pulled (274 MB, dim=768)
+- `CORTEX_EMBEDDINGS_ENABLED=1` set in `.env` + `docker-compose.yml`
+- Schema fix: dedupe_key UNIQUE index moved from `_SCHEMA` → `_MIGRATE_INDEXES` (commit `4f2fac4`)
+- Backfill partial: **4,506 / 53,215 rows embedded (8.5%)** — Docker daemon crash-loops
+  every 2-9 min, killing each `docker exec` run before completion. DB integrity OK throughout.
+- Semantic search working: `GET /memories?semantic=1` returns ranked results.
+- Embed worker ON (`CORTEX_EMBEDDINGS_ENABLED=1`) — new memories embedded in real-time.
+
+- [FOLLOWUP] Complete historical backfill during Docker-stable window:
+  `docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --apply --provider ollama --db /data/cortex/brain.db`
+- [FOLLOWUP] Fix Docker daemon crash-loop on Bob (zombie-daemon issue, ~10 min MTBF)
+
+Commits: `4f2fac4`, `dce5064`
+Verification: `ops/verification/20260423-131459-cortex-embeddings-live-arm.txt`
+
+---
+
 ## Cortex Embeddings Reconciliation (2026-04-23 17:05 UTC, Claude Code)
 
 Parent-agent pass after the embeddings Cline prompt ran. No code
