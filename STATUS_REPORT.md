@@ -26,6 +26,23 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## network-monitoring run 4 — FULL PASS, both agents healthy (2026-04-23 09:43 MDT, Claude Code)
+
+First run where both network-monitoring agents are armed, running, and healthy.
+
+- `com.symphony.network-guard` PID 56949, exit=0, writing healthy records every 60s ✅
+- `com.symphony.network-dropout-watch` PID 52527, exit=0, gateway 0.6ms / WAN 13ms ✅
+- `logs/network-guard.err` stopped growing at 09:40 (pre-fix); no new errors since.
+- Both plists lint PASS. Both tools compile PASS.
+
+- [FOLLOWUP] Prune `logs/network-guard.err` (8 MB / 143k lines of pre-fix tracebacks) after a stable day: `cp /dev/null logs/network-guard.err`
+- [FOLLOWUP] Copy dropout-watch plist to `~/Library/LaunchAgents/` for standard agents-dir visibility.
+
+Verification: `ops/verification/20260423-094342-network-monitoring-launchd.txt`
+Audit doc: `docs/audits/2026-04-23-04-network-monitoring-launchd-verification.md`
+
+---
+
 ## network-monitoring phase-2 prompt drafted — fix security_utils import (2026-04-23 15:26 MDT, Claude Code)
 
 Repo-only planning pass following the Phase-1 commit `9e12fc6`. Reviewed the

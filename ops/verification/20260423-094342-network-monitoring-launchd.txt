@@ -1,0 +1,135 @@
+Network Monitoring LaunchDaemon Setup & Verification (Run 4 — both agents healthy)
+==================================================================================
+Date (UTC): Thu Apr 23 15:43:42 UTC 2026
+Date (local): 2026-04-23T09:43:42 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server
+Git HEAD: 0cc46e92ca1d27e46631437824e45dc46d5e7abf
+uname: Darwin Bobs-Mac-mini.local 25.3.0 Darwin Kernel Version 25.3.0
+Prior key commits: 9e12fc6 (plist added), 4dbd996 (PATH fix), 063ed78 (security_utils fix)
+Triggered by: rerun-network-monitoring-launchd-setup (manual)
+
+---
+
+PHASE 1 — Both network-monitoring agents observed
+
+## plutil -lint setup/launchd/com.symphony.network-guard.plist
+Result: OK — PASS
+
+## plutil -lint setup/launchd/com.symphony.network-dropout-watch.plist
+Result: OK — PASS
+
+## launchctl list | grep -E "network-guard|network-dropout"
+56949  0  com.symphony.network-guard           (RUNNING, PID 56949, exit=0)
+52527  0  com.symphony.network-dropout-watch   (RUNNING, PID 52527, exit=0)
+
+Both agents are running with exit code 0. This is the first run where
+com.symphony.network-guard shows exit=0 (previously was exit=1 / crash-loop).
+
+## Installed plist locations
+~/Library/LaunchAgents/com.symphony.network-guard.plist:          EXISTS (mtime Mar 10 — stale)
+~/Library/LaunchAgents/com.symphony.network-dropout-watch.plist:  NOT PRESENT (bootstrapped from repo)
+/Library/LaunchDaemons/com.symphony.network-guard.plist:          NOT PRESENT (correct)
+
+## Log file state
+logs/network-guard.log:          4,293,682 bytes, 204,166 lines
+  Last timestamps: 09:42:57, 09:43:08, 09:43:19 — all "status": "healthy"
+  NEW RECORDS BEING WRITTEN. Was stalled at 2026-04-03 before fix.
+logs/network-guard.err:          8,032,565 bytes, 143,427 lines
+  mtime: 2026-04-23 09:40 — STOPPED GROWING after fix at 09:41.
+  Tail shows old crash content (historical). No new errors since fix.
+logs/network-dropout-watch.log:  309 bytes — active, clean
+logs/network-dropout-watch.err:  0 bytes — empty, no errors
+
+## Recent guard log entries (healthy)
+"timestamp": "2026-04-23T09:42:57.848035", "status": "healthy"
+"timestamp": "2026-04-23T09:43:08.535935", "status": "healthy"
+"timestamp": "2026-04-23T09:43:19.257485", "status": "healthy"
+
+## dropout-watch log (full)
+[watch] started at 2026-04-23T09:36:46.920264 targets={gateway: 192.168.1.1, wan: 1.1.1.1, control4: , sonos: }
+[watch] received signal=15, stopping
+[watch] stopped
+[watch] started at 2026-04-23T09:37:12.154935 targets={gateway: 192.168.1.1, wan: 1.1.1.1, control4: , sonos: }
+
+---
+
+PHASE 2 — Tool compile + status probe
+
+## python3 -m py_compile tools/network_dropout_watch.py && python3 -m py_compile tools/network_guard_daemon.py
+Result: BOTH PASS
+
+## python3 tools/network_dropout_watch.py --status --state-dir data/network_watch
+{
+  "success": true, "running": true, "pid": 52527,
+  "updated_at": "2026-04-23T09:43:41.459316",
+  "health": "healthy",
+  "sample": {
+    "gateway": {"host": "192.168.1.1", "ok": true, "latency_ms": 0.559},
+    "wan":     {"host": "1.1.1.1",     "ok": true, "latency_ms": 13.084}
+  }
+}
+EXIT: 0
+
+---
+
+PHASE 3 — Plist spec verification (both)
+
+setup/launchd/com.symphony.network-guard.plist:
+  Label:            com.symphony.network-guard             ✓
+  ProgramArguments: /usr/bin/python3 + tool + --once       ✓
+  WorkingDirectory: /Users/bob/AI-Server                   ✓
+  StartInterval:    60                                     ✓
+  KeepAlive:        true                                   ✓
+  StandardOutPath:  logs/network-guard.log                 ✓
+  StandardErrorPath: logs/network-guard.err                ✓
+
+setup/launchd/com.symphony.network-dropout-watch.plist:
+  Label:            com.symphony.network-dropout-watch     ✓
+  ProgramArguments: /usr/bin/python3 + --watch + --interval-sec 2.0 ✓
+  PATH:             includes /sbin:/usr/sbin (ping fix)    ✓
+  KeepAlive:        true, ThrottleInterval: 30             ✓
+  StandardOutPath:  logs/network-dropout-watch.log         ✓
+  StandardErrorPath: logs/network-dropout-watch.err        ✓
+
+---
+
+OVERALL RESULT: FULL PASS
+
+Both network-monitoring agents are armed, running, and healthy.
+
+  network-guard (--once, 60s tick):
+    PID 56949 | exit=0 | healthy entries at 09:42, 09:43, 09:43
+    Fix applied: inlined sanitize_for_telegram, removed dangling security_utils import
+
+  network-dropout-watch (--watch, 2s interval):
+    PID 52527 | exit=0 | health=healthy
+    Gateway: 192.168.1.1 ok, 0.559 ms | WAN: 1.1.1.1 ok, 13.084 ms
+    .err: empty
+
+---
+
+REMAINING OPEN ITEM:
+
+- [FOLLOWUP] Prune logs/network-guard.err — 8 MB / 143k lines of pre-fix tracebacks.
+  Safe to truncate once guard health has been confirmed stable for a full day:
+    cp /dev/null /Users/bob/AI-Server/logs/network-guard.err
+
+- [FOLLOWUP] Optionally copy repo plist to ~/Library/LaunchAgents/ for
+  com.symphony.network-dropout-watch so it appears in the standard agents dir:
+    cp setup/launchd/com.symphony.network-dropout-watch.plist ~/Library/LaunchAgents/
+
+---
+
+Safety checklist:
+[x] No launchctl state-changing command was run this phase.
+[x] No sudo used.
+[x] No secrets printed or committed.
+[x] No inbound port opened; no public exposure.
+[x] No Docker, Redis, or other runtime state mutated.
+[x] No external message sent.
+[x] Only ops/verification/, docs/audits/, STATUS_REPORT.md modified this commit.
+[x] plutil -lint PASS on both plists.
+[x] python3 -m py_compile PASS on both tools.
+[x] Verification artifact has standard stamp format.
+[x] STATUS_REPORT uses [FOLLOWUP] / [NEEDS_MATT] tags.
