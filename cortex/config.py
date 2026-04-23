@@ -36,3 +36,18 @@ CORTEX_LOG_LEVEL = os.environ.get("CORTEX_LOG_LEVEL", "INFO")
 PRUNE_CONFIDENCE_THRESHOLD = float(os.environ.get("PRUNE_CONFIDENCE_THRESHOLD", "0.3"))
 # Days since last access before a low-confidence memory is pruned
 PRUNE_STALE_DAYS = int(os.environ.get("PRUNE_STALE_DAYS", "14"))
+
+# ── Embeddings ────────────────────────────────────────────────────────────────
+
+# Master switch — default OFF in this PR. Flip to "1" on Bob after dedup backfill.
+CORTEX_EMBEDDINGS_ENABLED = os.environ.get("CORTEX_EMBEDDINGS_ENABLED", "0") == "1"
+
+# Allow falling back to OpenAI text-embedding-3-small when Ollama is unreachable.
+# Requires OPENAI_API_KEY to also be set. Default: local-only.
+CORTEX_EMBED_OPENAI_OK = os.environ.get("CORTEX_EMBED_OPENAI_OK", "0") == "1"
+
+# Ollama embedding model name.
+CORTEX_EMBED_OLLAMA_MODEL = os.environ.get("CORTEX_EMBED_OLLAMA_MODEL", "nomic-embed-text")
+
+# Ollama host for embeddings (may differ from analysis model host).
+CORTEX_EMBED_OLLAMA_HOST = os.environ.get("CORTEX_EMBED_OLLAMA_HOST", OLLAMA_HOST)

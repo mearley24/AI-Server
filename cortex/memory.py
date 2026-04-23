@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import structlog
@@ -82,6 +83,17 @@ CREATE TABLE IF NOT EXISTS improvement_log (
     impact_estimate TEXT DEFAULT '',
     status TEXT DEFAULT 'proposed'
 );
+
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+    memory_id      TEXT    PRIMARY KEY,
+    embedding      BLOB    NOT NULL,
+    dim            INTEGER NOT NULL,
+    model          TEXT    NOT NULL,
+    content_digest TEXT    NOT NULL,
+    created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_memory_emb_model ON memory_embeddings(model);
 """
 
 # Idempotent ALTER TABLE statements for existing DBs that predate _SCHEMA additions.
@@ -104,6 +116,45 @@ _URL_STRIP_PARAMS: frozenset[str] = frozenset(
 
 # Source prefixes that yield a stable dedupe key even without a URL.
 _MSG_PREFIXES = ("msg:", "imessage:", "bluebubbles:", "x:")
+
+# ── Embedding queue (set by engine on startup) ────────────────────────────────
+# When None or CORTEX_EMBEDDINGS_ENABLED is false, enqueue is a no-op.
+_embed_queue: Optional[asyncio.Queue] = None
+
+
+def set_embed_queue(q: asyncio.Queue) -> None:
+    global _embed_queue
+    _embed_queue = q
+
+
+def _content_digest(content: str) -> str:
+    return hashlib.sha256(content[:4096].encode()).hexdigest()
+
+
+def _maybe_enqueue(memory_id: str, content: str) -> None:
+    from cortex.config import CORTEX_EMBEDDINGS_ENABLED
+    if not CORTEX_EMBEDDINGS_ENABLED or _embed_queue is None:
+        return
+    try:
+        _embed_queue.put_nowait((memory_id, content))
+    except asyncio.QueueFull:
+        pass  # drop silently — backfill script picks up missing rows
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Pure-Python cosine similarity; NumPy used when available."""
+    try:
+        import numpy as np
+        av, bv = np.array(a, dtype="float32"), np.array(b, dtype="float32")
+        na, nb = np.linalg.norm(av), np.linalg.norm(bv)
+        if na == 0 or nb == 0:
+            return 0.0
+        return float(np.dot(av, bv) / (na * nb))
+    except ImportError:
+        dot = sum(x * y for x, y in zip(a, b))
+        na = sum(x * x for x in a) ** 0.5
+        nb = sum(x * x for x in b) ** 0.5
+        return dot / (na * nb) if na and nb else 0.0
 
 
 # Valid memory categories
@@ -197,6 +248,7 @@ class MemoryStore:
         )
         self.conn.commit()
         logger.debug("memory_stored", id=mem_id, category=category, title=title[:50])
+        _maybe_enqueue(mem_id, content)
         return mem_id
 
     @staticmethod
@@ -321,6 +373,7 @@ class MemoryStore:
         )
         self.conn.commit()
         logger.debug("memory_stored_with_key", id=mem_id, key=key[:12])
+        _maybe_enqueue(mem_id, content)
         return mem_id
 
     # ── Read ───────────────────────────────────────────────────────────────────
@@ -421,6 +474,47 @@ class MemoryStore:
             (cutoff, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    async def search_semantic(
+        self,
+        query: str,
+        k: int = 5,
+        model: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Embed *query* and return top-k memory_ids by cosine similarity.
+
+        Returns [] if no embeddings exist or the provider is unavailable.
+        Falls back gracefully — never raises.
+        """
+        try:
+            from cortex.embeddings import get_provider, unpack_vector
+            provider = get_provider()
+            q_vec = await provider.embed(query)
+            if not q_vec:
+                return []
+
+            use_model = model or provider.model_name
+            rows = self.conn.execute(
+                "SELECT memory_id, embedding FROM memory_embeddings WHERE model = ?",
+                (use_model,),
+            ).fetchall()
+            if not rows:
+                return []
+
+            import struct
+            q_arr = q_vec
+            results: list[tuple[float, str]] = []
+            for row in rows:
+                try:
+                    v = unpack_vector(row[1])
+                    score = _cosine(q_arr, v)
+                    results.append((score, row[0]))
+                except Exception:
+                    pass
+            results.sort(key=lambda x: x[0], reverse=True)
+            return [{"memory_id": mid, "score": round(sc, 4)} for sc, mid in results[:k]]
+        except Exception:
+            return []
 
     # ── Update ─────────────────────────────────────────────────────────────────
 
