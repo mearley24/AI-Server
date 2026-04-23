@@ -1,0 +1,98 @@
+Cortex Embeddings — Live Arm Evidence Capture (read-only probe)
+===============================================================
+Timestamp (UTC): Thu Apr 23 19:55:12 UTC 2026
+Host:   Bobs-Mac-mini.local (Bob, Mac Mini M4)
+HEAD:   eb7ef02dff9f7c332b31b15e282bd71cbad4a011
+Branch: main
+Status: clean (harness-owned dirty files only — data/, ops/alerts/, untracked sweeps)
+Triggered by: .cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md
+
+---
+
+## Step 2 — Repo-owned artifact scan
+
+ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md:
+  -rw-r--r--  1 bob  staff  9497 Apr 23 11:08
+
+ops/verification/ entries matching cortex-embed|embeddings-live|embed-arm:
+  20260423-105744-cortex-embeddings.txt          (author+test verification)
+  20260423-131459-cortex-embeddings-live-arm.txt (live arm receipt — PRESENT)
+  20260423-165728-cortex-embed-backfill.json     (pytest tempdir run — not live)
+  20260423-170602-cortex-embeddings-reconciliation.txt
+  20260423-173937-cortex-embed-backfill.json     (LIVE dedup backfill, 1 duplicate removed)
+  20260423-175440-cortex-embed-arm-reconciliation.txt
+
+STATUS_REPORT.md matches for 'Cortex Embeddings':
+  L29: ## Cortex Embeddings — Live Arm on Bob (2026-04-23 13:14 MDT, Claude Code)
+  L52: ## Cortex Embeddings Reconciliation (2026-04-23 17:05 UTC, Claude Code)
+  L94: ## Cortex Embeddings Phase-1 Author+Test (2026-04-23 10:57 MDT, Claude Code)
+
+STATUS_REPORT.md matches for 'live.*arm|Live Arm':
+  L29: ## Cortex Embeddings — Live Arm on Bob (2026-04-23 13:14 MDT, Claude Code)
+  L48: Verification: ops/verification/20260423-131459-cortex-embeddings-live-arm.txt
+
+git log (ops/verification + STATUS_REPORT + prompt):
+  555274c docs(cortex): live embeddings arm on Bob — verification + STATUS_REPORT
+  76bf120 docs(cortex/embeddings): reconcile — prompt done, runbook + receipts
+
+---
+
+## Step 3 — Live host probes (read-only)
+
+### Cortex container
+docker ps: cortex  Up 12 minutes (healthy)
+
+### GET /health
+{"status":"alive","memories":{"total":53117,...}}  → HTTP 200 OK
+
+### .env flag
+CORTEX_EMBEDDINGS_ENABLED=1  ← confirmed present
+
+### Ollama
+/api/tags → ['nomic-embed-text:latest', 'qwen3:8b', 'llama3.2:3b']
+nomic-embed-text:latest is PRESENT
+
+### SQLite — memory_embeddings
+SELECT COUNT(*) FROM memory_embeddings   → 4,559
+by_model: [('nomic-embed-text', 4559)]
+dim: 768 (inferred from model)
+
+### SQLite — memories index list
+idx_memories_dedupe_key   (UNIQUE, partial)
+idx_memories_updated
+idx_memories_importance
+idx_memories_category
+sqlite_autoindex_memories_1
+
+### brain.db listing
+-rw-r--r-- 1 root root 179,855,360  Apr 23 13:54  brain.db
+-rw-r--r-- 1 root root 160,874,496  Apr 23 11:30  brain.db.bak.20260423-113026
+
+---
+
+## Verdict
+
+VERDICT: ARMED
+
+Supporting evidence:
+  (a) .env: CORTEX_EMBEDDINGS_ENABLED=1                          ✅
+  (b) memory_embeddings row count: 4,559 (model=nomic-embed-text) ✅
+  (c) Cortex /health: HTTP 200, status=alive                      ✅
+
+Partial backfill note: 4,559 / 53,117 memories embedded (8.6%).
+Embed worker is ON — new memories are embedded in real-time.
+Remaining 48,558 rows require a full uninterrupted backfill run.
+Full receipt: ops/verification/20260423-131459-cortex-embeddings-live-arm.txt
+STATUS_REPORT live-arm entry: line 29 (already present, NOT duplicated here)
+
+---
+
+## Non-actions (per prompt guardrails)
+
+- Did NOT pull ollama model
+- Did NOT flip CORTEX_EMBEDDINGS_ENABLED (was already =1)
+- Did NOT restart Cortex container
+- Did NOT run cortex_embed_backfill.py --apply
+- Did NOT mutate .env
+- Did NOT execute any step of ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md
+- Did NOT edit STATUS_REPORT [NEEDS_MATT] markers
