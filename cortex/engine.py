@@ -260,6 +260,14 @@ async def _startup() -> None:
     global engine
     engine = CortexEngine()
     await engine.start()
+    # Start embedding worker if enabled (gated by CORTEX_EMBEDDINGS_ENABLED)
+    from cortex.config import CORTEX_EMBEDDINGS_ENABLED
+    if CORTEX_EMBEDDINGS_ENABLED:
+        from cortex.embeddings import embed_worker
+        from cortex.memory import set_embed_queue
+        _eq: asyncio.Queue = asyncio.Queue(maxsize=500)
+        set_embed_queue(_eq)
+        asyncio.create_task(embed_worker(_eq, engine.memory))
 
 
 @app.get("/health")
@@ -313,11 +321,40 @@ async def today_digest() -> dict[str, Any]:
 
 @app.get("/memories")
 async def list_memories(
-    category: str | None = None, limit: int = 20
+    category: str | None = None,
+    limit: int = 20,
+    q: str = "",
+    semantic: int = 0,
 ) -> list[dict[str, Any]]:
     if engine is None:
         raise HTTPException(status_code=503, detail="cortex not initialized")
-    return engine.memory.recall("", category=category, limit=limit)
+    keyword_results = engine.memory.recall(q, category=category, limit=limit)
+    if not semantic or not q:
+        return keyword_results
+    # Blend keyword + semantic hits (union by memory_id, rank by weighted sum)
+    try:
+        sem_hits = await engine.memory.search_semantic(q, k=limit)
+        sem_map = {h["memory_id"]: h["score"] for h in sem_hits}
+        seen: set = set()
+        merged: list[dict[str, Any]] = []
+        for row in keyword_results:
+            row["semantic_score"] = sem_map.get(row["id"], 0.0)
+            seen.add(row["id"])
+            merged.append(row)
+        # Add semantic-only hits not already in keyword results
+        for hit in sem_hits:
+            if hit["memory_id"] not in seen:
+                extra = engine.memory.conn.execute(
+                    "SELECT * FROM memories WHERE id=?", (hit["memory_id"],)
+                ).fetchone()
+                if extra:
+                    row = dict(extra)
+                    row["semantic_score"] = hit["score"]
+                    merged.append(row)
+        merged.sort(key=lambda r: (r.get("importance", 0) * 0.5 + r.get("semantic_score", 0.0) * 5), reverse=True)
+        return merged[:limit]
+    except Exception:
+        return keyword_results
 
 
 @app.get("/rules")
