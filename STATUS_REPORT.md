@@ -26,6 +26,51 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## unfinished-setup audit + network-monitoring launchd follow-up prompt (2026-04-23 15:10, Claude Code)
+
+Docs-only pass answering "look through the entire space and see what we
+worked on and never setup." Cross-referenced the two 2026-04-23 audits
+(bob-freezing runtime hangs + x-intake deep-dive) against the current
+repo tree and produced a classification across *not set up / partially
+set up / set up but unverified / already complete / unresolved*.
+
+Correction vs. the prior in-memory summary: `setup/launchd/com.symphony.network-guard.plist`
+**is** committed (verified this pass — `ls setup/launchd/` shows it,
+and commits referencing it are in-tree). What is actually absent is a
+committed launchd plist for `tools/network_dropout_watch.py` and any
+committed verification artifact proving either network daemon is
+currently loaded/healthy on Bob.
+
+Highest-priority next setup gap identified: the host-network monitoring
+supervision story. Scoped as a Cline-first follow-up at
+`.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`.
+The prompt is read-only on Bob except for writing a verification file
+and committing the new plist + docs; it explicitly does **not**
+`launchctl load` anything and leaves the actual arm step behind a
+`[NEEDS_MATT]` gate.
+
+- [FOLLOWUP] Cline / Bob: run
+  `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`
+  to capture the current `launchctl list | grep network-guard` state,
+  add a committed plist for `tools/network_dropout_watch.py`, write
+  the paired `docs/audits/2026-04-23-network-monitoring-launchd-verification.md`
+  artifact, and update this report. Do not load the new plist.
+- [NEEDS_MATT] Decide when to `sudo launchctl bootstrap` the new
+  network-dropout-watch plist on Bob. Repo-only until you say go.
+
+Audit: `docs/audits/2026-04-23-unfinished-setup-audit.md`.
+Follow-up prompt: `.cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md`.
+
+TODO references:
+- [ ] arm `com.symphony.network-dropout-watch` on Bob (needs Matt)
+- [ ] capture `ops/verification/<stamp>-network-monitoring-launchd.txt`
+      receipt proving both daemons supervised and producing events
+- [ ] resolve approval-drainer plist contradictory status sections
+- [ ] prune `pending_approvals` backlog (237) and accumulated
+      `ops/verification/` artifacts (pre-existing FOLLOWUPs, unchanged)
+
+---
+
 ## bob-watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)
 
 Bob deployed ba3c298 (the bash-3.2 hotfix) and the log showed:
