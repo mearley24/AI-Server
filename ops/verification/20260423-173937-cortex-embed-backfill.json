@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-23T17:39:37.746687+00:00",
+  "db": "/Users/bob/AI-Server/data/cortex/brain.db",
+  "model": "nomic-embed-text",
+  "total": 53054,
+  "already_done": 0,
+  "missing": 53054,
+  "written": 53035,
+  "failed": 19,
+  "dry_run": false
+}
