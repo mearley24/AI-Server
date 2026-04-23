@@ -26,6 +26,20 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## network-dropout-watch armed + PATH fix (2026-04-23 09:37 MDT, Claude Code)
+
+`com.symphony.network-dropout-watch` LaunchAgent bootstrapped and running.
+Found `ping` not in PATH (lives at `/sbin/ping`); added `/sbin:/usr/sbin` to
+the plist and reloaded. Agent now reporting `health: healthy`:
+- Gateway 192.168.1.1: ok, 0.6 ms
+- WAN 1.1.1.1: ok, 16.5 ms
+
+State file: `data/network_watch/dropout_watch_status.json` — `running: true`.
+
+- ~~[NEEDS_MATT] Arm dropout-watch LaunchAgent~~ ✅ Done 2026-04-23 09:37 MDT
+
+---
+
 ## network-monitoring launchd verification run 2 (2026-04-23 09:34 MDT, Claude Code)
 
 Re-execution of network-monitoring setup prompt. No new files created; all prior
