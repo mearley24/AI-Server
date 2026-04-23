@@ -26,6 +26,30 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## X-Intake Reply-Leg Phases 2–6 — Author+Test (2026-04-23 10:44 MDT, Claude Code)
+
+Commits: `6aa2102`, `7bc0f5e`, `cce41c4`, `c0b9d1f`
+
+- `integrations/x_intake/reply_actions/action_store.py` — `thread_guid` column + migration; `AlreadyUsed` exception; `list_open_slots()`; `lookup_by_slot()`
+- `integrations/x_intake/reply_actions/listener.py` — `process_message()` + `run_listener()` (subscribes to `events:imessage`, parse → lookup → dispatch → ack)
+- `integrations/x_intake/reply_actions/dispatcher.py` — `HANDLER_REGISTRY` (3 handlers: `cortex_remember`, `cortex_dismiss`, `escalate_to_matt`); `Dispatcher` with rate-limit (10/60s) + idempotency
+- `integrations/x_intake/reply_actions/ack.py` — `send_ack()` dry-run by default; ring buffer; ndjson log
+- `docker-compose.yml` — `CORTEX_REPLY_DRY_RUN=1` + `ALLOWED_TEST_RECIPIENTS` added to x-intake
+- `ops/tests/test_reply_leg_e2e.py` + `test_reply_leg_guards.py` — 11 tests, all pass
+
+**Test result:** 11 passed, 0.03s. **Outbound ACKs remain in `CORTEX_REPLY_DRY_RUN=1` mode.**
+
+- [NEEDS_MATT] Enable live sends:
+  1. `bash scripts/set-env.sh ALLOWED_TEST_RECIPIENTS "iMessage;-;+19705193013"`
+  2. `bash scripts/set-env.sh CORTEX_REPLY_DRY_RUN 0`
+  3. `docker compose up -d --build x-intake`
+  4. Send one test reply; verify `data/x_intake/reply_acks.ndjson` + Cortex memory
+  5. Re-set `CORTEX_REPLY_DRY_RUN=1` after test
+
+Verification: `ops/verification/20260423-104458-x-intake-reply-leg-phases-2-6.txt`
+
+---
+
 ## Cortex Dedup — re-run verification (2026-04-23 10:34 MDT, Claude Code)
 
 Re-run confirming all prior dedup work intact. 12 tests pass (0.03s). Dry-run backfill

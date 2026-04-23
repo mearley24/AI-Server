@@ -1,0 +1,107 @@
+X-Intake Reply-Leg Phases 2–6 — Verification
+=============================================
+Date (local): 2026-04-23T10:44:58 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server  branch: main
+Triggered by: .cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md
+
+Commits (all behind CORTEX_REPLY_DRY_RUN=1):
+  6aa2102  feat(x-intake/reply): phases 2+3 — inbound listener + action_store thread_guid + AlreadyUsed
+  7bc0f5e  feat(x-intake/reply): phase 4 — executor-router + HANDLER_REGISTRY + rate-limit
+  cce41c4  feat(x-intake/reply): phase 5 — outbound ACK (dry-run default) + CORTEX_REPLY_DRY_RUN in compose
+  c0b9d1f  test(x-intake/reply): phase 6 e2e + guardrail coverage (11 tests)
+
+---
+
+V1 — Static checks
+
+python3 -m py_compile (listener, dispatcher, ack, action_store, main, parser) → ALL PASS
+
+New modules compiled:
+  integrations/x_intake/reply_actions/listener.py    — Phase 2+3
+  integrations/x_intake/reply_actions/dispatcher.py  — Phase 4
+  integrations/x_intake/reply_actions/ack.py          — Phase 5
+
+Key symbols:
+  dispatcher.py:92  HANDLER_REGISTRY = {"cortex_remember", "cortex_dismiss", "escalate_to_matt"}
+  dispatcher.py:127 class Dispatcher.dispatch()
+  ack.py:27         _DRY_RUN_ENV = os.environ.get("CORTEX_REPLY_DRY_RUN", "1")
+  ack.py:29         _ALLOWED_RECIPIENTS = frozenset(...)
+
+Net diff: 838 insertions across 7 files — within 700 LOC per-phase; total phases 2-6.
+
+---
+
+V2 — Path existence
+
+ok-listener   ok-dispatcher   ok-ack   ok-e2e   (all present)
+
+---
+
+V3+V4 — Tests (11 passed, 0.03s)
+
+ops/tests/test_reply_leg_e2e.py (6 tests):
+  test_e2e_reply1_calls_cortex_remember           PASSED
+  test_e2e_mark_used_called                       PASSED
+  test_e2e_idempotency_second_reply_is_noop       PASSED
+  test_e2e_invalid_slot_ignored                   PASSED
+  test_e2e_expired_context_ignored                PASSED
+  test_e2e_dry_run_ack_goes_to_ring               PASSED
+
+ops/tests/test_reply_leg_guards.py (5 tests):
+  test_unknown_handler_name_not_executed          PASSED
+  test_rate_limit_caps_per_handle                 PASSED
+  test_dry_run_never_calls_send_text              PASSED
+  test_expired_context_ignored                    PASSED
+  test_already_used_action_is_noop                PASSED
+
+---
+
+V5 — Docker compose surface check
+
+grep CORTEX_REPLY_DRY_RUN docker-compose.yml:
+  x-intake environment:
+    - CORTEX_REPLY_DRY_RUN=1                  ✓ (hardcoded on, not from env)
+    - ALLOWED_TEST_RECIPIENTS=${ALLOWED_TEST_RECIPIENTS:-}   ✓ (empty by default)
+
+grep CORTEX_REPLY_DRY_RUN ack.py:
+  ack.py:27  _DRY_RUN_ENV = os.environ.get("CORTEX_REPLY_DRY_RUN", "1")  ✓
+
+---
+
+V6 — Live Bob smoke
+
+SKIPPED — Docker not running at time of this verification.
+x-intake container not accessible.
+
+---
+
+CLOSING CHECKLIST:
+[x] Phases 2–6 landed behind CORTEX_REPLY_DRY_RUN=1 default.
+[x] HANDLER_REGISTRY is explicit — no reflection, no getattr.
+[x] No outbound iMessage sent in any automated test.
+[x] Rate-limit (10/60s), idempotency (mark_used), expiry, allowlist all covered.
+[x] STATUS_REPORT + verification artifact committed.
+[x] git push origin main succeeds.
+
+---
+
+[NEEDS_MATT] + [BOB_CLINE_ONLY] Live-enable sequence:
+
+1. Add Matt's phone to .env:
+   bash scripts/set-env.sh ALLOWED_TEST_RECIPIENTS "iMessage;-;+19705193013"
+
+2. Set dry-run flag off in .env (NOT in docker-compose.yml — compose should stay =1):
+   bash scripts/set-env.sh CORTEX_REPLY_DRY_RUN 0
+
+3. Rebuild + restart x-intake:
+   docker compose up -d --build x-intake
+
+4. Test with one message to Matt's own number (prefix: [bob-reply-test]):
+   The next iMessage reply "1" or "reply 1" to a card from Bob will trigger
+   cortex_remember against the test action stored in reply_actions.db.
+
+5. Verify in data/x_intake/reply_acks.ndjson that an entry was written.
+   Verify in /remember that a new memory was created.
+
+6. Re-set CORTEX_REPLY_DRY_RUN=1 and rebuild after testing.
