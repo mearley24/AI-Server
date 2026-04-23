@@ -3,8 +3,29 @@
 # Runs every 60s via LaunchDaemon.
 
 REPO_DIR="${BOB_REPO_DIR:-/Users/bob/AI-Server}"
-COMPOSE="docker compose"
+# Use an array so word-splitting doesn't re-introduce a malformed
+# `docker -d ...` invocation (see ops/verification/…-watchdog-container-
+# recovery-hotfix.txt, 2026-04-23 — docker was rejecting `-d` because the
+# recovery path was expanding `$COMPOSE` in a context that dropped the
+# `compose` sub-command).
+COMPOSE=(docker compose)
 MAX_LOG_BYTES=2000000
+
+# Optional mode flags — used by install/CI to lint the script without
+# executing any side-effectful checks:
+#   --check       : syntax-only (bash -n)
+#   --dry-run     : run the tick but skip all recovery side effects and exit
+MODE=""
+for arg in "$@"; do
+    case "$arg" in
+        --check)   MODE="check" ;;
+        --dry-run) MODE="dry-run" ;;
+    esac
+done
+if [[ "$MODE" == "check" ]]; then
+    bash -n "$0" && echo "bob-watchdog.sh: syntax OK" && exit 0
+    exit 1
+fi
 
 # Prefer the system log path when writable (LaunchDaemon install), otherwise
 # fall back to the repo-local path (user LaunchAgent install — no sudo needed).
@@ -74,8 +95,10 @@ in_cooldown() {
     local cooldown="${2:-300}"
     local marker="$STATE_DIR/$1"
     if [[ -f "$marker" ]]; then
-        local ts=$(cat "$marker")
-        local now=$(date +%s)
+        local ts
+        ts=$(cat "$marker")
+        local now
+        now=$(date +%s)
         (( now - ts < cooldown )) && return 0
     fi
     return 1
@@ -199,6 +222,11 @@ check_docker() {
     log_alert "Docker Desktop is down or in zombie state"
     in_cooldown "docker" 180 && { log "  cooldown, skip"; return; }
 
+    if [[ "$MODE" == "dry-run" ]]; then
+        log "  [dry-run] would restart Docker Desktop"
+        return
+    fi
+
     # Kill lingering helpers so the new Docker Desktop has a clean backend.
     pkill -9 -x docker 2>/dev/null || true
     pkill -9 -f 'com.docker.backend' 2>/dev/null || true
@@ -228,26 +256,122 @@ check_docker() {
 
 BOB_USER="bob"
 
+# Optional override file — one service name per line (# comments OK). When
+# present this file, not the compose config, defines the required list. Use
+# this to temporarily pin the set without a code push.
+REQUIRED_OVERRIDE_FILE="${BOB_WATCHDOG_REQUIRED:-$REPO_DIR/ops/bob-watchdog.required}"
+
+# Resolve the list of required container names. Preference order:
+#   1) $REQUIRED_OVERRIDE_FILE (operator-controlled, hot-editable)
+#   2) `docker compose config --services` from $REPO_DIR/docker-compose.yml
+#   3) empty — skip the check (never page on a stale hard-coded list)
+resolve_required() {
+    if [[ -f "$REQUIRED_OVERRIDE_FILE" ]]; then
+        grep -vE '^\s*(#|$)' "$REQUIRED_OVERRIDE_FILE"
+        return
+    fi
+    if [[ -f "$REPO_DIR/docker-compose.yml" ]]; then
+        ( cd "$REPO_DIR" 2>/dev/null && \
+          bounded 15 "${COMPOSE[@]}" config --services 2>/dev/null ) \
+          | grep -vE '^\s*$'
+        return
+    fi
+}
+
+# Optional services — missing is reported but never pages. Decommissioned or
+# laptop-only services go here. Keep this list in sync with STATUS_REPORT.md.
+OPTIONAL_SERVICES=(
+    mission-control      # decommissioned 2026 — replaced by Cortex
+    knowledge-scanner    # removed from compose 2026-04-14
+    openwebui            # removed from compose 2026-04-13 (Prompt N)
+    remediator           # removed from compose 2026-04-14
+    context-preprocessor # removed from compose 2026-04-14
+    x-intake-lab         # intermittent lab container
+)
+
+is_optional() {
+    local s="$1"
+    for o in "${OPTIONAL_SERVICES[@]}"; do
+        [[ "$s" == "$o" ]] && return 0
+    done
+    return 1
+}
+
 # --- CHECK 4: Missing containers ---
 check_containers() {
     docker info >/dev/null 2>&1 || return
     cd "$REPO_DIR" 2>/dev/null || return
 
-    local running missing=""
+    local running required
     running=$(docker ps --format '{{.Names}}' 2>/dev/null)
+    required=$(resolve_required)
 
-    for svc in openclaw email-monitor redis notification-hub calendar-agent proposals dtools-bridge mission-control knowledge-scanner clawwork voice-receptionist openwebui remediator vpn polymarket-bot intel-feeds context-preprocessor x-intake client-portal; do
-        echo "$running" | grep -q "^${svc}$" || missing="$missing $svc"
+    if [[ -z "$required" ]]; then
+        # No authoritative list — skip to avoid paging on a stale hard-coded set.
+        log "  container check skipped (no compose services resolved)"
+        return
+    fi
+
+    local missing_required=() missing_optional=()
+    while IFS= read -r svc; do
+        [[ -z "$svc" ]] && continue
+        if ! echo "$running" | grep -q "^${svc}$"; then
+            if is_optional "$svc"; then
+                missing_optional+=("$svc")
+            else
+                missing_required+=("$svc")
+            fi
+        fi
+    done <<< "$required"
+
+    # Optional-only misses: log once per hour, never restart.
+    if (( ${#missing_optional[@]} > 0 )); then
+        if ! in_cooldown "containers_optional" 3600; then
+            log "  Missing optional (ignored): ${missing_optional[*]}"
+            mark_action "containers_optional"
+        fi
+    fi
+
+    if (( ${#missing_required[@]} == 0 )); then
+        return
+    fi
+
+    log_alert "Missing containers: ${missing_required[*]}"
+    in_cooldown "containers" 300 && { log "  cooldown, skip"; return; }
+
+    if [[ "$MODE" == "dry-run" ]]; then
+        log "  [dry-run] would run: ${COMPOSE[*]} up -d --no-build ${missing_required[*]}"
+        mark_action "containers"
+        return
+    fi
+
+    # Recovery: bound the compose invocation and capture its exit code. Only
+    # claim recovery when (a) exit 0 AND (b) every previously-missing required
+    # container is now running.
+    local rc=0
+    bounded 180 "${COMPOSE[@]}" up -d --no-build "${missing_required[@]}" >>"$LOG" 2>&1
+    rc=$?
+    mark_action "containers"
+
+    if (( rc != 0 )); then
+        log_alert "Recovery command failed (exit $rc); see log above"
+        return
+    fi
+
+    # Re-probe: every service in missing_required must now appear.
+    sleep 3
+    running=$(docker ps --format '{{.Names}}' 2>/dev/null)
+    local still_missing=()
+    for svc in "${missing_required[@]}"; do
+        echo "$running" | grep -q "^${svc}$" || still_missing+=("$svc")
     done
 
-    [[ -z "$missing" ]] && return
+    if (( ${#still_missing[@]} > 0 )); then
+        log_alert "Recovery ran exit=0 but still missing: ${still_missing[*]}"
+        return
+    fi
 
-    log_alert "Missing containers:$missing"
-    in_cooldown "containers" 120 && { log "  cooldown, skip"; return; }
-
-    $COMPOSE up -d --no-build 2>>"$LOG"
-    mark_action "containers"
-    log "  Containers recovered"
+    log "  Containers recovered: ${missing_required[*]}"
 }
 
 # --- CHECK 5: Unhealthy containers ---
@@ -260,6 +384,10 @@ check_unhealthy() {
     for c in $uhc; do
         in_cooldown "uh_${c}" 300 && continue
         log_alert "Unhealthy: $c — restarting"
+        if [[ "$MODE" == "dry-run" ]]; then
+            log "  [dry-run] would restart $c"
+            continue
+        fi
         docker restart "$c" 2>>"$LOG"
         mark_action "uh_${c}"
     done
@@ -273,6 +401,7 @@ check_email_dns() {
 
     in_cooldown "email_dns" 120 && return
     log_alert "Email monitor stale DNS — restarting"
+    [[ "$MODE" == "dry-run" ]] && { log "  [dry-run] would restart email-monitor"; return; }
     docker restart email-monitor 2>>"$LOG"
     mark_action "email_dns"
 }
@@ -299,6 +428,7 @@ check_x_intake() {
     in_cooldown "x_intake" 180 && { log "  x-intake cooldown, skip"; return; }
 
     log_alert "Restarting x-intake container"
+    [[ "$MODE" == "dry-run" ]] && { log "  [dry-run] would restart x-intake"; return; }
     docker restart x-intake 2>>"$LOG"
     mark_action "x_intake"
     rm -f "$strike_file" 2>/dev/null
@@ -324,6 +454,7 @@ write_heartbeat() {
 
 # --- MAIN ---
 log "--- tick ---"
+[[ "$MODE" == "dry-run" ]] && log "  MODE=dry-run (no side effects)"
 check_tailscale
 check_dns
 restore_tailscale_dns

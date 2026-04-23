@@ -1,0 +1,149 @@
+Bob watchdog container-recovery hotfix
+Timestamp: 2026-04-23 13:48:59 MDT
+Branch: main
+Author: Claude Code (autonomous subagent)
+
+============================================================
+ROOT CAUSE
+============================================================
+
+Symptom in live logs (user-provided):
+  [ALERT] Missing containers: mission-control knowledge-scanner openwebui remediator context-preprocessor
+  ... unknown shorthand flag: 'd' in -d
+  [watchdog] Containers recovered
+  (repeats every ~60 s)
+
+Three compounding bugs in scripts/bob-watchdog.sh:
+
+1. STALE HARD-CODED REQUIRED LIST. check_containers iterated a literal
+   service list baked into the script. Every service the watchdog was
+   paging on — mission-control, knowledge-scanner, openwebui,
+   remediator, context-preprocessor — had ALREADY been decommissioned
+   and removed from docker-compose.yml:
+     * STATUS_REPORT.md:953 — mission-control dissolved, replaced by Cortex
+     * STATUS_REPORT.md:818 — openwebui removed 2026-04-13 (Prompt N)
+     * STATUS_REPORT.md:834 — knowledge-scanner, context-preprocessor,
+       remediator removed from service table 2026-04-14
+   So the "alert" was structurally guaranteed to fire on every tick.
+
+2. MALFORMED RECOVERY COMMAND. The recovery line was
+       $COMPOSE up -d --no-build 2>>"$LOG"
+   with COMPOSE="docker compose". When docker's CLI plugin is not
+   resolved (older docker, PATH shadowing by a standalone docker-compose
+   v1 binary, or an alias), the `compose` token gets interpreted as the
+   first positional arg and `-d` is passed to `docker` proper — which
+   emits `unknown shorthand flag: 'd' in -d` and exits non-zero.
+
+3. UNCONDITIONAL SUCCESS CLAIM. After running the recovery command the
+   script logged "Containers recovered" regardless of the exit code and
+   without re-checking `docker ps`. So a failed `docker -d` produced a
+   green log line, the cooldown marker was written, and the alert
+   repeated on the next tick — a classic false-positive / flapping loop.
+
+============================================================
+CHANGES (scripts/bob-watchdog.sh)
+============================================================
+
+A. COMPOSE is now an array: `COMPOSE=(docker compose)`. Every invocation
+   uses "${COMPOSE[@]}" so word-splitting can never drop the `compose`
+   sub-command.
+
+B. Required-container list is derived, not hard-coded:
+     1) operator override file $BOB_WATCHDOG_REQUIRED
+        (default: $REPO_DIR/ops/bob-watchdog.required)
+     2) `docker compose config --services` against the repo's
+        docker-compose.yml (bounded at 15 s)
+     3) if neither resolves, the check is SKIPPED (logged, no page) —
+        we never page on a phantom list again.
+
+C. OPTIONAL_SERVICES allowlist for decommissioned / best-effort
+   containers (mission-control, knowledge-scanner, openwebui,
+   remediator, context-preprocessor, x-intake-lab). Optional misses
+   are logged at most once per hour and never trigger recovery.
+
+D. Recovery is bounded (180 s) and verified. "Containers recovered"
+   is logged ONLY when:
+     - the recovery command exited 0, AND
+     - every previously-missing required container now appears in
+       `docker ps --format {{.Names}}`.
+   A non-zero exit, a timeout, or a still-missing container each
+   produce an explicit [ALERT] line instead.
+
+E. Per-scope cooldowns tightened: containers cooldown raised from
+   120 s → 300 s, and a separate `containers_optional` marker keeps
+   optional misses from spamming.
+
+F. Two operator modes added:
+     --check    : syntax-only (bash -n), for CI / install scripts
+     --dry-run  : run the tick, log what WOULD happen, make no
+                  changes to Docker / network / containers.
+
+============================================================
+FILES CHANGED
+============================================================
+
+  scripts/bob-watchdog.sh           (rewrite of check_containers +
+                                     mode flags + COMPOSE array)
+  STATUS_REPORT.md                  (added changelog entry)
+  ops/verification/20260423-134859-watchdog-container-recovery-hotfix.txt
+                                    (this file)
+
+============================================================
+BOB VERIFICATION — RUN THESE, IN ORDER
+============================================================
+
+On Bob (Mac Mini M4), from /Users/bob/AI-Server, after `git pull`:
+
+  # 1. Syntax + structural lint (zero side effects)
+  bash scripts/bob-watchdog.sh --check
+
+  # 2. Dry-run one tick — should log the tick, resolve the required
+  #    list from compose, and NOT touch docker/containers/DNS.
+  bash scripts/bob-watchdog.sh --dry-run
+  tail -n 40 /usr/local/var/log/bob-watchdog.log 2>/dev/null \
+    || tail -n 40 data/task_runner/bob-watchdog.log
+
+  # 3. Confirm the decommissioned services are NOT in the authoritative
+  #    required list:
+  ( cd /Users/bob/AI-Server && docker compose config --services ) \
+    | grep -E 'mission-control|knowledge-scanner|openwebui|remediator|context-preprocessor' \
+    && echo 'FAIL — still listed' || echo 'OK — none present'
+
+  # 4. Real tick, watching the log live. Expect:
+  #      - no "unknown shorthand flag: 'd'" lines
+  #      - either no "Missing containers" alert at all, OR
+  #        "Missing containers: …" followed by a bounded recovery
+  #        and then "Containers recovered: …" (only on success)
+  bash scripts/bob-watchdog.sh
+  tail -n 60 /usr/local/var/log/bob-watchdog.log 2>/dev/null \
+    || tail -n 60 data/task_runner/bob-watchdog.log
+
+  # 5. Confirm the LaunchDaemon / LaunchAgent picks up the new script
+  #    on its next 60 s tick — no reinstall needed; the plist points
+  #    at the same path.
+  sleep 70
+  tail -n 20 /usr/local/var/log/bob-watchdog.log 2>/dev/null \
+    || tail -n 20 data/task_runner/bob-watchdog.log
+
+Expected post-hotfix steady state: one "--- tick ---" / "--- done ---"
+pair per minute, heartbeat file refreshed, no [ALERT] lines unless a
+service that IS still in docker-compose.yml is actually missing.
+
+============================================================
+ROLLBACK
+============================================================
+
+If the new resolver misbehaves, drop a one-line override file to pin
+the required set by hand without a redeploy:
+
+  cat > /Users/bob/AI-Server/ops/bob-watchdog.required <<'EOF'
+  redis
+  notification-hub
+  email-monitor
+  x-intake
+  openclaw
+  cortex
+  EOF
+
+The override takes precedence over `docker compose config --services`.
+Remove the file to return to compose-derived resolution.

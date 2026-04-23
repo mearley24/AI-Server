@@ -26,6 +26,43 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## bob-watchdog container-recovery hotfix (2026-04-23, Claude Code)
+
+Fixed a three-bug compound in `scripts/bob-watchdog.sh` that had the
+watchdog flapping once a minute:
+
+1. Required-container list was a stale hard-coded literal; it still paged
+   on `mission-control`, `knowledge-scanner`, `openwebui`, `remediator`,
+   and `context-preprocessor` — all decommissioned and no longer in
+   `docker-compose.yml` (see entries at lines 818 / 834 / 953).
+2. Recovery command was `$COMPOSE up -d --no-build` (word-split string).
+   In environments where the `docker compose` plugin doesn't resolve
+   cleanly, docker treated `-d` as a top-level flag and emitted
+   `unknown shorthand flag: 'd' in -d`.
+3. "Containers recovered" was logged regardless of exit code or post-
+   recovery state, so the failed command produced a green log line and
+   the alert kept flapping.
+
+Changes:
+
+- `COMPOSE=(docker compose)` array; every call uses `"${COMPOSE[@]}"`.
+- Required list now resolves from (1) optional operator-override file
+  `ops/bob-watchdog.required`, else (2) `docker compose config --services`
+  (bounded 15 s), else (3) skip the check entirely — we never page on a
+  phantom list again.
+- `OPTIONAL_SERVICES` allowlist for decommissioned/lab containers; misses
+  are logged at most once per hour and never trigger recovery.
+- Recovery bounded at 180 s; "Containers recovered" is logged only when
+  exit == 0 **and** every previously-missing required container is
+  visible in `docker ps`. Any other outcome logs an explicit `[ALERT]`.
+- New flags: `--check` (bash-n only), `--dry-run` (log-only tick).
+
+Verification: `ops/verification/20260423-134859-watchdog-container-recovery-hotfix.txt`
+lists the Bob-side commands (`bash scripts/bob-watchdog.sh --check`,
+`--dry-run`, etc.).
+
+---
+
 ## X-intake deep-dive audit + reply-action design (2026-04-23, Claude Code)
 
 Audit-and-design pass covering the full X-intake pipeline, BlueBubbles notification path,
