@@ -1,0 +1,4 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260423-063714
+[ai-dispatch] run-prompt file=.cursor/prompts/audit-x-intake-deep-dive-reply-actions-and-docker-testbed.md model=claude-sonnet-4-6[1m] bytes=    9959
+
+=== claude output ===
