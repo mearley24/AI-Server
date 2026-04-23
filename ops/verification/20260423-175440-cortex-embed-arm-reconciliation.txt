@@ -1,0 +1,169 @@
+Cortex Embeddings Bob Arm — Reconciliation Pass 2
+==================================================
+Date (UTC): 2026-04-23T17:54:40Z
+Author: Claude Code (parent-agent follow-up pass, bounded, read-only)
+Repo: /home/user/workspace/AI-Server-b4ba9c81  branch: main
+Triggered by: parent-agent message that the runbook
+  ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md was run on Bob.
+
+Scope: read committed repo artifacts and decide whether the runtime
+  arm is recorded as complete. No runtime action. No docker, no env
+  flip, no model pull, no service restart, no sudo, no ports, no
+  secrets, no external messages. Harness-owned dirty files
+  (.claude/, .mcp.json, CLAUDE.md) preserved.
+
+---
+
+R1 — Git state
+
+  remote: origin -> https://git-agent-proxy.perplexity.ai/mearley24/AI-Server
+  branch: main  (in sync with origin/main, 0 ahead / 0 behind)
+  HEAD:   06beb8c0 ops: task-runner tick 20260423-115206 — heartbeat
+
+  Commits after 76bf1206 (the first embeddings reconciliation):
+    06beb8c0 ops: task-runner tick 20260423-115206 — heartbeat
+    99ef8ee5 ops: task-runner tick 20260423-114155 — heartbeat
+    ddc38898 ops: task-runner tick 20260423-113153 — heartbeat
+    4f2fac4d fix(cortex): move dedupe_key UNIQUE index out of
+             _SCHEMA into _MIGRATE_INDEXES (existing DB compat)
+    26ab724c ops: task-runner tick 20260423-112102 — heartbeat
+    30e8b186 ops: task-runner tick 20260423-111054 — heartbeat
+
+  -> Only one substantive commit (4f2fac4d). Its message + stat
+     (cortex/memory.py, 1 file, -1 line) show it addresses a
+     migration/existing-DB compat issue, not a live arm. No commit
+     with subject matching "live embeddings arm on Bob" or similar
+     exists anywhere (git log --all grep -iE 'live|arm|embed' audit
+     confirms).
+
+---
+
+R2 — Runbook artifact check
+
+  test -f ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md  -> present
+  header: "Status: [NEEDS_MATT] + [BOB_CLINE_ONLY] — NOT auto-run by
+          Computer / Cline / Claude Code."
+
+  Runbook's required live-arm receipt filename pattern (line 167):
+    ops/verification/<YYYYMMDD-HHMMSS>-cortex-embeddings-live-arm.txt
+
+  find ops/verification -name "*live-arm*" -o -name "*embeddings-live*"
+    -o -name "*embed-arm*"
+  -> NO MATCHES. The required live-arm receipt does not exist.
+
+---
+
+R3 — Verification artifacts tied to embeddings
+
+  ops/verification/20260423-105744-cortex-embeddings.txt
+    -> Phase-1 author+test receipt (8/8 pytest run), not a live arm.
+
+  ops/verification/20260423-165728-cortex-embed-backfill.json
+    -> JSON summary. Inspection of "db" field:
+       /private/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/
+         pytest-of-bob/pytest-8/test_backfill_apply_populates_0/brain.db
+       model: "null-v1", total: 10, written: 10, failed: 0
+    -> This is a pytest fixture tempdir + NullProvider. It is
+       evidence of the test suite running, NOT of a live --apply
+       against /data/cortex/brain.db with the ollama provider.
+
+  ops/verification/20260423-170602-cortex-embeddings-reconciliation.txt
+    -> The first reconciliation pass (prompt done + runbook drafted).
+       Its own V10 enumerates remaining gates that must still be
+       closed on Bob.
+
+---
+
+R4 — STATUS_REPORT check
+
+  grep -n 'Cortex Embeddings' STATUS_REPORT.md
+    29: Cortex Embeddings Reconciliation (2026-04-23 17:05 UTC, Claude Code)
+    71: Cortex Embeddings Phase-1 Author+Test (2026-04-23 10:57 MDT, Claude Code)
+
+  No entry titled "Live Arm on Bob" exists.
+
+  [NEEDS_MATT] markers still open for embeddings (lines 44, 58, 65,
+  85, 115-117):
+    - line 44: "live `--apply` on `brain.db` is still `[NEEDS_MATT]`"
+    - line 58: runbook labelled "[NEEDS_MATT] + [BOB_CLINE_ONLY]"
+    - line 65: "[NEEDS_MATT] Remaining action is the runtime arm
+               sequence on Bob."
+    - line 85: "[NEEDS_MATT] Ordered arm sequence (do in order)"
+    - line 115: embeddings-prompt FOLLOWUP (author+test only) —
+               live --apply stays [NEEDS_MATT] + [BOB_CLINE_ONLY]
+    - line 117: "[NEEDS_MATT] Cortex dedup live `--apply`"
+
+---
+
+R5 — Verdict
+
+  VERDICT: NOT_RECORDED_AS_ARMED.
+
+  The parent-agent statement that the runbook was run on Bob is not
+  supported by repo-owned artifacts. Expected evidence per the
+  runbook's verification-receipt contract is absent:
+
+    (a) No ops/verification/*cortex-embeddings-live-arm.txt  — MISSING
+    (b) No STATUS_REPORT "Live Arm on Bob" entry              — MISSING
+    (c) No live backfill JSON against /data/cortex/brain.db   — MISSING
+        (the only JSON is from a pytest tempdir, NullProvider)
+    (d) No commit "docs(cortex): live embeddings arm on Bob"  — MISSING
+    (e) [NEEDS_MATT] gates in STATUS_REPORT still open        — STILL OPEN
+
+  Two consistent explanations:
+    (i)  Cline/Matt has not yet executed the runbook on Bob.
+    (ii) Cline/Matt executed some of the steps on Bob but did not
+         commit the evidence back to origin/main (receipt + STATUS
+         update + live JSON).
+
+  Neither case warrants repo-side closure of [NEEDS_MATT] gates.
+  Those gates must only be flipped against committed evidence.
+
+---
+
+R6 — Action taken this pass (repo-owned only)
+
+  Added: .cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md
+    -> Read-only Cline prompt for Bob that:
+       - Captures existing host evidence (container up, /health,
+         .env flag, ollama tags, SELECT COUNT(*) FROM
+         memory_embeddings, PRAGMA index_list, brain.db file list).
+       - Classifies: ARMED | NOT_ARMED | PARTIAL | UNKNOWN.
+       - If ARMED, writes the runbook-required live-arm receipt
+         + STATUS_REPORT entry and commits with the exact message
+         the runbook mandates.
+       - If anything else, commits only the evidence file; does NOT
+         flip [NEEDS_MATT] gates, does NOT execute runbook steps.
+    -> Risk tier: low. Bans: no --apply, no env mutation, no
+       container restart, no ollama pull, no runbook execution.
+
+  Added: ops/verification/20260423-175440-cortex-embed-arm-
+         reconciliation.txt  (this file)
+
+  NOT touched:
+    - ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md
+    - STATUS_REPORT.md [NEEDS_MATT] gates
+    - docs/audits/2026-04-23-unfinished-setup-audit.md
+    - .cursor/prompts/2026-04-23-cline-cortex-embeddings.md (already
+      Status: done; unchanged)
+    - .claude/, .mcp.json, CLAUDE.md (harness-owned)
+    - any file under cortex/, scripts/, .env
+
+---
+
+R7 — Next gated action (for Cline / Matt on Bob)
+
+  1. Run the new evidence-capture prompt
+     (.cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md)
+     on Bob. Read-only; safe under AUTO_APPROVE.
+  2. If the evidence prompt reports VERDICT: NOT_ARMED or PARTIAL,
+     the runbook ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md
+     remains the next [NEEDS_MATT] + [BOB_CLINE_ONLY] gate. Matt
+     executes it with human approval.
+  3. The evidence prompt itself will land the live-arm receipt + the
+     STATUS_REPORT "Live Arm on Bob" entry when (and only when) the
+     ARMED verdict holds on Bob — at which point the [NEEDS_MATT]
+     line in STATUS_REPORT can be struck in a subsequent pass with
+     a direct pointer to the receipt.
+
+Closing signature: Claude Code parent-agent, 2026-04-23T17:54:40Z.
