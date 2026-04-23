@@ -1,0 +1,96 @@
+Phase 1 Reply-Action Foundation — Verification Report
+======================================================
+Timestamp : 2026-04-23T07:00:00Z
+Author    : Claude Code (autonomous)
+Phase     : Phase 1 of 6 (reply-action loop implementation plan)
+Trigger   : Matt approved Phase 0 design ("LGTM on the reply-actions design")
+
+## What was built
+
+Four files under integrations/x_intake/reply_actions/:
+
+  parser.py       — pure parse_reply(raw, valid_slots) → ParsedReply
+                    No I/O, no side effects, fully unit-testable.
+                    Handles: "1", "reply 1", "reply1", "r1", "R1", trailing text.
+                    Ambiguity: multiple valid-slot digits in one reply → status="ambiguous".
+                    Unknown/out-of-range → status="unrecognized".
+
+  action_store.py — ActionStore class backed by SQLite at
+                    /data/x_intake/reply_actions.db (existing Docker volume).
+                    API: create() → action_id (12-char hex, 6 bytes via secrets.token_hex)
+                         lookup(action_id) → ActionContext | None
+                         mark_used(action_id, slot) → bool (first-writer-wins dedupe)
+                         prune() → int (deletes expired rows)
+                    NOT wired to any handler — Phase 4 adds execution.
+
+  formatter.py    — format_card(summary, action_id, expiry_seconds, slots) → str
+                    Reads action catalog from config/reply_actions.schema.json at import.
+                    Produces: {summary}\n\n──────────\n{options_line}\nID:{id} · exp {Nh}
+                    strip_options_block() reverses the append for re-formatting.
+
+  __init__.py     — Re-exports: parse_reply, ParsedReply, ActionStore, ActionContext,
+                    format_card, strip_options_block.
+
+## Tests
+
+File: tests/test_reply_actions.py
+Runner: python3 -m unittest tests.test_reply_actions -v
+Result: 32 tests, 0 failures, 0 errors (2.25s)
+
+Coverage breakdown:
+  TestParseReply  (17 tests): bare digit, reply+space, reply no-space, r-prefix,
+                              case-insensitive, trailing text, ambiguity (2 and 3 slots),
+                              unrecognized (plain text, out-of-range, YES, empty, whitespace)
+  TestActionStore (8 tests):  create/lookup round-trip, missing lookup, expired flag,
+                              mark_used first-writer-wins, prune removes expired,
+                              prune keeps live, 50 IDs unique
+  TestFormatter   (9 tests):  summary present, action_id present, 24h expiry, 1h expiry,
+                              divider present, Reply prefix, strip round-trip,
+                              strip noop on plain text, structure order (summary first, ID last)
+
+## Files read / greps run during design
+
+  integrations/x_intake/queue_db.py      — DB_PATH pattern (hardcode /data/x_intake/)
+  integrations/x_intake/action_queue.py  — same pattern confirmed
+  config/reply_actions.schema.json       — action catalog, global_settings, outbound_format
+  docs/audits/x-intake-deep-dive-audit.md  (Phase 0 artifact)
+  tests/test_llm_router.py               — test file pattern (sys.path.insert, unittest)
+
+## What is NOT done (Phase 4 gate)
+
+  - No handler modules (reply_actions/handlers/)
+  - No wiring of ActionStore into main.py (x-intake inbound Redis listener)
+  - No wiring of format_card() into _send_reply() / _parse_llm_response()
+  - No audit log writes (data/x_intake/reply_action_audit.jsonl)
+  - No confirmation flow (risky actions requiring "YES")
+  - No inbound reply routing logic
+
+## Phase gate: what Phase 2 requires
+
+  Per the plan, Phase 2 = Testbed container (Dockerfile, compose, teardown script,
+  promotion docs). It does NOT depend on Phase 1 modules. Both could proceed in parallel.
+
+  Phase 4 (action router) DOES depend on Phase 1. The gate requirement: parser.py
+  and action_store.py must be importable from within the x-intake Docker container
+  (i.e., the reply_actions/ directory must exist on the container's PYTHONPATH before
+  Phase 4 work begins). No rebuild is needed until Phase 4 modifies main.py.
+
+## Risk assessment
+
+  LOW. No runtime behavior changed. No existing files modified. No secrets touched.
+  No production services restarted. The reply_actions/ package is dead code until
+  Phase 4 explicitly imports it.
+
+## Open questions for Phase 4
+
+  1. Inbound reply path: does BlueBubbles webhook already deliver "1" / "reply 2" style
+     replies to events:imessage, or is a separate webhook route needed?
+  2. Confirmation flow: should the ActionStore track pending-confirm state, or should
+     Phase 4 use an in-memory dict with TTL (simpler, lost on restart)?
+  3. Audit log: JSONL at data/x_intake/reply_action_audit.jsonl — should this be a
+     separate SQLite table in reply_actions.db for easier querying?
+
+Root cause: N/A (greenfield implementation, no bug fixed)
+Fix applied: Minimal Phase 1 foundation — parser, store, formatter, tests
+Remaining blocker: None for Phase 1. Phase 4 requires BlueBubbles inbound path confirmed.
+Next: Phase 2 (testbed Docker container) or Phase 4 (action router) per Matt's priority.
