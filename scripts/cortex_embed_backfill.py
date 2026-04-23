@@ -68,8 +68,7 @@ async def _run(db_path: Path, dry_run: bool, provider, batch_size: int) -> dict:
     backup_cmd = f"cp {db_path} {db_path}.bak.{stamp}"
     print(f"Backup command (run manually before --apply):\n  {backup_cmd}\n")
 
-    conn = sqlite3.connect(str(db_path), timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = sqlite3.connect(str(db_path), timeout=30)
 
     # Find memories without embeddings for this model
     existing = {
