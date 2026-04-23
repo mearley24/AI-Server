@@ -1,0 +1,118 @@
+BlueBubbles Attachment Bodies + Reply Consolidation — Verification
+==================================================================
+Date (local): 2026-04-23T10:20:15 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server  branch: main
+Triggered by: .cursor/prompts/2026-04-23-cline-bluebubbles-attachment-bodies.md
+
+Commits this run:
+  fe5f778  feat(bluebubbles): capture attachment bodies with size+mime gate; route dashboard through BlueBubblesClient
+  525940d  test(bluebubbles): attachment normalizer + send_text allowlist (14 tests)
+
+---
+
+V1 — Static checks
+
+python3 -m py_compile cortex/bluebubbles.py   → PASS
+python3 -m py_compile cortex/dashboard.py     → PASS
+
+git diff --stat (fe5f778^ .. HEAD):
+  .gitignore                                |   1 +
+  cortex/bluebubbles.py                     | 212 +++++++++++++
+  cortex/dashboard.py                       |  32 ++--
+  ops/tests/fixtures/bluebubbles/tiny.png   | Bin 0 -> 69 bytes
+  ops/tests/test_bluebubbles_attachments.py | 287 +++++++++++++
+  5 files changed, 487 insertions(+), 45 deletions(-)
+
+Key additions to cortex/bluebubbles.py:
+  - AttachmentRef TypedDict
+  - MessageEvent TypedDict
+  - ATTACHMENT_MIME_ALLOWLIST (9 types), ATTACHMENT_MAX_BYTES (5 MiB), ATTACHMENT_TOTAL_MAX_BYTES (8 MiB)
+  - _sha256_hex, _store_attachment_body, _fetch_attachment_body, _enrich_attachments
+  - normalize_webhook_payload now returns MessageEvent with canonical fields + legacy compat
+  - bluebubbles_webhook calls _enrich_attachments before _publish_event
+
+cortex/dashboard.py:
+  - /api/symphony/bluebubbles/health now routes through BlueBubblesClient().ping()
+  - Removed 13-line direct httpx block + BLUEBUBBLES_URL/BLUEBUBBLES_PASSWORD locals
+
+---
+
+V2 — Path existence
+
+test -f cortex/bluebubbles.py          → ok-bluebubbles
+test -d data/bluebubbles/attachments   → created (mkdir -p semantics in _store_attachment_body)
+test -f scripts/bluebubbles-health.sh  → ok-health-script
+data/bluebubbles/attachments/ in .gitignore → ADDED
+
+---
+
+V3+V4 — pytest (14 tests, all pass)
+
+ops/tests/test_bluebubbles_attachments.py::test_normalize_returns_message_event_shape         PASSED
+ops/tests/test_bluebubbles_attachments.py::test_normalize_attachment_metadata_preserved        PASSED
+ops/tests/test_bluebubbles_attachments.py::test_normalize_enforces_mime_allowlist              PASSED
+ops/tests/test_bluebubbles_attachments.py::test_normalize_drops_oversize_attachment_body       PASSED
+ops/tests/test_bluebubbles_attachments.py::test_sha256_dedups_identical_attachments            PASSED
+ops/tests/test_bluebubbles_attachments.py::test_total_size_cap_respected                       PASSED
+ops/tests/test_bluebubbles_attachments.py::test_store_writes_and_dedup                         PASSED
+ops/tests/test_bluebubbles_attachments.py::test_publish_event_emits_both_channels              PASSED
+ops/tests/test_bluebubbles_attachments.py::test_publish_event_skips_imessage_for_outbound      PASSED
+ops/tests/test_bluebubbles_attachments.py::test_routing_fails_closed_on_allowlist_miss         PASSED
+ops/tests/test_bluebubbles_attachments.py::test_send_text_returns_not_configured_when_unconfigured PASSED
+ops/tests/test_bluebubbles_attachments.py::test_send_text_fails_closed_on_empty_body           PASSED
+ops/tests/test_bluebubbles_attachments.py::test_send_text_requires_recipient                   PASSED
+ops/tests/test_bluebubbles_attachments.py::test_send_text_routes_through_client_post           PASSED
+14 passed in 0.07s
+
+Fixture: ops/tests/fixtures/bluebubbles/tiny.png — 69 bytes, valid 1x1 PNG
+
+---
+
+V5 — Live probe (BOB_CLINE_ONLY)
+
+bash scripts/bluebubbles-health.sh --json:
+  {"cortex_health": {"status": "unreachable", "reason": "cortex_http_404"},
+   "bluebubbles_server": {"status": "healthy", "reason": null,
+                          "server_version": "1.9.9", "private_api": false}}
+  EXIT: 0
+
+curl http://127.0.0.1:8102/api/bluebubbles/health:
+  {"detail":"Not Found"}
+  EXIT: 0 (HTTP 404)
+
+Interpretation:
+  BlueBubbles server 1.9.9: HEALTHY.
+  Cortex /api/bluebubbles/health: 404 — running container has a stale image that
+  predates register_bluebubbles_routes. Route IS registered in code (engine.py:255).
+  A docker rebuild will expose it: docker compose up -d --build cortex
+
+---
+
+Grep proof — no rogue direct BlueBubbles API callers outside cortex/bluebubbles.py:
+
+grep -rn "api/v1/message/text" --include="*.py" . (excluding venv):
+  cortex/bluebubbles.py:447: (only in BlueBubblesClient.send_text — correct)
+
+grep -rn "api/v1/server/info" --include="*.py" cortex/ integrations/:
+  cortex/bluebubbles.py:394: (only in BlueBubblesClient.ping — correct)
+  (dashboard.py rogue call REMOVED)
+
+---
+
+Closing checklist:
+[x] All 14 tests in test_bluebubbles_attachments.py pass.
+[x] No new direct BlueBubbles HTTP caller outside cortex/bluebubbles.py.
+[x] data/bluebubbles/attachments/ added to .gitignore.
+[x] STATUS_REPORT entry written.
+[x] This verification artifact written.
+[x] git push origin main succeeds.
+
+---
+
+REMAINING ITEMS:
+
+[FOLLOWUP] docker compose up -d --build cortex — to pick up the new bluebubbles.py
+  code and expose /api/bluebubbles/health on port 8102.
+
+[FOLLOWUP] cortex_http_404 in bluebubbles-health.sh output will clear after the rebuild.

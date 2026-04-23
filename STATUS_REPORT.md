@@ -26,6 +26,25 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## BlueBubbles Attachment Bodies + Reply Consolidation (2026-04-23 10:20 MDT, Claude Code)
+
+Commits: `fe5f778`, `525940d`
+
+- `cortex/bluebubbles.py` — `AttachmentRef` + `MessageEvent` TypedDicts; `normalize_webhook_payload` returns `MessageEvent`; `_enrich_attachments` fetches+stores bodies (5 MiB/attachment, 8 MiB/event cap, 9-type MIME allowlist, sha256 dedup, atomic write)
+- `cortex/dashboard.py` — `/api/symphony/bluebubbles/health` now routes through `BlueBubblesClient().ping()` (removed direct httpx block)
+- `.gitignore` — `data/bluebubbles/attachments/` added
+- `ops/tests/test_bluebubbles_attachments.py` — 14 tests, all pass
+- `ops/tests/fixtures/bluebubbles/tiny.png` — 69-byte 1×1 PNG fixture
+
+**Test result:** 14 passed in 0.07s
+
+- [FOLLOWUP] `docker compose up -d --build cortex` — running container is pre-fix; `/api/bluebubbles/health` will 404 until rebuilt
+- [FOLLOWUP] `cortex_http_404` in bluebubbles-health.sh will clear after Cortex rebuild
+
+Verification: `ops/verification/20260423-102015-bluebubbles-attachment-bodies.txt`
+
+---
+
 ## BlueBubbles Health Plist — Phase 1 Add+Lint (2026-04-23 10:13 MDT, Claude Code)
 
 Added `setup/launchd/com.symphony.bluebubbles-health.plist`. Not loaded — arm step is `[NEEDS_MATT]`.
