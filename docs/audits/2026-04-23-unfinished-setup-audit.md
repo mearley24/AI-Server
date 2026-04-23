@@ -42,6 +42,17 @@ the repo confirms them.
 > Remaining items are `[FOLLOWUP]` housekeeping only (prune pre-fix `.err`
 > after a stable day; optional `~/Library/LaunchAgents/` copy).
 >
+> **Remaining §1 open items → Cline prompts (2026-04-23):** five
+> self-contained, copy/paste-runnable prompts now cover every other §1
+> gap. They were authored docs-only; no runtime was touched. Run in
+> this order:
+>
+> 1. `.cursor/prompts/2026-04-23-cline-bluebubbles-attachment-bodies.md`
+> 2. `.cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md`
+> 3. `.cursor/prompts/2026-04-23-cline-cortex-dedup-upsert.md`
+> 4. `.cursor/prompts/2026-04-23-cline-cortex-embeddings.md`
+> 5. `.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md`
+>
 > ---
 >
 > *Original TL;DR (preserved for history):* "No committed launchd plist

@@ -26,6 +26,73 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## unfinished-setup audit — remaining-items Cline prompt fan-out (2026-04-23 MDT, Claude Code)
+
+Docs-only pass: wrote five self-contained, copy/paste-runnable Cline
+task prompts covering every remaining open item from the 2026-04-23
+unfinished-setup audit reconciliation
+(`ops/verification/20260423-155053-unfinished-setup-reconciliation.txt`).
+No runtime changes were performed on Bob or anywhere else. No launchd
+state mutated, no sudo, no ports opened, no secrets read, no external
+messages/posts. Unrelated dirty working-tree items (`.claude/**`,
+`.mcp.json`, `CLAUDE.md` sandbox churn) were preserved as-is per the
+parent instruction.
+
+Prompts added under `.cursor/prompts/`, each with: `autonomy` metadata
+block (category / risk / trigger / `Status: active`), goal + non-goals,
+explicit safety gates ("no secrets / no destructive / no external sends
+/ no recurring jobs loaded / Bob runtime marked `[BOB_CLINE_ONLY]` /
+live-mutation steps marked `[NEEDS_MATT]`"), safe inspection steps,
+scoped implementation tasks, bounded verification checklist (static
+checks + pytest + path-exists + sample fixtures + optional bounded
+`[BOB_CLINE_ONLY]` probes), required artifacts (STATUS_REPORT entry,
+`ops/verification/<stamp>-*.txt` receipt, commits, push), and
+stop-conditions:
+
+1. `2026-04-23-cline-bluebubbles-attachment-bodies.md` — inbound
+   attachment-body capture (size + mime gate, sha256 dedup path) and
+   outbound-reply consolidation through `cortex.bluebubbles.send_text`.
+2. `2026-04-23-cline-bluebubbles-health-plist.md` — add + lint a
+   `com.symphony.bluebubbles-health` LaunchAgent plist wrapping
+   `scripts/bluebubbles-health.sh --json`. Phase-1 add/lint only; arming
+   via `launchctl` is a separate `[NEEDS_MATT]` step, mirroring how the
+   now-closed network-monitoring prompts split add-then-arm.
+3. `2026-04-23-cline-cortex-dedup-upsert.md` — Cortex `memories` table
+   gets a `dedupe_key` column + partial UNIQUE index, canonical-key
+   helper, `store_or_update` upsert path, and a one-shot backfill script
+   with a dry-run default. Live `--apply` is `[NEEDS_MATT]` +
+   `[BOB_CLINE_ONLY]`, gated on a mandatory DB backup.
+4. `2026-04-23-cline-cortex-embeddings.md` — new `memory_embeddings`
+   table, local-first Ollama / OpenAI-opt-in / Null-provider
+   embedding writer gated by `CORTEX_EMBEDDINGS_ENABLED=0` default,
+   `search_semantic` query path, and a dry-run-default backfill script.
+   Ordered to run **after** the dedup prompt on Bob.
+5. `2026-04-23-cline-x-intake-reply-leg-phases-2-6.md` — adds the
+   inbound-reply listener, validator, explicit-allowlist
+   executor/router, consolidated outbound ACK (defaulting to
+   `CORTEX_REPLY_DRY_RUN=1`), and fixture-driven offline e2e tests.
+   Requires the attachment-bodies prompt to have landed first so the
+   consolidated `send_text` outbound path exists.
+
+Order for Matt / future Cline to run them:
+attachment-bodies → health-plist → dedup → embeddings → reply-leg.
+
+Verification (docs-only):
+
+- `ls .cursor/prompts/2026-04-23-cline-*.md` — five new files visible.
+- `grep -nE "^Status:" .cursor/prompts/2026-04-23-cline-*.md` — all
+  five are `Status: active`.
+- `grep -nE "\[BOB_CLINE_ONLY\]|\[NEEDS_MATT\]"` hits present in every
+  file where runtime mutation is scoped.
+- `git diff --stat` shows prompt files + this STATUS_REPORT entry
+  only; no runtime code touched.
+
+Artifact this pass: this section + the five prompt files. No separate
+`ops/verification/*.txt` was written because the work is
+prompts-only documentation; the commit itself is the receipt.
+
+---
+
 ## unfinished-setup audit reconciliation — network-monitoring closed, stale prompts marked done (2026-04-23 09:50 MDT, Claude Code)
 
 Review-first docs-only pass per parent workflow: inspect what has already
