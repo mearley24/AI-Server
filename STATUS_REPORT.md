@@ -26,6 +26,27 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Cortex Dedup (UNIQUE/Upsert) Phase-1 Author+Test (2026-04-23 10:32 MDT, Claude Code)
+
+Commits: `716b14a`, `da532f3`, `758b31f`
+
+- `cortex/memory.py` — `dedupe_key TEXT DEFAULT NULL` column; `CREATE UNIQUE INDEX … WHERE dedupe_key IS NOT NULL`; `_MIGRATE_COLUMNS` + `_MIGRATE_INDEXES` for existing DBs; `_canonical_key()` (hint → URL → msg-prefix → None); `store_or_update()` upsert (merges importance/tags/metadata on collision)
+- `cortex/engine.py` — `/remember` accepts optional `dedupe_hint` + `overwrite_content`, routes to `store_or_update`
+- `scripts/cortex_dedup_backfill.py` — `--dry-run` (default) / `--apply`; prints backup command; writes JSON summary to `ops/verification/` on apply; refuses to run on locked DB
+- `ops/tests/test_cortex_dedup.py` — 12 tests, all pass (0.07s)
+
+**Test result:** 12 passed in 0.07s
+
+- [NEEDS_MATT] Live backfill against `brain.db` (run after `docker compose up -d --build cortex`):
+  1. `cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)`
+  2. Verify Cortex is not actively writing (or stop container)
+  3. `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`
+- [FOLLOWUP] V6 live DB inspection once Docker is up — confirm `idx_memories_dedupe_key` present
+
+Verification: `ops/verification/20260423-103234-cortex-dedup.txt`
+
+---
+
 ## BlueBubbles Attachment Bodies + Reply Consolidation (2026-04-23 10:20 MDT, Claude Code)
 
 Commits: `fe5f778`, `525940d`
