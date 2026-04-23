@@ -459,7 +459,6 @@ services:
       - ./data/audio_intake:/data/audio_intake:ro
       - ./tools:/app/tools:ro
       - ./config:/app/config:ro
-      - ./scripts:/app/scripts:ro
     environment:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102
@@ -472,10 +471,6 @@ services:
       - OPENCLAW_URL=http://openclaw:3000
       - BLUEBUBBLES_SERVER_URL=${BLUEBUBBLES_SERVER_URL:-}
       - BLUEBUBBLES_API_PASSWORD=${BLUEBUBBLES_API_PASSWORD:-}
-      - CORTEX_EMBEDDINGS_ENABLED=${CORTEX_EMBEDDINGS_ENABLED:-0}
-      - CORTEX_EMBED_OPENAI_OK=${CORTEX_EMBED_OPENAI_OK:-0}
-      - CORTEX_EMBED_OLLAMA_HOST=${CORTEX_EMBED_OLLAMA_HOST:-http://host.docker.internal:11434}
-      - CORTEX_EMBED_OLLAMA_MODEL=${CORTEX_EMBED_OLLAMA_MODEL:-nomic-embed-text}
     depends_on:
       redis:
         condition: service_healthy
