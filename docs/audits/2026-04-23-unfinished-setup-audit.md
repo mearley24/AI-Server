@@ -109,9 +109,16 @@ the Apr-23 bob-freezing audit.
   12 tests), `bc8ffdf` + `50feea8` (verification). Embeddings: commits
   `9f0b7c4` (schema), `89ad9fc` (module), `814f746` (search + backfill),
   `7eab1eb` (8 tests). Default posture `CORTEX_EMBEDDINGS_ENABLED=0`.
-  Live `--apply` on Bob `brain.db` is `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`
+  ~~Live `--apply` on Bob `brain.db` is `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`
   and tracked in the runbook
-  `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`.
+  `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`.~~
+  **Embeddings runtime arm CLOSED 2026-04-23 UTC** — runbook executed
+  on Bob, VERDICT: ARMED (4559 rows, `nomic-embed-text`, `/health`
+  200). Receipts: `ops/verification/20260423-131459-cortex-embeddings-live-arm.txt`
+  (commit `555274cd`), `ops/verification/20260423-135512-cortex-embed-arm-evidence.txt`
+  (commit `412ec2bc`), `ops/verification/20260423-200253-cortex-embed-arm-closure.txt`.
+  See STATUS_REPORT §"Cortex Embeddings Arm Closure". Historical
+  backfill of remaining ~48k rows is a [FOLLOWUP], not a gate.
 
 ## 2. Partially Set Up (meaningful hooks exist; end-state not evidenced)
 

@@ -4,8 +4,26 @@
 Category: ops
 Risk tier: low
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!--
+Closed 2026-04-23 UTC. Executed on Bob by Cline; verdict ARMED with all
+three conditions met (CORTEX_EMBEDDINGS_ENABLED=1, 4559 memory_embeddings
+rows nomic-embed-text, /health 200). Step 5 receipts and STATUS_REPORT
+entry already committed upstream to the runbook execution (commit
+555274cd). Evidence artifacts:
+  - ops/verification/20260423-135512-cortex-embed-arm-evidence.txt
+    (commit 412ec2bc — VERDICT: ARMED)
+  - ops/verification/20260423-131459-cortex-embeddings-live-arm.txt
+    (commit 555274cd — runbook live-arm receipt)
+  - STATUS_REPORT.md §"Cortex Embeddings — Live Arm on Bob" (L29)
+    (commit 555274cd)
+  - ops/verification/20260423-200253-cortex-embed-arm-closure.txt
+    (this closure pass reconciliation receipt)
+Do not re-run this prompt. The runtime arm gate is closed; only the
+historical-backfill [FOLLOWUP] remains and the embed worker is ON.
+-->
 
 # Cortex Embeddings — Bob Live-Arm Evidence Capture (read-only)
 

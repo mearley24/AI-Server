@@ -245,3 +245,42 @@ flip, container restart, and a production backfill — each of which
 is a decision, not a mechanical step. Splitting the runbook off gives
 Matt a copy/paste-runnable sequence without creating a new autonomous
 surface area.
+
+---
+
+## Closure (2026-04-23 UTC)
+
+**Runbook status: CLOSED.** Executed on Bob by Claude Code + Cline on
+2026-04-23. The `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` header above
+describes the runbook's gating contract *before* execution — it is
+preserved as history; arm is now recorded.
+
+Verdict: **ARMED** with all three acceptance conditions met:
+
+- `.env`: `CORTEX_EMBEDDINGS_ENABLED=1`
+- `memory_embeddings` rows: 4559 (model `nomic-embed-text`, dim=768)
+- Cortex `/health`: HTTP 200, `status=alive`
+
+Committed evidence (all on `origin/main`):
+
+- `ops/verification/20260423-131459-cortex-embeddings-live-arm.txt`
+  (commit `555274cd` — runbook receipt, all 8 arm steps executed)
+- `ops/verification/20260423-135512-cortex-embed-arm-evidence.txt`
+  (commit `412ec2bc` — independent arm-evidence probe, VERDICT: ARMED)
+- `STATUS_REPORT.md` §"Cortex Embeddings — Live Arm on Bob" (L29,
+  commit `555274cd`)
+- Supporting code fixes: `4f2fac4c` (dedupe_key index migration),
+  `dce5064a` (WAL pragma removal + compose mounts/env)
+- `ops/verification/20260423-200253-cortex-embed-arm-closure.txt`
+  (this closure pass reconciliation receipt)
+
+Remaining (not gates on arm):
+
+- [FOLLOWUP] Full historical backfill of the remaining ~48k rows
+  during a Docker-stable window. Embed worker is **ON**; new memories
+  are embedded in real time. Command in STATUS_REPORT L44.
+- [FOLLOWUP] Investigate Bob's Docker daemon zombie-crash (~10 min
+  MTBF) — tracked separately, not an embeddings concern.
+
+Do not re-execute this runbook. Any re-arm starts from a new runbook
+drafted against the current DB + flag state.

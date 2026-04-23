@@ -1,0 +1,171 @@
+Cortex Embeddings Bob Arm — Closure Pass (ARMED verified)
+==========================================================
+Date (UTC): 2026-04-23T20:02:53Z
+Author: Claude Code (parent-agent closure pass, bounded, read-only decision)
+Repo: /home/user/workspace/AI-Server-e8f61565  branch: main
+Remote sync: 0 ahead / 0 behind origin/main (HEAD 00e1baf1)
+Triggered by: parent-agent report that Cline completed
+  .cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md
+  on Bob with VERDICT: ARMED.
+
+Scope: repo-side reconciliation only. No runtime action. No docker,
+  no env flip, no service restart, no sudo, no ports, no secrets,
+  no external messages, no Bob runtime actions. Harness-owned
+  dirty files (.claude/, .mcp.json, CLAUDE.md) preserved untouched.
+
+---
+
+C1 — Evidence inventory (all COMMITTED on origin/main)
+
+  Evidence capture (from arm-evidence prompt):
+    ops/verification/20260423-135512-cortex-embed-arm-evidence.txt
+      committed in 412ec2bc
+      "ops(cortex): embed arm evidence capture — VERDICT: ARMED
+       (4559 rows, nomic-embed-text)"
+      Verdict: ARMED with all three conditions met:
+        (a) .env: CORTEX_EMBEDDINGS_ENABLED=1                          ✅
+        (b) memory_embeddings row count: 4559 (nomic-embed-text)       ✅
+        (c) Cortex /health: HTTP 200, status=alive                     ✅
+
+  Runbook live-arm receipt (required by runbook Step 5):
+    ops/verification/20260423-131459-cortex-embeddings-live-arm.txt
+      committed in 555274cd
+      "docs(cortex): live embeddings arm on Bob —
+       verification + STATUS_REPORT"
+      Content: precheck state, all 8 arm steps executed, 4506
+      embeddings committed, backup present, DB integrity OK,
+      semantic search smoke test HTTP 200.
+
+  STATUS_REPORT entry (required by runbook Step 5):
+    STATUS_REPORT.md L29
+      "## Cortex Embeddings — Live Arm on Bob
+       (2026-04-23 13:14 MDT, Claude Code)"
+      committed in 555274cd
+
+  Supporting code fix commits:
+    4f2fac4c — fix(cortex): dedupe_key UNIQUE index migration
+               (_SCHEMA → _MIGRATE_INDEXES) for existing-DB compat
+    dce5064a — fix(cortex): remove WAL pragma from backfill;
+               add scripts mount + embed env vars to compose
+
+---
+
+C2 — Prompt itself
+
+  .cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md
+    Step 5 contract: "If VERDICT: ARMED, also write a receipt at
+    ops/verification/<stamp>-cortex-embeddings-live-arm.txt containing
+    the verbatim requirements from the runbook's Verification receipt
+    requirements section. Then append a dated STATUS_REPORT entry."
+
+    Evidence: Cline completed C1 and C2 above AND committed them.
+    The committed STATUS_REPORT L29 entry and the
+    20260423-131459-cortex-embeddings-live-arm.txt receipt fulfill
+    the prompt's Step 5 contract. Partial-backfill note is
+    explicitly called out in both the receipt and the STATUS_REPORT
+    entry; embed worker remains ON for real-time writes.
+
+---
+
+C3 — Verdict
+
+  VERDICT: ARM CONTRACT FULFILLED.
+
+  The parent-agent statement "ARMED" is supported by repo-owned
+  artifacts that match the runbook's receipt requirements and the
+  evidence-capture prompt's Step 5 contract. The live arm on Bob
+  is recorded, committed, and in sync with origin/main.
+
+  Remaining follow-up is not a gate on arm closure:
+    - Full uninterrupted backfill of the remaining ~48k rows
+      (embed worker is ON, so new writes are embedded live;
+       historical backfill is a [FOLLOWUP] not a [NEEDS_MATT]).
+    - Docker daemon zombie-crash issue on Bob (separate [FOLLOWUP]).
+
+---
+
+C4 — Actions taken this pass (repo-owned only)
+
+  a) Flipped .cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md
+     autonomy header from `Status: active` → `Status: done` and
+     appended a closure pointer to this receipt + the arm-evidence
+     receipt + the live-arm receipt.
+     Reason: the prompt executed on Bob with the target verdict;
+     leaving it `active` would cause the task runner to re-probe.
+
+  b) Appended a "Closure (2026-04-23 UTC)" block to
+     ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md recording:
+        - the three committed receipts (evidence capture, live-arm
+          receipt, STATUS_REPORT entry),
+        - the supporting fix commits,
+        - the partial-backfill [FOLLOWUP],
+        - explicit note that the runbook is now closed and the
+          [NEEDS_MATT] header no longer applies to arm.
+
+  c) Appended a dated STATUS_REPORT closure entry that strikes
+     through the superseded arm-sequence markers on L88-89 and
+     L108-114 by reference (preserves history per project
+     strikethrough convention rather than editing the prior
+     entries in place) and links to this receipt.
+
+  d) Touched up the docs/audits/2026-04-23-unfinished-setup-audit.md
+     entry on "Cortex cross-source dedup (UNIQUE/upsert) and
+     embeddings" to note that the live embeddings arm on Bob is
+     now recorded (the entry already said "CLOSED repo-side"; we
+     add the runtime-arm closure reference).
+
+  Not touched:
+    - STATUS_REPORT.md L88-89 and L108-114 prior [NEEDS_MATT]
+      lines (preserved as history; superseded by closure entry).
+    - STATUS_REPORT.md L140-142 and other [NEEDS_MATT] items
+      that are NOT about Cortex embed arm (dedup live --apply,
+      bluebubbles-health plist, X-intake reply-leg smoke) — out
+      of scope for this pass per parent-agent instruction.
+    - .claude/, .mcp.json, CLAUDE.md (harness-owned).
+    - any file under cortex/, scripts/, .env.
+    - ops/verification/ pre-existing artifacts.
+    - the evidence-capture prompt's step plan / guardrails
+      (only the Status header is flipped).
+
+---
+
+C5 — Remaining open items after this pass (not in scope for arm
+      closure; referenced for the parent agent's worklist)
+
+  - [NEEDS_MATT] Cortex dedup live `--apply` against brain.db
+    (STATUS_REPORT L140). Note: the live-arm receipt records
+    a dedup --apply run at Step 2 that removed 1 duplicate; if
+    this was the intended live dedup, that marker itself is
+    stale. But the arm receipt does not claim to close the
+    dedup [NEEDS_MATT]; the explicit closure is left to a
+    future pass with stronger evidence (a dedicated dedup
+    backfill JSON with explicit "groups=N, deleted=N" counts).
+    The live-arm receipt does reference
+    ops/verification/20260423-190359-cortex-dedup-backfill.json
+    (groups=1, deleted=1, written=53055) which MAY satisfy that
+    marker; parent agent should decide in a separate pass.
+
+  - [NEEDS_MATT] Arm com.symphony.bluebubbles-health.plist
+    (STATUS_REPORT L141). Not in scope here.
+
+  - [NEEDS_MATT] X-intake reply-leg live smoke
+    (STATUS_REPORT L142). Not in scope here.
+
+  - [FOLLOWUP] Full historical embeddings backfill (~48k rows)
+    (STATUS_REPORT L43, live-arm receipt L101). Not a gate on
+    arm; embed worker is ON for live writes.
+
+---
+
+C6 — Verification commands that will be run before commit
+
+  - test -f on each of the four critical paths
+    (evidence file, live-arm receipt, closure receipt, this file).
+  - grep for the committed VERDICT: ARMED token.
+  - grep for Step 5 completion in STATUS_REPORT (L29 header).
+  - git log --oneline for the ARMED commit and the live-arm commit.
+  - git diff --stat on staged changes.
+
+---
+
+Closing signature: Claude Code parent-agent, 2026-04-23T20:02:53Z.

@@ -85,9 +85,76 @@ Added:
 - Reconciliation receipt
   `ops/verification/20260423-170500-cortex-embeddings-reconciliation.txt`.
 
-- [NEEDS_MATT] Remaining action is the runtime arm sequence on Bob.
+- ~~[NEEDS_MATT] Remaining action is the runtime arm sequence on Bob.
   Start from `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`;
-  do not re-run the Cline prompt.
+  do not re-run the Cline prompt.~~ ✅ (closed 2026-04-23 UTC — runbook
+  executed on Bob; see §"Cortex Embeddings — Live Arm on Bob" L29 and
+  §"Cortex Embeddings Arm Closure" below.)
+
+---
+
+## Cortex Embeddings Arm Closure (2026-04-23 20:02 UTC, Claude Code)
+
+Parent-agent closure pass after Cline ran
+`.cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md`
+on Bob and reported VERDICT: ARMED. Repo-side reconciliation only —
+no runtime action, no docker, no env flip, no sudo, no external
+messages. Harness-owned dirty files (`.claude/`, `.mcp.json`,
+`CLAUDE.md`) preserved.
+
+All three acceptance conditions met and recorded on `origin/main`:
+
+- `.env`: `CORTEX_EMBEDDINGS_ENABLED=1`
+- `memory_embeddings` rows: 4559 (`nomic-embed-text`, dim=768)
+- Cortex `/health`: HTTP 200, `status=alive`
+
+Committed evidence:
+
+- `ops/verification/20260423-131459-cortex-embeddings-live-arm.txt`
+  (commit `555274cd` — runbook receipt, arm steps 1-8 + smoke test)
+- `ops/verification/20260423-135512-cortex-embed-arm-evidence.txt`
+  (commit `412ec2bc` — independent arm-evidence probe, VERDICT: ARMED)
+- `ops/verification/20260423-200253-cortex-embed-arm-closure.txt`
+  (this pass — reconciliation receipt + superseded-marker map)
+- Runbook `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md`
+  has a "Closure (2026-04-23 UTC)" section appended pointing at
+  the three receipts above.
+- Evidence-capture prompt
+  `.cursor/prompts/2026-04-23-cline-cortex-embeddings-arm-evidence.md`
+  flipped `Status: active` → `Status: done` to prevent re-probe.
+
+Superseded markers (preserved as history per strikethrough convention):
+
+- L88-89 "[NEEDS_MATT] Remaining action is the runtime arm sequence
+  on Bob" — now struck. ✅
+- L108-114 "[NEEDS_MATT] Ordered arm sequence" (under Phase-1 Author+Test
+  entry) — arm sequence has now been executed; the entry is retained
+  for historical accuracy but the live-arm entry at L29 and this
+  closure entry are authoritative.
+
+Embed worker is ON — all new memories are embedded in real time by
+`embed_worker`. Only the historical-backfill [FOLLOWUP] remains; it is
+not a gate on arm.
+
+- [FOLLOWUP] Complete historical backfill of the remaining ~48k rows
+  (see L43-44 under the 13:14 live-arm entry).
+- [FOLLOWUP] Docker daemon zombie-crash on Bob (~10 min MTBF) —
+  tracked separately; unrelated to embeddings.
+
+Out-of-scope for this pass (other open [NEEDS_MATT] markers unrelated
+to Cortex embed arm, retained as-is for future passes):
+
+- L140 "[NEEDS_MATT] Cortex dedup live `--apply`" — the live-arm
+  receipt L37-38 records a dedup `--apply` run that removed 1
+  duplicate + wrote 53055 rows
+  (`ops/verification/20260423-190359-cortex-dedup-backfill.json`);
+  dedicated closure deferred to a separate pass.
+- L141 "[NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist`"
+  — unrelated; unchanged.
+- L142 "[NEEDS_MATT] X-intake reply-leg live smoke" — unrelated;
+  unchanged.
+
+Verification: `ops/verification/20260423-200253-cortex-embed-arm-closure.txt`
 
 ---
 
