@@ -1,8 +1,8 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-21 15:03 MDT
+Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,38 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## X-intake deep-dive audit + reply-action design (2026-04-23, Claude Code)
+
+Audit-and-design pass covering the full X-intake pipeline, BlueBubbles notification path,
+and a new interactive reply-action loop. No runtime changes were made.
+
+New artifacts:
+
+- `docs/audits/x-intake-deep-dive-audit.md` — end-to-end audit: fetch depth, thread
+  hydration, link expansion, LLM summarization, Cortex writes, relevance gating, latency
+  bottlenecks, dedup behavior, and a full Mermaid event-path diagram with per-hop failure
+  modes.
+- `config/reply_actions.schema.json` — machine-readable action catalog (6 actions: card,
+  research, prototype, save, mute, open-thread), per-action safety flags, expiry defaults,
+  confirmation requirements, hard denylist, and outbound template format.
+- `ops/verification/20260423-reply-actions-design-verification.md` — lists files read,
+  greps run, assumptions made, open questions, and a 6-phase implementation plan
+  (Phase 0 = this audit → Phase 6 = production rollout).
+
+Key findings:
+- [FOLLOWUP] Dominant latency bottleneck: synchronous Ollama qwen3:8b (4–12 s). Parallelizing
+  fetch + analysis or streaming early partial cards would cut perceived lag significantly.
+- [FOLLOWUP] No reply-action parsing exists today — inbound iMessage replies are published to
+  Redis but nothing consumes them for action routing. Phase 3–4 of the plan closes this.
+- [FOLLOWUP] No cross-source dedup in Cortex — same tweet can be stored multiple times from
+  different sources (iMessage + x-alpha-collector). A UNIQUE constraint or upsert is needed.
+- [FOLLOWUP] No embeddings in Cortex memory — search is keyword-only LIKE queries. Semantic
+  retrieval is a Phase 5+ improvement.
+- Reply 3 ("spin test container") routes to a fully isolated testbed compose stack; spec is in
+  `config/reply_actions.schema.json` under `testbed_integration`. Teardown: single command.
 
 ---
 
@@ -1983,6 +2015,14 @@ curl "http://127.0.0.1:8102/api/meetings/recent" | python3 -m json.tool
 - Worker timeout on whisper is 2 hours per file. Multi-hour recordings may need splitting upstream.
 
 _Built by Cline on 2026-04-17 per `.cursor/prompts/cline-prompt-meeting-audio-intake.md` (AUTO_APPROVE=true). Acceptance criteria all green at commit time: whisper-cli installed; `ggml-large-v3.bin` 2.9G on disk; all 4 intake dirs created; queue schema applied; launchd job loaded; empty-queue worker run completes in <0.1s; `/api/meetings/recent` returns `[]`._
+
+### Self-improvement loop — 20260422T120000Z
+
+inbox processed: 1, cards: 1 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 1 needs-fetch)
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md` — **needs fetch** — iMessage-captured X link from @ihtesham2005; tweet content unknown, cannot assess automation potential until fetched
+
+---
 
 ## Self-improvement loop (2026-04-22, autonomous subagent)
 

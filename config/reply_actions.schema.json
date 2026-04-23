@@ -1,0 +1,222 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "reply_actions.schema.json",
+  "title": "Reply-Action Catalog",
+  "description": "Machine-readable definition of all valid reply actions for the X-intake → iMessage interactive loop. See docs/audits/x-intake-deep-dive-audit.md §3 for design rationale.",
+  "version": "1.0.0",
+
+  "global_settings": {
+    "default_expiry_seconds": 86400,
+    "dedupe_window_seconds": 30,
+    "id_length_bytes": 6,
+    "id_encoding": "hex",
+    "outbound_template": "{summary}\n\n──────────\n{options_block}\nID:{action_id} · exp {expiry_human}",
+    "options_separator": "\n",
+    "unrecognized_token_behavior": "ignore_and_log",
+    "expired_reply_behavior": "ack_expired_no_execute"
+  },
+
+  "parsing_rules": {
+    "description": "Rules for mapping a raw reply string to an action slot.",
+    "normalization": [
+      "strip_whitespace",
+      "lowercase",
+      "remove_punctuation_except_digits"
+    ],
+    "accepted_prefixes": ["reply", "r"],
+    "numeric_direct": true,
+    "comment": "Accepted forms: '1', 'reply 1', 'reply1', 'r1', 'R1', 'Reply 1'. Case-insensitive. Extraneous text after the token is ignored. If multiple action numbers appear in one reply, the message is treated as unrecognized.",
+    "ambiguity_policy": "do_nothing_and_log",
+    "typo_tolerance": "none",
+    "confirmation_token": "YES",
+    "confirmation_timeout_seconds": 300
+  },
+
+  "safety_rules": {
+    "hard_denylist": [
+      "trading_orders",
+      "money_movement",
+      "ach_transfer",
+      "kraken_trade",
+      "polymarket_order",
+      "send_external_email",
+      "send_x_post",
+      "send_imessage_to_new_number",
+      "modify_production_compose",
+      "drop_database"
+    ],
+    "risky_actions_require_confirm": true,
+    "max_actions_per_message_id": 1,
+    "per_message_id_dedupe": true,
+    "audit_log_path": "data/x_intake/reply_action_audit.jsonl",
+    "audit_fields": [
+      "ts",
+      "action_id",
+      "message_id",
+      "source_message_excerpt",
+      "raw_reply",
+      "parsed_slot",
+      "action_key",
+      "actor",
+      "result",
+      "expiry_ok",
+      "confirmed"
+    ]
+  },
+
+  "actions": [
+    {
+      "slot": 1,
+      "key": "build_card",
+      "label": "Build card",
+      "short_label": "card",
+      "description": "Generate a structured knowledge card from this post and save it to Cortex with full metadata. Non-destructive.",
+      "risky": false,
+      "requires_confirmation": false,
+      "expiry_seconds": 86400,
+      "handler": "reply_actions.handlers.build_card",
+      "handler_payload_schema": {
+        "message_id": "string",
+        "post_url": "string",
+        "summary": "string",
+        "relevance": "integer",
+        "type": "string"
+      },
+      "dry_run_safe": true,
+      "rollback": "DELETE FROM memories WHERE source_action_id = ?",
+      "tags": ["cortex", "knowledge"]
+    },
+    {
+      "slot": 2,
+      "key": "deep_research",
+      "label": "Deep research",
+      "short_label": "research",
+      "description": "Kick off a Perplexity/LLM deep-research job on the post topic and return an expanded brief.",
+      "risky": false,
+      "requires_confirmation": false,
+      "expiry_seconds": 86400,
+      "handler": "reply_actions.handlers.deep_research",
+      "handler_payload_schema": {
+        "message_id": "string",
+        "post_url": "string",
+        "summary": "string",
+        "research_depth": "string"
+      },
+      "dry_run_safe": true,
+      "rollback": "N/A — read-only API calls",
+      "tags": ["research", "perplexity"]
+    },
+    {
+      "slot": 3,
+      "key": "prototype",
+      "label": "Spin test container",
+      "short_label": "prototype",
+      "description": "Launch an isolated Docker testbed container for sandboxed experimentation. Routes exclusively through the testbed compose stack — never touches production services.",
+      "risky": true,
+      "requires_confirmation": true,
+      "confirmation_prompt": "Spin isolated testbed for: {topic}? Reply YES to confirm.",
+      "expiry_seconds": 3600,
+      "handler": "reply_actions.handlers.spin_testbed",
+      "handler_payload_schema": {
+        "message_id": "string",
+        "prototype_id": "string",
+        "topic_slug": "string",
+        "resource_profile": "string"
+      },
+      "dry_run_safe": true,
+      "rollback": "bash scripts/testbed-teardown.sh {prototype_id}",
+      "tags": ["docker", "testbed", "sandbox"]
+    },
+    {
+      "slot": 4,
+      "key": "save_to_cortex",
+      "label": "Save to Cortex",
+      "short_label": "save",
+      "description": "Write this post's summary and metadata to Cortex long-term memory with high importance.",
+      "risky": false,
+      "requires_confirmation": false,
+      "expiry_seconds": 86400,
+      "handler": "reply_actions.handlers.save_to_cortex",
+      "handler_payload_schema": {
+        "message_id": "string",
+        "post_url": "string",
+        "summary": "string",
+        "importance": "integer"
+      },
+      "dry_run_safe": true,
+      "rollback": "DELETE FROM memories WHERE source_action_id = ?",
+      "tags": ["cortex", "memory"]
+    },
+    {
+      "slot": 5,
+      "key": "mute_author",
+      "label": "Mute author",
+      "short_label": "mute",
+      "description": "Add the post author to the local mute list so future posts from them are suppressed at the relevance gate.",
+      "risky": false,
+      "requires_confirmation": true,
+      "confirmation_prompt": "Mute @{author} — suppress future posts? Reply YES to confirm.",
+      "expiry_seconds": 3600,
+      "handler": "reply_actions.handlers.mute_author",
+      "handler_payload_schema": {
+        "message_id": "string",
+        "author_handle": "string"
+      },
+      "dry_run_safe": true,
+      "rollback": "Remove author from mute list via /queue/unmute/{author}",
+      "tags": ["filter", "signal-quality"]
+    },
+    {
+      "slot": 6,
+      "key": "open_thread",
+      "label": "Open thread in browser",
+      "short_label": "open",
+      "description": "Trigger a macOS `open` command on Bob to open the X thread URL in the default browser.",
+      "risky": false,
+      "requires_confirmation": false,
+      "expiry_seconds": 3600,
+      "handler": "reply_actions.handlers.open_thread",
+      "handler_payload_schema": {
+        "message_id": "string",
+        "post_url": "string"
+      },
+      "dry_run_safe": false,
+      "rollback": "N/A — browser tab; close manually",
+      "tags": ["local", "browser"]
+    }
+  ],
+
+  "outbound_format": {
+    "description": "Template for the trailing options block appended to every x-intake outbound card. Keep under 120 chars to avoid iMessage truncation.",
+    "example": "Reply 1 — card  |  2 — research  |  3 — prototype\nID:a3f9c1 · exp 24h",
+    "max_options_line_chars": 120,
+    "id_prefix": "ID:",
+    "expiry_format": "exp {N}h",
+    "separator": "  |  "
+  },
+
+  "testbed_integration": {
+    "action_key": "prototype",
+    "compose_file": "docker/testbed/docker-compose.testbed.yml",
+    "teardown_script": "scripts/testbed-teardown.sh",
+    "promotion_doc": "docs/testbed-promotion.md",
+    "isolation": {
+      "network": "none_by_default",
+      "egress_allowlist": [],
+      "mounts": "source_dirs_ro_only",
+      "scratch_volume": "per_prototype_wiped_on_teardown",
+      "resource_limits": {
+        "cpus": "1.0",
+        "memory": "512m",
+        "pids_limit": 64,
+        "disk_quota_mb": 1024
+      },
+      "secrets": "none_unless_explicitly_injected"
+    }
+  },
+
+  "extension_pattern": {
+    "description": "To add a new action: (1) add a new object to the actions array with the next sequential slot number, (2) implement the handler module at reply_actions/handlers/{key}.py, (3) update outbound_format.example to include the new short_label, (4) add a unit test in tests/test_reply_actions.py.",
+    "required_fields": ["slot", "key", "label", "short_label", "description", "risky", "requires_confirmation", "expiry_seconds", "handler", "dry_run_safe", "rollback", "tags"]
+  }
+}
