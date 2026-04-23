@@ -26,6 +26,23 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## BlueBubbles Health Plist — Phase 1 Add+Lint (2026-04-23 10:13 MDT, Claude Code)
+
+Added `setup/launchd/com.symphony.bluebubbles-health.plist`. Not loaded — arm step is `[NEEDS_MATT]`.
+
+- `plutil -lint`: PASS
+- `bash -n scripts/bluebubbles-health.sh`: PASS
+- All 46 launchd plists lint+label OK (`ops/tests/test_launchd_plists.py` added)
+- Live probe: BlueBubbles server healthy (v1.9.9); Cortex `/api/bluebubbles/health` returns 404
+
+- [NEEDS_MATT] Arm the LaunchAgent:
+  `cp setup/launchd/com.symphony.bluebubbles-health.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.symphony.bluebubbles-health.plist`
+- [FOLLOWUP] Add `GET /api/bluebubbles/health` to Cortex — currently 404; script exits 0 but cortex_health reports "unreachable".
+
+Verification: `ops/verification/20260423-101329-bluebubbles-health-plist.txt`
+
+---
+
 ## unfinished-setup audit — remaining-items Cline prompt fan-out (2026-04-23 MDT, Claude Code)
 
 Docs-only pass: wrote five self-contained, copy/paste-runnable Cline

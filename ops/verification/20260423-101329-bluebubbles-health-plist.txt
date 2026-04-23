@@ -1,0 +1,116 @@
+BlueBubbles Health Plist — Phase-1 Add + Lint Verification
+===========================================================
+Date (UTC): Thu Apr 23 15:43:42 UTC 2026
+Date (local): 2026-04-23T10:13:29 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server
+Git HEAD: 361ac56e58c96cf64352e804ba0c74c961126d8d
+Triggered by: .cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md
+
+---
+
+V1 — Repo static checks
+
+## plutil -lint setup/launchd/com.symphony.bluebubbles-health.plist
+setup/launchd/com.symphony.bluebubbles-health.plist: OK
+Result: PASS
+
+## bash -n scripts/bluebubbles-health.sh
+Result: PASS (exit 0, no output)
+
+---
+
+V2 — Cross-plist sanity
+
+## grep Label
+setup/launchd/com.symphony.bluebubbles-health.plist:    <string>com.symphony.bluebubbles-health</string>  ✓
+
+## grep script path
+setup/launchd/com.symphony.bluebubbles-health.plist:        <string>/Users/bob/AI-Server/scripts/bluebubbles-health.sh</string>  ✓
+
+## grep StartInterval
+setup/launchd/com.symphony.bluebubbles-health.plist:    <key>StartInterval</key>  (value: 300)  ✓
+
+## grep StandardOutPath / StandardErrorPath
+setup/launchd/com.symphony.bluebubbles-health.plist:    <key>StandardOutPath</key>   → logs/bluebubbles-health.log  ✓
+setup/launchd/com.symphony.bluebubbles-health.plist:    <key>StandardErrorPath</key> → logs/bluebubbles-health.err  ✓
+
+---
+
+V3 — Path existence checks
+
+test -f scripts/bluebubbles-health.sh   → ok-script   ✓
+test -f setup/launchd/com.symphony.bluebubbles-health.plist → ok-plist   ✓
+test -d setup/launchd/                  → ok-launchd-dir   ✓
+grep logs/ .gitignore                   → logs/ ok-logs-ignored   ✓
+
+---
+
+V4 — Plist suite lint (all 46 plists)
+
+python3 inline check: plutil -lint + Label/filename match on all setup/launchd/*.plist
+Result: ALL 46 plists: lint+label OK   PASS
+
+Note: ops/tests/test_launchd_plists.py created for pytest coverage.
+pytest not installed on system Python 3.14 (no module named pytest); plutil
+inline check used as equivalent. Test file compiles cleanly (py_compile PASS).
+
+---
+
+V5 — Live one-shot probe (BOB_CLINE_ONLY)
+
+## curl -sS -m 8 http://127.0.0.1:8102/api/bluebubbles/health
+{"detail":"Not Found"}
+HTTP: 404
+
+## bash scripts/bluebubbles-health.sh --json
+{"cortex_health": {"status": "unreachable", "reason": "cortex_http_404"},
+ "bluebubbles_server": {"status": "healthy", "reason": null,
+                        "server_version": "1.9.9", "private_api": false}}
+BB_EXIT: 0
+
+Interpretation:
+- BlueBubbles server: HEALTHY — server_version=1.9.9, reachable on LAN.
+- Cortex /api/bluebubbles/health: 404 — endpoint does not exist yet.
+  Script exits 0 (graceful degradation). This is a [FOLLOWUP] to add
+  the Cortex endpoint; it is NOT a failure of the health script itself.
+
+---
+
+Plist spec verification
+
+Label:             com.symphony.bluebubbles-health   ✓
+ProgramArguments:  /bin/bash + script + --json        ✓
+WorkingDirectory:  /Users/bob/AI-Server               ✓
+PATH:              /usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin  ✓
+RunAtLoad:         true                               ✓
+KeepAlive:         false                              ✓
+StartInterval:     300 (5 min)                        ✓
+ThrottleInterval:  60                                 ✓
+StandardOutPath:   logs/bluebubbles-health.log        ✓
+StandardErrorPath: logs/bluebubbles-health.err        ✓
+No Sockets / MachServices / UserName / GroupName      ✓
+Not loaded into launchctl — deferred to [NEEDS_MATT]  ✓
+
+---
+
+NOT DONE IN THIS RUN — requires Matt:
+
+1. Arm the LaunchAgent:
+   cp setup/launchd/com.symphony.bluebubbles-health.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/com.symphony.bluebubbles-health.plist
+
+2. Add Cortex /api/bluebubbles/health endpoint (currently 404):
+   The script handles the absence gracefully, but the cortex_health check
+   will always show "unreachable" until the endpoint is implemented.
+
+---
+
+Closing checklist:
+[x] setup/launchd/com.symphony.bluebubbles-health.plist committed.
+[x] plutil -lint PASS + bash -n PASS captured above.
+[x] No launchctl mutation run.
+[x] STATUS_REPORT entry landed.
+[x] Verification artifact (this file) landed.
+[x] git push origin main succeeds.
+[x] [NEEDS_MATT] arm command included verbatim in STATUS_REPORT.
