@@ -26,6 +26,34 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Five-Prompt Reconciliation (2026-04-23 10:48 MDT, Claude Code)
+
+Parent-agent audit of the five prompts added in `361ac56`. MacBook
+checkout is in sync with `origin/main` at `15484a3` — nothing pushed,
+nothing rebased, harness-owned `.claude/` / `.mcp.json` / `CLAUDE.md`
+dirty state preserved.
+
+| # | Prompt | Outcome |
+|---|--------|---------|
+| 1 | `bluebubbles-health-plist` | Completed + verified — `4b7485f` |
+| 2 | `bluebubbles-attachment-bodies` | Completed + verified — `fe5f778`, `525940d` |
+| 3 | `cortex-dedup-upsert` | Completed + verified (re-run) — `716b14a`, `da532f3`, `758b31f`, `bc8ffdf`, `50feea8` |
+| 4 | `cortex-embeddings` | **Not run** — no commits, no verification, no STATUS_REPORT entry |
+| 5 | `x-intake-reply-leg-phases-2-6` | Completed + verified — `6aa2102`, `7bc0f5e`, `cce41c4`, `c0b9d1f`, `15484a3` |
+
+Embeddings was the only unrun prompt. Its stop-condition ("dedup must
+land first") is now satisfied, so it is cleared to run.
+
+- [FOLLOWUP] Run `.cursor/prompts/2026-04-23-cline-cortex-embeddings.md` — author+test only; live `--apply` on `brain.db` stays `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`.
+- [FOLLOWUP] `docker compose up -d --build cortex` on Bob — unblocks three items in one command: exposes `GET /api/bluebubbles/health` (clears `cortex_http_404`); lets attachment-enrichment run against live webhooks; permits V6 live-DB inspection of `idx_memories_dedupe_key`.
+- [NEEDS_MATT] Cortex dedup live `--apply` (after backup + rebuild).
+- [NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist` via `cp` + `launchctl load`.
+- [NEEDS_MATT] X-intake reply-leg live smoke — `ALLOWED_TEST_RECIPIENTS`, `CORTEX_REPLY_DRY_RUN=0`, rebuild, one reply to Matt's own number, then restore `=1`.
+
+Verification: `ops/verification/20260423-164850-five-prompt-reconciliation.md`
+
+---
+
 ## X-Intake Reply-Leg Phases 2–6 — Author+Test (2026-04-23 10:44 MDT, Claude Code)
 
 Commits: `6aa2102`, `7bc0f5e`, `cce41c4`, `c0b9d1f`
