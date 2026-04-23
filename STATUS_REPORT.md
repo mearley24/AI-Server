@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)** → **network-dropout-watch LaunchAgent plist added + network-guard crash documented (2026-04-23 09:15, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,42 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## network-monitoring launchd setup + verification (2026-04-23 09:15 MDT, Claude Code)
+
+Phase-1 repo-only pass: added `com.symphony.network-dropout-watch` LaunchAgent
+plist, observed existing `com.symphony.network-guard` state on Bob, documented
+everything. No launchd state was mutated; no services were started or stopped.
+
+**Findings — existing network-guard:**
+- Plist lint: PASS. Loaded in `~/Library/LaunchAgents/` (installed Mar 10 — older than repo copy).
+- Daemon is crash-looping since ~Apr 3: `ModuleNotFoundError: No module named 'security_utils'`.
+  `.log` last wrote 2026-04-03; `.err` is 8 MB of repeated tracebacks today.
+  **The network-guard daemon is not producing health records.**
+
+**New artifact:** `setup/launchd/com.symphony.network-dropout-watch.plist`
+- LaunchAgent (no sudo), `KeepAlive=true`, `ThrottleInterval=30`.
+- Runs `tools/network_dropout_watch.py --watch --interval-sec 2.0`.
+- `plutil -lint` PASS. **Not loaded** — arming is gated behind `[NEEDS_MATT]` below.
+
+- [FOLLOWUP] Verify `data/network_watch/dropout_watch_status.json` is populated
+  after Matt arms the new LaunchAgent; confirm `"health": "healthy"`.
+- [FOLLOWUP] Prune `logs/network-guard.err` once the security_utils crash is fixed
+  (currently 8 MB of repeated tracebacks).
+
+- [NEEDS_MATT] Arm dropout-watch LaunchAgent (no sudo required):
+  `launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist`
+  Then verify: `cat data/network_watch/dropout_watch_status.json`
+
+- [NEEDS_MATT] Fix network-guard crash — resolve `security_utils` import in
+  `tools/network_guard_daemon.py`, then reload:
+  `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist`
+  `launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-guard.plist`
+
+Verification: `ops/verification/20260423-091516-network-monitoring-launchd.txt`
+Audit doc: `docs/audits/2026-04-23-network-monitoring-launchd-verification.md`
 
 ---
 

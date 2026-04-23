@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.network-dropout-watch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/bob/AI-Server/tools/network_dropout_watch.py</string>
+        <string>--watch</string>
+        <string>--state-dir</string>
+        <string>/Users/bob/AI-Server/data/network_watch</string>
+        <string>--interval-sec</string>
+        <string>2.0</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/bob</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/network-dropout-watch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/network-dropout-watch.err</string>
+</dict>
+</plist>

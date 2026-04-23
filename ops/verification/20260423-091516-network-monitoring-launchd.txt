@@ -1,0 +1,189 @@
+Network Monitoring LaunchDaemon Setup & Verification
+=====================================================
+Date (UTC): Thu Apr 23 15:14:51 UTC 2026
+Date (local): 2026-04-23T09:15:16 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server
+Git HEAD: cfaced3573e478ce9d5b6a4fb6ff7dc11f787158
+uname: Darwin Bobs-Mac-mini.local 25.3.0 Darwin Kernel Version 25.3.0: Wed Jan 28 20:49:24 PST 2026; root:xnu-12377.81.4~5/RELEASE_ARM64_T8132 arm64
+Triggered by: .cursor/prompts/2026-04-23-cline-network-monitoring-launchd-setup.md
+
+---
+
+PHASE 1 — Existing network-guard plist (observe, no runtime mutation)
+
+## plutil -lint setup/launchd/com.symphony.network-guard.plist
+setup/launchd/com.symphony.network-guard.plist: OK
+Result: PASS
+
+## launchctl list | grep network-guard
+-	1	com.symphony.network-guard
+Interpretation: Loaded as user LaunchAgent. PID column is "-" which means
+the process is not currently running (expected for --once mode that ticked
+and exited, or a crashed/throttled KeepAlive). Exit code = 1.
+
+## Installed plist locations
+~/Library/LaunchAgents/com.symphony.network-guard.plist: EXISTS
+  mtime: Mar 10 07:57 (older than repo copy — plist not reloaded since Mar 10)
+/Library/LaunchDaemons/com.symphony.network-guard.plist: NOT PRESENT
+  (correct — it is a user LaunchAgent, not a system daemon)
+
+## Log file existence
+/Users/bob/AI-Server/logs/network-guard.log: 4,287,214 bytes, 203,830 lines
+  last entry: 2026-04-03T13:46:14 (20 days old — daemon stopped writing healthy records)
+/Users/bob/AI-Server/logs/network-guard.err: 8,026,517 bytes
+  mtime: 2026-04-23 09:13 (written today — daemon is crash-looping)
+
+## First 40 lines of network-guard.log (healthy, from 2026-03-23)
+{
+  "timestamp": "2026-03-23T22:18:10.887686",
+  "status": "healthy", "fingerprint": "healthy", "reasons": [],
+  "checks": { "gateway": {"host":"192.168.1.1","reachable":true,...},
+               "dns": {"host":"google.com","ok":true,...},
+               "http": {"url":"...generate_204","ok":true,"status_code":204} },
+  "consecutive_bad": 0, "incident_task_id": null
+}
+
+## Last 200 lines of network-guard.log (last healthy entries, 2026-04-03)
+Final entry timestamp: 2026-04-03T13:46:14.458802
+Status: healthy — gateway, dns, http, docker_bridge, docker_redis, vpn all OK.
+(No unhealthy entries found in log.)
+
+## Last 100 lines of network-guard.err (repeated crash)
+Traceback (most recent call last):
+  File "/Users/bob/AI-Server/tools/network_guard_daemon.py", line 32, in <module>
+    from security_utils import sanitize_for_telegram
+ModuleNotFoundError: No module named 'security_utils'
+(Repeated ~24+ times in the last 100 lines alone. Daemon is crash-looping with
+ KeepAlive+ThrottleInterval. Error dates to a code update that added
+ `security_utils` import without resolving the module path in the LaunchAgent
+ environment.)
+
+## Phase 1 Summary
+- Plist lint: PASS
+- Plist loaded: YES (user LaunchAgent, ~/Library/LaunchAgents/)
+- Plist in sync with repo: NO — installed copy is Mar 10; repo copy is newer
+- Daemon running: NO (exit code 1, crash-looping on ModuleNotFoundError)
+- Log producing: NO — last healthy write was 2026-04-03. Daemon broken since
+  security_utils import was added.
+- [NEEDS_MATT] Fix: resolve security_utils module path OR remove the import;
+  reload the plist: launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist
+  then launchctl bootstrap gui/$(id -u) setup/launchd/com.symphony.network-guard.plist
+
+---
+
+PHASE 2 — network_dropout_watch.py lint + bounded status probe
+
+## python3 -m py_compile tools/network_dropout_watch.py
+Result: PASS (exit 0, no output)
+
+## python3 tools/network_dropout_watch.py --status --state-dir data/network_watch
+(bounded: --status exits immediately after reading state file)
+{
+  "success": true,
+  "running": false,
+  "pid": 24740,
+  "updated_at": "2026-04-04T18:56:51.720644",
+  "health": "lan_or_router_down",
+  "targets": {"gateway": "192.168.1.1", "wan": "1.1.1.1", "control4": "", "sonos": ""},
+  "stopped": true
+}
+events_file=/Users/bob/AI-Server/data/network_watch/dropout_watch_events.jsonl
+EXIT: 0
+Note: state is stale (Apr 4, stopped=true). Tool compiled and reads state
+correctly. "lan_or_router_down" is the last recorded state from Apr 4 —
+it was never re-armed after that.
+
+---
+
+PHASE 3 — New plist: setup/launchd/com.symphony.network-dropout-watch.plist
+
+## plutil -lint setup/launchd/com.symphony.network-dropout-watch.plist
+setup/launchd/com.symphony.network-dropout-watch.plist: OK
+Result: PASS
+
+## Full file contents (diff -u /dev/null equiv)
+--- /dev/null
++++ setup/launchd/com.symphony.network-dropout-watch.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.symphony.network-dropout-watch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/bob/AI-Server/tools/network_dropout_watch.py</string>
+        <string>--watch</string>
+        <string>--state-dir</string>
+        <string>/Users/bob/AI-Server/data/network_watch</string>
+        <string>--interval-sec</string>
+        <string>2.0</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/bob/AI-Server</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/bob</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/bob/AI-Server/logs/network-dropout-watch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bob/AI-Server/logs/network-dropout-watch.err</string>
+</dict>
+</plist>
+
+## Design notes
+- LaunchAgent (not LaunchDaemon): runs as bob, no root needed.
+- KeepAlive=true: launchd restarts on crash; ThrottleInterval=30s bounds storms.
+- No StartInterval: continuous process, not a tick. Interval controlled by --interval-sec 2.0.
+- No UserName key: inherited from LaunchAgent context (bob).
+- Handles SIGTERM cleanly (tools/network_dropout_watch.py:20-28).
+- Writes state to data/network_watch/dropout_watch_status.json (read by watchdog / Cortex).
+- Outbound surface: ICMP ping to 192.168.1.1 (gateway), 1.1.1.1 (WAN). No inbound ports.
+
+---
+
+NOT DONE IN THIS RUN — requires Matt:
+
+1. Bootstrap the new LaunchAgent (arm it):
+   launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist
+   No sudo required (user LaunchAgent).
+
+2. Validate data/network_watch/ state directory gets populated:
+   After arming, check: cat data/network_watch/dropout_watch_status.json
+   Expect: "running": true, "health": "healthy" (on a healthy LAN).
+
+3. Fix network_guard_daemon.py crash (security_utils missing):
+   Resolve the import, then reload the plist:
+   launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist
+   launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-guard.plist
+
+4. Cross-check against ntopng/netdata stack (not yet scheduled):
+   Audit docs note full LAN traffic monitoring is absent by choice — not in scope here.
+
+---
+
+Safety checklist:
+[x] No launchctl state-changing command was run.
+[x] No sudo was used.
+[x] No secrets, .env, keys, tokens, or Keychain contents were printed or committed.
+[x] No inbound port was opened; no public exposure added.
+[x] No runtime service on Bob was started, stopped, killed, or restarted.
+[x] No Docker state, Redis state, or launchd state was mutated.
+[x] No external message was sent.
+[x] Only setup/launchd/, docs/audits/, ops/verification/, STATUS_REPORT.md modified.
+[x] plutil -lint PASS on both plists.
+[x] python3 -m py_compile tools/network_dropout_watch.py PASS.
+[x] Verification artifact exists with standard stamp format.
+[x] STATUS_REPORT entry uses [FOLLOWUP] / [NEEDS_MATT] tags.
