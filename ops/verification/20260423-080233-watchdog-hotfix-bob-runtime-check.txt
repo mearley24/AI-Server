@@ -1,0 +1,118 @@
+Watchdog Container-Recovery Hotfix — Bob Runtime Verification
+==============================================================
+Date: 2026-04-23T08:02:33 MDT
+Host: Bob (Mac Mini M4), /Users/bob/AI-Server, branch: main
+Triggered by: manual verification request (Claude Code)
+
+## Summary
+
+PARTIAL PASS — hotfix code is correct and works; LaunchDaemon is still running
+the pre-hotfix copy at /usr/local/bin/bob-watchdog.sh and requires a manual
+sudo step to deploy. See Blocker section below.
+
+---
+
+## Steps Run
+
+1. git pull --rebase origin main
+   Result: Already up to date.
+
+2. bash scripts/bob-watchdog.sh --dry-run
+   Exit code: 0
+   Log path: data/task_runner/bob-watchdog.log (user fallback — no sudo)
+   Output: --- tick --- / MODE=dry-run (no side effects) / --- done ---
+   Result: PASS — no errors, no false alerts, no unknown shorthand flag
+
+3. bash scripts/bob-watchdog.sh (live run)
+   Exit code: 0
+   Log path: data/task_runner/bob-watchdog.log
+   Output: --- tick --- / --- done --- (no alerts; all services healthy)
+   Duration: ~4s
+   Result: PASS — clean tick, no false ALERT, no Containers recovered noise
+
+4. tail -n 60 /usr/local/var/log/bob-watchdog.log (system daemon log)
+   Result: FAIL — pre-hotfix behavior visible. Every other tick shows:
+     [ALERT] Missing containers: mission-control knowledge-scanner openwebui remediator context-preprocessor
+     unknown shorthand flag: d in -d
+     [watchdog]   Containers recovered
+   These are the three bugs the hotfix was meant to fix.
+
+---
+
+## Root Cause of Remaining Failures
+
+The LaunchDaemon (system-level, running as root) at:
+  /Library/LaunchDaemons/com.symphony.bob-watchdog.plist
+
+executes:
+  /usr/local/bin/bob-watchdog.sh
+
+NOT the repo copy at:
+  /Users/bob/AI-Server/scripts/bob-watchdog.sh
+
+/usr/local/bin/bob-watchdog.sh is the pre-hotfix version (mtime: Apr 4 19:44):
+  - COMPOSE="docker compose" (string, not array) → -d flag bug
+  - No OPTIONAL_SERVICES list → decommissioned containers page every minute
+  - No post-recovery re-probe → false "Containers recovered" after failed command
+  - No --dry-run / --check modes
+
+The user-level LaunchAgent (~/.../LaunchAgents/com.symphony.bob-watchdog.plist)
+correctly uses the repo copy and produces clean ticks (verified in
+data/task_runner/bob-watchdog.log).
+
+---
+
+## Confirmation Against All Four Hotfix Criteria
+
+Criterion 1 — no "unknown shorthand flag: d" in daemon log:
+  FAIL — still present in /usr/local/var/log/bob-watchdog.log every 2 min.
+  Root cause: /usr/local/bin/bob-watchdog.sh has COMPOSE as a string.
+  Status once blocker resolved: will pass (repo script uses array).
+
+Criterion 2 — no false "Containers recovered" after failed docker command:
+  FAIL — still present in system log.
+  Root cause: same stale copy.
+  Status once blocker resolved: will pass (re-probe added in repo script).
+
+Criterion 3 — decommissioned containers do not page every minute:
+  FAIL — system log shows mission-control/knowledge-scanner/openwebui/
+         remediator/context-preprocessor flagged as required every tick.
+  Root cause: stale copy has no OPTIONAL_SERVICES list.
+  Status once blocker resolved: will pass (OPTIONAL_SERVICES in repo script).
+
+Criterion 4 — real missing required services still actionable:
+  PASS — logic verified by reading repo script (lines 315-374). Required
+  list resolves from docker compose config --services; only containers
+  NOT in OPTIONAL_SERVICES trigger recovery and ALERT.
+
+---
+
+## Blocker — Manual Action Required
+
+To complete the deployment, run (requires terminal with sudo):
+
+  sudo cp /Users/bob/AI-Server/scripts/bob-watchdog.sh /usr/local/bin/bob-watchdog.sh
+  sudo chmod 755 /usr/local/bin/bob-watchdog.sh
+  sudo launchctl kickstart -k system/com.symphony.bob-watchdog
+
+Then verify with:
+  sleep 70
+  tail -n 20 /usr/local/var/log/bob-watchdog.log
+
+Expected post-fix output: ticks show --- tick --- / --- done --- with no
+ALERT lines for decommissioned containers and no "unknown shorthand flag".
+
+---
+
+## Files Read / Checked
+
+- scripts/bob-watchdog.sh (repo hotfix — 468 lines, COMPOSE array, OPTIONAL_SERVICES)
+- /usr/local/bin/bob-watchdog.sh (pre-hotfix copy, 179 lines, COMPOSE string)
+- /Library/LaunchDaemons/com.symphony.bob-watchdog.plist (runs /usr/local/bin/...)
+- ~/Library/LaunchAgents/com.symphony.bob-watchdog.plist (runs repo copy)
+- /usr/local/var/log/bob-watchdog.log (system daemon log, 15640 lines)
+- data/task_runner/bob-watchdog.log (user agent log — clean ticks verified)
+
+---
+
+Next: Matt runs the three sudo commands above; re-verify with tail of system log.

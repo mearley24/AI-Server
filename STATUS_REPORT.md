@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog Bob runtime check — daemon copy needs sudo deploy (2026-04-23 08:02, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -60,6 +60,37 @@ Changes:
 Verification: `ops/verification/20260423-134859-watchdog-container-recovery-hotfix.txt`
 lists the Bob-side commands (`bash scripts/bob-watchdog.sh --check`,
 `--dry-run`, etc.).
+
+---
+
+## bob-watchdog Bob runtime verification (2026-04-23 08:02 MDT, Claude Code)
+
+Runtime check against the LaunchDaemon on Bob. Result: **PARTIAL PASS — manual
+sudo step required to complete deployment.**
+
+- `scripts/bob-watchdog.sh` (repo copy): hotfix confirmed correct. Dry-run and
+  live invocations both produced clean ticks — no `unknown shorthand flag`,
+  no false `Containers recovered`, no alerts for decommissioned containers.
+- `/usr/local/bin/bob-watchdog.sh` (system daemon copy): still the pre-hotfix
+  version (mtime Apr 4). The LaunchDaemon plist
+  (`/Library/LaunchDaemons/com.symphony.bob-watchdog.plist`) runs this path,
+  not the repo copy, so all three original bugs remain active in the system log.
+- User-level LaunchAgent (`~/Library/LaunchAgents/`) correctly uses the repo
+  copy — its log (`data/task_runner/bob-watchdog.log`) shows clean ticks.
+
+**- [NEEDS_MATT] Deploy hotfix to system daemon (requires sudo terminal):**
+
+```
+sudo cp /Users/bob/AI-Server/scripts/bob-watchdog.sh /usr/local/bin/bob-watchdog.sh
+sudo chmod 755 /usr/local/bin/bob-watchdog.sh
+sudo launchctl kickstart -k system/com.symphony.bob-watchdog
+sleep 70 && tail -n 20 /usr/local/var/log/bob-watchdog.log
+```
+
+Expected result: no `[ALERT]` lines for decommissioned containers, no
+`unknown shorthand flag: 'd'`, no spurious `Containers recovered`.
+
+Full report: `ops/verification/20260423-080233-watchdog-hotfix-bob-runtime-check.txt`
 
 ---
 
