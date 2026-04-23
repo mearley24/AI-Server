@@ -1109,30 +1109,18 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
     PROPOSALS_URL = os.environ.get("PROPOSALS_URL", "http://proposals:8091")
     CLIENT_PORTAL_URL = os.environ.get("CLIENT_PORTAL_URL", "http://client-portal:8096")
     MARKUP_URL = os.environ.get("MARKUP_URL", "http://host.docker.internal:8088")
-    BLUEBUBBLES_URL = os.environ.get("BLUEBUBBLES_SERVER_URL", "")
-    BLUEBUBBLES_PASSWORD = os.environ.get("BLUEBUBBLES_API_PASSWORD", "")
-
     @app.get("/api/symphony/bluebubbles/health")
     async def symphony_bluebubbles_health():
-        if not BLUEBUBBLES_URL or not BLUEBUBBLES_PASSWORD:
-            return {"status": "offline", "error": "not configured"}
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                r = await client.get(
-                    f"{BLUEBUBBLES_URL}/api/v1/server/info",
-                    params={"password": BLUEBUBBLES_PASSWORD},
-                )
-            if r.status_code != 200:
-                return {"status": "offline", "http_status": r.status_code}
-            data = r.json().get("data", {})
-            return {
-                "status": "online",
-                "server_url": BLUEBUBBLES_URL,
-                "private_api": bool(data.get("private_api")),
-                "server_version": data.get("server_version"),
-            }
-        except Exception as exc:
-            return {"status": "offline", "error": str(exc)}
+        from cortex.bluebubbles import BlueBubblesClient
+        ping = await BlueBubblesClient().ping()
+        if not ping.get("ok"):
+            return {"status": "offline", "error": ping.get("error") or f"http_{ping.get('http_status')}"}
+        return {
+            "status": "online",
+            "server_version": ping.get("server_version"),
+            "private_api": ping.get("private_api"),
+            "latency_ms": ping.get("latency_ms"),
+        }
 
     @app.get("/api/symphony/markup/health")
     async def symphony_markup_health():

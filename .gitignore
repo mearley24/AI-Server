@@ -31,6 +31,7 @@ data/**/*.db-wal
 # Network watch + intake (updated by daemons)
 data/network_watch/
 data/intake_uploads/
+data/bluebubbles/attachments/
 data/manual_digest/
 
 # Transcript drops, polymarket live state, OpenClaw live exports

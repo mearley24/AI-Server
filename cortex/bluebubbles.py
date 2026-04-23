@@ -24,6 +24,7 @@ Design notes
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -31,7 +32,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -60,6 +61,62 @@ ROUTING_CONFIG_CANDIDATES = [
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379")
 REDIS_IMESSAGE_CHANNEL = "events:imessage"
 REDIS_BLUEBUBBLES_CHANNEL = "events:bluebubbles"
+
+
+# ── Attachment constants ─────────────────────────────────────────────────────
+
+ATTACHMENT_MIME_ALLOWLIST: frozenset[str] = frozenset(
+    [
+        "image/png", "image/jpeg", "image/gif", "image/heic",
+        "application/pdf", "text/plain", "text/vtt",
+        "audio/m4a", "audio/mp4",
+    ]
+)
+ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024   # 5 MiB per attachment
+ATTACHMENT_TOTAL_MAX_BYTES = 8 * 1024 * 1024  # 8 MiB total per event
+
+_MIME_TO_EXT: dict[str, str] = {
+    "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
+    "image/heic": "heic", "application/pdf": "pdf",
+    "text/plain": "txt", "text/vtt": "vtt",
+    "audio/m4a": "m4a", "audio/mp4": "m4a",
+}
+
+_ATTACHMENT_BASE_DIR = Path(__file__).resolve().parent.parent / "data" / "bluebubbles" / "attachments"
+
+
+# ── Event / attachment types ─────────────────────────────────────────────────
+
+class AttachmentRef(TypedDict, total=False):
+    guid: str
+    mime_type: str
+    filename: str
+    byte_size: int
+    body_path: str | None   # repo-relative path to stored body; None if not fetched
+    sha256: str | None
+    size: int | None
+
+
+class MessageEvent(TypedDict, total=False):
+    # Canonical fields
+    event_id: str
+    thread_guid: str
+    author_handle: str
+    text: str
+    attachments: list[AttachmentRef]
+    received_at_utc: str
+    source: str
+    # Legacy compat fields kept for existing consumers
+    id: str
+    timestamp: str
+    channel: str
+    raw_event_type: str
+    chat_id: str
+    sender_id: str
+    sender_display: str
+    direction: str
+    body_text: str
+    in_reply_to: str
 
 
 # ── In-memory health state ───────────────────────────────────────────────────
@@ -259,12 +316,108 @@ def get_routing() -> Routing:
     return _ROUTING
 
 
+# ── Attachment body helpers ──────────────────────────────────────────────────
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _store_attachment_body(data: bytes, sha256: str, mime: str, base_dir: Path) -> Path:
+    """Write bytes to base_dir/<yyyy>/<mm>/<sha256>.<ext> atomically.
+
+    Skips the write if the destination already exists with a matching digest.
+    Returns the destination path.
+    """
+    ext = _MIME_TO_EXT.get(mime, "bin")
+    now = datetime.now(timezone.utc)
+    dest_dir = base_dir / f"{now.year:04d}" / f"{now.month:02d}"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{sha256}.{ext}"
+    if dest.exists() and _sha256_hex(dest.read_bytes()) == sha256:
+        return dest
+    tmp = dest.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, dest)
+    return dest
+
+
+async def _fetch_attachment_body(guid: str, client: "BlueBubblesClient") -> bytes | None:
+    """Download raw attachment bytes from BlueBubbles. Returns None on any error."""
+    if not client.configured or not guid:
+        return None
+    url = f"{client.base_url}/api/v1/attachment/{guid}/download"
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=client.timeout) as c:
+            resp = await c.get(url, params=client._params())
+        if resp.status_code != 200:
+            return None
+        return resp.content
+    except Exception:
+        return None
+
+
+async def _enrich_attachments(
+    event: dict[str, Any],
+    client: "BlueBubblesClient",
+    base_dir: Path | None = None,
+) -> None:
+    """Fetch + store attachment bodies in-place on the event dict.
+
+    Respects ATTACHMENT_MIME_ALLOWLIST, ATTACHMENT_MAX_BYTES, and
+    ATTACHMENT_TOTAL_MAX_BYTES. Bodies that fail any gate remain None;
+    metadata is always preserved.
+    """
+    atts: list[dict[str, Any]] = event.get("attachments") or []
+    if not atts:
+        return
+    store_dir = base_dir or _ATTACHMENT_BASE_DIR
+    total_bytes = 0
+    for att in atts:
+        mime = att.get("mime_type") or ""
+        if mime not in ATTACHMENT_MIME_ALLOWLIST:
+            att["body_path"] = None
+            att["sha256"] = None
+            att["size"] = None
+            continue
+        if total_bytes >= ATTACHMENT_TOTAL_MAX_BYTES:
+            att["body_path"] = None
+            att["sha256"] = None
+            att["size"] = None
+            continue
+        guid = att.get("guid") or ""
+        raw = await _fetch_attachment_body(guid, client)
+        if raw is None:
+            att["body_path"] = None
+            att["sha256"] = None
+            att["size"] = None
+            continue
+        if len(raw) > ATTACHMENT_MAX_BYTES:
+            logger.warning("bluebubbles_attachment_too_large guid=%s size=%d", guid, len(raw))
+            att["body_path"] = None
+            att["sha256"] = None
+            att["size"] = len(raw)
+            continue
+        if total_bytes + len(raw) > ATTACHMENT_TOTAL_MAX_BYTES:
+            att["body_path"] = None
+            att["sha256"] = None
+            att["size"] = None
+            continue
+        sha = _sha256_hex(raw)
+        dest = _store_attachment_body(raw, sha, mime, store_dir)
+        att["body_path"] = str(dest)
+        att["sha256"] = sha
+        att["size"] = len(raw)
+        total_bytes += len(raw)
+
+
 # ── Event normalization ──────────────────────────────────────────────────────
 
 CHANNEL_NAME = "bluebubbles-imessage"
 
 
-def normalize_webhook_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_webhook_payload(payload: dict[str, Any]) -> MessageEvent:
     """Normalize a BlueBubbles webhook body into the internal message event.
 
     BlueBubbles sends a variety of event shapes (see
@@ -324,35 +477,47 @@ def normalize_webhook_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         ts_iso = _utc_now_iso()
 
-    # Attachments — keep metadata only
-    attachments: list[dict[str, Any]] = []
+    # Attachments — metadata only; bodies filled later by _enrich_attachments
+    attachments: list[AttachmentRef] = []
     raw_atts = data.get("attachments") or []
     if isinstance(raw_atts, list):
         for a in raw_atts:
             if not isinstance(a, dict):
                 continue
             attachments.append(
-                {
-                    "guid": a.get("guid", ""),
-                    "mime_type": a.get("mimeType") or a.get("uti", ""),
-                    "filename": a.get("transferName") or a.get("originalROWID", ""),
-                    "byte_size": a.get("totalBytes", 0),
-                }
+                AttachmentRef(
+                    guid=a.get("guid", ""),
+                    mime_type=a.get("mimeType") or a.get("uti", ""),
+                    filename=a.get("transferName") or str(a.get("originalROWID", "")),
+                    byte_size=int(a.get("totalBytes") or 0),
+                    body_path=None,
+                    sha256=None,
+                    size=None,
+                )
             )
 
-    return {
-        "id": guid or f"bb-{int(time.time() * 1000)}",
-        "timestamp": ts_iso,
-        "channel": CHANNEL_NAME,
-        "raw_event_type": raw_type,
-        "chat_id": chat_guid,
-        "sender_id": sender_id,
-        "sender_display": sender_display,
-        "direction": direction,
-        "body_text": body_text,
-        "in_reply_to": in_reply_to,
-        "attachments": attachments,
-    }
+    event_id = guid or f"bb-{int(time.time() * 1000)}"
+    return MessageEvent(
+        # Canonical fields
+        event_id=event_id,
+        thread_guid=chat_guid,
+        author_handle=sender_id,
+        text=body_text,
+        attachments=attachments,
+        received_at_utc=ts_iso,
+        source="bluebubbles",
+        # Legacy compat fields
+        id=event_id,
+        timestamp=ts_iso,
+        channel=CHANNEL_NAME,
+        raw_event_type=raw_type,
+        chat_id=chat_guid,
+        sender_id=sender_id,
+        sender_display=sender_display,
+        direction=direction,
+        body_text=body_text,
+        in_reply_to=in_reply_to,
+    )
 
 
 # ── Outbound client ──────────────────────────────────────────────────────────
@@ -563,6 +728,7 @@ def register_bluebubbles_routes(app: FastAPI) -> None:
 
         # Only forward inbound user messages into the pipeline.
         if event.get("direction") == "inbound" and event.get("body_text"):
+            await _enrich_attachments(event, client)
             _publish_event(event)
             return {
                 "status": "accepted",
