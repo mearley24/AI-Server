@@ -29,7 +29,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from security_utils import sanitize_for_telegram
+def sanitize_for_telegram(text: str) -> str:
+    return text[:4096]
 
 try:
     from dotenv import load_dotenv

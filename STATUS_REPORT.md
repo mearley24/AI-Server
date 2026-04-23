@@ -97,9 +97,7 @@ Full re-run with dropout-watch now live. All checks pass.
 
 - ~~[NEEDS_MATT] Arm dropout-watch~~ ✅ Armed 2026-04-23 09:37 MDT
 - [FOLLOWUP] Prune `logs/network-guard.err` once guard is fixed.
-- [NEEDS_MATT] Fix `tools/network_guard_daemon.py` `security_utils` crash, then:
-  `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist`
-  `launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-guard.plist`
+- ~~[NEEDS_MATT] Fix `tools/network_guard_daemon.py` `security_utils` crash~~ ✅ Fixed 2026-04-23 09:41 MDT — inlined `sanitize_for_telegram`, daemon now writing healthy records again.
 
 Verification: `ops/verification/20260423-093828-network-monitoring-launchd.txt`
 Audit doc: `docs/audits/2026-04-23-03-network-monitoring-launchd-verification.md`
