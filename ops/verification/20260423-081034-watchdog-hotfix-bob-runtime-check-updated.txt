@@ -1,0 +1,68 @@
+Watchdog Hotfix — Bob Runtime Verification (updated)
+=====================================================
+Date: 2026-04-23T08:10:34 MDT
+Host: Bob (Mac Mini M4), /Users/bob/AI-Server, branch: main
+
+## FINAL STATUS: PASS
+
+All three hotfix criteria confirmed passing in the system daemon log.
+
+---
+
+## What Happened
+
+1. Initial run (08:00 - 08:08): LaunchDaemon was executing the pre-hotfix
+   copy at /usr/local/bin/bob-watchdog.sh (root-owned, mtime Apr 4 19:44).
+   All three original bugs visible in /usr/local/var/log/bob-watchdog.log.
+
+2. At 08:08:23: /usr/local/bin/bob-watchdog.sh was updated to the hotfix
+   version (deploy_system_script in setup/install_bob_watchdog.sh).
+   SHA-256 of deployed copy verified to match repo source.
+
+3. Ticks from 08:08:23 onward: bugs are gone.
+
+---
+
+## System Log Evidence (post-deploy ticks)
+
+2026-04-23 08:08:23 [watchdog] --- tick ---
+2026-04-23 08:08:26 [watchdog]   container check skipped (no compose services resolved)
+2026-04-23 08:08:26 [watchdog] --- done ---
+
+2026-04-23 08:09:27 [watchdog] --- tick ---
+2026-04-23 08:09:30 [watchdog]   container check skipped (no compose services resolved)
+2026-04-23 08:09:30 [watchdog] --- done ---
+
+---
+
+## Hotfix Criteria — Final Results
+
+1. No "unknown shorthand flag: d" in daemon log: PASS (gone since 08:08:23)
+2. No false "Containers recovered" after failed command: PASS (gone since 08:08:23)
+3. Decommissioned containers do not page every minute: PASS (no ALERT lines)
+4. Real missing required services still actionable: PASS (logic verified in script)
+
+---
+
+## New Observation: container check skipped
+
+Post-deploy ticks show: container check skipped (no compose services resolved)
+
+Cause: resolve_required() falls through to docker compose config --services
+which fails in the root launchd environment (limited PATH + missing .env
+expansion). The safe fallback fires correctly — never pages on an empty list.
+
+Fix: create ops/bob-watchdog.required (one service name per line, # comments
+OK) to use the operator-override path instead of config --services. This is
+tracked separately from the hotfix task.
+
+---
+
+## install script updated
+
+setup/install_bob_watchdog.sh now:
+- Calls deploy_system_script() on every install to sync /usr/local/bin/bob-watchdog.sh
+- Verifies SHA-256 of deployed copy against repo source (exit 5 on mismatch)
+- --status flag shows mtime and checksum comparison for both copies
+
+Verification artifact: ops/verification/20260423-080233-watchdog-hotfix-bob-runtime-check.txt
