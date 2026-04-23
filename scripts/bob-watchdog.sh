@@ -4,7 +4,7 @@
 #
 # Version marker: bump on every deploy-relevant change so a stale
 # /usr/local/bin copy is easy to spot in the log ("watchdog vX starting").
-WATCHDOG_VERSION="2026-04-23.2-root-resolve"
+WATCHDOG_VERSION="2026-04-23.3-bash3-required"
 
 # --- Repo root resolution ---
 # The script can be invoked from three places:
@@ -317,17 +317,28 @@ compose_file_args() {
 #   1) $REQUIRED_OVERRIDE_FILE (operator-controlled, hot-editable)
 #   2) `docker compose -f <repo>/docker-compose.yml config --services`
 #   3) empty — skip the check (never page on a stale hard-coded list)
+#
+# Also records the source used into $REQUIRED_SOURCE so check_containers can
+# log it on every tick. Writes "override:<path>", "compose", or "none".
+# Uses Bash-3.2-compatible idioms (macOS system bash): no mapfile/readarray,
+# no associative arrays.
+REQUIRED_SOURCE="none"
 resolve_required() {
     if [[ -f "$REQUIRED_OVERRIDE_FILE" ]]; then
-        grep -vE '^\s*(#|$)' "$REQUIRED_OVERRIDE_FILE"
+        REQUIRED_SOURCE="override:$REQUIRED_OVERRIDE_FILE"
+        grep -vE '^[[:space:]]*(#|$)' "$REQUIRED_OVERRIDE_FILE"
         return
     fi
     if [[ -f "$REPO_DIR/docker-compose.yml" ]]; then
-        local file_args
-        mapfile -t file_args < <(compose_file_args)
+        local file_args=() line
+        # Bash 3.2: populate array via while-read instead of mapfile.
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && file_args+=("$line")
+        done < <(compose_file_args)
+        REQUIRED_SOURCE="compose"
         ( cd "$REPO_DIR" 2>/dev/null && \
           bounded 15 "${COMPOSE[@]}" "${file_args[@]}" config --services 2>/dev/null ) \
-          | grep -vE '^\s*$'
+          | grep -vE '^[[:space:]]*$'
         return
     fi
 }
@@ -362,11 +373,12 @@ check_containers() {
     local running required
     running=$(docker ps --format '{{.Names}}' 2>/dev/null)
     required=$(resolve_required)
+    log "  required services source=${REQUIRED_SOURCE}"
 
     if [[ -z "$required" ]]; then
         # No authoritative list — skip to avoid paging on a stale hard-coded set.
         # Emit actionable diagnostics so a broken deployment is obvious in logs.
-        local diag="resolved=${REPO_RESOLVED} repo_dir=${REPO_DIR} cwd=$(pwd)"
+        local diag="resolved=${REPO_RESOLVED} repo_dir=${REPO_DIR} cwd=$(pwd) source=${REQUIRED_SOURCE}"
         if [[ ! -f "$REPO_DIR/docker-compose.yml" ]]; then
             diag+=" compose_yml=missing"
         else
@@ -418,8 +430,11 @@ check_containers() {
     # claim recovery when (a) exit 0 AND (b) every previously-missing required
     # container is now running. Pass explicit -f so the recovery never depends
     # on cwd-relative compose discovery.
-    local rc=0 file_args
-    mapfile -t file_args < <(compose_file_args)
+    local rc=0
+    local file_args=() line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && file_args+=("$line")
+    done < <(compose_file_args)
     bounded 180 "${COMPOSE[@]}" "${file_args[@]}" up -d --no-build "${missing_required[@]}" >>"$LOG" 2>&1
     rc=$?
     mark_action "containers"

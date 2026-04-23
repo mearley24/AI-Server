@@ -2,7 +2,7 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
 Host: Bob (Mac Mini M4), branch: main.
-Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)**.
+Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)**.
 
 ### Tagging conventions (for the summarizer)
 
@@ -23,6 +23,63 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+---
+
+## bob-watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)
+
+After the 14:14 root-resolve fix deployed cleanly, the LaunchDaemon log
+still showed the tick banner but two downstream problems:
+
+```
+/usr/local/bin/bob-watchdog.sh: line 327: mapfile: command not found
+container check skipped (no compose services resolved)
+```
+
+Root cause: `mapfile` is bash 4+. The root LaunchDaemon runs under
+macOS system `/bin/bash` 3.2.57, so the two `mapfile -t file_args < <(...)`
+calls silently killed `resolve_required` (line 327) and the recovery
+path (line 422). Even with a bash 4 interpreter the compose path was
+fragile — `docker compose config --services` fails to expand `.env`
+under the root launchd environment.
+
+**Fix (this commit, version marker `2026-04-23.3-bash3-required`):**
+
+1. `scripts/bob-watchdog.sh` — replaced both `mapfile` sites with bash-
+   3.2-compatible `while IFS= read -r line; do file_args+=("$line");
+   done < <(compose_file_args)`. No bash 4+ features remain (no
+   mapfile/readarray, no associative arrays, no `${var^^}` case ops).
+   Added `REQUIRED_SOURCE` tracking so every tick logs which source
+   the required-service list came from:
+   `required services source=override:<path>` | `compose` | `none`.
+   Switched `\s` PCRE class → POSIX `[[:space:]]` for BSD grep.
+2. `ops/bob-watchdog.required` (new) — authoritative list of 18
+   required compose services (derived 2026-04-23 from the
+   `services:` block of docker-compose.yml). Optional/lab/decom
+   services are explicitly excluded and handled by the existing
+   `OPTIONAL_SERVICES` allowlist. `bob-watchdog.sh` reads this
+   directly from the repo working copy — no install-side change is
+   required; `git pull` is sufficient to place it where the daemon
+   looks for it.
+
+**- [NEEDS_MATT] Deploy to Bob (one sudo command):**
+
+```
+cd /Users/bob/AI-Server && git pull --ff-only origin main && \
+  sudo bash setup/install_bob_watchdog.sh --deploy-system && \
+  sleep 70 && tail -n 30 /usr/local/var/log/bob-watchdog.log
+```
+
+Expected log shape:
+
+```
+--- tick --- v=2026-04-23.3-bash3-required repo=/Users/bob/AI-Server resolved=1
+[watchdog]   required services source=override:/Users/bob/AI-Server/ops/bob-watchdog.required
+```
+
+and NO `mapfile: command not found` / `container check skipped` lines.
+
+Full report: `ops/verification/20260423-144615-watchdog-bash3-required-services-hotfix.txt`
 
 ---
 

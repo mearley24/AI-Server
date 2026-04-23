@@ -1,0 +1,33 @@
+# ops/bob-watchdog.required — authoritative list of required compose
+# services for the Bob Mac Mini M4. Consumed by scripts/bob-watchdog.sh
+# in preference to `docker compose config --services`, which fails under
+# the root LaunchDaemon environment (no shell .env expansion).
+#
+# One service name per line. Lines beginning with `#` and blank lines are
+# ignored. Do NOT list optional/lab/decommissioned services here — those
+# are handled by the OPTIONAL_SERVICES allowlist in bob-watchdog.sh.
+#
+# Source: grep of services: block in docker-compose.yml (2026-04-23).
+# Excluded as optional/lab: x-intake-lab.
+# Excluded as decommissioned (removed from compose, kept in OPTIONAL list
+# for back-compat log suppression): mission-control, knowledge-scanner,
+# openwebui, remediator, context-preprocessor.
+
+redis
+vpn
+polymarket-bot
+proposals
+email-monitor
+voice-receptionist
+calendar-agent
+notification-hub
+dtools-bridge
+clawwork
+openclaw
+cortex
+intel-feeds
+x-intake
+rsshub
+x-alpha-collector
+client-portal
+cortex-autobuilder

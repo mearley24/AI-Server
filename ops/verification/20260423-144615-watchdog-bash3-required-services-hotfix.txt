@@ -1,0 +1,109 @@
+bob-watchdog bash-3.2 + required-services hotfix
+==================================================
+Timestamp (UTC): 2026-04-23 14:46:15
+Version marker:  2026-04-23.3-bash3-required
+Repo HEAD base:  main
+
+Root cause
+----------
+After the 2026-04-23.2-root-resolve deploy, the LaunchDaemon copy at
+/usr/local/bin/bob-watchdog.sh ran under macOS system bash 3.2.57
+(/bin/bash — the only interpreter available to a root LaunchDaemon
+unless the plist is explicitly pointed at /opt/homebrew/bin/bash).
+
+bash 3.2 does NOT support `mapfile` / `readarray`. The script called
+`mapfile -t file_args < <(compose_file_args)` in two spots:
+
+  scripts/bob-watchdog.sh:327  (resolve_required)
+  scripts/bob-watchdog.sh:422  (check_containers recovery path)
+
+At line 327 the call failed with:
+  /usr/local/bin/bob-watchdog.sh: line 327: mapfile: command not found
+
+`resolve_required` therefore emitted nothing, `required` came back
+empty, and `check_containers` fell through to the benign "no compose
+services resolved" skip. No recovery, no paging, but every tick logged
+a misleading skip line. Bob confirmed version marker + repo=/…/AI-Server
++ resolved=1 were all correct — the failure was purely the bash 3.2
+incompatibility.
+
+A secondary failure mode existed even if `mapfile` had worked:
+`docker compose config --services` fails to resolve `.env` under the
+root launchd environment (no login shell, no HOME-based dotenv), so
+the compose path was unreliable. The fix introduces an operator-
+controlled required-list file.
+
+Changed files
+-------------
+1. scripts/bob-watchdog.sh
+   - WATCHDOG_VERSION bumped to "2026-04-23.3-bash3-required".
+   - Replaced both `mapfile -t file_args < <(compose_file_args)`
+     sites with a bash-3.2 `while IFS= read -r line; do ... done`
+     loop that populates `file_args=()`.
+   - Added `REQUIRED_SOURCE` module-level variable; `resolve_required`
+     now records which source it used ("override:<path>", "compose",
+     or "none").
+   - `check_containers` now logs "required services source=<value>"
+     on every tick so a misconfigured override file is obvious.
+   - Skip-path diagnostic line now includes `source=<value>`.
+   - Replaced `\s` regex class (PCRE) with POSIX `[[:space:]]` for
+     portability with BSD grep on macOS.
+   - No new bash 4+ features introduced; no associative arrays; no
+     `${var^^}` / `${var,,}`.
+
+2. ops/bob-watchdog.required (new)
+   - Authoritative list of 18 required compose services, derived by
+     awk-parsing the `services:` block of docker-compose.yml on
+     2026-04-23. Optional/lab/decommissioned services are explicitly
+     excluded (x-intake-lab, mission-control, knowledge-scanner,
+     openwebui, remediator, context-preprocessor — the last five are
+     also in OPTIONAL_SERVICES for back-compat log suppression).
+   - Comments + blank lines are stripped by `grep -vE`.
+   - When present this file is authoritative; bob-watchdog.sh falls
+     back to `docker compose config --services` only when it's absent.
+
+3. STATUS_REPORT.md
+   - New entry documenting the hotfix and deploy instruction.
+
+Not changed
+-----------
+- setup/install_bob_watchdog.sh — existing `--deploy-system` path
+  already copies scripts/bob-watchdog.sh to /usr/local/bin,
+  sha256-verifies the system copy, and kickstarts the daemon. The
+  ops/bob-watchdog.required file is read directly from the repo
+  (REPO_DIR/ops/bob-watchdog.required) so no install-side change is
+  required — `git pull` alone places it where the daemon reads it.
+- scripts/com.symphony.bob-watchdog.plist — unchanged; still pinned
+  to WorkingDirectory=/Users/bob/AI-Server with AI_SERVER_ROOT set.
+
+Local checks run
+----------------
+- `bash -n scripts/bob-watchdog.sh`                     → OK
+- `bash scripts/bob-watchdog.sh --check`                → "syntax OK"
+- `grep -nE '\bmapfile\b|\breadarray\b' scripts/bob-watchdog.sh`
+    → only documentation comments match (no active code).
+- Simulated override parse → 18 services returned, source reports
+  "override:ops/bob-watchdog.required".
+
+Bob deploy command (single sudo step)
+-------------------------------------
+cd /Users/bob/AI-Server && git pull --ff-only origin main && \
+  sudo bash setup/install_bob_watchdog.sh --deploy-system && \
+  sleep 70 && tail -n 30 /usr/local/var/log/bob-watchdog.log
+
+Expected log lines after deploy
+-------------------------------
+  --- tick --- v=2026-04-23.3-bash3-required repo=/Users/bob/AI-Server resolved=1
+  [watchdog]   required services source=override:/Users/bob/AI-Server/ops/bob-watchdog.required
+
+Expected absences (should NOT appear)
+-------------------------------------
+  - "mapfile: command not found"
+  - "container check skipped (no compose services resolved)"
+  - "unknown shorthand flag: 'd'"
+
+Rollback
+--------
+The change is confined to scripts/bob-watchdog.sh + a new file. To
+roll back, `git revert` the commit and re-run
+`sudo bash setup/install_bob_watchdog.sh --deploy-system`.
