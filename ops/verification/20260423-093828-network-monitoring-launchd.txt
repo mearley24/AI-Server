@@ -1,0 +1,134 @@
+Network Monitoring LaunchDaemon Setup & Verification (Run 3 — dropout-watch ARMED)
+===================================================================================
+Date (UTC): Thu Apr 23 15:38:15 UTC 2026
+Date (local): 2026-04-23T09:38:28 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Repo: /Users/bob/AI-Server
+Git HEAD: 4dbd9966bfed7690e6b6bc9e34dc5b024b745867
+uname: Darwin Bobs-Mac-mini.local 25.3.0 Darwin Kernel Version 25.3.0: Wed Jan 28 20:49:24 PST 2026; root:xnu-12377.81.4~5/RELEASE_ARM64_T8132 arm64
+Prior commits: 9e12fc6 (plist added), fa914c5 (run-2 receipt), 4dbd996 (PATH fix + arm)
+Triggered by: rerun-network-monitoring-launchd-setup (manual)
+
+---
+
+PHASE 1 — Both network-monitoring plists observed
+
+## plutil -lint setup/launchd/com.symphony.network-guard.plist
+Result: OK — PASS
+
+## plutil -lint setup/launchd/com.symphony.network-dropout-watch.plist
+Result: OK — PASS
+
+## launchctl list | grep -E "network-guard|network-dropout"
+-      1  com.symphony.network-guard          (loaded, NOT running, exit=1)
+52527  0  com.symphony.network-dropout-watch  (running, PID 52527, exit=0)
+
+## Installed plist locations
+~/Library/LaunchAgents/com.symphony.network-guard.plist:     EXISTS (mtime Mar 10 — stale)
+~/Library/LaunchAgents/com.symphony.network-dropout-watch.plist: NOT PRESENT
+  (bootstrapped directly from repo path, not copied to LaunchAgents — normal for this method)
+/Library/LaunchDaemons/com.symphony.network-guard.plist:     NOT PRESENT (correct)
+
+## Log file state
+logs/network-guard.log:          4,287,214 bytes, 203,830 lines — last write 2026-04-03 (UNCHANGED)
+logs/network-guard.err:          8,031,893 bytes, 143,415 lines — still growing (crash-loop)
+logs/network-dropout-watch.log:  309 bytes — ACTIVE
+logs/network-dropout-watch.err:  0 bytes — CLEAN (no errors)
+
+## logs/network-dropout-watch.log (full, 4 lines)
+[watch] started at 2026-04-23T09:36:46.920264 targets={'gateway': '192.168.1.1', 'wan': '1.1.1.1', 'control4': '', 'sonos': ''}
+[watch] received signal=15, stopping
+[watch] stopped
+[watch] started at 2026-04-23T09:37:12.154935 targets={'gateway': '192.168.1.1', 'wan': '1.1.1.1', 'control4': '', 'sonos': ''}
+(First start at 09:36 with old plist; SIGTERM on reload; restart at 09:37 with PATH fix.)
+
+## logs/network-guard.err (last 6 lines — unchanged pattern)
+    from security_utils import sanitize_for_telegram
+ModuleNotFoundError: No module named 'security_utils'
+Traceback (most recent call last):
+  File "/Users/bob/AI-Server/tools/network_guard_daemon.py", line 32, in <module>
+    from security_utils import sanitize_for_telegram
+ModuleNotFoundError: No module named 'security_utils'
+
+---
+
+PHASE 2 — network_dropout_watch.py lint + status probe
+
+## python3 -m py_compile tools/network_dropout_watch.py
+Result: PASS (exit 0)
+
+## python3 tools/network_dropout_watch.py --status --state-dir data/network_watch
+{
+  "success": true,
+  "running": true,
+  "pid": 52527,
+  "updated_at": "2026-04-23T09:38:17.003320",
+  "health": "healthy",
+  "targets": {"gateway": "192.168.1.1", "wan": "1.1.1.1", "control4": "", "sonos": ""},
+  "sample": {
+    "gateway": {"host": "192.168.1.1", "ok": true, "latency_ms": 0.549, "return_code": 0},
+    "wan":     {"host": "1.1.1.1",     "ok": true, "latency_ms": 15.897, "return_code": 0}
+  }
+}
+events_file=/Users/bob/AI-Server/data/network_watch/dropout_watch_events.jsonl
+EXIT: 0
+Result: RUNNING=true, HEALTH=healthy — PASS
+
+---
+
+PHASE 3 — Plist spec verification
+
+setup/launchd/com.symphony.network-dropout-watch.plist:
+  Label:             com.symphony.network-dropout-watch              ✓
+  ProgramArguments:  /usr/bin/python3 + tool + --watch + --state-dir + --interval-sec 2.0 ✓
+  WorkingDirectory:  /Users/bob/AI-Server                           ✓
+  PATH:              /Users/bob/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/sbin:/usr/sbin ✓
+                     (added /sbin:/usr/sbin in 4dbd996 to resolve ping)
+  HOME:              /Users/bob                                      ✓
+  RunAtLoad:         true                                            ✓
+  KeepAlive:         true                                            ✓
+  ThrottleInterval:  30                                              ✓
+  StandardOutPath:   /Users/bob/AI-Server/logs/network-dropout-watch.log ✓
+  StandardErrorPath: /Users/bob/AI-Server/logs/network-dropout-watch.err ✓
+  UserName key:      absent                                          ✓
+  StartInterval key: absent                                          ✓
+
+---
+
+OVERALL RESULT: PASS
+
+network-dropout-watch is ARMED, RUNNING, and HEALTHY.
+  - PID 52527, uptime since 2026-04-23T09:37:12
+  - Gateway 192.168.1.1: ok, 0.549 ms
+  - WAN 1.1.1.1: ok, 15.897 ms
+  - No errors in .err log
+
+---
+
+STILL NOT DONE — requires Matt:
+
+1. Fix network_guard_daemon.py crash (security_utils missing):
+   Resolve or remove the `from security_utils import sanitize_for_telegram` import,
+   then reload:
+     launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist
+     launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-guard.plist
+   Optionally prune logs/network-guard.err (currently 8 MB / 143k lines of tracebacks).
+
+2. Optional: install dropout-watch plist to ~/Library/LaunchAgents/ for persistence
+   across re-installs (current bootstrap is directly from repo path — survives reboots
+   but launchctl list shows no entry in the standard agents dir).
+
+---
+
+Safety checklist:
+[x] No launchctl state-changing command was run THIS phase.
+[x] No sudo was used.
+[x] No secrets, .env, keys, tokens printed or committed.
+[x] No inbound port opened; no public exposure added.
+[x] No Docker, Redis, or other runtime state mutated.
+[x] No external message sent.
+[x] Only ops/verification/, docs/audits/, STATUS_REPORT.md modified.
+[x] plutil -lint PASS on both plists.
+[x] python3 -m py_compile PASS.
+[x] Verification artifact has standard stamp format.
+[x] STATUS_REPORT uses [FOLLOWUP] / [NEEDS_MATT] tags.
