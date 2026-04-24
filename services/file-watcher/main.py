@@ -106,7 +106,7 @@ DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN", "")
 
 PROJECTS_CONFIG = Path(__file__).parent / "projects.json"
 DB_PATH = Path(os.getenv("DB_PATH", "/tmp/file-watcher.db"))
-PORT = int(os.getenv("PORT", "8102"))
+PORT = int(os.getenv("PORT", "8103"))
 
 # ── Database (idempotency) ────────────────────────────────────────────────────
 
@@ -898,7 +898,7 @@ def main() -> None:
 
     # Run FastAPI health server (blocks)
     try:
-        uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+        uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
     finally:
         observer.stop()
         observer.join()
