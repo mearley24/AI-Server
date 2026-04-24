@@ -3462,3 +3462,10 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - Ghost container 57cc6585b5bc_dtools-bridge removed
 - docker image prune -a reclaimed 432 MB
 - [NEEDS_MATT] WireGuard tunnel not established: peer 185.204.1.211:51820 not responding (0 B received). polymarket-bot cannot reach Polymarket API until tunnel is up. Check VPN credentials or provider status.
+
+## VPN Tunnel Restored (2026-04-24 UTC, Claude Code)
+- WireGuard handshake established: fi-hel-wg-002 (185.204.1.211:51820)
+- Egress IP: 185.204.1.218 (Mullvad Helsinki)
+- Transfer: 6.35 MiB received — tunnel active
+- polymarket-bot re-attached to VPN network namespace
+- Root cause: vpn container restart detached polymarket-bot namespace; clean docker compose up resolved it
