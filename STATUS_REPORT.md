@@ -3453,3 +3453,12 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - [FOLLOWUP] Raise rsshub+dtools-bridge mem_limit 256m→512m (APPROVE: compose-memory-limits)
 - [FOLLOWUP] docker image prune -a reclaim 8.67 GB (APPROVE: log-rotation)
 - [FOLLOWUP] vpn healthcheck investigation
+
+## Docker Memory + VPN Fixes Applied (2026-04-24 UTC, Claude Code)
+- rsshub mem_limit 256m → 512m (was 87% of limit, now 41%)
+- dtools-bridge mem_limit 256m → 512m (was 78% of limit)
+- vpn healthcheck ping -c 1 → ping -c 1 -W 3 (fix race with 10s Docker timeout)
+- vpn start_period 30s → 60s
+- Ghost container 57cc6585b5bc_dtools-bridge removed
+- docker image prune -a reclaimed 432 MB
+- [NEEDS_MATT] WireGuard tunnel not established: peer 185.204.1.211:51820 not responding (0 B received). polymarket-bot cannot reach Polymarket API until tunnel is up. Check VPN credentials or provider status.
