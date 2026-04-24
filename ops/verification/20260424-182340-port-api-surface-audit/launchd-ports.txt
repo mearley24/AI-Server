@@ -1,0 +1,374 @@
+-	0	com.bluebubbles.server
+-	0	com.symphony.approval-drainer
+-	0	com.symphony.audio-intake
+-	0	com.symphony.bluebubbles-health
+-	0	com.symphony.bob-maintenance
+-	0	com.symphony.bob-watchdog
+-	0	com.symphony.bob.workspace
+-	0	com.symphony.business-hours-throttle
+-	0	com.symphony.daily-digest
+-	0	com.symphony.graph-drift-watcher-daily
+-	0	com.symphony.learning
+-	0	com.symphony.network-guard
+-	0	com.symphony.notes-sync
+-	0	com.symphony.overnight-learner
+-	0	com.symphony.quality-gate-nightly
+-	0	com.symphony.realized-change-watcher
+-	0	com.symphony.self-improvement
+-	0	com.symphony.smoke-test
+-	0	com.symphony.subscription-audit
+-	0	com.symphony.task-runner
+-	0	com.symphony.task-runner-watchdog
+-	0	com.symphony.trading-research-daily-digest
+-	0	com.symphony.trading-research-quality-weekly
+-	0	com.symphony.x-autoposter
+-	1	com.symphony.email-project-intake
+-	1	com.symphony.email-reply-agent
+-	1	com.symphony.imessage-watcher
+-	1	com.symphony.markup-app
+-	1	com.symphony.voice-webhook
+-	1	com.symphony.watcher
+-	127	com.symphony.employee-beatrice-bot
+-	127	com.symphony.employee-betty-bot
+-	2	com.bob.icloud-sync
+-	2	com.bob.supabase-keepalive
+-	2	com.symphony.core-ops-health-hourly
+-	2	com.symphony.decision-hygiene-hourly
+-	2	com.symphony.failure-replay-queue
+-	2	com.symphony.focus-ops-monitor
+-	2	com.symphony.incoming-tasks
+-	2	com.symphony.mobile-api
+-	2	com.symphony.notes-watcher
+-	2	com.symphony.polymarket-hourly
+-	2	com.symphony.polymarket-scan
+-	2	com.symphony.service-sre-loop
+-	2	com.symphony.signal-action-hourly
+-	2	com.symphony.trading-pnl-attribution-daily
+-	2	com.symphony.trading-provider-slo-monitor
+-	2	com.symphony.trading-research-bot-hourly
+-	2	com.symphony.trading-topic-graph-daily
+-	2	com.symphony.worker-betty
+-	78	com.bob.inbox-sorter
+-	78	com.bob.library-scanner
+-	78	com.bob.projects-scanner
+1007	0	com.bob.telegram-bot
+2322	-15	com.symphony.imessage-bridge
+62424	-15	com.symphony.trading-api
+962	0	com.symphony.file-watcher
+974	0	com.symphony.markup-tool
+989	0	com.bob.vault-pwa
+--- LaunchAgent plist scan ---
+=== setup/launchd/com.symphony.approval-drainer.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+  <!-- 02:00 MT every day -->
+=== setup/launchd/com.symphony.backup-data.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.bluebubbles-health.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.bob-maintenance.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.bob.workspace.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.business-hours-throttle.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.core-ops-health-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.daily-digest.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <!-- 6:00 AM -->
+        <!-- 8:00 PM -->
+=== setup/launchd/com.symphony.decision-hygiene-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.email-project-intake.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.email-reply-agent.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.employee-beatrice-bot.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.failure-replay-queue.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.file-watcher.plist ===
+    curl http://127.0.0.1:8102/health
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.focus-ops-monitor.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.graph-drift-watcher-daily.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.imessage-bridge.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.imessage-watcher.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.incoming-tasks.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.learning.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.markup-app.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.mobile-api.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.network-dropout-watch.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.network-guard.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.notes-indexer.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <string>redis://localhost:6379</string>
+=== setup/launchd/com.symphony.notes-watcher.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.overnight-learner.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.polymarket-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.polymarket-scan.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.quality-gate-nightly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.self-improvement.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.service-sre-loop.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.signal-action-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.smoke-test.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.subscription-audit.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+    <!-- Run on the 20th of every month at 9:00 AM -->
+=== setup/launchd/com.symphony.trading-api.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.trading-pnl-attribution-daily.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.trading-provider-slo-monitor.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.trading-research-bot-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <string>http://127.0.0.1:8421</string>
+=== setup/launchd/com.symphony.trading-research-daily-digest.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.trading-research-quality-weekly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.trading-topic-graph-daily.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.voice-webhook.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphony.watcher.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphonysh.dropbox-organizer.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== setup/launchd/com.symphonysh.icloud-watch.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <string>redis://localhost:6379</string>
+=== /Users/bob/Library/LaunchAgents/com.symphony.approval-drainer.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+  <!-- 02:00 MT every day -->
+=== /Users/bob/Library/LaunchAgents/com.symphony.audio-intake.plist ===
+		<string>http://127.0.0.1:8102</string>
+		<string>http://192.168.1.189:11434</string>
+	<key>Label</key>
+	<key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.bluebubbles-health.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.bob-maintenance.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.bob-watchdog.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.bob.workspace.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.business-hours-throttle.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.core-ops-health-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.daily-digest.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <!-- 6:00 AM -->
+        <!-- 8:00 PM -->
+=== /Users/bob/Library/LaunchAgents/com.symphony.decision-hygiene-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.email-project-intake.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.email-reply-agent.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.employee-beatrice-bot.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.employee-betty-bot.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.failure-replay-queue.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.file-watcher.plist ===
+    curl http://127.0.0.1:8102/health
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.focus-ops-monitor.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.graph-drift-watcher-daily.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.imessage-bridge.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.imessage-watcher.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.incoming-tasks.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.learning.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.markup-app.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.markup-tool.plist ===
+  <key>Label</key><string>com.symphony.markup-tool</string>
+  <key>ProgramArguments</key>
+    <string>--port</string><string>8088</string>
+=== /Users/bob/Library/LaunchAgents/com.symphony.mobile-api.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.network-guard.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.notes-sync.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <string>cd ~/AI-Server &amp;&amp; python3 scripts/export_notes.py &amp;&amp; OLLAMA_HOST=http://192.168.1.199:11434 python3 integrations/apple_notes/notes_indexer.py --index &amp;&amp; python3 scripts/notes_to_cortex.py >> /tmp/notes-sync.log 2>&amp;1</string>
+        <string>http://192.168.1.199:11434</string>
+=== /Users/bob/Library/LaunchAgents/com.symphony.notes-watcher.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.overnight-learner.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.polymarket-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.polymarket-scan.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.quality-gate-nightly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.realized-change-watcher.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.self-improvement.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.service-sre-loop.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.signal-action-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.smoke-test.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.subscription-audit.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+    <!-- Run on the 20th of every month at 9:00 AM -->
+=== /Users/bob/Library/LaunchAgents/com.symphony.task-runner-watchdog.plist ===
+		<string>http://localhost:8199</string>
+	<key>Label</key>
+	<key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.task-runner.plist ===
+  <key>Label</key>
+  <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-api.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-pnl-attribution-daily.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-provider-slo-monitor.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-research-bot-hourly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+        <string>http://127.0.0.1:8421</string>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-research-daily-digest.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-research-quality-weekly.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.trading-topic-graph-daily.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.voice-webhook.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.watcher.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.worker-betty.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.symphony.x-autoposter.plist ===
+    <key>Label</key>
+    <key>ProgramArguments</key>
+=== /Users/bob/Library/LaunchAgents/com.bluebubbles.server.plist ===
+        <key>Label</key>
+        <key>Program</key>

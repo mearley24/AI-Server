@@ -1,0 +1,104 @@
+{
+    "status": "healthy",
+    "reason": null,
+    "ping": {
+        "ok": true,
+        "latency_ms": 369.4,
+        "server_version": "1.9.9",
+        "private_api": true,
+        "macos_version": "26.3.0"
+    },
+    "configured": true,
+    "server_url_configured": true,
+    "webhook_endpoint": "/hooks/bluebubbles",
+    "routing": {
+        "policy": "allow_owner_only",
+        "inbound_allowed_phones": [
+            "+19705193013",
+            "+18609171850",
+            "18609171850"
+        ],
+        "inbound_allowed_emails": [
+            "mearley24@me.com"
+        ],
+        "inbound_allowed_chat_guids": [
+            "iMessage;-;+18609171850"
+        ],
+        "inbound_blocked_phones": [],
+        "outbound_allowed_phones": [
+            "+19705193013",
+            "+18609171850",
+            "18609171850"
+        ],
+        "outbound_allowed_chat_guids": [
+            "iMessage;-;+18609171850"
+        ],
+        "config_path": "/app/config/bluebubbles_routing.json",
+        "loaded": true
+    },
+    "counters": {
+        "inbound_count": 0,
+        "outbound_count": 0,
+        "outbound_failure_count": 0
+    },
+    "last_inbound_event_at": null,
+    "last_outbound_send_at": null,
+    "last_outbound_error": null,
+    "last_ping_ok_at": "2026-04-24T18:24:32.063024+00:00",
+    "last_ping_error": null,
+    "last_ping_latency_ms": 369.4
+}
+
+--- outbound ping ---
+{"cortex_health": {"status": "healthy", "reason": null}, "bluebubbles_server": {"status": "healthy", "reason": null, "server_version": "1.9.9", "private_api": true}}
+
+--- routing config (redacted) ---
+{
+  "_description": "BlueBubbles routing + identity rules. Both inbound webhooks and outbound sends are checked against these allowlists. Edit this file (no code changes) to widen/narrow which iMessage chats AI-Server is allowed to process.",
+  "_policies": {
+    "allow_all": "Dev mode \u2014 allow any chat (NOT recommended outside staging).",
+    "allow_listed": "Allow only explicit allow-lists. Unknown chats rejected.",
+    "allow_owner_only": "Allow only if sender/recipient matches owner (phones/emails lists). Block everything else."
+  },
+  "_schema_version": 1,
+  "default_policy": "allow_owner_only",
+  "inbound": {
+    "_comment": "Chat GUIDs / phones / emails allowed to trigger automation. Empty list = only default_policy applies.",
+    "allowed_chat_guids": [
+      "iMessage;-;+18609171850"
+    ],
+    "allowed_emails": [
+      "mearley24@me.com"
+    ],
+    "allowed_phones": [
+      "+19705193013",
+      "+18609171850",
+      "18609171850"
+    ],
+    "allowed_webhook_source_hosts": [
+      "127.0.0.1",
+      "::1",
+      "localhost",
+      "host.docker.internal",
+      "172.18.0.1",
+      "100.89.1.51",
+      "bobs-mac-mini.tailbcf3fe.ts.net"
+    ],
+    "blocked_phones": []
+  },
+  "outbound": {
+    "_comment": "Chat GUIDs / phones we will ever send to. Prevents accidental messages into unintended threads.",
+    "allowed_chat_guids": [
+      "iMessage;-;+18609171850"
+    ],
+    "allowed_phones": [
+      "+19705193013",
+      "+18609171850",
+      "18609171850"
+    ]
+  }
+}
+
+--- BLUEBUBBLES_SERVER_URL domain check ---
+url_domain: bobs-mac-mini.tailbcf3fe.ts.net
+is_tailscale: True

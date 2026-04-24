@@ -1,0 +1,19 @@
+NAMES                STATUS                       PORTS
+polymarket-bot       Up 2 minutes (healthy)       
+vpn                  Up 3 minutes (healthy)       127.0.0.1:8430->8430/tcp
+dtools-bridge        Up 14 minutes (healthy)      127.0.0.1:8096->5050/tcp
+rsshub               Up 14 minutes (healthy)      1200/tcp
+x-intake             Up 42 minutes (healthy)      127.0.0.1:8101->8101/tcp
+cortex               Up 13 seconds (healthy)      127.0.0.1:8102->8102/tcp
+email-monitor        Up About an hour (healthy)   127.0.0.1:8092->8092/tcp
+proposals            Up About an hour (healthy)   127.0.0.1:8091->8091/tcp
+notification-hub     Up About an hour (healthy)   127.0.0.1:8095->8095/tcp
+cortex-autobuilder   Up About an hour (healthy)   127.0.0.1:8115->8115/tcp
+x-alpha-collector    Up About an hour             
+openclaw             Up 13 seconds (healthy)      127.0.0.1:8099->3000/tcp
+clawwork             Up About an hour (healthy)   127.0.0.1:8097->8097/tcp
+voice-receptionist   Up About an hour (healthy)   127.0.0.1:8093->3000/tcp
+intel-feeds          Up About an hour (healthy)   127.0.0.1:8765->8765/tcp
+client-portal        Up About an hour (healthy)   8096/tcp
+calendar-agent       Up About an hour (healthy)   127.0.0.1:8094->8094/tcp
+redis                Up About an hour (healthy)   127.0.0.1:6379->6379/tcp

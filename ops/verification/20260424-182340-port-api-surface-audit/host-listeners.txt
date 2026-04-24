@@ -1,0 +1,40 @@
+BlueBubbl   671  bob   70u  IPv6 0xc66d52f72fef087c      0t0  TCP [::1]:45670 (LISTEN)
+ollama      975  bob    4u  IPv6 0xaff1935b5fb6835e      0t0  TCP *:11434 (LISTEN)
+BlueBubbl   671  bob   63u  IPv6 0x7ae16eb0130ec23a      0t0  TCP *:1234 (LISTEN)
+rapportd    635  bob   10u  IPv4 0xaee2bb908815e2d2      0t0  TCP *:49168 (LISTEN)
+rapportd    635  bob   11u  IPv6 0xd18673dc570bc010      0t0  TCP *:49168 (LISTEN)
+ControlCe   682  bob   11u  IPv4 0x2822ad57ce53ade9      0t0  TCP *:5000 (LISTEN)
+ControlCe   682  bob   12u  IPv6 0x168a55c4b4419666      0t0  TCP *:5000 (LISTEN)
+rapportd    635  bob   25u  IPv6 0x87b1f2a42d4a0c9a      0t0  TCP *:51703 (LISTEN)
+rapportd    635  bob   27u  IPv6 0x9db490e69bfb8948      0t0  TCP *:51704 (LISTEN)
+ControlCe   682  bob    9u  IPv4 0x4ea8374749d74ec3      0t0  TCP *:7000 (LISTEN)
+ControlCe   682  bob   10u  IPv6 0x6d28d59e2977ac4b      0t0  TCP *:7000 (LISTEN)
+Python      962  bob   34u  IPv4 0xfe917c94c6587e40      0t0  TCP *:8102 (LISTEN)
+Python     2322  bob    3u  IPv4 0x977668025d3aeb04      0t0  TCP *:8199 (LISTEN)
+Python    62424  bob    6u  IPv4 0x463c904354d5d423      0t0  TCP *:8421 (LISTEN)
+Dropbox    1015  bob  220u  IPv4 0xedd946859c490110      0t0  TCP 127.0.0.1:17600 (LISTEN)
+Dropbox    1015  bob  229u  IPv4 0x3d4164a5300ff8db      0t0  TCP 127.0.0.1:17603 (LISTEN)
+com.docke 27030  bob  206u  IPv4 0x1327899923e200b3      0t0  TCP 127.0.0.1:6379 (LISTEN)
+Python      974  bob    3u  IPv4 0x50da8814dac7a327      0t0  TCP 127.0.0.1:8088 (LISTEN)
+com.docke 27030  bob  211u  IPv4 0xaf63bebc10f7be49      0t0  TCP 127.0.0.1:8091 (LISTEN)
+com.docke 27030  bob  210u  IPv4 0x94ea453f82a33860      0t0  TCP 127.0.0.1:8092 (LISTEN)
+com.docke 27030  bob  205u  IPv4 0xdf429aa2963b12d0      0t0  TCP 127.0.0.1:8093 (LISTEN)
+com.docke 27030  bob  200u  IPv4 0xd55fba59240e8da8      0t0  TCP 127.0.0.1:8094 (LISTEN)
+com.docke 27030  bob  201u  IPv4 0x18c6a0efe10a391f      0t0  TCP 127.0.0.1:8095 (LISTEN)
+com.docke 27030  bob  310u  IPv4 0x8afb5c66782c3329      0t0  TCP 127.0.0.1:8096 (LISTEN)
+com.docke 27030  bob  136u  IPv4 0xce969a628517973b      0t0  TCP 127.0.0.1:8097 (LISTEN)
+com.docke 27030  bob   81u  IPv4 0xb33def2550ab78bc      0t0  TCP 127.0.0.1:8099 (LISTEN)
+com.docke 27030  bob   86u  IPv4 0x10b80e4c52293e84      0t0  TCP 127.0.0.1:8101 (LISTEN)
+com.docke 27030  bob  101u  IPv4 0x473d4ee1b1eb2dee      0t0  TCP 127.0.0.1:8102 (LISTEN)
+com.docke 27030  bob  194u  IPv4 0xe0c25994abc36740      0t0  TCP 127.0.0.1:8115 (LISTEN)
+com.docke 27030  bob  167u  IPv4 0xcc46f93112de38c6      0t0  TCP 127.0.0.1:8430 (LISTEN)
+com.docke 27030  bob  209u  IPv4 0xf7c2eb4f1d8c3887      0t0  TCP 127.0.0.1:8765 (LISTEN)
+Python      989  bob    3u  IPv4 0x30039dfdc96f3ef8      0t0  TCP 127.0.0.1:8801 (LISTEN)
+COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+identitys   675  bob   10u  IPv4 0xc61c6ff3de3902de      0t0  UDP *:*
+identitys   675  bob   15u  IPv4 0xd029a57cb7769a59      0t0  UDP *:*
+identitys   675  bob   20u  IPv4 0x1b557d70c6a17967      0t0  UDP *:*
+rapportd    635  bob   21u  IPv6 0xffed1f0c78e4b53a      0t0  UDP *:3722
+replicato 21375  bob    8u  IPv6 0x292e4f1fc0df5566      0t0  UDP *:50753
+sharingd    759  bob    4u  IPv4 0x80427a1d55c104af      0t0  UDP *:*
+sharingd    759  bob   10u  IPv6 0x94d7d4bffabeac6b      0t0  UDP *:58855
