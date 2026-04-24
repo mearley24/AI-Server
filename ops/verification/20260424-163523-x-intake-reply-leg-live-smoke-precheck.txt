@@ -1,0 +1,80 @@
+# X-Intake Reply-Leg Live Smoke — Precheck Re-run
+UTC stamp: 20260424-163523
+Host: bob
+Runner: Claude Code
+Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+
+## Precheck 1 — Git state
+ M STATUS_REPORT.md
+ M data/clawwork/data/clawwork_state.json
+ M data/clawwork/data/sector_performance.json
+ M data/network_watch/dropout_watch_status.json
+ M data/task_runner/bob-watchdog-state/docker
+ M data/task_runner/bob-watchdog-state/uh_polymarket-bot
+ M data/task_runner/bob-watchdog-state/uh_vpn
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+ M ops/verification/dispatch-20260424-103001-run-prompt.txt
+?? ops/self_improvement/archive/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+?? ops/self_improvement/archive/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+?? ops/self_improvement/archive/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+?? ops/self_improvement/cards/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md
+?? ops/self_improvement/cards/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md
+?? ops/self_improvement/cards/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md
+?? ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+?? ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+?? ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+?? ops/verification/20260424-103205-autonomy-sweep-realized-change.txt
+?? ops/verification/20260424-103205-task-runner-health.txt
+?? ops/verification/20260424-163523-x-intake-reply-leg-live-smoke-precheck.txt
+?? ops/verification/self-improve-20260424T170000Z.txt
+main
+45162886463b80da1d10f1bd2f2bb8191314c32d
+45162886 ops: task-runner tick 20260424-103156 — heartbeat
+4747136e ops: loose-ends reconciliation — close 6 stale prompts + 2 runbooks against committed evidence
+c5815dcb ops: task-runner tick 20260424-102124 — heartbeat
+e610cddb ops(bluebubbles): PASS-webhook-only — live webhook confirmed after URL fix
+03dddc34 ops(bluebubbles): FAIL-no-webhook — webhook URL misconfigured
+
+## Precheck 2 — x-intake container + handler registry
+x-intake Up 29 minutes (healthy)
+['cortex_dismiss', 'cortex_remember', 'escalate_to_matt']
+
+## Precheck 3 — DRY_RUN flag state
+ALLOWED_TEST_RECIPIENTS=
+CORTEX_REPLY_DRY_RUN=1
+DRY=1 | ALLOW=
+
+## Precheck 4 — BlueBubbles health
+{"cortex_health": {"status": "healthy", "reason": null}, "bluebubbles_server": {"status": "healthy", "reason": null, "server_version": "1.9.9", "private_api": true}}
+
+## Precheck 5 — ACK ring-buffer writability
+ok-writable
+1 /data/x_intake/reply_acks.ndjson
+
+Precheck 1 result: PASS (Phase 2-6 commits confirmed in history; dirty tree is runtime data only, no x_intake/reply_actions/ changes)
+
+## Precheck 2 result: PASS
+x-intake: Up (healthy)
+HANDLER_REGISTRY: ['cortex_dismiss', 'cortex_remember', 'escalate_to_matt'] ✓
+
+## Precheck 3 result: PASS
+DRY=1 | ALLOW= (confirmed in .env and container env)
+
+## Precheck 4 result: PASS
+BlueBubbles healthy (v1.9.9, private_api=true)
+Webhook URL: http://127.0.0.1:8102/hooks/bluebubbles (fixed 2026-04-24 ~16:10 UTC)
+
+## Precheck 5 result: PASS
+/data/x_intake: writable
+reply_acks.ndjson: 1 line (from DRY_RUN_ONLY smoke at 09:09 MDT)
+
+## Precheck 6 — Action seed
+Thread GUID confirmed: iMessage;-;+19705193013
+From prior smoke receipt (ops/verification/20260424-090900-x-intake-reply-leg-live-smoke.txt)
+Action will be seeded in arm sequence step 0.
+
+## Summary
+All prechecks 1-5 PASS. Ready for arm sequence.
+Remaining gap from prior smoke: DRY=0 + real send_text POST never exercised.
+Options documented in arm notes below.

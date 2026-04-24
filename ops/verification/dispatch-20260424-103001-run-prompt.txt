@@ -2,3 +2,18 @@
 [ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
 
 === claude output ===
+All 7 artifacts confirmed present. Run complete.
+
+---
+
+**Inbox processed: 4 items** — 1 already done (ihtesham2005, skipped), 3 new cards written.
+
+All 3 new cards are **`needs fetch`** — each is a bare X.com URL forwarded to the business iMessage number with no body text. Tweet content must be fetched before relevance can be scored.
+
+**Fetch priority order:**
+1. **@nousresearch** — AI research org; if the tweet describes a model release or prompting technique it's directly actionable for Cortex/cortex-autobuilder
+2. **@openswarm_** — swarm/agent-coordination account; may be relevant to multi-service orchestration
+3. **@jameszmsun** — unknown account; relevance undetermined
+
+**Pattern note:** Four consecutive `needs-fetch` cards from the same iMessage URL lane (20260422 + three on 20260424) now strengthen the case for the iMessage→x_intake bridge proposed in the earlier ihtesham2005 card. That bridge would close this recurring gap automatically.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-103001-run-prompt.txt

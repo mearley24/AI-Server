@@ -1,0 +1,60 @@
+Prompt path: ops/self_improvement/ (process-inbox run — self-improve.sh process)
+UTC timestamp: 2026-04-24T17:00:00Z
+
+=== Inbox files ===
+
+ALREADY PROCESSED (archive + card existed):
+  ops/self_improvement/inbox/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+
+PROCESSED THIS RUN:
+  ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+  ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+  ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+
+SKIPPED (oversize): none
+UNCHANGED (not present in inbox): n/a
+
+Total inbox files (excl. .gitkeep): 4
+Items processed this run: 3
+Items already processed (skipped): 1
+
+=== Archive files written ===
+
+ops/self_improvement/archive/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+ops/self_improvement/archive/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+ops/self_improvement/archive/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+
+=== Cards produced ===
+
+ops/self_improvement/cards/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md
+  Status: needs fetch
+  Reason: bare X URL from @jameszmsun; no tweet body present; account context unknown
+
+ops/self_improvement/cards/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md
+  Status: needs fetch
+  Reason: bare X URL from @nousresearch (AI research org); no tweet body present; highest-priority fetch in batch
+
+ops/self_improvement/cards/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md
+  Status: needs fetch
+  Reason: bare X URL from @openswarm_ (swarm/agent-coordination account); no tweet body present
+
+=== Prompt files drafted ===
+
+None — all cards are needs-fetch; no auto-safe prompts written this run.
+
+=== STATUS_REPORT.md ===
+
+Appended section: "### Self-improvement loop — 2026-04-24T17:00:00Z"
+
+=== Collector ===
+
+Collector ran prior to this processing turn (scripts/self-improvement-collect.sh daemon-once).
+SELF_IMPROVE_SKIP_COLLECT not set; collection assumed to have run normally per self-improve.sh process flow.
+
+=== Pattern observation ===
+
+Four consecutive needs-fetch cards from the iMessage URL lane (ihtesham2005 on 20260422, plus three on 20260424).
+All are bare X.com status URLs with no surrounding body text, all from handle +19705193013.
+Recurring pattern supports the iMessage→x_intake bridge proposal first surfaced in the ihtesham2005 card.
+
+STATUS: OK
