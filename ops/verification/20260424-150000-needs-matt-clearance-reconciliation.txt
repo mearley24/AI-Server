@@ -168,4 +168,7 @@ Additional untracked files staged in this commit:
 COMMIT HASH
 ---------------------------------------------------------------
 
-(Appended after commit — see `git log -1 --oneline` post-commit.)
+Commit: 2d0646fa  ops(needs_matt): reconciliation pass — ARMED×2 / DEFERRED×1
+  Files changed: 4 (this receipt, the inventory receipt, the new
+  evidence-capture prompt, and STATUS_REPORT.md).
+  Push: pending / see commit trailer for status.
