@@ -1,0 +1,14 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260424-113422
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
+
+=== claude output ===
+Done. Summary of this run:
+
+**Inbox:** 4 items found, 4 skipped (idempotent re-run — all had matching archive + card from the 17:00Z run earlier this session).
+
+**No new cards or prompts were drafted.** The 3 uncommitted 20260424 cards (@nousresearch, @openswarm_, @jameszmsun) and the committed ihtesham2005 card are all `Status: needs fetch` — tweet content is unknown, so no efficiency lever can be scored. The recurring pattern (4 iMessage X-URL cards in 3 days, all needing fetch) reinforces the `integrations/x_intake` auto-routing gap identified in the prior run.
+
+**Artifacts written:**
+- `ops/verification/self-improve-20260424T173543Z.txt` — STATUS: OK
+- `STATUS_REPORT.md` — new `### Self-improvement loop — 2026-04-24T17:35:43Z` section appended
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-113422-run-prompt.txt

@@ -1,0 +1,51 @@
+Self-improvement loop — verification artifact
+=============================================
+Prompt path:   (invoked directly via Claude Code — "Process self-improvement inbox")
+UTC timestamp: 2026-04-24T17:35:43Z
+
+Inbox files found (excluding .gitkeep):
+  ops/self_improvement/inbox/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+  ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+  ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+  ops/self_improvement/inbox/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+
+Total inbox items: 4
+Skipped (oversize): 0
+
+Idempotency check:
+  Each inbox file was matched against its archive and card counterparts.
+  All 4 items had an existing archive copy AND a fully-written card from
+  the prior run (17:00–17:03Z this session). Per idempotency rule, all
+  were skipped.
+
+Items skipped (already processed):
+  1. 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+     Archive: ops/self_improvement/archive/ — present (committed)
+     Card:    ops/self_improvement/cards/...-card.md — present (committed)
+     Status:  needs fetch
+
+  2. 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+     Archive: ops/self_improvement/archive/ — present (untracked, uncommitted)
+     Card:    ops/self_improvement/cards/...-card.md — present (untracked, uncommitted)
+     Status:  needs fetch
+
+  3. 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+     Archive: ops/self_improvement/archive/ — present (untracked, uncommitted)
+     Card:    ops/self_improvement/cards/...-card.md — present (untracked, uncommitted)
+     Status:  needs fetch
+
+  4. 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+     Archive: ops/self_improvement/archive/ — present (untracked, uncommitted)
+     Card:    ops/self_improvement/cards/...-card.md — present (untracked, uncommitted)
+     Status:  needs fetch
+
+Cards produced this run: 0 (all skipped)
+Prompts drafted this run: 0
+
+Collector:
+  SELF_IMPROVE_SKIP_COLLECT was not set; the calling script
+  (scripts/self-improve.sh process) calls self-improvement-collect.sh
+  daemon-once first. The 3 new 2047xxx inbox files in git status as ??
+  confirm the collector ran and deposited items before this agent fired.
+
+STATUS: OK — idempotent re-run, all items already processed
