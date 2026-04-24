@@ -555,46 +555,8 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  x-intake-lab:
-    build: ./integrations/x_intake
-    container_name: x-intake-lab
-    restart: unless-stopped
-    command: ["python3", "lab_main.py"]
-    ports:
-      - "127.0.0.1:8103:8101"
-    mem_limit: 512m
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - CORTEX_URL=http://cortex:8102
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
-      - OLLAMA_ANALYSIS_MODEL=${OLLAMA_ANALYSIS_MODEL:-llama3.2:3b}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PYTHONUNBUFFERED=1
-      - TZ=America/Denver
-      - LAB_MODE=true
-    volumes:
-      - ./data/transcripts:/data/transcripts
-      - ./data/bookmarks:/data/bookmarks
-      - x-intake-lab-data:/data/lab
-    networks:
-      - default
-    depends_on:
-      redis:
-        condition: service_healthy
-      cortex:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8101/health', timeout=3)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "5"
+  # x-intake-lab: decommissioned 2026-04-24 (APPROVE ALL) — idle lab container.
+  # Volume x-intake-lab-data preserved. Restore from git history if needed.
 
   rsshub:
     image: diygod/rsshub:latest
