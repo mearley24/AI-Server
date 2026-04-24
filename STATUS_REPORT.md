@@ -3539,3 +3539,16 @@ Reconciliation receipt: `ops/verification/20260424-port-api-surface-audit-reconc
 - ~~[FOLLOWUP] Remove x-intake-lab from docker-compose.yml (port 8103, not running)~~ ✅
   Removed in commit (pending) on 2026-04-24. Volume ai-server_x-intake-lab-data (3.842 kB, empty) retained — separate approval needed to drop it.
   Receipt: ops/verification/20260424-183925-x-intake-lab-removal/
+
+### Self-improvement loop — 20260424T191000Z
+
+inbox processed: 4 (all skipped — idempotent re-run), cards: 0 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 4 inbox items already had archive + card from earlier runs this session. No new cards or prompts drafted. All 4 items are bare X.com URLs captured via iMessage URL heuristic — cannot be scored without fetching tweet content (no web access this turn).
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed**; Status: needs fetch
+
+Verification: ops/verification/self-improve-20260424T191000Z.txt
