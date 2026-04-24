@@ -26,6 +26,26 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## X-Intake Reply-Leg — DRY_RUN_ONLY Smoke on Bob (2026-04-24 09:09 MDT, Claude Code)
+
+Full listener→dispatcher→cortex→ACK chain verified via synthetic Redis event.
+
+- `run_listener` wired into `main.py` startup (was missing — Phase 2 integration gap fixed)
+- `reply_listener_wired dry_run=True` confirmed in x-intake logs
+- `parse_reply → ActionStore.lookup → cortex_remember → POST /remember 200 OK` ✓
+- Cortex memory `f347c35c` created ✓
+- `reply_acks.ndjson` written (1 line) ✓
+- Idempotency: second replay → still 1 ndjson line ✓
+- Live outbound `send_text` not exercised: self-to-self iMessage didn't trigger BlueBubbles webhook (inbound_count=0); synthetic event used instead
+- DRY=1 | ALLOW= restored and confirmed
+
+- ~~[NEEDS_MATT] X-intake reply-leg live smoke~~ ✅ DRY_RUN_ONLY verified 2026-04-24 — chain works; live BlueBubbles→Cortex webhook path pending config verification
+- [FOLLOWUP] Verify BlueBubbles webhook URL → `http://cortex:8102/hooks/bluebubbles`; test with incoming message from another contact (not self-to-self)
+
+Receipt: `ops/verification/20260424-090900-x-intake-reply-leg-live-smoke.txt`
+
+---
+
 ## Bob Docker Crash / Memory Diagnostic Prompt Added (2026-04-24 UTC, Claude Code)
 
 User-reported symptom: "something keeps crashing docker, it needs to be

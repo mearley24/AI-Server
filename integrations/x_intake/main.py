@@ -1114,6 +1114,25 @@ async def send_action_digest():
 async def startup():
     # Store watchdog task on app.state so it is never GC'd while the loop runs.
     app.state.watchdog_task = asyncio.create_task(_listener_watchdog())
+
+    # Start the reply-action listener (Phases 2-6).
+    try:
+        import sys as _sys
+        _sys.path.insert(0, "/app")
+        from reply_actions.listener import run_listener
+        from reply_actions.dispatcher import Dispatcher
+        from reply_actions.action_store import ActionStore
+        from reply_actions.ack import send_ack
+        _store = ActionStore()
+        _dispatcher = Dispatcher(_store)
+        _dry_run = os.getenv("CORTEX_REPLY_DRY_RUN", "1").strip() not in ("0", "false", "no")
+        app.state.reply_listener_task = asyncio.create_task(
+            run_listener(REDIS_URL, _store, _dispatcher, send_ack, dry_run=_dry_run)
+        )
+        logger.info("reply_listener_wired", dry_run=_dry_run)
+    except Exception as _e:
+        logger.warning("reply_listener_wire_failed", error=str(_e)[:120])
+
     logger.info("x_intake_started", port=PORT, openai_key_set=bool(OPENAI_API_KEY))
 
 

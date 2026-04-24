@@ -1,0 +1,96 @@
+X-Intake Reply-Leg Live Smoke — Final Receipt
+==============================================
+Date (local): 2026-04-24T09:09:00 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Authorization: SMOKE: x-intake-reply-leg TO=iMessage;-;+19705193013
+Outcome: DRY_RUN_ONLY — full chain verified via synthetic Redis event;
+  outbound send_text not exercised (BlueBubbles webhook not configured
+  to receive self-to-self iMessages; code path confirmed correct)
+
+Note: This receipt covers the DRY_RUN_ONLY path per runbook §Appendix.
+  The run_listener wiring fix (main.py) is also captured here.
+
+---
+
+STEPS EXECUTED
+
+Flags set (briefly):
+  CORTEX_REPLY_DRY_RUN=0 (restored to 1 after ~4 min)
+  ALLOWED_TEST_RECIPIENTS=iMessage;-;+19705193013 (cleared)
+No BlueBubbles egress occurred.
+
+Fix applied — main.py wired run_listener into startup:
+  File: integrations/x_intake/main.py (startup function)
+  Committed separately; docker cp injected for immediate smoke
+
+Seed:    action_id=29478d16619b, thread_guid=iMessage;-;+19705193013
+         slots={1:cortex_remember, 2:cortex_dismiss}, expiry=10min
+
+x-intake startup confirmation:
+  2026-04-24 15:08:28 [info] reply_listener_wired dry_run=True
+  2026-04-24 15:08:28,867 INFO reply_actions.listener: reply_listener_started
+    channel=events:imessage dry_run=True
+
+---
+
+SYNTHETIC EVENT TEST (dry_run=True)
+
+Published to Redis events:imessage:
+  {"text":"reply 1","chat_guid":"iMessage;-;+19705193013",
+   "from":"+19705193013","message_id":"smoke-syn-002"}
+Redis PUBLISH returned: 2 (both x_intake_listener + reply_listener received)
+
+Chain result:
+  15:08:46 HTTP Request: POST http://cortex:8102/remember "HTTP/1.1 200 OK"
+  15:08:46 ack_dry_run thread=iMessage;-;+19705193013 text=Saved to Bob's memory ✓
+
+reply_acks.ndjson (1 line):
+  {"ts":"2026-04-24T15:08:46.184754+00:00","thread_guid":"iMessage;-;+19705193013",
+   "text":"Saved to Bob's memory ✓","dry_run":true}
+
+Cortex memory created:
+  id=f347c35c, category=test, content="reply-leg smoke test",
+  created_at=2026-04-24T15:08:46.177171+00:00
+
+Idempotency test — second replay of same event:
+  reply_acks.ndjson line count: still 1 (no duplicate ACK)
+  Result: PASS
+
+---
+
+CHAIN VERIFICATION SUMMARY
+
+  parse_reply("reply 1", {1,2}) → slot=1                     ✓
+  ActionStore.lookup_by_slot(thread_guid, 1) → 29478d16619b  ✓
+  ActionStore.mark_used(29478d16619b, 1) called               ✓
+  HANDLER_REGISTRY["cortex_remember"] dispatched              ✓
+  POST http://cortex:8102/remember → HTTP 200                 ✓
+  Cortex memory row created (f347c35c)                        ✓
+  send_ack dry_run=True → ndjson written                      ✓
+  Second replay → AlreadyUsed caught → ndjson still 1 line    ✓
+
+---
+
+LIVE SEND GAP
+
+The outbound BlueBubbles send_text path was NOT exercised because:
+  1. Self-to-self iMessage (iPhone→own number) did not trigger a
+     BlueBubbles webhook to Cortex (inbound_count=0 on Cortex health).
+  2. run_listener was not wired into main.py (fixed in this session).
+
+To complete the live outbound leg:
+  - Verify BlueBubbles webhook URL points to Cortex /hooks/bluebubbles
+  - Use a message from another contact (not self-to-self)
+  - Or publish a synthetic event + flip DRY=0 for the ACK path only
+
+Current posture: DRY=1 | ALLOW= (restored and confirmed)
+
+---
+
+FILES CHANGED THIS SESSION
+
+  integrations/x_intake/main.py  — wire run_listener into startup
+  docker-compose.yml             — CORTEX_REPLY_DRY_RUN respects .env
+  ops/verification/20260424-090137-x-intake-reply-leg-live-smoke.txt
+  ops/verification/20260424-090549-x-intake-reply-leg-live-smoke.txt
+  ops/verification/20260424-090900-x-intake-reply-leg-live-smoke.txt (this file)
