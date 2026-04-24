@@ -26,39 +26,68 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
-## Bob Docker Crash Diagnostic (2026-04-24 09:12 MDT, Claude Code)
+## BlueBubbles → Cortex Live Webhook Verification Prompt Added (2026-04-24 UTC, Claude Code)
 
-Classification: **A (host memory) + C (disk) + E (Docker Desktop daemon) + F (watchdog churn)**
+Parent-agent repo pass documenting the one remaining follow-up Matt
+flagged: fully-live BlueBubbles → Cortex webhook leg. Self-to-self
+iMessage does not trigger the webhook (expected Apple iMessage-routing
+behavior — not a bug); full-leg proof requires a message from a
+**different** phone number. **No runtime/external action performed by
+this repo pass** — no curl, no docker exec, no BlueBubbles UI
+inspection, no message send, no settings mutation, no service restart,
+no port change, no secret read. Dirty harness-owned files
+(`.claude/**`, `.mcp.json`, `CLAUDE.md`) preserved.
 
-Root cause: Ollama holds 5.7 GB (qwen3:8b + nomic-embed-text loaded); Docker VM = 3.83 GB; host has 126 MB free RAM, disk at 95%. Docker Desktop running from translocated path (zombie-daemon root cause).
+Added, Bob-safe, bounded, read-only by design:
 
-- [FOLLOWUP] Reinstall Docker Desktop to `/Applications/` (fixes zombie-daemon — user action, no script)
-- [FOLLOWUP] `ollama stop` + `OLLAMA_KEEP_ALIVE=0` — frees 5.7 GB immediately
-- [FOLLOWUP] `docker system prune -a` — reclaims 25 GB disk (separate reviewed prompt)
-- [FOLLOWUP] Raise Docker VM to 6 GB after Ollama quieted (`APPROVE: docker-desktop-resources`)
-- [FOLLOWUP] Watchdog cooldown 180→300s (`APPROVE: watchdog-throttle`)
+- `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md`
+  — autonomous Cline prompt (Category: messaging, Risk: high, Trigger:
+  manual, Status: active). Phases 0–10 emit bounded evidence to
+  `ops/verification/<stamp>-bluebubbles-cortex-live-webhook.md` and
+  classify into `PASS-webhook-and-policy`, `PASS-webhook-only`,
+  `FAIL-no-webhook`, `BLOCKED-no-external-sender`,
+  `BLOCKED-ui-inaccessible`, or `BLOCKED-unhealthy-baseline`. Any
+  settings/config mutation deferred to follow-up prompts gated on
+  `APPROVE: bluebubbles-webhook-url` (or similar).
+- `ops/runbooks/2026-04-24-bluebubbles-cortex-live-webhook.md` —
+  human-approved companion runbook: pre-flight, bounded command
+  reference, UI check checklist, redaction rules, verdict taxonomy,
+  escalation paths, explicit non-authorizations. No autonomy metadata
+  (dispatcher skips runbooks).
+- `ops/verification/20260424-bluebubbles-cortex-live-webhook-prompt-creation.md`
+  — receipt for this repo pass: prompt/runbook existence, path greps,
+  no-runtime-action attestation.
 
-Report: `ops/verification/20260424-151202-bob-docker-crash-diagnostic.md`
+Key design choices recorded in the prompt:
 
----
+- **Source-of-truth webhook URL = `http://127.0.0.1:8102/hooks/bluebubbles`**
+  (loopback form), per `cortex/bluebubbles.py:680` and
+  `docs/bluebubbles/MANUAL_WEBHOOK_TEST.md:9`. The `cortex` hostname
+  form only resolves inside the Docker compose network; BlueBubbles
+  runs as a host-side LaunchAgent, so the loopback form is correct.
+  Both forms are captured in evidence to prevent repeat confusion.
+- **External send is manual and out-of-band.** The prompt prints a
+  nonce (`BBCX-<UTC-YYYYMMDD>-<6hex>`) and instructs Matt to arrange a
+  human on a distinct phone number to send it. The agent never sends
+  a message.
+- **UI inspection is `[NEEDS_MATT]`.** Matt pastes a redacted
+  screenshot description of the BlueBubbles Settings Webhook URL field
+  into the verification file. The agent does not click into the UI
+  and does not edit the field.
+- **Event watching is time-windowed polling** (≤ 12 polls × 10 s);
+  no `tail -f`, no `--follow`, no `watch`.
+- **Redaction mandatory.** Phone numbers → last-4; message bodies →
+  nonce-only; BlueBubbles API password/token → `***REDACTED***`;
+  email local-parts → `***@example.com`.
 
-## X-Intake Reply-Leg — DRY_RUN_ONLY Smoke on Bob (2026-04-24 09:09 MDT, Claude Code)
+Follow-up ownership:
 
-Full listener→dispatcher→cortex→ACK chain verified via synthetic Redis event.
+- [FOLLOWUP] Matt runs `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md` on Bob via Cline after coordinating an external sender.
+- [NEEDS_MATT] Inspect BlueBubbles Settings UI Webhook URL and record under Step 2.
+- [NEEDS_MATT] Coordinate external-number iMessage send for Step 5 (nonce supplied by prompt Step 0).
 
-- `run_listener` wired into `main.py` startup (was missing — Phase 2 integration gap fixed)
-- `reply_listener_wired dry_run=True` confirmed in x-intake logs
-- `parse_reply → ActionStore.lookup → cortex_remember → POST /remember 200 OK` ✓
-- Cortex memory `f347c35c` created ✓
-- `reply_acks.ndjson` written (1 line) ✓
-- Idempotency: second replay → still 1 ndjson line ✓
-- Live outbound `send_text` not exercised: self-to-self iMessage didn't trigger BlueBubbles webhook (inbound_count=0); synthetic event used instead
-- DRY=1 | ALLOW= restored and confirmed
-
-- ~~[NEEDS_MATT] X-intake reply-leg live smoke~~ ✅ DRY_RUN_ONLY verified 2026-04-24 — chain works; live BlueBubbles→Cortex webhook path pending config verification
-- [FOLLOWUP] Verify BlueBubbles webhook URL → `http://cortex:8102/hooks/bluebubbles`; test with incoming message from another contact (not self-to-self)
-
-Receipt: `ops/verification/20260424-090900-x-intake-reply-leg-live-smoke.txt`
+_Created by Claude Code on 2026-04-24 UTC. No runtime/external message
+action performed by this repo pass._
 
 ---
 
