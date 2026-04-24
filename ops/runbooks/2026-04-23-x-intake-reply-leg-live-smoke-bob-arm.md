@@ -1,6 +1,11 @@
 # X-Intake Reply-Leg Live Smoke — Bob Runtime Arm Runbook
 
-**Status:** `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` + **[EXTERNAL_SEND]**
+**Status:** `PRECHECKS_PASSED` — x-intake rebuilt 2026-04-24 with Phase 2-6 code.
+Handler registry confirmed. DRY=1 posture confirmed. Awaiting Matt's
+iPhone for action seed + live send (steps precheck-6 through arm-7).
+See `ops/verification/20260424-084105-x-intake-reply-leg-live-smoke-precheck.txt`.
+
+`[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` + **[EXTERNAL_SEND]**
 — **NOT auto-run by Computer / Cline / Claude Code / task-runner /
 self-improvement loop.** This file is a human-approved runbook, not
 an autonomous prompt. Do **not** add `<!-- autonomy: start -->`
@@ -54,12 +59,15 @@ before proceeding.
    Expect: branch `main`, HEAD contains commits `6aa2102`, `7bc0f5e`,
    `cce41c4`, `c0b9d1f` (Phases 2–6).
 
-2. x-intake container healthy:
+2. x-intake container healthy and up-to-date:
    ```
    docker ps --format '{{.Names}} {{.Status}}' | grep -E '^x-intake '
-   docker exec x-intake python3 -c "from integrations.x_intake.reply_actions.dispatcher import HANDLER_REGISTRY; print(sorted(HANDLER_REGISTRY))"
+   docker exec x-intake python3 -c "import sys; sys.path.insert(0,'/app'); from reply_actions.dispatcher import HANDLER_REGISTRY; print(sorted(HANDLER_REGISTRY))"
    ```
    Expect: `['cortex_dismiss', 'cortex_remember', 'escalate_to_matt']`.
+   If `ModuleNotFoundError: No module named 'reply_actions'`, the image is
+   stale (built before Phases 2-6). Rebuild first:
+   `docker compose up -d --build x-intake`
 
 3. **Current flag state — must be in the DRY_RUN=1 posture before
    starting:**

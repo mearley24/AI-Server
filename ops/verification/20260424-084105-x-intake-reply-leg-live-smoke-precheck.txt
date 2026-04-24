@@ -1,0 +1,131 @@
+X-Intake Reply-Leg Live Smoke — Prechecks
+==========================================
+Date (local): 2026-04-24T08:41:05 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Git HEAD: a939e2e18bc8c01d8914f485e1f11e4b43812dcd
+Branch: main
+Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+
+---
+
+PRECHECK 1 — Git state
+
+Clean tree (harness-owned dirty files only), branch main.
+Phase 2-6 commits present:
+  6aa21028  feat(x-intake/reply): phases 2+3 — listener + action_store
+  7bc0f5ed  feat(x-intake/reply): phase 4 — executor-router + HANDLER_REGISTRY
+  cce41c45  feat(x-intake/reply): phase 5 — outbound ACK (dry-run default)
+  c0b9d1f4  test(x-intake/reply): phase 6 e2e + guardrail coverage (11 tests)
+Result: PASS
+
+---
+
+PRECHECK 2 — x-intake container + handler registry
+
+Container:  x-intake  Up (healthy)
+Container:  cortex    Up (healthy)
+
+NOTE: Initial check failed — image was stale (built before Phases 2-6).
+Action taken: docker compose up -d --build x-intake (rebuilt with full code).
+
+Post-rebuild:
+  docker exec x-intake python3 -c "...HANDLER_REGISTRY...":
+    registry: ['cortex_dismiss', 'cortex_remember', 'escalate_to_matt'] ✓
+Result: PASS (after rebuild)
+
+---
+
+PRECHECK 3 — Flag state
+
+.env:   flags absent (CORTEX_REPLY_DRY_RUN not set, ALLOWED_TEST_RECIPIENTS not set)
+Inside container: DRY=1 | ALLOW=   ← docker-compose.yml sets CORTEX_REPLY_DRY_RUN=1 default
+Result: PASS — DRY=1 posture confirmed before any flip
+
+---
+
+PRECHECK 4 — BlueBubbles server health
+
+bash scripts/bluebubbles-health.sh --json | tail -1:
+  BB: healthy 1.9.9 ✓
+Result: PASS
+
+---
+
+PRECHECK 5 — ACK ring-buffer / ndjson
+
+/data/x_intake/: writable ✓
+reply_acks.ndjson: not yet created (no prior live ACKs) ✓
+Result: PASS
+
+---
+
+PRECHECK 6 — Seed a test action
+
+STATUS: NOT COMPLETED — requires Matt's iMessage thread GUID.
+The ActionStore.create() call needs:
+  thread_guid = Matt's actual iMessage;-;+XXXXXXXXXX handle
+Matt must provide this GUID and run the seed step manually or confirm it.
+
+---
+
+OVERALL PRECHECK STATUS
+
+All automated prechecks: PASS (after x-intake rebuild)
+Blocking item: Precheck 6 (action seed) + Step 4 (Matt sends real iMessage)
+  → Both require Matt's physical iPhone and thread GUID.
+
+---
+
+ARM STEPS COMPLETED SO FAR
+
+- [x] Precheck 1: git state ✓
+- [x] Precheck 2: handler registry (after rebuild) ✓
+- [x] Precheck 3: flag state DRY=1 ✓
+- [x] Precheck 4: BlueBubbles healthy ✓
+- [x] Precheck 5: /data/x_intake/ writable ✓
+- [x] x-intake container rebuilt with Phase 2-6 code
+- [ ] Precheck 6: seed ActionStore — NEEDS MATT (thread GUID)
+- [ ] Step 1: set ALLOWED_TEST_RECIPIENTS — NEEDS MATT (phone number)
+- [ ] Step 2: flip CORTEX_REPLY_DRY_RUN=0 — NEEDS MATT
+- [ ] Step 3: rebuild x-intake — ready to run
+- [ ] Step 4: Matt sends "[bob-reply-test] reply 1" — NEEDS MATT (iPhone)
+- [ ] Step 5: inspect evidence — NEEDS MATT
+- [ ] Step 6: restore DRY=1 + empty allowlist — NEEDS MATT
+
+---
+
+NEXT STEPS FOR MATT
+
+To complete the live smoke, in one continuous session:
+
+1. Identify your iMessage thread GUID for your own number.
+   (Check BlueBubbles server UI or run:
+    curl http://<BB_SERVER>/api/v1/chat/query?password=<PASS> | grep -i guid)
+
+2. Seed the action:
+   docker exec x-intake python3 /app/action_seed_helper.py \
+     --thread-guid "iMessage;-;+19705193013" \
+     --slot 1 --handler cortex_remember \
+     --content "reply-leg smoke" --category test
+
+   OR inline:
+   docker exec x-intake python3 -c "
+   import sys; sys.path.insert(0,'/app')
+   from reply_actions.action_store import ActionStore
+   import time
+   store = ActionStore()
+   aid = store.create(
+     valid_slots=[1],
+     context={'thread_guid':'iMessage;-;+19705193013','url':'','title':'smoke test',
+              'summary':'reply-leg smoke','category':'test',
+              'slot_handler_map':{'1':'cortex_remember'}},
+     expiry_seconds=600,
+     thread_guid='iMessage;-;+19705193013',
+   )
+   print('seeded action_id:', aid)
+   "
+   (Replace +19705193013 with your actual number.)
+
+3. Run the full arm sequence (steps 1-7) in one session.
+
+4. The DRY=0 window should be kept under 5 minutes.
