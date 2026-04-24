@@ -3378,9 +3378,29 @@ All 4 inbox items already had archive + card from the 17:00–17:03Z run this se
 
 Verification: ops/verification/self-improve-20260424T170337Z.txt
 
+### Self-improvement loop — 20260424T180711Z
+
+inbox processed: 4 (all skipped — idempotent re-run), cards: 0 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 4 inbox items already had archive + card from earlier runs this session. No new cards or prompts drafted.
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed** (committed); Status: needs fetch
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **already processed** (untracked); Status: needs fetch
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed** (untracked); Status: needs fetch
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **already processed** (untracked); Status: needs fetch
+
+Verification: ops/verification/self-improve-20260424T180711Z.txt
+
 ## X-Intake Reply-Leg — Live Smoke Final (2026-04-24 UTC, Claude Code)
 - Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
 - Evidence: ops/verification/20260424-174246-x-intake-reply-leg-live-smoke.txt
 - Verdict: PARTIAL-PASS — listener/dispatch/cortex_remember/send_ack all verified; BlueBubbles send_text hangs (apple-script) or 500 (private-api helper not connected)
 - Fixes committed: listener.py bytes decode, ack.py HTTP via CORTEX_URL, routing JSON allowlist
 - [FOLLOWUP: bluebubbles-send-method] Messages.app AppleScript access or Private API helper needed to close outbound leg
+
+## Bob Docker Crash Diagnostic — Re-run (2026-04-24 18:04 UTC, Claude Code)
+- Evidence: ops/verification/20260424-180456-bob-docker-crash-diagnostic.md
+- Classification: B (rsshub 87%, dtools-bridge 78% of 256m) + C (8.67 GB reclaimable) + D (vpn restart loop) + E (Docker Desktop crash during keychain-locked build)
+- [FOLLOWUP] Raise rsshub+dtools-bridge mem_limit 256m→512m (APPROVE: compose-memory-limits)
+- [FOLLOWUP] docker image prune -a reclaim 8.67 GB (APPROVE: log-rotation)
+- [FOLLOWUP] vpn healthcheck investigation
