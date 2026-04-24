@@ -447,7 +447,7 @@ def test_investigation_cache_ttl():
     gate = HumanGate(source="s", marker="FOLLOWUP", excerpt="test", action_class="AUTO_REVIEW")
     inv = Investigation(
         gate_excerpt="test", gate_source="s", root_cause_hypothesis="h",
-        evidence=[], proposed_fix="fix", confidence=0.5,
+        evidence=[], proposed_fix="fix", actions=[], confidence=0.5,
         investigated_at="now", status="complete",
     )
     cache.put(gate, inv)
@@ -466,3 +466,112 @@ def test_run_investigations_skips_non_auto_review():
         results = asyncio.run(run_investigations(gates, Path(tmp)))
     assert len(results) == 1
     assert results[0].gate_excerpt == "complete backfill"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  9. Action execution layer
+# ══════════════════════════════════════════════════════════════════════════════
+
+from cortex.autonomy import (
+    Action,
+    ExecutionResult,
+    ActionRegistry,
+    execute_action_safe,
+    _make_action,
+)
+
+
+def test_action_has_stable_id():
+    """Same command always produces the same action_id."""
+    a1 = _make_action("label", "echo hello")
+    a2 = _make_action("label2", "echo hello")
+    assert a1.action_id == a2.action_id  # same command → same ID
+
+
+def test_action_different_commands_different_ids():
+    a1 = _make_action("l", "echo hello")
+    a2 = _make_action("l", "echo world")
+    assert a1.action_id != a2.action_id
+
+
+def test_execute_action_blocked_without_approval():
+    """requires_approval=True + approved=False → blocked_needs_approval."""
+    action = _make_action("test", "echo hi", requires_approval=True, host_required=False)
+    result = execute_action_safe(action, approved=False)
+    assert result.status == "blocked_needs_approval"
+    assert result.returncode is None
+
+
+def test_execute_action_host_required_returns_host_required():
+    """Host commands return host_required status, not executed."""
+    action = _make_action(
+        "test", "launchctl list | grep task-runner",
+        requires_approval=False, host_required=True,
+    )
+    result = execute_action_safe(action, approved=True)
+    assert result.status == "host_required"
+    assert action.command in result.stdout
+
+
+def test_execute_action_safe_runs_echo():
+    """Low-risk in-container command actually executes when approved."""
+    action = Action(
+        action_id="test001",
+        label="echo test",
+        command="echo autonomy-test-ok",
+        risk="low",
+        requires_approval=False,
+        timeout_sec=5,
+        host_required=False,
+    )
+    result = execute_action_safe(action, approved=True)
+    assert result.status == "success"
+    assert "autonomy-test-ok" in result.stdout
+    assert result.returncode == 0
+    assert result.duration_sec >= 0
+
+
+def test_execute_action_timeout():
+    """Commands exceeding timeout_sec return timeout status."""
+    action = Action(
+        action_id="test002",
+        label="sleep forever",
+        command="sleep 60",
+        risk="low",
+        requires_approval=False,
+        timeout_sec=1,
+        host_required=False,
+    )
+    result = execute_action_safe(action, approved=True)
+    assert result.status == "timeout"
+
+
+def test_action_registry_put_and_get():
+    reg = ActionRegistry(ttl=60)
+    a = _make_action("label", "echo hi", host_required=False)
+    reg.register(a)
+    found = reg.get(a.action_id)
+    assert found is not None
+    assert found.command == "echo hi"
+
+
+def test_action_registry_miss_returns_none():
+    reg = ActionRegistry(ttl=60)
+    assert reg.get("nonexistent") is None
+
+
+def test_investigate_gate_includes_actions():
+    """investigate_gate must populate actions list and register them."""
+    gate = HumanGate(
+        source="STATUS_REPORT.md", marker="FOLLOWUP",
+        excerpt="- [FOLLOWUP] Complete historical embedding backfill",
+        action_class="AUTO_REVIEW",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        inv = investigate_gate(gate, Path(tmp))
+    assert isinstance(inv.actions, list)
+    assert len(inv.actions) > 0
+    assert all(isinstance(a, Action) for a in inv.actions)
+    # Backfill rule should produce a dry-run action
+    labels = [a.label.lower() for a in inv.actions]
+    assert any("dry" in l or "backfill" in l or "embed" in l for l in labels)

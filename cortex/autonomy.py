@@ -12,11 +12,14 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
+import shlex
 import sqlite3
+import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -164,6 +167,35 @@ class AutonomyQuestion:
 
 
 @dataclass
+class Action:
+    """A single executable action proposed by an investigation."""
+
+    action_id: str          # sha256[:12] of command — stable, deduplicates identical cmds
+    label: str
+    command: str            # complete, copy-paste safe command string
+    risk: str               # "low" | "medium" | "high"
+    requires_approval: bool = True   # default: always ask before running
+    timeout_sec: int = 60
+    host_required: bool = True       # True = must run on Bob host, not inside container
+    env_hint: str = ""               # e.g. "Run from ~/AI-Server on Bob"
+
+
+@dataclass
+class ExecutionResult:
+    """Result of a POST /api/autonomy/execute_action call."""
+
+    action_id: str
+    command: str
+    approved: bool
+    executed_at: str
+    status: str        # success | failed | timeout | blocked_needs_approval | host_required
+    stdout: str = ""
+    stderr: str = ""
+    returncode: int | None = None
+    duration_sec: float = 0.0
+
+
+@dataclass
 class Investigation:
     """Structured investigation report for one AUTO_REVIEW gate."""
 
@@ -172,6 +204,7 @@ class Investigation:
     root_cause_hypothesis: str
     evidence: list[dict[str, Any]]   # [{type, source, content}]
     proposed_fix: str
+    actions: list[Action]            # structured, optionally executable action plan
     confidence: float                # 0.0 – 1.0
     investigated_at: str
     status: str = "complete"         # complete | partial | no_evidence
@@ -681,6 +714,231 @@ _DEFAULT_HYPOTHESIS = "Gate requires review; no specific pattern matched."
 _DEFAULT_FIX = "Review gate context and determine the appropriate action manually."
 
 
+def _make_action(label: str, command: str, risk: str = "low",
+                 requires_approval: bool = True, timeout_sec: int = 60,
+                 host_required: bool = True, env_hint: str = "Run from ~/AI-Server on Bob") -> Action:
+    action_id = hashlib.sha256(command.encode()).hexdigest()[:12]
+    return Action(action_id=action_id, label=label, command=command,
+                  risk=risk, requires_approval=requires_approval,
+                  timeout_sec=timeout_sec, host_required=host_required, env_hint=env_hint)
+
+
+# Per-pattern action lists — parallel to _INVESTIGATION_RULES order
+_RULE_ACTIONS: list[list[Action]] = [
+    # backfill / embed
+    [
+        _make_action(
+            "Dry-run embedding backfill (safe preview)",
+            "docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --dry-run",
+            risk="low", requires_approval=False, timeout_sec=60,
+        ),
+        _make_action(
+            "Apply embedding backfill (Ollama provider)",
+            "docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --apply --provider ollama --db /data/cortex/brain.db",
+            risk="medium", requires_approval=True, timeout_sec=300,
+        ),
+        _make_action(
+            "Enable embeddings in .env",
+            "bash scripts/set-env.sh CORTEX_EMBEDDINGS_ENABLED 1",
+            risk="low", requires_approval=True, timeout_sec=10,
+        ),
+    ],
+    # docker daemon instability
+    [
+        _make_action(
+            "Run Docker recovery script",
+            "bash scripts/docker-recover.sh",
+            risk="medium", requires_approval=True, timeout_sec=120,
+        ),
+        _make_action(
+            "Show Docker container health",
+            "docker ps --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'",
+            risk="low", requires_approval=False, timeout_sec=10,
+        ),
+    ],
+    # network-guard
+    [
+        _make_action(
+            "Check network-guard launchd status",
+            "launchctl list | grep network-guard",
+            risk="low", requires_approval=False, timeout_sec=5,
+        ),
+        _make_action(
+            "Reload network-guard plist",
+            "launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.symphony.network-guard.plist && launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-guard.plist",
+            risk="medium", requires_approval=True, timeout_sec=15,
+        ),
+    ],
+    # dropout-watch
+    [
+        _make_action(
+            "Check dropout-watch status",
+            "launchctl list | grep dropout-watch",
+            risk="low", requires_approval=False, timeout_sec=5,
+        ),
+        _make_action(
+            "Re-arm dropout-watch",
+            "launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist",
+            risk="low", requires_approval=True, timeout_sec=10,
+        ),
+    ],
+    # task-runner / watchdog
+    [
+        _make_action(
+            "Check task-runner launchd status",
+            "launchctl list | grep -E 'task-runner|bob-watchdog'",
+            risk="low", requires_approval=False, timeout_sec=5,
+        ),
+        _make_action(
+            "Reload task-runner agent",
+            "launchctl load ~/Library/LaunchAgents/com.symphony.task-runner.plist",
+            risk="low", requires_approval=True, timeout_sec=10,
+        ),
+    ],
+    # log prune
+    [
+        _make_action(
+            "Truncate network-guard.err log",
+            "cp /dev/null /Users/bob/AI-Server/logs/network-guard.err",
+            risk="low", requires_approval=False, timeout_sec=5,
+        ),
+    ],
+    # plist copy to LaunchAgents
+    [
+        _make_action(
+            "Copy dropout-watch plist to LaunchAgents",
+            "cp /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist ~/Library/LaunchAgents/",
+            risk="low", requires_approval=False, timeout_sec=5,
+        ),
+    ],
+]
+
+_DEFAULT_ACTIONS: list[Action] = [
+    _make_action(
+        "Review gate in STATUS_REPORT",
+        "grep -n 'FOLLOWUP\\|NEEDS_MATT' /Users/bob/AI-Server/STATUS_REPORT.md | tail -20",
+        risk="low", requires_approval=False, timeout_sec=5,
+    ),
+]
+
+# ── Action registry (action_id → Action, TTL-bound) ───────────────────────────
+
+_ACTION_REGISTRY_TTL = 600  # seconds
+
+
+class ActionRegistry:
+    """Maps action_id → Action for execute_action lookups."""
+
+    def __init__(self, ttl: float = _ACTION_REGISTRY_TTL) -> None:
+        self._ttl = ttl
+        self._store: dict[str, tuple[float, Action]] = {}
+
+    def register(self, action: Action) -> None:
+        self._store[action.action_id] = (time.time(), action)
+
+    def get(self, action_id: str) -> Action | None:
+        entry = self._store.get(action_id)
+        if entry and (time.time() - entry[0]) < self._ttl:
+            return entry[1]
+        return None
+
+    def register_all(self, actions: list[Action]) -> None:
+        for a in actions:
+            self.register(a)
+
+    def clear_stale(self) -> None:
+        now = time.time()
+        self._store = {k: v for k, v in self._store.items() if (now - v[0]) < self._ttl}
+
+
+_action_registry = ActionRegistry()
+
+# ── Execution log (ring buffer) ───────────────────────────────────────────────
+
+_MAX_EXEC_LOG = 50
+_execution_log: list[ExecutionResult] = []
+
+# Commands allowed to run directly in-container (host_required=False candidates).
+# All others return host_required status.
+_CONTAINER_SAFE_PREFIXES: tuple[str, ...] = (
+    "python3 /app/scripts/",
+)
+
+
+def _is_container_executable(command: str) -> bool:
+    return any(command.strip().startswith(p) for p in _CONTAINER_SAFE_PREFIXES)
+
+
+def execute_action_safe(action: Action, approved: bool) -> ExecutionResult:
+    """Execute an action with safety checks. Never raises — always returns a result."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if action.requires_approval and not approved:
+        result = ExecutionResult(
+            action_id=action.action_id, command=action.command,
+            approved=False, executed_at=now_iso,
+            status="blocked_needs_approval",
+            stderr="Action requires explicit approval. Pass approved=true to execute.",
+        )
+        _execution_log.append(result)
+        if len(_execution_log) > _MAX_EXEC_LOG:
+            _execution_log.pop(0)
+        return result
+
+    if action.host_required and not _is_container_executable(action.command):
+        result = ExecutionResult(
+            action_id=action.action_id, command=action.command,
+            approved=approved, executed_at=now_iso,
+            status="host_required",
+            stdout=f"Run this command on the Bob host:\n  {action.command}",
+            stderr="Cannot execute host commands from inside the Cortex container.",
+        )
+        _execution_log.append(result)
+        if len(_execution_log) > _MAX_EXEC_LOG:
+            _execution_log.pop(0)
+        logger.info("autonomy.action_host_required action_id=%s", action.action_id)
+        return result
+
+    # Actually execute
+    t0 = time.time()
+    try:
+        cmd_list = shlex.split(action.command)
+        proc = subprocess.run(
+            cmd_list, capture_output=True, text=True, timeout=action.timeout_sec,
+        )
+        duration = time.time() - t0
+        stdout_lines = proc.stdout.splitlines()[-100:]
+        stderr_lines = proc.stderr.splitlines()[-100:]
+        status = "success" if proc.returncode == 0 else "failed"
+        result = ExecutionResult(
+            action_id=action.action_id, command=action.command,
+            approved=approved, executed_at=now_iso, status=status,
+            stdout="\n".join(stdout_lines), stderr="\n".join(stderr_lines),
+            returncode=proc.returncode, duration_sec=round(duration, 2),
+        )
+        logger.info("autonomy.action_executed action_id=%s status=%s rc=%s",
+                    action.action_id, status, proc.returncode)
+    except subprocess.TimeoutExpired:
+        result = ExecutionResult(
+            action_id=action.action_id, command=action.command,
+            approved=approved, executed_at=now_iso, status="timeout",
+            stderr=f"Command timed out after {action.timeout_sec}s.",
+            duration_sec=time.time() - t0,
+        )
+    except Exception as exc:
+        result = ExecutionResult(
+            action_id=action.action_id, command=action.command,
+            approved=approved, executed_at=now_iso, status="failed",
+            stderr=f"Execution error: {exc!s:.200}",
+            duration_sec=time.time() - t0,
+        )
+
+    _execution_log.append(result)
+    if len(_execution_log) > _MAX_EXEC_LOG:
+        _execution_log.pop(0)
+    return result
+
+
 def _collect_evidence(sources: list[dict], repo: Path) -> list[dict[str, Any]]:
     """Gather bounded evidence from each source descriptor. Never raises."""
     results: list[dict[str, Any]] = []
@@ -767,17 +1025,22 @@ def investigate_gate(gate: "HumanGate", repo: Path) -> Investigation:
     hypothesis = _DEFAULT_HYPOTHESIS
     sources: list[dict] = []
     fix = _DEFAULT_FIX
+    actions: list[Action] = list(_DEFAULT_ACTIONS)
 
-    for pattern, hyp, srcs, proposed in _INVESTIGATION_RULES:
+    for idx, (pattern, hyp, srcs, proposed) in enumerate(_INVESTIGATION_RULES):
         if pattern.search(text):
             hypothesis = hyp
             sources = srcs
             fix = proposed
+            actions = list(_RULE_ACTIONS[idx]) if idx < len(_RULE_ACTIONS) else list(_DEFAULT_ACTIONS)
             break
 
     evidence = _collect_evidence(sources, repo)
     confidence = _derive_confidence(evidence)
     status = "complete" if evidence else "no_evidence"
+
+    # Register all actions so /execute_action can look them up
+    _action_registry.register_all(actions)
 
     return Investigation(
         gate_excerpt=gate.excerpt[:200],
@@ -785,6 +1048,7 @@ def investigate_gate(gate: "HumanGate", repo: Path) -> Investigation:
         root_cause_hypothesis=hypothesis,
         evidence=evidence,
         proposed_fix=fix,
+        actions=actions,
         confidence=confidence,
         investigated_at=datetime.now(timezone.utc).isoformat(),
         status=status,
@@ -862,9 +1126,8 @@ def register_autonomy_routes(app: FastAPI) -> None:
 
     @app.get("/api/autonomy/investigations", tags=["autonomy"])
     async def autonomy_investigations() -> dict[str, Any]:
-        """Return cached investigation reports for AUTO_REVIEW gates."""
+        """Return investigation reports for AUTO_REVIEW gates with structured action plans."""
         try:
-            # Also trigger fresh investigations on direct call
             overview = await assessor.assess()
             invs = await run_investigations(overview.human_gates, REPO)
             return {
@@ -880,3 +1143,34 @@ def register_autonomy_routes(app: FastAPI) -> None:
                 "count": 0,
                 "investigations": [],
             }
+
+    @app.post("/api/autonomy/execute_action", tags=["autonomy"])
+    async def autonomy_execute_action(body: dict[str, Any]) -> dict[str, Any]:
+        """Execute a proposed action from an investigation. Gated by approval."""
+        action_id = (body or {}).get("action_id", "")
+        approved = bool((body or {}).get("approved", False))
+
+        if not action_id:
+            return {"error": "action_id required", "status": "bad_request"}
+
+        action = _action_registry.get(action_id)
+        if not action:
+            return {
+                "error": f"Unknown action_id '{action_id}'. Call /api/autonomy/investigations first to register actions.",
+                "status": "not_found",
+            }
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, execute_action_safe, action, approved)
+        logger.info("autonomy.execute_action action_id=%s approved=%s status=%s",
+                    action_id, approved, result.status)
+        return asdict(result)
+
+    @app.get("/api/autonomy/execution_log", tags=["autonomy"])
+    async def autonomy_execution_log() -> dict[str, Any]:
+        """Return the last 50 action execution results."""
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "count": len(_execution_log),
+            "results": [asdict(r) for r in reversed(_execution_log)],
+        }

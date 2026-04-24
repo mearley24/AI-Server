@@ -1793,29 +1793,83 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       el.innerHTML = '<div class="small" style="color:var(--green)">No AUTO_REVIEW gates to investigate.</div>';
       return;
     }
+
+    const _RISK_COLOR = { low: 'var(--green)', medium: 'var(--yellow)', high: 'var(--red)' };
+
     el.innerHTML = invs.map((inv) => {
       const conf = (inv.confidence * 100).toFixed(0);
       const confCol = _confColor(inv.confidence);
-      const evidenceSummary = (inv.evidence || []).map((e) =>
-        `<li style="padding:1px 0;"><span style="color:var(--gold-dim);min-width:140px;display:inline-block;">${esc(e.label||e.type)}</span>` +
-        `<span class="small mono" style="color:var(--muted);">${esc(String(e.content??'').slice(0,120))}</span></li>`
+      const evidenceRows = (inv.evidence || []).map((e) =>
+        `<tr><td style="color:var(--gold-dim);padding:1px 8px 1px 0;white-space:nowrap;">${esc(e.label||e.type)}</td>` +
+        `<td class="small mono" style="color:var(--muted);">${esc(String(e.content??'').slice(0,140))}</td></tr>`
       ).join('');
-      return `<div style="border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:10px;">
+
+      const actionRows = (inv.actions || []).map((a) => {
+        const riskCol = _RISK_COLOR[a.risk] || 'var(--muted)';
+        const btnId = `btn-${a.action_id}`;
+        const outId = `out-${a.action_id}`;
+        const needsApproval = a.requires_approval;
+        const btnLabel = a.host_required && !a.command.startsWith('python3 /app/') ? 'Copy' : (needsApproval ? 'Run (requires approval)' : 'Run');
+        const btnAction = a.host_required && !a.command.startsWith('python3 /app/')
+          ? `navigator.clipboard.writeText(${JSON.stringify(a.command)}).then(()=>{$('${btnId}').textContent='Copied!'});`
+          : `runAction(${JSON.stringify(a.action_id)}, ${needsApproval}, '${outId}', '${btnId}')`;
+        return `<div style="margin:4px 0;padding:6px 8px;background:var(--surface-2);border-radius:4px;border-left:3px solid ${riskCol};">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="font-size:10px;font-weight:700;color:${riskCol};min-width:36px;">${esc(a.risk.toUpperCase())}</span>
+            <span style="font-size:11px;color:var(--text);flex:1;">${esc(a.label)}</span>
+            ${a.host_required && !a.command.startsWith('python3 /app/') ? '<span style="font-size:9px;color:var(--muted);margin-right:4px;">HOST</span>' : ''}
+            <button id="${btnId}" onclick="${btnAction}" style="font-size:10px;padding:2px 8px;border-radius:3px;border:1px solid var(--border-2);background:var(--surface-3);color:var(--muted);cursor:pointer;">${btnLabel}</button>
+          </div>
+          <code class="small mono" style="color:var(--muted);display:block;overflow-x:auto;white-space:pre;">${esc(a.command)}</code>
+          <div id="${outId}" style="display:none;margin-top:4px;padding:4px 6px;background:#0a0a0a;border-radius:3px;font-size:10px;font-family:monospace;color:var(--green);white-space:pre-wrap;max-height:120px;overflow-y:auto;"></div>
+        </div>`;
+      }).join('');
+
+      return `<div style="border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:12px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
           <span style="font-size:10px;font-weight:700;color:var(--blue);">AUTO_REVIEW</span>
           <span class="small mono" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(inv.gate_source)}</span>
-          <span style="font-size:11px;font-weight:700;color:${confCol};">${conf}% confidence</span>
+          <span style="font-size:11px;font-weight:700;color:${confCol};">${conf}%</span>
         </div>
         <div style="font-size:12px;color:var(--text);margin-bottom:4px;">${esc(inv.root_cause_hypothesis)}</div>
-        <div class="small" style="color:var(--muted);margin-bottom:4px;line-height:1.4;">
-          ${esc((inv.gate_excerpt||'').slice(0,120))}
-        </div>
-        ${evidenceSummary ? `<ul style="margin:4px 0 6px;padding:0 0 0 4px;list-style:none;">${evidenceSummary}</ul>` : ''}
-        <div style="font-size:11px;background:var(--surface-2);border-radius:4px;padding:5px 8px;margin-top:4px;color:var(--text);">
-          <span style="color:var(--muted);margin-right:4px;">Proposed fix:</span>${esc(inv.proposed_fix)}
-        </div>
+        <div class="small" style="color:var(--muted);margin-bottom:6px;line-height:1.4;">${esc((inv.gate_excerpt||'').slice(0,140))}</div>
+        ${evidenceRows ? `<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">${evidenceRows}</table>` : ''}
+        <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em;">Action Plan</div>
+        ${actionRows || '<div class="small" style="color:var(--muted)">No actions defined.</div>'}
       </div>`;
     }).join('');
+  }
+
+  async function runAction(action_id, requires_approval, outId, btnId) {
+    const out = $(outId);
+    const btn = $(btnId);
+    if (requires_approval) {
+      const confirmed = confirm(`This action requires approval.\n\nAction ID: ${action_id}\n\nProceed?`);
+      if (!confirmed) return;
+    }
+    btn.textContent = 'Running…';
+    btn.disabled = true;
+    out.style.display = 'block';
+    out.textContent = 'executing…';
+    try {
+      const res = await fetch('/api/autonomy/execute_action', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({action_id, approved: true}),
+      });
+      const data = await res.json();
+      const statusCol = data.status === 'success' ? 'var(--green)' : data.status === 'host_required' ? 'var(--yellow)' : 'var(--red)';
+      out.style.color = statusCol;
+      let txt = `status: ${data.status}`;
+      if (data.stdout) txt += `\n--- stdout ---\n${data.stdout}`;
+      if (data.stderr) txt += `\n--- stderr ---\n${data.stderr}`;
+      if (data.returncode != null) txt += `\nreturncode: ${data.returncode}  (${data.duration_sec}s)`;
+      out.textContent = txt;
+      btn.textContent = data.status === 'success' ? 'Done ✓' : data.status;
+    } catch(e) {
+      out.textContent = `fetch error: ${e}`;
+      btn.textContent = 'Error';
+    }
   }
 
   window.loadInvestigations = async function loadInvestigations() {
