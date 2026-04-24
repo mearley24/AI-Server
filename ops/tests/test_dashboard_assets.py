@@ -179,10 +179,22 @@ def test_api_tools_cortex_entry_has_tailscale_urls():
     assert cortex is not None, "Cortex Dashboard must be in the registry"
     assert cortex["port"] == 8102
     assert cortex["local_url"] == "http://127.0.0.1:8102/dashboard"
+    # URLs are still surfaced so the UI can light up the moment
+    # `tailscale serve` publishes 8102, but Cortex is Docker-bound
+    # 127.0.0.1:8102 today — flagged lan_only post the 2026-04-24
+    # wildcard-listener fix (file-watcher rebound to 127.0.0.1:8103).
     assert cortex["tailscale_url"] == "http://100.89.1.51:8102/dashboard"
     assert (
         cortex["tailscale_fqdn_url"]
         == "http://bobs-mac-mini.tailbcf3fe.ts.net:8102/dashboard"
+    )
+    assert cortex["status"] == "lan_only"
+    # Guard against re-introducing the stale "Currently binds *:8102"
+    # claim. The note can still describe the prior wildcard as history,
+    # but must not describe it as the current state.
+    assert "Currently binds *:8102" not in cortex["notes"], (
+        "Cortex note still claims *:8102 wildcard as current; the wildcard "
+        "was host file-watcher, rebound to 127.0.0.1:8103 on 2026-04-24."
     )
 
 

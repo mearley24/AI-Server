@@ -156,18 +156,28 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
     # Overview tab — core Cortex + central services
     _tool("Cortex Dashboard", 8102, "overview", "Core AI",
           health_path="/health", local_path="/dashboard",
-          notes="Brain, memory, dashboard. Currently binds *:8102 — audit item."),
+          notes="Brain, memory, dashboard. Bound 127.0.0.1:8102 (Docker "
+                "loopback); direct Tailscale URL requires `tailscale serve` "
+                "or SSH tunnel — the prior *:8102 wildcard was the host "
+                "file-watcher agent, rebound to 127.0.0.1:8103 on 2026-04-24.",
+          status="lan_only"),
     _tool("OpenClaw", 8099, "overview", "Core AI",
           health_path="/health",
-          notes="Central LLM orchestration + routing."),
+          notes="Central LLM orchestration + routing. Docker-bound "
+                "127.0.0.1:8099 — Tailscale URL needs `tailscale serve`.",
+          status="lan_only"),
     _tool("Cortex Autobuilder", 8115, "overview", "Core AI",
           health_path="/health",
-          notes="Bob/Betty research loop + topic scanning."),
+          notes="Bob/Betty research loop + topic scanning. Docker-bound "
+                "127.0.0.1:8115 — Tailscale URL needs `tailscale serve`.",
+          status="lan_only"),
 
     # X Intake tab
     _tool("X Intake", 8101, "xintake", "Intelligence",
           health_path="/health",
-          notes="X/Twitter link analysis + bookmarks queue."),
+          notes="X/Twitter link analysis + bookmarks queue. Docker-bound "
+                "127.0.0.1:8101 — Tailscale URL needs `tailscale serve`.",
+          status="lan_only"),
 
     # Symphony Ops tab — business / communication tools
     _tool("Markup Tool", 8088, "symphony", "Business",
@@ -182,7 +192,9 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
                 "(LAN-accessible)."),
     _tool("Proposals", 8091, "symphony", "Business",
           health_path="/health",
-          notes="Symphony proposal generation engine."),
+          notes="Symphony proposal generation engine. Docker-bound "
+                "127.0.0.1:8091 — Tailscale URL needs `tailscale serve`.",
+          status="lan_only"),
     _tool("iMessage Bridge", 8199, "symphony", "Communication",
           health_path="/health",
           notes="Two-way message bridge health/API. Bound 127.0.0.1.",
@@ -191,10 +203,14 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
     # Autonomy tab — control plane / ops adjacent
     _tool("Notification Hub", 8095, "autonomy", "Infrastructure",
           health_path="/health",
-          notes="Alert routing and delivery."),
+          notes="Alert routing and delivery. Docker-bound 127.0.0.1:8095 — "
+                "Tailscale URL needs `tailscale serve`.",
+          status="lan_only"),
     _tool("Intel Feeds", 8765, "autonomy", "Intelligence",
           health_path="/health",
-          notes="News, Reddit, Polymarket monitors."),
+          notes="News, Reddit, Polymarket monitors. Docker-bound "
+                "127.0.0.1:8765 — Tailscale URL needs `tailscale serve`.",
+          status="lan_only"),
 
     # Mobile gateway — not yet confirmed in PORTS.md; surface as unknown
     _tool("Mobile Gateway", None, "overview", "Infrastructure",
