@@ -1,0 +1,110 @@
+X-Intake Reply-Leg Live Smoke — Final Receipt
+==============================================
+Date (UTC): 2026-04-24T17:42Z
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Runner: Claude Code
+Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+Outcome: PARTIAL-PASS — chain fires end-to-end to BlueBubbles API;
+  outbound delivery blocked by apple-script execution hang on Bob.
+
+== Bugs Found and Fixed This Session ==
+
+1. listener.py — process_message: Redis delivers messages as bytes; the
+   isinstance(raw, str) guard caused bytes to pass through as raw dict
+   reference, failing the isinstance(data, dict) check and silently returning.
+   Fix: decode bytes before json.loads.
+
+2. ack.py — live send_ack: imported cortex.bluebubbles.BlueBubblesClient
+   which is not installed in the x-intake container. Exception was caught
+   silently (str(exc) == ""). Fix: call Cortex POST /api/bluebubbles/send
+   via httpx instead (CORTEX_URL env var).
+
+3. Action context schema: create() was called without slot_handler_map key,
+   causing reply_unknown_handler. Context must include:
+   {"slot_handler_map": {"1": "cortex_remember"}, "thread_guid": "...", ...}
+
+4. routing JSON: +18609171850 was added with leading + but BlueBubbles
+   may send handle address without the + prefix. Fix: added both forms
+   (with and without +) and added iMessage;-;+18609171850 to allowed_chat_guids.
+
+== Chain Verification — Step by Step ==
+
+BlueBubbles webhook -> Cortex inbound:
+  POST /hooks/bluebubbles 200 OK                                       PASS
+  inbound_count incremented                                            PASS
+  policy: is_inbound_allowed(18609171850) -> sender_allowlisted        PASS (after fix 4)
+  _publish_event -> events:imessage published                          PASS
+
+events:imessage -> x-intake reply_listener:
+  reply_listener_started channel=events:imessage dry_run=False         PASS
+  message received as bytes -> decoded to str -> json.loads            PASS (after fix 1)
+  parse_reply("reply 1", {1}) -> slot=1                               PASS
+  ActionStore.lookup_by_slot(iMessage;-;+18609171850, 1) -> found      PASS
+  ActionStore.mark_used() -> idempotency guard active                  PASS
+  HANDLER_REGISTRY["cortex_remember"] dispatched                       PASS
+  POST http://cortex:8102/remember -> HTTP 200 OK                      PASS
+  send_ack(iMessage;-;+18609171850, "Saved to Bobs memory", dry_run=False)  PASS (after fix 2+3)
+
+x-intake -> Cortex /api/bluebubbles/send -> BlueBubbles:
+  POST http://cortex:8102/api/bluebubbles/send 200-path entered        PASS
+  POST BlueBubbles /api/v1/message/text method=apple-script            FAIL (ReadTimeout)
+  POST BlueBubbles /api/v1/message/text method=private-api             FAIL (500, helper not connected)
+
+== Evidence ==
+Cortex counters at close:
+  inbound_count: 3
+  outbound_failure_count: 4 (ReadTimeout x4)
+  outbound_count: 0 (send_text never returned 200)
+  last_outbound_error: "" (ReadTimeout stringifies to empty)
+
+reply_acks.ndjson: 1 line (dry-run entry from prior smoke; live-mode
+  does not write to ndjson — expected)
+
+== DRY=0 Window ==
+Opened:   2026-04-24T16:57:27Z
+Closed:   2026-04-24T17:40Z
+Duration: ~43 min (includes multi-round debugging)
+
+== External Sends ==
+Sender: +1XXXXXXX1850 -> Matt BlueBubbles handle
+  ~16:54Z — "reply 1" (Cortex down during Docker restart, no webhook)
+  ~17:01Z — "[bob-reply-test] reply 1" (routing policy blocked, fix 4 needed)
+  ~17:10Z — "[bob-reply-test] reply 1" (routing fixed; bytes bug blocked, fix 1 needed)
+  Chain also exercised via direct Redis PUBLISH for debugging.
+
+== Routing JSON State at Close ==
+Added for this test (persisted in config/bluebubbles_routing.json):
+  inbound.allowed_phones: +18609171850, 18609171850
+  inbound.allowed_chat_guids: iMessage;-;+18609171850
+  outbound.allowed_phones: +18609171850, 18609171850
+  outbound.allowed_chat_guids: iMessage;-;+18609171850
+These entries remain for future retests. Remove if not needed.
+
+== Restore Confirmation ==
+CORTEX_REPLY_DRY_RUN=1    .env confirmed, container confirmed (DRY=1)
+ALLOWED_TEST_RECIPIENTS=  .env confirmed, container confirmed (ALLOW=)
+
+== Verdict ==
+PARTIAL-PASS
+
+The complete reply-leg pipeline is proven correct from inbound iMessage
+through cortex_remember + send_ack. The only unproven leg is final
+BlueBubbles message delivery on Bob.
+
+Root cause of outbound failure: BlueBubbles /api/v1/message/text with
+method=apple-script hangs indefinitely (ReadTimeout at any timeout value).
+method=private-api returns 500 "iMessage Private API Helper is not connected."
+
+Fixes required to close the gap:
+  [FOLLOWUP: bluebubbles-send-method]
+  Option A: Open Messages.app on Bob, verify AppleScript access is granted
+            in System Preferences -> Privacy -> Automation. Then retry.
+  Option B: Connect BlueBubbles Private API helper (requires jailbreak or
+            unsandboxed environment — check BlueBubbles docs for Bob's setup).
+  Option C: Rebuild x-intake image with fixes baked in; run a clean retry
+            once BlueBubbles send method is confirmed working.
+
+Files changed this session (committed separately):
+  integrations/x_intake/reply_actions/listener.py  (bytes decode fix)
+  integrations/x_intake/reply_actions/ack.py        (HTTP via CORTEX_URL)
+  config/bluebubbles_routing.json                    (allowlist entries)

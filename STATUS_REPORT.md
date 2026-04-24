@@ -3355,3 +3355,32 @@ Pattern note: three X links arrived on 2026-04-24 via the same iMessage handle (
 - Verdict: BLOCKED — Docker daemon restarted during DRY=0 window; Cortex unreachable when webhook arrived
 - +18609171850 added to routing JSON (left for retry; remove via config/bluebubbles_routing.json if not needed)
 - [FOLLOWUP: x-intake-reply-leg-retry] Re-seed action, flip DRY=0, retry send with Docker stable
+
+### Self-improvement loop — 2026-04-24T17:03:37Z
+
+inbox processed: 0 (idempotent re-run), cards: 0 new (all 4 inbox items already had archive + card from prior run at 17:00Z)
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed** (committed)
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **already processed** (untracked, uncommitted from 17:00Z run)
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed** (untracked, uncommitted from 17:00Z run)
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **already processed** (untracked, uncommitted from 17:00Z run)
+
+### Self-improvement loop — 2026-04-24T17:35:43Z
+
+inbox processed: 4 (all skipped — idempotent re-run), cards: 0 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 4 inbox items already had archive + card from the 17:00–17:03Z run this session; collector confirmed running (3 new 20260424 files visible as untracked in git). No new cards or prompts drafted.
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed** (committed); Status: needs fetch
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **already processed** (untracked); Status: needs fetch
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed** (untracked); Status: needs fetch
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **already processed** (untracked); Status: needs fetch
+
+Verification: ops/verification/self-improve-20260424T170337Z.txt
+
+## X-Intake Reply-Leg — Live Smoke Final (2026-04-24 UTC, Claude Code)
+- Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+- Evidence: ops/verification/20260424-174246-x-intake-reply-leg-live-smoke.txt
+- Verdict: PARTIAL-PASS — listener/dispatch/cortex_remember/send_ack all verified; BlueBubbles send_text hangs (apple-script) or 500 (private-api helper not connected)
+- Fixes committed: listener.py bytes decode, ack.py HTTP via CORTEX_URL, routing JSON allowlist
+- [FOLLOWUP: bluebubbles-send-method] Messages.app AppleScript access or Private API helper needed to close outbound leg
