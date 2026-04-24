@@ -1,0 +1,41 @@
+=== task-runner preflight ===
+started_at: 2026-04-24T17:21:36-06:00
+finished_at: 2026-04-24T17:21:37-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-24.md
+
+unsafe conflicts: 0
+
+commit: fb834cffca3ba872dc5d58ad3d00b1b78ca418b0 pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/client_intel/client_profiles.sqlite
+ M data/client_intel/proposed_facts.sqlite
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "fb834cffca3ba872dc5d58ad3d00b1b78ca418b0",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-24.md"
+  ],
+  "finished_at": "2026-04-24T17:21:37-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-24T17:21:36-06:00",
+  "unsafe_conflicts": []
+}
