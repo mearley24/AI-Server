@@ -33,6 +33,8 @@ async def process_message(
     Extracted from the listener loop so tests can call it directly.
     """
     try:
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
         data = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
         return

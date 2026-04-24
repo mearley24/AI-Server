@@ -78,12 +78,14 @@ async def send_ack(
         return {"ok": False, "dry_run": False, "error": "recipient_not_allowlisted"}
 
     try:
-        from cortex.bluebubbles import BlueBubblesClient
-        client = BlueBubblesClient()
-        if not client.configured:
-            logger.warning("ack_bluebubbles_not_configured")
-            return {"ok": False, "dry_run": False, "error": "not_configured"}
-        result = await client.send_text(chat_guid=thread_guid, body=text)
+        import httpx
+        cortex_url = os.environ.get("CORTEX_URL", "http://cortex:8102").rstrip("/")
+        async with httpx.AsyncClient(timeout=10) as c:
+            resp = await c.post(
+                f"{cortex_url}/api/bluebubbles/send",
+                json={"chat_guid": thread_guid, "body": text},
+            )
+        result = resp.json()
         if not result.get("ok"):
             logger.warning("ack_send_failed error=%s", str(result)[:100])
             return {"ok": False, "dry_run": False, "error": str(result.get("error", "unknown"))}
