@@ -3280,3 +3280,10 @@ Implements Option A + B from `docs/audits/bob-freezing-runtime-hangs-2026-04-23.
 - **Scope respected:** no launchd plist edit, no Docker/Redis/secrets/messaging changes; the lock semantics (`fcntl.flock`) are unchanged — only the subprocesses inside the tick are bounded.
 
 _Implemented by Claude Code on 2026-04-23 (AUTO_APPROVE). Committed via clean `git worktree` at origin/main because the main checkout on Matt's MacBook carried a pre-existing unresolved merge conflict in `ios-app/SymphonyOps/SymphonyOps/ContentView.swift` that must not be touched per the prompt's guardrail._
+
+## BlueBubbles → Cortex Live Webhook Verification (2026-04-24 UTC, Claude Code)
+- Prompt: .cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md
+- Runbook: ops/runbooks/2026-04-24-bluebubbles-cortex-live-webhook.md
+- Evidence: ops/verification/20260424-160905-bluebubbles-cortex-live-webhook.md
+- Verdict: FAIL-no-webhook
+- [FOLLOWUP: bluebubbles-webhook-url-mismatch] — URL shows cortex:8102 (Docker-only hostname); host-side LaunchAgent cannot resolve it. Fix: change to http://127.0.0.1:8102/hooks/bluebubbles then re-run verification.

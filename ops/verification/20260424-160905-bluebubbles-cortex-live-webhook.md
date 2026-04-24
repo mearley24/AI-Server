@@ -107,3 +107,51 @@ External sender must send this nonce string (and only this string) as an iMessag
 
 [Awaiting Matt to confirm external send time and sender (last-4 redacted)]
 
+## Step 2 — Webhook URL (UI) [NEEDS_MATT]
+Matt confirmed: Webhook URL field shows http://cortex:8102/hooks/bluebubbles
+
+FINDING: MISCONFIGURED — cortex hostname only resolves inside the Docker compose
+network. BlueBubbles runs as a host-side LaunchAgent (com.bluebubbles.server),
+not inside Docker. From the host, "cortex" is unresolvable via DNS. Every
+webhook POST from BlueBubbles has been silently failing to connect.
+
+This is the root cause of inbound_count=0 across all prior verification runs.
+
+Required fix (deferred): change the Webhook URL in BlueBubbles Settings to:
+  http://127.0.0.1:8102/hooks/bluebubbles
+
+Stop condition met. Exiting without external send test per prompt spec.
+[FOLLOWUP: bluebubbles-webhook-url-mismatch]
+
+## Step 5 — Nonce + External Send Coordination
+SKIPPED — stop condition met at Step 2. External send deferred to follow-up run
+after URL is corrected.
+
+## Step 6 — Time-windowed Polls
+SKIPPED — stop condition met at Step 2.
+
+## Step 7 — Log Excerpts (redacted)
+SKIPPED — no inbound event to capture.
+
+## Step 8 — Dedup / DB Evidence
+SKIPPED — no inbound event to capture.
+
+## Verdict
+FAIL-no-webhook
+
+Root cause identified at Step 2 without requiring an external send:
+BlueBubbles Webhook URL is set to http://cortex:8102/hooks/bluebubbles.
+cortex resolves only inside the Docker compose network. The host-side
+LaunchAgent cannot reach it, so all webhook POSTs from BlueBubbles have
+been failing silently. No webhook has ever reached Cortex /hooks/bluebubbles.
+
+## Followups
+- [FOLLOWUP: bluebubbles-webhook-url-mismatch]
+  Next prompt: .cursor/prompts/2026-04-24-cline-bluebubbles-webhook-url-fix.md
+  Requires approval token: APPROVE: bluebubbles-webhook-url
+  Action: Change BlueBubbles Settings Webhooks URL from
+    http://cortex:8102/hooks/bluebubbles
+  to:
+    http://127.0.0.1:8102/hooks/bluebubbles
+  Then re-run this verification prompt (or a follow-up) with an external sender
+  to confirm the full inbound path is live.
