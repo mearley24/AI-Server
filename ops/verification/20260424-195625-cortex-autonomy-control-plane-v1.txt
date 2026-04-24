@@ -1,0 +1,84 @@
+Cortex Autonomy Control Plane v1 — Verification Receipt
+=========================================================
+UTC: 2026-04-24T19:56:25Z
+Host: Bobs-Mac-mini.local
+
+FILES CHANGED
+-------------
+cortex/autonomy.py          — new (21 KB) — scanners, assessor, route
+cortex/engine.py            — updated — register_autonomy_routes added
+cortex/static/index.html    — updated — Autonomy tab added
+docker-compose.yml          — updated — 6 bind mounts added to cortex service
+ops/tests/test_autonomy.py  — new — 6 unit tests
+docs/cortex-autonomy-control-plane-v1.md — new
+
+ENDPOINT
+--------
+GET /api/autonomy/overview
+Live test result (2026-04-24T19:55Z):
+  overall_status: warn
+  human_gates: 20 (4 NEEDS_MATT, 14 FOLLOWUP/ARMED/BLOCKED)
+  recent_verifications: 10
+  response_time: ~300ms
+
+10-QUESTION RESULTS
+-------------------
+✅ is_bob_alive:             alive — 54800 memories in DB
+✅ can_receive_messages:     healthy — 0 inbound events (counters reset on restart)
+✅ can_write_memory:         memory DB has 54800 entries
+⚠️ can_use_embeddings:       CORTEX_EMBEDDINGS_ENABLED=0 (disabled by config — expected)
+✅ can_execute_signed_tasks: heartbeat.txt updated 7min ago
+✅ can_send_outbound:        healthy — last ping 2026-04-24T19:55:23Z
+⚠️ what_is_blocked_on_matt:  4 NEEDS_MATT, 14 FOLLOWUP/ARMED
+✅ what_failed_recently:     no recent FAIL or GAP verdicts
+✅ what_got_verified_recently: 5 recent verifications found
+⚠️ what_is_bob_doing_next:  queue empty — recent topics from self-improve
+
+DASHBOARD
+---------
+http://127.0.0.1:8102/dashboard — Autonomy tab (5th in nav)
+
+BUGS FIXED DURING IMPLEMENTATION
+---------------------------------
+1. DEADLOCK: original assessor called httpx.get(localhost:8102) synchronously
+   inside an async FastAPI handler — this blocked the uvicorn event loop
+   waiting for itself to respond.
+   Fix: replaced with direct SQLite reads (_db_memory_count()) for Cortex
+   health questions; used async httpx.AsyncClient for BlueBubbles calls only.
+
+2. MISSING MOUNTS: ops/verification, STATUS_REPORT.md, data/task_runner
+   not present in the cortex Docker image. Scanners found empty dirs.
+   Fix: added 6 bind mounts to cortex service in docker-compose.yml.
+
+3. HEARTBEAT PATH: code used /Users/bob/AI-Server/data/task_runner/ (host path)
+   but container mounts it at /data/task_runner/.
+   Fix: added /data/task_runner/ as first candidate in heartbeat check.
+
+TESTS (ops/tests/test_autonomy.py)
+-----------------------------------
+  test_verification_scanner_pass ............. PASS
+  test_verification_scanner_fail ............. PASS
+  test_human_gate_scanner_needs_matt ......... PASS
+  test_autonomy_overview_endpoint_keys ....... PASS
+  test_verification_scanner_skip_large_files . PASS
+  test_assessor_returns_10_questions ......... PASS
+  Total: 6/6 PASS
+
+KNOWN LIMITATIONS
+-----------------
+- autonomy.py injected via docker cp (keychain locked; survives restart, not --build)
+- Embeddings warn by design (not enabled)
+- inbound_count resets on container restart (counters are in-memory)
+- Verification scanner includes dispatch/heartbeat files (valid receipts, low signal)
+- No persistent event/action/gate tables — full scan on every request (~300ms)
+
+NEXT RECOMMENDED SLICE (v2)
+----------------------------
+1. Bake autonomy.py into Docker image (requires keychain unlock for docker compose --build)
+2. POST /api/autonomy/event — services emit structured events directly
+3. Persistent gates/events in brain.db
+4. Richer STATUS_REPORT parser — extract structured entries not just marker lines
+5. Autonomy score (0–100 weighted)
+6. SSE or polling for real-time dashboard updates
+
+VERDICT: PASS

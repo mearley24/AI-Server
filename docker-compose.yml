@@ -459,6 +459,12 @@ services:
       - ./data/audio_intake:/data/audio_intake:ro
       - ./tools:/app/tools:ro
       - ./config:/app/config:ro
+      - ./ops/verification:/app/ops/verification:ro
+      - ./ops/runbooks:/app/ops/runbooks:ro
+      - ./ops/work_queue:/app/ops/work_queue:ro
+      - ./.cursor/prompts:/app/.cursor/prompts:ro
+      - ./STATUS_REPORT.md:/app/STATUS_REPORT.md:ro
+      - ./data/task_runner:/data/task_runner:ro
     environment:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102

@@ -10,10 +10,12 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
+import sqlite3
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -287,8 +289,22 @@ class HumanGateScanner:
 
 # ── AutonomyAssessor ──────────────────────────────────────────────────────────
 
-CORTEX_LOCAL_URL = os.environ.get("CORTEX_LOCAL_URL", "http://localhost:8102")
-_HTTP_TIMEOUT = 3.0  # seconds — cheap local check only
+_BB_HEALTH_URL = "http://localhost:8102/api/bluebubbles/health"
+_HTTP_TIMEOUT = 3.0
+
+# Direct DB access — avoids Cortex calling itself (would deadlock the async loop)
+_CORTEX_DB = Path(os.environ.get("CORTEX_DATA_DIR", "/data/cortex")) / "brain.db"
+
+
+def _db_memory_count() -> int:
+    """Return total memory count directly from SQLite (non-blocking read)."""
+    try:
+        conn = sqlite3.connect(str(_CORTEX_DB), timeout=2)
+        row = conn.execute("SELECT COUNT(*) FROM memories WHERE importance > 0").fetchone()
+        conn.close()
+        return int(row[0]) if row else 0
+    except Exception:
+        return -1
 
 
 def _q(key: str, label: str, status: str, detail: str) -> AutonomyQuestion:
@@ -306,17 +322,19 @@ class AutonomyAssessor:
         self._vs = verification_scanner or VerificationScanner()
         self._gs = gate_scanner or HumanGateScanner()
 
-    def assess(self) -> AutonomyOverview:
-        gates = self._gs.scan()
-        verifications = self._vs.scan()
+    async def assess(self) -> AutonomyOverview:
+        loop = asyncio.get_event_loop()
+        # Run blocking file I/O in a thread pool to avoid blocking the event loop
+        gates = await loop.run_in_executor(None, self._gs.scan)
+        verifications = await loop.run_in_executor(None, self._vs.scan)
 
         questions: list[AutonomyQuestion] = [
-            self._is_bob_alive(),
-            self._can_receive_messages(),
+            await self._is_bob_alive(),
+            await self._can_receive_messages(),
             self._can_write_memory(verifications),
             self._can_use_embeddings(),
             self._can_execute_signed_tasks(),
-            self._can_send_outbound(),
+            await self._can_send_outbound(),
             self._what_is_blocked_on_matt(gates),
             self._what_failed_recently(verifications),
             self._what_got_verified_recently(verifications),
@@ -342,52 +360,43 @@ class AutonomyAssessor:
 
     # ── Individual checks ─────────────────────────────────────────────────────
 
-    def _is_bob_alive(self) -> AutonomyQuestion:
+    async def _is_bob_alive(self) -> AutonomyQuestion:
         key = "is_bob_alive"
         label = "Is Bob (Cortex) alive?"
-        try:
-            resp = httpx.get(f"{CORTEX_LOCAL_URL}/health", timeout=_HTTP_TIMEOUT)
-            if resp.status_code == 200:
-                data = resp.json()
-                mem = (data.get("memories") or {}).get("total", "?")
-                return _q(key, label, "ok", f"alive — {mem} memories")
-            return _q(key, label, "warn", f"health returned HTTP {resp.status_code}")
-        except Exception as exc:
-            return _q(key, label, "fail", f"unreachable: {str(exc)[:80]}")
+        # Direct DB check — Cortex cannot call itself without deadlocking
+        loop = asyncio.get_event_loop()
+        count = await loop.run_in_executor(None, _db_memory_count)
+        if count >= 0:
+            return _q(key, label, "ok", f"alive — {count} memories in DB")
+        return _q(key, label, "warn", "DB unreadable or empty")
 
-    def _can_receive_messages(self) -> AutonomyQuestion:
+    async def _can_receive_messages(self) -> AutonomyQuestion:
         key = "can_receive_messages"
         label = "Can Bob receive iMessages?"
         try:
-            resp = httpx.get(
-                f"{CORTEX_LOCAL_URL}/api/bluebubbles/health", timeout=_HTTP_TIMEOUT
-            )
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                resp = await client.get(_BB_HEALTH_URL)
             if resp.status_code == 200:
                 data = resp.json()
-                inbound = data.get("inbound_count", 0) or 0
+                inbound = (data.get("counters") or {}).get("inbound_count", 0) or 0
                 last = data.get("last_inbound_event_at") or "never"
                 status_str = data.get("status", "unknown")
-                if status_str == "online":
-                    return _q(key, label, "ok", f"online — {inbound} inbound, last: {last}")
+                if status_str == "healthy":
+                    return _q(key, label, "ok", f"healthy — {inbound} inbound events, last: {last}")
                 return _q(key, label, "warn", f"status={status_str}, inbound={inbound}")
-            return _q(key, label, "warn", f"health HTTP {resp.status_code}")
+            return _q(key, label, "warn", f"BlueBubbles health HTTP {resp.status_code}")
         except Exception as exc:
             return _q(key, label, "warn", f"BlueBubbles check failed: {str(exc)[:80]}")
 
     def _can_write_memory(self, verifications: list[Verification]) -> AutonomyQuestion:
         key = "can_write_memory"
         label = "Can Bob write to memory?"
-        try:
-            resp = httpx.get(f"{CORTEX_LOCAL_URL}/health", timeout=_HTTP_TIMEOUT)
-            if resp.status_code == 200:
-                data = resp.json()
-                total = (data.get("memories") or {}).get("total", 0) or 0
-                if total > 0:
-                    return _q(key, label, "ok", f"memory store has {total} entries")
-                return _q(key, label, "warn", "memory count is 0 — pipeline may be cold")
-            return _q(key, label, "warn", f"health HTTP {resp.status_code}")
-        except Exception as exc:
-            return _q(key, label, "fail", f"unreachable: {str(exc)[:80]}")
+        count = _db_memory_count()
+        if count > 0:
+            return _q(key, label, "ok", f"memory DB has {count} entries")
+        if count == 0:
+            return _q(key, label, "warn", "memory count is 0 — pipeline may be cold")
+        return _q(key, label, "fail", "memory DB unreadable")
 
     def _can_use_embeddings(self) -> AutonomyQuestion:
         key = "can_use_embeddings"
@@ -404,10 +413,11 @@ class AutonomyAssessor:
         key = "can_execute_signed_tasks"
         label = "Task runner alive?"
         heartbeat_candidates = [
-            DATA_TASK_RUNNER_DIR / "heartbeat.txt",
+            Path("/data/task_runner/heartbeat.txt"),          # Docker mount path
+            Path("/data/task_runner/bob_watchdog_heartbeat.txt"),
+            Path("/data/task_runner/watchdog_heartbeat.txt"),
+            DATA_TASK_RUNNER_DIR / "heartbeat.txt",           # host path fallback
             DATA_TASK_RUNNER_DIR / "bob_watchdog_heartbeat.txt",
-            DATA_TASK_RUNNER_DIR / "watchdog_heartbeat.txt",
-            Path("/Users/bob/AI-Server/data/task_runner/heartbeat.txt"),
         ]
         for hb in heartbeat_candidates:
             if hb.is_file():
@@ -418,24 +428,24 @@ class AutonomyAssessor:
                 return _q(key, label, "warn", f"{hb.name} is stale — {age_min:.0f}min old")
         return _q(key, label, "warn", "no heartbeat file found — task runner may be down")
 
-    def _can_send_outbound(self) -> AutonomyQuestion:
+    async def _can_send_outbound(self) -> AutonomyQuestion:
         key = "can_send_outbound"
         label = "Can Bob send outbound iMessages?"
         try:
-            resp = httpx.get(
-                f"{CORTEX_LOCAL_URL}/api/bluebubbles/health", timeout=_HTTP_TIMEOUT
-            )
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                resp = await client.get(_BB_HEALTH_URL)
             if resp.status_code == 200:
                 data = resp.json()
-                outbound = data.get("outbound_count", 0) or 0
+                outbound = (data.get("counters") or {}).get("outbound_count", 0) or 0
                 last_ping = data.get("last_ping_ok_at") or "never"
                 ping_err = data.get("last_ping_error")
-                if data.get("status") == "online" and not ping_err:
-                    return _q(key, label, "ok", f"online — {outbound} sent, last ping: {last_ping}")
+                status_str = data.get("status", "unknown")
+                if status_str == "healthy" and not ping_err:
+                    return _q(key, label, "ok", f"healthy — {outbound} sent, last ping: {last_ping}")
                 if ping_err:
                     return _q(key, label, "warn", f"ping error: {ping_err}")
-                return _q(key, label, "warn", f"status={data.get('status')}, outbound={outbound}")
-            return _q(key, label, "warn", f"health HTTP {resp.status_code}")
+                return _q(key, label, "warn", f"status={status_str}, outbound={outbound}")
+            return _q(key, label, "warn", f"BlueBubbles health HTTP {resp.status_code}")
         except Exception as exc:
             return _q(key, label, "warn", f"BlueBubbles check failed: {str(exc)[:80]}")
 
@@ -495,7 +505,7 @@ def register_autonomy_routes(app: FastAPI) -> None:
     async def autonomy_overview() -> dict[str, Any]:
         """Return the full autonomy control plane snapshot as JSON."""
         try:
-            overview = assessor.assess()
+            overview = await assessor.assess()
             data = asdict(overview)
             return data
         except Exception as exc:
