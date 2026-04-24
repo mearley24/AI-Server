@@ -1,0 +1,105 @@
+Bob Docker Crash / Memory Diagnostic — Prompt-Added Receipt
+============================================================
+
+Timestamp: 2026-04-24 (UTC)
+Actor:     Claude Code (parent agent, repo pass)
+Host:      parent-agent sandbox (not Bob)
+Branch:    main
+
+User-reported symptom
+---------------------
+"something keeps crashing docker, it needs to be looked into and see
+how we can optimize docker and Bob as it may be a memory problem."
+
+Scope of this pass
+------------------
+Repo-only. Created a new autonomous Cline prompt + human runbook for
+Bob to run bounded, read-only Docker crash / memory-pressure
+diagnostics. No runtime action taken by this pass. No docker
+invocation, no docker-compose invocation, no launchctl, no sudo, no
+pkill, no prune, no container or daemon restart, no secret read, no
+external send. Dirty harness-owned working-tree items preserved:
+.claude/**, .mcp.json, CLAUDE.md.
+
+Files added
+-----------
+- .cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md
+  autonomy block: present (Category: ops, Risk tier: high,
+  Trigger: manual, Status: active)
+- ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md
+  autonomy block: NOT present (correct — runbook, not autonomous
+  prompt; dispatcher must skip ops/runbooks/**)
+
+Files modified
+--------------
+- STATUS_REPORT.md — new section inserted above the 2026-04-24
+  NEEDS_MATT Clearance Reconciliation section. Single section, no
+  rewrite of other content.
+
+Path / header checks
+--------------------
+[ok] .cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md (462 lines)
+[ok] ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md (171 lines)
+[ok] STATUS_REPORT.md updated (3185 lines total)
+[ok] prompt autonomy metadata block present (start + end markers)
+[ok] prompt metadata fields: Category=ops, Risk tier=high,
+     Trigger=manual, Status=active
+[ok] runbook contains no autonomy metadata (only a reference to the
+     rule in body text)
+[ok] referenced path exists: scripts/bob-watchdog.sh
+[ok] referenced path exists: scripts/task_runner.py
+[ok] referenced path exists: docs/audits/bob-freezing-runtime-hangs-2026-04-23.md
+[ok] referenced path exists: docker-compose.yml
+[ok] referenced path exists: ops/verification
+[ok] referenced path exists: ops/runbooks
+
+Prompt contract summary
+-----------------------
+- AUTO_APPROVE = true only for phases 0–5 (read-only evidence capture).
+- AUTO_APPROVE = false for any mutation.
+- Bounded commands only (timeout, --tail N, --since, sed -n, head).
+- No docker system prune, no docker restart, no docker stop / kill,
+  no Docker Desktop restart, no launchctl / sudo, no tail -f,
+  no --follow, no watch, no heredocs, no inline interpreters,
+  no external send, no secret printing.
+- Six named approval strings for follow-up prompts, never applied
+  in this prompt: APPROVE: docker-desktop-resources,
+  APPROVE: compose-memory-limits, APPROVE: watchdog-throttle,
+  APPROVE: log-rotation, APPROVE: container-decommission <name>.
+- Six hard stop conditions: Docker Desktop unavailable, critical
+  memory pressure, suspected data corruption, crash loop
+  (RestartCount >= 10), sudo required, wrong host.
+- Phase 7 decision tree: classifies to exactly one of A–H.
+- Phase 8 proposes mitigations per category; each mitigation names
+  the approval string that would unblock it.
+- Final report written to
+  ops/verification/<stamp>-bob-docker-crash-diagnostic.md plus a
+  receipt txt; STATUS_REPORT.md gets a single-line pointer; commit
+  and push to origin/main.
+
+Runbook contract summary
+------------------------
+- Status: active; companion to the prompt above.
+- Kick-off paste block for Cline on Bob (primary path).
+- Headless dispatch fallback via ops/cline-run-prompt.sh.
+- Classification-to-action table (A–H → approval string → follow-up
+  mutation prompt).
+- Explicit list of things the prompt intentionally does NOT do.
+- Recovery instructions if the diagnostic itself hangs.
+
+Follow-up posture
+-----------------
+No follow-up prompt is created by this pass. After Matt runs the
+diagnostic on Bob and receives a classification, he types an
+approval string in the next Cline session to unblock a targeted
+mutation prompt (compose deltas, watchdog cadence change, Docker
+Desktop resource proposal, etc.). Each follow-up is a new,
+narrowly-scoped prompt — never broadened here.
+
+Commit reference
+----------------
+Commit hash is captured in the post-commit git log entry and will be
+appended to this receipt in the same commit (ops commits in this
+repo record their own hash in a follow-on line where applicable).
+
+End of receipt.

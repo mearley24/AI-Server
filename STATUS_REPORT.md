@@ -26,6 +26,53 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Bob Docker Crash / Memory Diagnostic Prompt Added (2026-04-24 UTC, Claude Code)
+
+User-reported symptom: "something keeps crashing docker, it needs to be
+looked into and see how we can optimize docker and Bob as it may be a
+memory problem." Parent-agent repo pass; **no runtime action performed
+by this pass** — no `docker` invocation, no container/daemon restart, no
+prune, no launchctl, no sudo, no secret read, no external send. Dirty
+harness-owned files (`.claude/**`, `.mcp.json`, `CLAUDE.md`) preserved.
+
+Added, Bob-safe, bounded, read-only by design:
+
+- `.cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md`
+  — autonomous Cline prompt (Category: ops, Risk: high, Trigger: manual,
+  Status: active) for Docker crash / memory-pressure diagnosis on Bob.
+  Phases 0–10 emit evidence to
+  `ops/verification/<stamp>-bob-docker-crash-diagnostic.md` and classify
+  into A–H (host memory / container memory / disk / restart loop /
+  Docker Desktop crash / watchdog false recovery / compose misconfig /
+  unknown). All mutations deferred to follow-up prompts gated on
+  explicit approval strings (`APPROVE: docker-desktop-resources`,
+  `APPROVE: compose-memory-limits`, `APPROVE: watchdog-throttle`,
+  `APPROVE: log-rotation`, `APPROVE: container-decommission <name>`).
+- `ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md` — human
+  runbook companion: how to kick off the prompt on Bob, how to read the
+  classification, what the prompt intentionally does not do, and what
+  to do if the diagnostic itself hangs. No autonomy metadata (runbook,
+  not autonomous prompt).
+- `ops/verification/20260424-bob-docker-crash-diagnostic-prompt-added.txt`
+  — receipt: prompt + runbook paths, header checks, git commit hash.
+
+Exact command for Matt to run on Bob in Cline:
+
+```
+Run .cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md.
+Follow every step. Read-only evidence phases run under AUTO_APPROVE=true.
+Any mutation requires the approval strings listed in §Safety gates.
+Do not restart Docker. Do not restart containers. Do not prune.
+Do not touch secrets. Commit and push at the end.
+Return the final report fields listed in the prompt.
+```
+
+- [FOLLOWUP] After the diagnostic runs on Bob and produces a
+  classification, Matt decides which approval string(s) to type in a
+  subsequent Cline session to unblock a follow-up mutation prompt.
+
+---
+
 ## NEEDS_MATT Clearance Reconciliation — Runbook Outcomes (2026-04-24 UTC, Claude Code)
 
 Parent-agent reconciliation pass against committed evidence for the
