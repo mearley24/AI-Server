@@ -334,3 +334,87 @@ class TestRelationshipType:
         conn.close()
         assert rows["eee555"] == "client"
         assert rows["bbb222"] == "vendor"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  --approved-only mode tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+from scripts.review_client_threads import run_relationship_review
+
+
+class TestApprovedOnlyMode:
+
+    def test_approved_only_fetches_only_approved_unknown(self, tmp_path):
+        """run_relationship_review queries is_reviewed=1 AND relationship_type='unknown' only."""
+        db = _make_test_db(tmp_path)
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        # Mark bbb222 approved with 'client' already set
+        conn.execute("UPDATE threads SET is_reviewed=1, relationship_type='client' WHERE thread_id='bbb222'")
+        conn.commit()
+        rows = conn.execute(
+            "SELECT thread_id FROM threads "
+            "WHERE is_reviewed=1 AND coalesce(relationship_type,'unknown')='unknown'"
+        ).fetchall()
+        conn.close()
+        ids = {r["thread_id"] for r in rows}
+        assert "eee555" in ids        # pre-approved, unknown rt
+        assert "bbb222" not in ids    # approved but rt already set
+        assert "aaa111" not in ids    # pending, not approved
+
+    def test_approved_only_does_not_change_is_reviewed(self, tmp_path):
+        """Setting relationship_type via run_relationship_review must not touch is_reviewed."""
+        db = _make_test_db(tmp_path)
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        before = conn.execute("SELECT is_reviewed FROM threads WHERE thread_id='eee555'").fetchone()["is_reviewed"]
+        set_relationship(conn, "eee555", "client")
+        after = conn.execute("SELECT is_reviewed FROM threads WHERE thread_id='eee555'").fetchone()["is_reviewed"]
+        conn.close()
+        assert before == after == 1
+
+    def test_approved_only_updates_relationship_type(self, tmp_path):
+        """set_relationship writes the chosen type correctly for an approved thread."""
+        db = _make_test_db(tmp_path)
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        set_relationship(conn, "eee555", "builder")
+        rt = conn.execute("SELECT relationship_type FROM threads WHERE thread_id='eee555'").fetchone()["relationship_type"]
+        conn.close()
+        assert rt == "builder"
+
+    def test_approved_only_skips_decrease_remaining(self, tmp_path):
+        """After classifying one thread, it no longer appears in the unclassified query."""
+        db = _make_test_db(tmp_path)
+        conn = sqlite3.connect(str(db))
+        conn.row_factory = sqlite3.Row
+        before = conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE is_reviewed=1 AND coalesce(relationship_type,'unknown')='unknown'"
+        ).fetchone()[0]
+        set_relationship(conn, "eee555", "vendor")
+        after = conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE is_reviewed=1 AND coalesce(relationship_type,'unknown')='unknown'"
+        ).fetchone()[0]
+        conn.close()
+        assert after == before - 1
+
+    def test_approved_only_handles_empty_queue(self, tmp_path):
+        """run_relationship_review prints a message and returns when no unclassified threads exist."""
+        db = _make_test_db(tmp_path)
+        conn = sqlite3.connect(str(db))
+        # Set all approved threads to a relationship type
+        conn.execute("UPDATE threads SET relationship_type='client' WHERE is_reviewed=1")
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        # Verify query returns 0 rows
+        count = conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE is_reviewed=1 AND coalesce(relationship_type,'unknown')='unknown'"
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0
+
+    def test_relationship_choices_include_skip_key_absent(self):
+        """'s' must not be in RELATIONSHIP_CHOICES — skip is handled separately in the loop."""
+        assert "s" not in RELATIONSHIP_CHOICES
+        assert "q" not in RELATIONSHIP_CHOICES

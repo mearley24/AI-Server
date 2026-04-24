@@ -3,16 +3,21 @@
 Interactive CLI for reviewing detected work threads from the client intel backfill.
 
 Usage:
-    python3 scripts/review_client_threads.py              # safe mode (masked)
-    python3 scripts/review_client_threads.py --full       # full context for operator
+    python3 scripts/review_client_threads.py                    # safe mode (masked)
+    python3 scripts/review_client_threads.py --full             # full context for operator
+    python3 scripts/review_client_threads.py --approved-only    # assign relationship to approved threads
+    python3 scripts/review_client_threads.py --full --approved-only
     python3 scripts/review_client_threads.py --limit 10
     python3 scripts/review_client_threads.py --min-confidence 0.7
     python3 scripts/review_client_threads.py --summary
 
 Modes:
-    --safe (default)  Contacts masked, no message text shown. Safe for screen sharing.
-    --full            Full phone, contact name if known, last 3–5 message snippets.
-                      Intended for Matt only. Does not store unmasked data.
+    --safe (default)   Contacts masked, no message text shown. Safe for screen sharing.
+    --full             Full phone, contact name if known, last 3–5 message snippets.
+                       Intended for Matt only. Does not store unmasked data.
+    --approved-only    Shows already-approved threads with relationship_type='unknown'.
+                       Prompts only for relationship_type — does NOT change is_reviewed.
+                       Supports [s]=skip and [q]=quit.
 
 All approvals are explicit — nothing is auto-approved.
 """
@@ -235,8 +240,14 @@ def print_summary(conn: sqlite3.Connection) -> None:
     approved = conn.execute(
         "SELECT COUNT(*) FROM threads WHERE is_reviewed=1"
     ).fetchone()[0]
+    unclassified = conn.execute(
+        "SELECT COUNT(*) FROM threads WHERE is_reviewed=1 AND "
+        "coalesce(relationship_type,'unknown')='unknown'"
+    ).fetchone()[0]
     print(f"\n  Pending work review : {pending}")
     print(f"  Approved total      : {approved}")
+    if unclassified:
+        print(f"  Needs relationship  : {unclassified}  (run --approved-only to assign)")
     print()
 
 
@@ -346,6 +357,74 @@ def run_review(
     _print_session_summary(approved_count, rejected_count, skipped_count)
 
 
+# ── Relationship-only review (for already-approved threads) ──────────────────
+
+def run_relationship_review(
+    conn: sqlite3.Connection,
+    limit: int = 50,
+    full: bool = False,
+) -> None:
+    """Review approved threads that have no relationship_type set yet.
+
+    Does NOT change is_reviewed. Only prompts for relationship_type.
+    Supports [s]=skip and [q]=quit in addition to the type choices.
+    """
+    rows = conn.execute(
+        "SELECT thread_id, chat_guid, contact_handle, message_count, date_first, date_last, "
+        "category, work_confidence, reason_codes, is_reviewed, "
+        "coalesce(relationship_type,'unknown') as relationship_type "
+        "FROM threads "
+        "WHERE is_reviewed = 1 AND coalesce(relationship_type,'unknown') = 'unknown' "
+        "ORDER BY work_confidence DESC, date_last DESC "
+        "LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+    if not rows:
+        print("\n✓ No approved threads with unset relationship_type.")
+        return
+
+    mode_label = "FULL CONTEXT" if full else "SAFE (masked)"
+    print(f"\n=== Assign relationship type: {len(rows)} approved thread(s)  [{mode_label}] ===")
+    print("  Approved threads only — is_reviewed will NOT change.")
+    print(f"  {RELATIONSHIP_MENU}")
+    print("  [s] skip  [q] quit\n")
+
+    classified_count = skipped_count = 0
+
+    for i, r in enumerate(rows, 1):
+        if full:
+            _print_thread_full(i, len(rows), r)
+        else:
+            _print_thread_safe(i, len(rows), r)
+
+        while True:
+            try:
+                choice = input("  > ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\nAborted.")
+                print(f"Session: classified={classified_count}  skipped={skipped_count}")
+                return
+
+            if choice in RELATIONSHIP_CHOICES:
+                rel = RELATIONSHIP_CHOICES[choice]
+                set_relationship(conn, r["thread_id"], rel)
+                print(f"       → relationship_type = {rel}\n")
+                classified_count += 1
+                break
+            elif choice in ("s", "skip", ""):
+                print("       ⬜ Skipped.\n")
+                skipped_count += 1
+                break
+            elif choice in ("q", "quit", "exit"):
+                print(f"Session: classified={classified_count}  skipped={skipped_count}")
+                return
+            else:
+                print(f"       ? Enter a type key ({', '.join(RELATIONSHIP_CHOICES)}), s, or q")
+
+    print(f"Session: classified={classified_count}  skipped={skipped_count}")
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -357,6 +436,7 @@ examples:
   python3 scripts/review_client_threads.py --summary
   python3 scripts/review_client_threads.py --full --limit 10
   python3 scripts/review_client_threads.py --safe --min-confidence 0.7
+  python3 scripts/review_client_threads.py --full --approved-only
 """,
     )
     parser.add_argument("--limit", type=int, default=50)
@@ -364,6 +444,10 @@ examples:
     parser.add_argument("--category", default="work")
     parser.add_argument("--summary", action="store_true",
                         help="Show counts only, skip review loop")
+    parser.add_argument("--approved-only", action="store_true",
+                        help="Assign relationship_type to already-approved threads "
+                             "that have relationship_type='unknown'. "
+                             "Does not change approval status.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--safe", dest="full", action="store_false", default=False,
                       help="Masked display — safe for screen sharing (default)")
@@ -375,13 +459,20 @@ examples:
     try:
         print_summary(conn)
         if not args.summary:
-            run_review(
-                conn,
-                limit=args.limit,
-                min_confidence=args.min_confidence,
-                category=args.category,
-                full=args.full,
-            )
+            if args.approved_only:
+                run_relationship_review(
+                    conn,
+                    limit=args.limit,
+                    full=args.full,
+                )
+            else:
+                run_review(
+                    conn,
+                    limit=args.limit,
+                    min_confidence=args.min_confidence,
+                    category=args.category,
+                    full=args.full,
+                )
     finally:
         conn.close()
 
