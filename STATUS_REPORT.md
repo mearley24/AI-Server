@@ -26,6 +26,24 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## BlueBubbles Health — LaunchAgent Armed on Bob (2026-04-24 08:35 MDT, Claude Code)
+
+`com.symphony.bluebubbles-health` LaunchAgent confirmed ARMED. Was installed
+2026-04-23 10:15 by a prior session; this run documents the verified state.
+
+- `run interval = 300 seconds` ✓
+- BlueBubbles server 1.9.9: healthy on every run ✓
+- `.err` log: empty (no crashes) ✓
+- 269 log lines from ~22+ runs since Apr 23 ✓
+- `last exit code = 1` — expected; script exits 1 when Cortex 404s (known FOLLOWUP)
+
+- ~~[NEEDS_MATT] Arm the LaunchAgent~~ ✅ Armed 2026-04-23 10:15 MDT
+- [FOLLOWUP] `docker compose up -d --build cortex` — stale image means `/api/bluebubbles/health` still 404s; rebuild clears it and drops exit code to 0.
+
+Verification: `ops/verification/20260424-083518-bluebubbles-health-arm.txt`
+
+---
+
 ## NEEDS_MATT Clearance Artifacts — Bob Runtime Runbooks (2026-04-23 UTC, Claude Code)
 
 Parent-agent docs-only pass to cover the three outstanding

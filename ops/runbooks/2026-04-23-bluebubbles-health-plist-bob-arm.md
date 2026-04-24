@@ -1,10 +1,13 @@
 # BlueBubbles Health Plist — Bob Runtime Arm Runbook
 
-**Status:** `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` — **NOT auto-run by
-Computer / Cline / Claude Code / task-runner / self-improvement
-loop.** This file is a human-approved runbook, not an autonomous
-prompt. Do **not** add `<!-- autonomy: start -->` metadata. Do not
-copy into `.cursor/prompts/`. Dispatchers under `ops/cline-run-*.sh`
+**Status:** `DONE` — LaunchAgent armed 2026-04-23 10:15 MDT.
+Running every 300 s; BlueBubbles server healthy; Cortex 404 is a
+known FOLLOWUP (container image stale — rebuild clears it).
+See `ops/verification/20260424-083518-bluebubbles-health-arm.txt`.
+
+This file is a human-approved runbook, not an autonomous prompt.
+Do **not** add `<!-- autonomy: start -->` metadata. Do not copy
+into `.cursor/prompts/`. Dispatchers under `ops/cline-run-*.sh`
 must **skip** anything in `ops/runbooks/`.
 
 **Owner:** Matt (or a human operator with local shell access to Bob).

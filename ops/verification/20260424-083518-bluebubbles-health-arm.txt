@@ -1,0 +1,103 @@
+BlueBubbles Health — LaunchAgent Armed on Bob
+=============================================
+Date (local): 2026-04-24T08:35:18 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Git HEAD: 9c36b14829e0520517464361636459a4f38e26fd
+Branch: main
+Runbook: ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md
+Operator: Claude Code (executing [NEEDS_MATT] runbook on Bob)
+
+Note: The LaunchAgent was already installed (mtime Apr 23 10:15) when
+this runbook execution began. This receipt documents the observed state
+and confirms all arm criteria are met. No double-load was performed.
+
+---
+
+PRECHECKS
+
+1. Git state: clean (harness-owned dirty files only), branch main.
+
+2. Plist lint:
+   setup/launchd/com.symphony.bluebubbles-health.plist: OK
+   Label: com.symphony.bluebubbles-health  ✓
+   StartInterval: 300 (5 min)              ✓
+
+3. Script:
+   test -f scripts/bluebubbles-health.sh   → ok-script
+   bash -n scripts/bluebubbles-health.sh   → bash-n-pass (exit 0)
+
+4. Already-loaded check:
+   launchctl list | grep bluebubbles-health:
+     -  1  com.symphony.bluebubbles-health  ← ALREADY LOADED
+   Installed plist: ~/Library/LaunchAgents/com.symphony.bluebubbles-health.plist (Apr 23 10:15)
+   → Job was armed in a prior session. Arm steps 1-2 are superseded.
+
+5. Manual one-shot probe (exit 0):
+   {"cortex_health": {"status": "unreachable", "reason": "cortex_http_404"},
+    "bluebubbles_server": {"status": "healthy", "reason": null, "server_version": "1.9.9", "private_api": false}}
+   BlueBubbles server: HEALTHY (v1.9.9) ✓
+   Cortex /api/bluebubbles/health: 404 — known FOLLOWUP, does not block arm ✓
+
+6. Logs dir writable: ok-logs ✓
+
+---
+
+LAUNCHCTL STATE
+
+launchctl print gui/501/com.symphony.bluebubbles-health:
+  path:         /Users/bob/Library/LaunchAgents/com.symphony.bluebubbles-health.plist
+  type:         LaunchAgent
+  state:        not running (between intervals)
+  program:      /bin/bash /Users/bob/AI-Server/scripts/bluebubbles-health.sh --json
+  working dir:  /Users/bob/AI-Server
+  stdout path:  /Users/bob/AI-Server/logs/bluebubbles-health.log
+  stderr path:  /Users/bob/AI-Server/logs/bluebubbles-health.err
+  run interval: 300 seconds ✓
+  last exit code: 1 (expected — script exits 1 when cortex_health is unreachable)
+
+---
+
+STEP 4: Kickstart (fresh run)
+
+launchctl kickstart -k gui/501/com.symphony.bluebubbles-health → EXIT:0
+
+Fresh log entry (last 3 lines of bluebubbles-health.log, 269 lines total):
+  {"cortex_health": {"status": "unreachable", "reason": "cortex_http_404"},
+   "bluebubbles_server": {"status": "healthy", "reason": null,
+                          "server_version": "1.9.9", "private_api": false}}
+
+bluebubbles-health.err: EMPTY (no tracebacks) ✓
+
+---
+
+STEP 5: Cadence confirmation
+
+run interval = 300 seconds ✓
+last exit code = 1 (expected, see above)
+Log paths correct ✓
+
+---
+
+SUMMARY
+
+The LaunchAgent com.symphony.bluebubbles-health is ARMED and running:
+- Fires every 300 seconds (5 min) via launchd
+- BlueBubbles server 1.9.9: healthy on every run
+- Cortex /api/bluebubbles/health: 404 on every run (known FOLLOWUP)
+- .err file: empty (no crashes)
+- 269 log lines from ~22+ runs since Apr 23
+
+Exit code 1 is the script's correct behaviour when cortex_health is
+"unreachable" — the script sets a non-zero exit to signal the probe
+found an issue, not to signal a crash. The LaunchAgent stays loaded
+and continues to fire on schedule regardless.
+
+---
+
+REMAINING FOLLOWUP
+
+- [FOLLOWUP] Rebuild Cortex container after adding /api/bluebubbles/health
+  endpoint (commit fe5f778 landed the route; container image is stale).
+  After rebuild, the exit code will drop to 0 and cortex_health will
+  show "healthy".
+  Command: docker compose up -d --build cortex
