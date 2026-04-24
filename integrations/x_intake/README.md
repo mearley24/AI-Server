@@ -255,6 +255,75 @@ The `AnalysisResult` dataclass is already structured for LLM output compatibilit
 
 ---
 
+## Offline / manual backlog recovery
+
+When Docker or the Redis listener is down, any X link that hits the
+iMessage bridge would otherwise be lost. The `manual_import` module
+captures URLs straight into the durable queue DB without calling any
+live X API, so they can be replayed once the pipeline is back up.
+
+All commands below assume you're in the repo root (``~/AI-Server``).
+Running them from a subdirectory breaks Docker Compose ("no configuration
+file provided").
+
+### 1. Fast status check
+
+```bash
+# while the service is up:
+curl -s http://127.0.0.1:8101/status | jq
+# while it's down, just inspect the DB directly:
+ls -la data/x_intake/
+sqlite3 data/x_intake/queue.db 'SELECT id,status,canonical_url,summary FROM x_intake_queue ORDER BY id DESC LIMIT 10'
+```
+
+### 2. Recover the 4 URLs sent while Docker was down
+
+A ready-made helper is shipped for exactly this scenario:
+
+```bash
+python3 scripts/x_intake_recover_offline.py
+```
+
+Idempotent — safe to rerun. Writes to ``./data/x_intake/queue.db`` by
+default (the same host-mounted path the container reads from).
+
+### 3. Import an arbitrary backlog (one URL per line)
+
+```bash
+# backlog.txt can contain comments (#) and blank lines
+python3 integrations/x_intake/manual_import.py --urls-file backlog.txt
+# or a single URL with a hand-written gist:
+python3 integrations/x_intake/manual_import.py \
+    --url https://x.com/handle/status/123 \
+    --note "launch announcement — check v0.11 changelog"
+```
+
+### 4. Same thing over HTTP (once the service is back up)
+
+```bash
+curl -s http://127.0.0.1:8101/import \
+  -H 'content-type: application/json' \
+  -d '{"urls":["https://x.com/handle/status/123"],
+       "notes":{"https://x.com/handle/status/123":"gist..."}}' | jq
+```
+
+### 5. Replay items into full analysis
+
+Once x-intake is up and APIs are healthy, hit `/analyze` for each
+pending row to re-enrich (fetches post, transcribes video, runs LLM):
+
+```bash
+sqlite3 data/x_intake/queue.db \
+  "SELECT url FROM x_intake_queue WHERE status='pending'" | \
+  while read url; do
+    curl -s -X POST http://127.0.0.1:8101/analyze \
+      -H 'content-type: application/json' \
+      -d "{\"url\": \"$url\", \"source\": \"backfill\"}"
+  done
+```
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |
@@ -264,3 +333,5 @@ The `AnalysisResult` dataclass is already structured for LLM output compatibilit
 | Bridge unreachable | Verify `host.docker.internal` DNS resolves; check `extra_hosts` in compose |
 | Post shows as `fetch_method: direct_meta` | fxtwitter + Nitter are both down; content may be truncated |
 | No response to Matt | Confirm `MATT_PHONE` is set or bridge correctly echoes sender in message JSON |
+| Links sent while Docker was down | Run `python3 scripts/x_intake_recover_offline.py` (or `manual_import.py --urls-file`) to hand-import the backlog into the queue DB |
+| Queue DB path | Controlled by `X_INTAKE_DB_PATH` (default `/data/x_intake/queue.db` in-container, host-mounted to `./data/x_intake/queue.db`) |
