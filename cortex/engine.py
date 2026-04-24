@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -378,6 +380,68 @@ async def run_improvement() -> dict[str, Any]:
         "proposals": len(result.get("proposals", [])),
         "opportunities": len(result.get("opportunities", [])),
     }
+
+
+# ── Client intelligence (read-only) ───────────────────────────────────────────
+
+_CLIENT_INTEL_DB = Path(os.environ.get("CORTEX_DATA_DIR", "/data/cortex")).parent.parent / "client_intel" / "message_thread_index.sqlite"
+
+
+@app.get("/api/client-intel/threads", tags=["client-intel"])
+async def client_intel_threads(
+    category: str = "work",
+    min_confidence: float = 0.5,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Read-only view of classified message threads from the client intel index.
+
+    category — filter by work / personal / mixed / unknown / all
+    min_confidence — minimum work_confidence threshold (0.0–1.0)
+    limit — max rows to return (capped at 200)
+    """
+    limit = min(limit, 200)
+    db_path = _CLIENT_INTEL_DB
+    if not db_path.is_file():
+        return {
+            "status": "unavailable",
+            "message": "Thread index not yet built. Run: python3 scripts/client_intel_backfill.py --dry-run --limit 100",
+            "threads": [],
+            "count": 0,
+        }
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        where = "WHERE work_confidence >= ?"
+        params: list[Any] = [min_confidence]
+        if category != "all":
+            where += " AND category = ?"
+            params.append(category)
+        rows = conn.execute(
+            f"SELECT thread_id, contact_handle, message_count, date_first, date_last, "
+            f"category, work_confidence, reason_codes, is_reviewed, created_at "
+            f"FROM threads {where} ORDER BY work_confidence DESC, date_last DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+        conn.close()
+        threads = []
+        for r in rows:
+            handle = r["contact_handle"]
+            masked = handle[:3] + "***" + handle[-2:] if len(handle) > 6 else "***"
+            threads.append({
+                "thread_id": r["thread_id"],
+                "contact_masked": masked,
+                "message_count": r["message_count"],
+                "date_first": r["date_first"],
+                "date_last": r["date_last"],
+                "category": r["category"],
+                "work_confidence": r["work_confidence"],
+                "reason_codes": json.loads(r["reason_codes"] or "[]"),
+                "is_reviewed": r["is_reviewed"],
+            })
+        return {"status": "ok", "count": len(threads), "threads": threads}
+    except Exception as exc:
+        logger.warning("client_intel_threads_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200], "threads": [], "count": 0}
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
