@@ -1,0 +1,70 @@
+X-Intake Reply-Leg Live Smoke — Attempt 2 Receipt
+==================================================
+UTC stamp: 20260424-165559
+Host: Bob (Mac Mini M4)
+Runner: Claude Code
+Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+Outcome: BLOCKED — Docker daemon went down during DRY=0 live window
+
+
+git HEAD: 6201429c0e61d7b92ab5f4d5292684ae385f47af
+
+## Prechecks (re-run 20260424-163523)
+All 5 prechecks PASS. See ops/verification/20260424-163523-x-intake-reply-leg-live-smoke-precheck.txt
+HANDLER_REGISTRY: cortex_dismiss, cortex_remember, escalate_to_matt
+DRY=1 | ALLOW= confirmed before arm sequence began.
+
+## Arm Sequence
+Routing JSON updated: +18609171850 added to inbound.allowed_phones + outbound.allowed_phones
+Action seeded:        action_id=3812a21316ca, thread_guid=iMessage;-;+18609171850, slot=1, handler=cortex_remember
+ALLOWED_TEST_RECIPIENTS set: iMessage;-;+18609171850
+CORTEX_REPLY_DRY_RUN=0 set at: 2026-04-24T16:50:28Z
+x-intake recreated (docker compose up -d); env confirmed: DRY=0 | ALLOW=iMessage;-;+18609171850
+main.py injected via docker cp (image stale; fix not baked in yet)
+
+Startup logs confirmed:
+  reply_listener_wired dry_run=False
+  reply_listener_started channel=events:imessage dry_run=False
+
+Pre-send state:
+  reply_acks.ndjson: 1 line (dry-run entry from prior smoke)
+  outbound_count: 0, outbound_failure_count: 0
+
+## DRY=0 Window
+DRY=0 flipped at:   2026-04-24T16:50:28Z
+External send:      +1XXXXXXX1850 -> BlueBubbles handle, ~2026-04-24T16:54Z
+                    Content: [bob-reply-test] reply 1
+DRY=1 restored at:  2026-04-24T16:56Z (approx)
+Window duration:    ~6 min
+
+## Blocker: Docker Daemon Restart
+Docker Desktop restarted mid-window (pid 24985 blocking startup reported by Matt).
+All containers (cortex, x-intake, redis) went down and came back up.
+Cortex was unreachable at http://127.0.0.1:8102/hooks/bluebubbles when the
+external message arrived. BlueBubbles webhook POST received ECONNREFUSED.
+Cortex in-memory counters reset to 0 on restart. No event published to events:imessage.
+x-intake reply_listener received nothing.
+
+## Evidence of Non-Firing
+reply_acks.ndjson: 1 line only (no new live ACK written)
+Cortex counters post-restart: inbound_count=0, outbound_count=0, outbound_failure_count=0
+x-intake logs: no reply_action / dispatcher / send_ack / send_text entries
+
+## Restore Confirmation
+CORTEX_REPLY_DRY_RUN=1 confirmed in .env
+ALLOWED_TEST_RECIPIENTS= (empty) confirmed in .env
+x-intake recreated: DRY=1 | ALLOW= confirmed in container env
+
+## Routing JSON State
++18609171850 remains in config/bluebubbles_routing.json inbound + outbound allowed_phones.
+Left intentionally for immediate follow-up retry. Remove if not retrying.
+
+## Verdict
+BLOCKED -- Docker instability during live window. Outbound send_text not exercised.
+All prior work (listener, dispatcher, action_store, dry-run ACK, idempotency) remains valid.
+One retry needed with Docker stable. Steps for retry:
+  1. Re-seed action for iMessage;-;+18609171850 slot=1
+  2. Set ALLOWED_TEST_RECIPIENTS, flip DRY=0, recreate x-intake
+  3. Inject main.py via docker cp (until image is rebuilt)
+  4. Have +1XXXXXXX1850 send: [bob-reply-test] reply 1
+  5. Capture chain evidence, restore DRY=1 + ALLOW= immediately

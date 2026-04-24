@@ -5,7 +5,8 @@
     "_comment": "Chat GUIDs / phones / emails allowed to trigger automation. Empty list = only default_policy applies.",
     "allowed_chat_guids": [],
     "allowed_phones": [
-      "+19705193013"
+      "+19705193013",
+      "+18609171850"
     ],
     "allowed_emails": [
       "mearley24@me.com"
@@ -25,7 +26,8 @@
     "_comment": "Chat GUIDs / phones we will ever send to. Prevents accidental messages into unintended threads.",
     "allowed_chat_guids": [],
     "allowed_phones": [
-      "+19705193013"
+      "+19705193013",
+      "+18609171850"
     ]
   },
   "default_policy": "allow_owner_only",

@@ -3337,3 +3337,21 @@ _Implemented by Claude Code on 2026-04-23 (AUTO_APPROVE). Committed via clean `g
 - Fix applied: BlueBubbles Webhook URL changed from http://cortex:8102 to http://127.0.0.1:8102/hooks/bluebubbles
 - [NOTE: multi-delivery] inbound_count=3 for single send (expected multi-event behavior, unconfirmed)
 - [FOLLOWUP: structured-log-visibility] logger.info lines not surfacing in docker logs cortex
+
+### Self-improvement loop — 2026-04-24T17:00:00Z
+
+inbox processed: 4, cards: 3 new + 1 already-processed (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 3 needs-fetch)
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed** (archive + card existed from prior run; skipped)
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **needs fetch** — @nousresearch (AI research org); highest-priority fetch in this batch given likely model/technique relevance to Cortex
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **needs fetch** — @openswarm_ (apparent swarm/agent-coordination account); content may be relevant to multi-service orchestration patterns
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **needs fetch** — @jameszmsun (unknown account); same iMessage URL pattern, relevance undetermined
+
+Pattern note: three X links arrived on 2026-04-24 via the same iMessage handle (+19705193013), all bare URLs with no body text. This is the fourth consecutive `needs-fetch` card from the iMessage URL lane. Consider adding x_intake auto-routing for iMessage-captured X URLs to close this recurring gap (see ihtesham2005 card for prior analysis).
+
+## X-Intake Reply-Leg — Live Smoke Attempt 2 on Bob (2026-04-24 UTC, Claude Code)
+- Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+- Evidence: ops/verification/20260424-165559-x-intake-reply-leg-live-smoke.txt
+- Verdict: BLOCKED — Docker daemon restarted during DRY=0 window; Cortex unreachable when webhook arrived
+- +18609171850 added to routing JSON (left for retry; remove via config/bluebubbles_routing.json if not needed)
+- [FOLLOWUP: x-intake-reply-leg-retry] Re-seed action, flip DRY=0, retry send with Docker stable
