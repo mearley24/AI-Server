@@ -1145,6 +1145,27 @@ def register_autonomy_routes(app: FastAPI) -> None:
                 "investigations": [],
             }
 
+    @app.post("/api/autonomy/investigate", tags=["autonomy"])
+    async def autonomy_investigate_on_demand(body: dict[str, Any]) -> dict[str, Any]:
+        """Run an investigation on a provided gate excerpt without requiring the file scanner.
+
+        Body: {"excerpt": "...", "source": "...", "marker": "FOLLOWUP"}
+        Useful for on-demand testing and when file mounts lag behind host changes.
+        """
+        excerpt = (body or {}).get("excerpt", "").strip()
+        source  = (body or {}).get("source", "manual")
+        marker  = (body or {}).get("marker", "FOLLOWUP").upper()
+        if not excerpt:
+            return {"error": "excerpt required", "status": "bad_request"}
+        gate = HumanGate(source=source, marker=marker, excerpt=excerpt,
+                         action_class="AUTO_REVIEW")
+        loop = asyncio.get_event_loop()
+        inv  = await loop.run_in_executor(None, investigate_gate, gate, REPO)
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "investigation": asdict(inv),
+        }
+
     @app.post("/api/autonomy/execute_action", tags=["autonomy"])
     async def autonomy_execute_action(body: dict[str, Any]) -> dict[str, Any]:
         """Execute a proposed action from an investigation. Gated by approval."""
