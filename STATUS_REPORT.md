@@ -3506,3 +3506,32 @@ All 4 inbox items already had archive + card from earlier runs this session. No 
 - `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed**; Status: needs fetch
 
 Verification: ops/verification/self-improve-20260424T191000Z.txt
+
+## X-Intake Reply-Leg — Milestone Complete (2026-04-24, Claude Code)
+
+### What is live
+- Inbound BlueBubbles webhook → Cortex → events:imessage → reply_listener ✅
+- `send_reply` handler delivers explicit body text verbatim ✅
+- Two-stage outbound: Cortex/BlueBubbles primary → iMessage bridge fallback (`:8199`) ✅
+- Durable receipts: every send_ack outcome writes to `/data/x_intake/reply_receipts.ndjson` ✅
+- Endpoint: `GET http://127.0.0.1:8101/reply-receipts` (last 50, recipient redacted) ✅
+
+### Tests passed
+- Dry-run end-to-end chain ✅
+- Explicit-body live send via bridge (2026-04-24T21:54Z, recipient ...1850) ✅
+- Durable receipt dry-run verification ✅
+
+### Key commits
+- `324205d5` — Wire x-intake replies to iMessage bridge fallback
+- `a274ca31` — Use explicit body for x-intake reply tests (send_reply handler)
+- `b00d6d18` — Add durable x-intake reply receipts (commit msg was generic; see this entry)
+
+### Current safe state
+- `CORTEX_REPLY_DRY_RUN=1` ✅
+- `ALLOWED_TEST_RECIPIENTS=` (cleared) ✅
+- Live sends require explicit Matt approval + arm sequence
+- Runtime receipt files (`data/x_intake/reply_receipts.ndjson`, `reply_acks.ndjson`) are NOT committed
+
+### Remaining gap
+- `[FOLLOWUP: bluebubbles-send-method]` BlueBubbles apple-script hangs on macOS 26; private-api helper not connecting. Bridge fallback closes the outbound gap for now.
+- x-intake image rebuild needed (keychain) to bake reply_listener permanently
