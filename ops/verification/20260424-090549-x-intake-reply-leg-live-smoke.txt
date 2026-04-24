@@ -1,0 +1,84 @@
+X-Intake Reply-Leg Live Smoke — Session Receipt (Attempt 2)
+============================================================
+Date (local): 2026-04-24T09:05:49 MDT
+Host: Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Authorization: SMOKE: x-intake-reply-leg TO=iMessage;-;+19705193013
+Outcome: PARTIAL — code path confirmed correct; BlueBubbles webhook not received
+
+DRY=0 window: ~4 minutes, zero sends executed.
+
+---
+
+STEPS EXECUTED
+
+Step 1:  ALLOWED_TEST_RECIPIENTS=iMessage;-;+19705193013   ✓
+Step 2:  CORTEX_REPLY_DRY_RUN=0                            ✓
+Step 3:  x-intake restarted → DRY=0 | ALLOW=iMessage;-;+19705193013  ✓
+         Listener: redis_listener_started channel=events:imessage    ✓
+Seed:    action_id=29478d16619b, slots={1:cortex_remember,2:cortex_dismiss}  ✓
+
+Step 4:  Matt sent "[bob-reply-test] reply 1" from iPhone
+         (self-to-self iMessage to +19705193013)
+
+Step 5:  Evidence inspection — FINDING: no event received
+  x-intake logs:   only listener_started lines; no inbound message processing
+  reply_acks.ndjson: not written
+  Cortex /api/bluebubbles/health:
+    inbound_count = 0
+    last_inbound_event_at = None
+  Redis PUBSUB NUMSUB events:imessage = 1 (x-intake is subscribed)
+  Redis PUBSUB NUMSUB events:bluebubbles = 0
+
+Step 6:  DRY=1 restored immediately; ALLOWED_TEST_RECIPIENTS cleared  ✓
+         Container confirmed: DRY=1 | ALLOW=
+
+---
+
+ROOT CAUSE ANALYSIS
+
+Cortex inbound_count=0 means the BlueBubbles webhook POST /hooks/bluebubbles
+was never received. The code path from the webhook inward is correct and
+tested (11 unit tests pass). The break is upstream:
+
+Hypothesis: Sending an iMessage to your own number (self-to-self) may not
+trigger a BlueBubbles webhook because the BlueBubbles server monitors
+Messages.app on the Mac for incoming messages from OTHER contacts; a
+message you send to yourself from your iPhone may not appear in the Mac
+Messages thread that BlueBubbles watches, or may not fire the "new-message"
+webhook event.
+
+---
+
+WHAT WORKS
+
+- x-intake: listener subscribed to events:imessage (PUBSUB NUMSUB=1)  ✓
+- HANDLER_REGISTRY: ['cortex_dismiss','cortex_remember','escalate_to_matt']  ✓
+- ActionStore seeded, lookup logic tested  ✓
+- DRY=0/DRY=1 flip via .env now works (compose.yml fixed)  ✓
+- Allowlist enforcement confirmed  ✓
+
+---
+
+WHAT REMAINS
+
+To complete the end-to-end smoke, the test message needs to arrive as an
+actual incoming iMessage event in BlueBubbles. Options:
+
+1. Send a message FROM another device/contact TO Matt's number so it
+   appears as an incoming message in Messages.app on Bob, triggering
+   the BlueBubbles webhook. Bob will then reply.
+
+2. Verify BlueBubbles webhook configuration — check that the webhook
+   URL is set to http://127.0.0.1:8102/hooks/bluebubbles (or the
+   appropriate Cortex address on the local network) and that the
+   BLUEBUBBLES_WEBHOOK_SECRET matches .env.
+
+3. Manually publish a test event to Redis and verify the full dispatch
+   chain without BlueBubbles:
+     docker exec redis redis-cli -a "$REDIS_PASSWORD" PUBLISH events:imessage \
+       '{"text":"reply 1","chat_guid":"iMessage;-;+19705193013","from":"+19705193013","message_id":"test-001"}'
+   This proves the listener→dispatcher→cortex_remember→ACK path without
+   requiring a real iPhone send.
+
+- [FOLLOWUP] Verify BlueBubbles webhook URL configuration
+- [FOLLOWUP] Test with a message from another contact (not self-to-self)
