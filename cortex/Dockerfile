@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy cortex package (engine, memory, goals, dashboard, static UI, ...)
 COPY cortex/ /app/cortex/
+COPY scripts/ /app/scripts/
 
 # Copy source files for migration (mounted read-only at runtime, but baked in as fallback)
 COPY AGENT_LEARNINGS.md /app/AGENT_LEARNINGS.md
