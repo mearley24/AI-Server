@@ -258,13 +258,17 @@ class HumanGateScanner:
                 all_lines = fh.readlines()
             tail = all_lines[-_STATUS_TAIL_LINES:]
             for line in tail:
+                stripped = line.strip()
+                # Skip resolved markers — lines like "- ~~[NEEDS_MATT]..." or "~~[FOLLOWUP]..."
+                if stripped.startswith("~~[") or stripped.startswith("- ~~["):
+                    continue
                 m = GATE_MARKERS.search(line)
                 if m:
                     marker = m.group(0).upper().replace("[", "").replace("]", "")
                     gates.append(HumanGate(
                         source="STATUS_REPORT.md",
                         marker=marker,
-                        excerpt=line.strip()[:160],
+                        excerpt=stripped[:160],
                     ))
         except Exception as exc:
             logger.debug("autonomy.status_report_scan_error err=%s", exc)

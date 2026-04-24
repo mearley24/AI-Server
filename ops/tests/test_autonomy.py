@@ -7,6 +7,7 @@ Run from the repo root:
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import tempfile
 from pathlib import Path
@@ -120,10 +121,35 @@ def test_human_gate_scanner_finds_needs_matt():
     markers = [g.marker for g in gates]
     assert any("NEEDS_MATT" in m for m in markers), f"Expected NEEDS_MATT in {markers}"
     assert any("FOLLOWUP" in m for m in markers), f"Expected FOLLOWUP in {markers}"
-    # The NEEDS_MATT gate should contain the excerpt
     nm_gates = [g for g in gates if "NEEDS_MATT" in g.marker]
     assert nm_gates, "No NEEDS_MATT gate found"
     assert "Polymarket" in nm_gates[0].excerpt or "NEEDS_MATT" in nm_gates[0].excerpt
+
+
+def test_human_gate_scanner_ignores_strikethrough():
+    """HumanGateScanner must not return gates for resolved ~~[MARKER]~~ lines."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        status = d / "STATUS_REPORT.md"
+        status.write_text(
+            "## Status\n"
+            "- ~~[NEEDS_MATT] Old resolved item~~ ✅ Done\n"
+            "- ~~[FOLLOWUP] Another resolved item~~ ✅ Done\n"
+            "~~[ARMED] Top-level resolved~~ ✅\n"
+            "- [NEEDS_MATT] Still open item\n",
+            encoding="utf-8",
+        )
+        scanner = HumanGateScanner(
+            status_report=status,
+            runbooks_dir=d / "runbooks_nonexistent",
+            prompts_dir=d / "prompts_nonexistent",
+        )
+        gates = scanner.scan()
+
+    # Only the active (non-struck) item should be returned
+    assert len(gates) == 1, f"Expected 1 gate, got {len(gates)}: {[g.excerpt for g in gates]}"
+    assert "NEEDS_MATT" in gates[0].marker
+    assert "Still open" in gates[0].excerpt
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -209,7 +235,7 @@ def test_autonomy_assessor_returns_ten_questions():
         assessor = AutonomyAssessor(verification_scanner=vs, gate_scanner=gs)
 
         with patch("httpx.get", side_effect=Exception("no network")):
-            overview = assessor.assess()
+            overview = asyncio.run(assessor.assess())
 
     assert isinstance(overview, AutonomyOverview)
     assert len(overview.questions) == 10
