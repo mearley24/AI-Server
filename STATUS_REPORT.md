@@ -26,6 +26,55 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Port & API Surface Audit — prompt armed (2026-04-24 UTC, Claude Code)
+
+Parent-agent docs-only pass. Matt asked (a) whether a recent full audit
+of all Bob ports exists and (b) whether the BlueBubbles API connection
+should be turned off now. No Bob runtime actions were taken this pass —
+no `docker`, `launchctl`, `sudo`, firewall, `.env`, or secret mutations.
+
+Answers from committed repo evidence:
+
+- **Recent full port audit?** Partial and stale. The closest snapshot is
+  `ops/verification/20260421-143522-full-system-sweep-and-audit.txt`
+  (2026-04-21, ~3 days old). It captured docker-compose port bindings
+  (19 services), `/health` sweep on the Symphony 8091–8765 range, 50
+  loaded launchd agents, and BlueBubbles inbound counters. It did not
+  enumerate every host listening socket, did not classify loopback vs
+  LAN vs Tailscale, did not map each listener to its owning plist/
+  container, and did not classify ports as REQUIRED/OPTIONAL/STALE/
+  UNKNOWN. A fresh, complete audit is warranted.
+
+- **Turn off BlueBubbles now?** No — not before the audit ships.
+  Inbound webhook was confirmed live on 2026-04-24
+  (`ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md`,
+  verdict `PASS-webhook-only`, commit `e610cddb`). Disabling the inbound
+  leg breaks Cortex message ingest and x-intake reply fan-in. Outbound
+  leg (`cortex.bluebubbles.BlueBubblesClient.send_text`) is the primary
+  send path; the AppleScript bridge on `:8199` is a fallback only.
+  x-intake reply-leg live smoke is `PRECHECKS_PASSED` and depends on
+  BlueBubbles outbound.
+
+Artifacts armed this pass:
+
+- Cline prompt: `.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md`
+  (bounded checks: `lsof -nP -iTCP -sTCP:LISTEN`, `docker ps` port map,
+  launchd plist→port inventory, BlueBubbles inbound+outbound surface,
+  classification table, hard no-mutation list).
+- Runbook: `ops/runbooks/2026-04-24-full-port-api-surface-audit.md`
+  (Status: ARMED).
+- Receipt: `ops/verification/20260424-port-api-surface-audit-prompt-armed.txt`.
+
+- [FOLLOWUP] Run the armed prompt on Bob (ACT MODE) to emit
+  `ops/verification/${STAMP}-port-api-surface-audit/` and replace this
+  entry's "partial + stale" finding with a full classification table.
+- [FOLLOWUP: bluebubbles-disable-gate] Any proposal to disable
+  BlueBubbles must ship with a rollback plan, a verification that the
+  AppleScript bridge (`:8199`) is healthy as a fallback outbound path,
+  and confirmation that `BLUEBUBBLES_SERVER_URL` is Tailscale-only.
+
+---
+
 ## Loose-Ends Reconciliation (2026-04-24 UTC, Claude Code)
 
 Parent-agent docs-only pass reconciling stale `Status: active` prompts

@@ -1,0 +1,82 @@
+================================================================================
+PORT & API SURFACE AUDIT — Cline prompt + runbook armed (docs-only pass)
+================================================================================
+Stamp (UTC):   2026-04-24T18:07Z
+Author:        Claude Code (parent-agent docs-only pass)
+Branch:        main
+Scope:         Authored Cline prompt + paired runbook. No runtime actions
+               on Bob. No docker/launchctl/sudo/env/ports/secrets touched.
+
+Matt question answered from repo evidence:
+
+  Q1. "Have we done a full audit of all ports recently to see what's used /
+       not used and next steps?"
+
+  A1. Closest existing snapshot is
+      ops/verification/20260421-143522-full-system-sweep-and-audit.txt
+      (2026-04-21, ~3 days stale). It covered:
+        - docker-compose port bindings (19 services listed)
+        - /health sweep for the 8091..8765 Symphony range
+        - launchd symphony.* load state (50 agents)
+        - BlueBubbles inbound counter (inbound=1 outbound=0 on 2026-04-21)
+      It did NOT:
+        - enumerate every host listening socket (lsof -nP -iTCP -sTCP:LISTEN)
+        - classify each bind as loopback / LAN / Tailscale-only
+        - map every listener back to its launchd plist or container
+        - classify each port as REQUIRED / OPTIONAL / STALE / UNKNOWN
+      Conclusion: partial + stale. A fresh, complete audit is warranted.
+
+  Q2. "Should we turn off the BlueBubbles API connection so nothing
+       unnecessary is left active?"
+
+  A2. Not yet. Evidence against premature disable:
+        - Inbound webhook leg was confirmed live on 2026-04-24,
+          receipt ops/verification/20260424-161534-bluebubbles-cortex-
+          live-webhook.md, verdict PASS-webhook-only (commit e610cddb).
+        - The inbound webhook lands on POST /hooks/bluebubbles at
+          127.0.0.1:8102 (cortex/bluebubbles.py::register_bluebubbles_routes);
+          disabling it breaks Cortex message ingest + x-intake reply fan-in.
+        - Outbound leg (cortex.bluebubbles.BlueBubblesClient.send_text) is
+          the primary send path; the AppleScript bridge at :8199
+          (scripts/imessage-server.py, com.symphony.imessage-bridge) is a
+          fallback only — no attachments, no read receipts.
+        - x-intake reply-leg live smoke is PRECHECKS_PASSED
+          (ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md)
+          and depends on BlueBubbles outbound. Turning BlueBubbles off now
+          regresses a gated live-smoke item.
+      Recommendation: keep BlueBubbles enabled until the full audit ships;
+      any disable proposal must arrive with a rollback plan, a fallback-
+      outbound verification, and confirmation that BLUEBUBBLES_SERVER_URL
+      is Tailscale-only (100.x / *.ts.net), not publicly exposed.
+
+Artifacts produced this pass:
+
+  .cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md
+    Cline prompt. Bounded checks: lsof listeners, docker ps port maps,
+    launchctl plist→port inventory, BlueBubbles inbound+outbound surface,
+    classification table REQUIRED/OPTIONAL/STALE/UNKNOWN. Hard "do not"
+    list forbids docker/launchctl mutation, firewall changes, .env
+    mutation, external sends, and BlueBubbles disable.
+
+  ops/runbooks/2026-04-24-full-port-api-surface-audit.md
+    Status: ARMED. Operator steps, exit criteria, and follow-up gate if
+    the audit surfaces anything Matt wants to disable.
+
+  STATUS_REPORT.md
+    Dated section appended under "Port & API Surface Audit (2026-04-24,
+    Claude Code) — prompt armed".
+
+No runtime action was taken. No containers, plists, ports, env, or
+secrets were modified. All conclusions above are sourced from committed
+repo evidence and referenced inline.
+
+Referenced evidence (exists, checked this pass):
+  ops/verification/20260421-143522-full-system-sweep-and-audit.txt
+  ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md
+  ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+  cortex/bluebubbles.py
+  scripts/imessage-server.py
+  scripts/bluebubbles-health.sh
+  PORTS.md
+  config/bluebubbles_routing.json (path referenced, contents not read)
+  .env.example (lines 539-541 for BlueBubbles env vars)
