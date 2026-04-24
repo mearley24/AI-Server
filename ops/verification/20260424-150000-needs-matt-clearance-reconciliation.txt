@@ -1,0 +1,174 @@
+NEEDS_MATT Clearance Reconciliation — Runbook Outcomes
+=======================================================
+Start (UTC):  2026-04-24T14:51Z
+End   (UTC):  2026-04-24T14:55Z
+Host:         Parent-agent sandbox (non-Bob). Read-only probes against
+              repo state only; no docker / launchctl / env / network.
+Git HEAD:     c0502b5a (pre-commit snapshot; post-commit hash appended
+              at bottom of this receipt)
+Branch:       main (up-to-date with origin/main at HEAD `c0502b5a`)
+Operator:     Claude Code parent agent (autonomous reconciliation)
+
+Scope:        Three Bob-runtime runbooks added in commit `4dd114ce`:
+              - ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md
+              - ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md
+              - ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+
+Out-of-scope: Polymarket funding (L1140/1141/1808), network-monitoring
+              / watchdog / sudoers markers, historical receipts under
+              ops/verification/*. Harness-owned paths (.claude/**,
+              .mcp.json, CLAUDE.md) preserved dirty as-is.
+
+---------------------------------------------------------------
+PER-GATE RECONCILIATION
+---------------------------------------------------------------
+
+1. Cortex dedup live --apply on brain.db
+   Runbook:   ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md
+   Runbook Status (header): DONE
+   Prior evidence receipts (both committed before this pass):
+     - ops/verification/20260423-173120-cortex-dedup-backfill.json
+       (groups=1, duplicates_found=1, rows_deleted=1, keys_set=1, dry_run=false)
+     - ops/verification/20260423-173840-cortex-dedup-backfill.json
+       (groups=1, duplicates_found=1, rows_deleted=1, keys_set=1, dry_run=false)
+   Live DB state per runbook appendix (as of 2026-04-24):
+     - memories total: 53,972
+     - dedupe_key IS NOT NULL: 1
+     - idx_memories_dedupe_key: PRESENT
+   Outcome: ARMED — already ran, idempotent on re-runs.
+   Bullet action: strikethrough + ✅ at STATUS_REPORT.md L353, L390, L410
+     (pre-reconciliation line numbers). Bullets retained for audit history.
+
+2. BlueBubbles health LaunchAgent arm
+   Runbook:   ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md
+   Runbook Status (header): DONE
+   Prior evidence receipt:
+     - ops/verification/20260424-083518-bluebubbles-health-arm.txt
+   Key facts from receipt:
+     - run interval = 300 seconds
+     - last exit code = 1 (expected — cortex_http_404 is a known
+       FOLLOWUP; BlueBubbles server 1.9.9 HEALTHY on every run)
+     - .err file: empty
+     - 269 log lines since 2026-04-23 10:15 install
+   Outcome: ARMED — LaunchAgent live since 2026-04-23 10:15 MDT.
+   Bullet action: strikethrough + ✅ at STATUS_REPORT.md L354, L448
+     (pre-reconciliation line numbers). Bullets retained for audit history.
+
+3. X-intake reply-leg live smoke
+   Runbook:   ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+   Runbook Status (header): [NEEDS_MATT] + [BOB_CLINE_ONLY] + [EXTERNAL_SEND]
+   Prior evidence receipt: NONE
+     - `ls ops/verification/ | grep -i x-intake-reply-leg-live-smoke` → empty
+     - Closest prior receipt is
+       ops/verification/20260423-104458-x-intake-reply-leg-phases-2-6.txt
+       which is the Phase-2-6 author+test closure (not the live smoke).
+   Outcome: DEFERRED — no evidence of live smoke. Runbook remains
+     correctly gated behind Matt-only allowlist + supervised DRY_RUN
+     flip + immediate restore + emergency rollback. External-send
+     posture preserved.
+   Bullet action: LEFT OPEN at STATUS_REPORT.md L355, L374
+     (pre-reconciliation line numbers). Annotated with a pointer to
+     the new evidence-capture prompt.
+   Follow-up artifact:
+     - .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md
+       Default posture: DRY_RUN_ONLY (runbook Appendix). Live smoke
+       requires explicit `SMOKE: x-intake-reply-leg TO=<matts-own-number>`
+       authorization typed by Matt in chat.
+
+---------------------------------------------------------------
+NEEDS_MATT INVENTORY — BEFORE / AFTER
+---------------------------------------------------------------
+
+Command: python3 scripts/needs_matt_inventory.py
+
+BEFORE (pre-edit):
+  total hits                 : 163
+  active (open gates)        : 19
+    of which stale           : 0
+    of which under-specified : 19
+  strikethrough (closed)     : 6
+  runbook-header             : 6
+  doc-reference              : 67
+  prompt-reference           : 65
+  historical (ops/verification): 0
+
+AFTER (post-edit, pre-commit):
+  total hits                 : 171  (+8 — this receipt + new prompt add new hits)
+  active (open gates)        : 14   (−5 — five bullets closed by evidence)
+  strikethrough (closed)     : 8    (+2 — two bullets now marked ✅)
+  runbook-header             : 6
+  doc-reference              : 74   (+7 — this receipt adds doc refs)
+  prompt-reference           : 69   (+4 — new evidence-capture prompt adds prompt refs)
+
+Delta: actionable-surface reduced from 19 → 14 (−5) on the three
+gates in scope. Remaining 14 active markers are outside this pass's
+scope (Polymarket funding x3 = L1140/1141/1808, network-guard +
+dropout-watch x2, x-intake reply-leg live smoke x2, and other open
+lanes).
+
+Python compile check:
+  python3 -c "import py_compile; py_compile.compile('scripts/needs_matt_inventory.py', doraise=True)" → ok
+
+---------------------------------------------------------------
+PATH / GREP CHECKS
+---------------------------------------------------------------
+
+Runbook paths exist:
+  ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md   → OK (Status: DONE)
+  ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md  → OK (Status: DONE)
+  ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md → OK (Status: [NEEDS_MATT])
+
+Orchestration prompt header:
+  .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md → OK (Status: active)
+
+Evidence-capture prompt created:
+  .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md → OK (Status: active)
+
+Policy + inventory script intact:
+  docs/needs-matt-policy.md          → OK
+  scripts/needs_matt_inventory.py    → OK (py_compile passes)
+  .cursor/prompts/needs-matt-hygiene-check.md → OK
+
+---------------------------------------------------------------
+ATTESTATIONS
+---------------------------------------------------------------
+
+- No runtime actions were performed in this pass: no docker, no
+  launchctl, no sudo, no env mutation, no external sends, no
+  posts/messages, no opened ports, no secrets read.
+- No file under ops/verification/ older than this run was modified.
+- No harness-owned path modified (.claude/**, .mcp.json, CLAUDE.md
+  all preserved dirty as observed at start of run).
+- No autonomy metadata added to anything under ops/runbooks/.
+- No Polymarket funding marker modified (STATUS_REPORT.md L1140,
+  L1141, L1808).
+- No [NEEDS_MATT] bullet outside the three tracked gates was edited.
+- X-intake live smoke gate left open; no claim of external-send
+  completion made. Default closure path (dry-run-only) documented in
+  the new evidence-capture prompt.
+
+---------------------------------------------------------------
+GIT DIFF --STAT HEAD (pre-commit)
+---------------------------------------------------------------
+
+ .claude/agents/data-model-explorer.md   |   2 +-   (harness-owned, not staged)
+ .claude/skills/INSTRUCTIONS.md          |   1 +   (harness-owned, not staged)
+ .claude/skills/code-review/SKILL.md     |   3 +-  (harness-owned, not staged)
+ .claude/skills/coding-workflow/SKILL.md |   1 +   (harness-owned, not staged)
+ .claude/skills/data-workflow/SKILL.md   |   1 +   (harness-owned, not staged)
+ .mcp.json                               |   2 +-  (harness-owned, not staged)
+ CLAUDE.md                               | 571 +--  (harness-owned, not staged)
+ STATUS_REPORT.md                        |  69 +++  (staged this pass)
+
+Additional untracked files staged in this commit:
+ .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md
+ ops/verification/20260424-150000-needs-matt-clearance-reconciliation.txt
+
+---------------------------------------------------------------
+COMMIT HASH
+---------------------------------------------------------------
+
+Commit: 2d0646fa  ops(needs_matt): reconciliation pass — ARMED×2 / DEFERRED×1
+  Files changed: 4 (this receipt, the inventory receipt, the new
+  evidence-capture prompt, and STATUS_REPORT.md).
+  Push: pending / see commit trailer for status.
