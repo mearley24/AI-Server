@@ -1,3 +1,5 @@
+# BlueBubbles API Surface
+
 {
     "status": "healthy",
     "reason": null,

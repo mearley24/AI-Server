@@ -3469,3 +3469,12 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - Transfer: 6.35 MiB received — tunnel active
 - polymarket-bot re-attached to VPN network namespace
 - Root cause: vpn container restart detached polymarket-bot namespace; clean docker compose up resolved it
+
+## Port & API Surface Audit (2026-04-24 18:23 UTC, Claude Code)
+- Evidence: ops/verification/20260424-182340-port-api-surface-audit/
+- Counts: 29 TCP listeners, 15 REQUIRED, 9 OPTIONAL, 1 UNKNOWN, 0 STALE
+- [NEEDS_MATT] Unknown second listener on :8102 (LAN-wide, PID 962 / com.symphony.file-watcher)
+- [NEEDS_MATT] PORTS.md claims loopback-only but 4 Symphony services bind LAN-wide (1234, 8199, 8421, 11434)
+- [FOLLOWUP] Update PORTS.md — 6 active services missing, note inaccurate
+- [FOLLOWUP] Remove x-intake-lab from docker-compose.yml (port 8103, not running)
+- BlueBubbles: KEEP ENABLED — inbound live, outbound blocked at apple-script/macOS 26 layer only
