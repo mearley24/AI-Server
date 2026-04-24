@@ -1,10 +1,12 @@
 # Cortex Dedup Live `--apply` — Bob Runtime Arm Runbook
 
-**Status:** `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` — **NOT auto-run by
-Computer / Cline / Claude Code / task-runner / self-improvement
-loop.** This file is a human-approved runbook, not an autonomous
-prompt. Do **not** add `<!-- autonomy: start -->` metadata to it. Do
-not copy it into `.cursor/prompts/`. Dispatchers under
+**Status:** `DONE` — `--apply` ran successfully on 2026-04-23
+(1 duplicate removed). Future re-runs follow the sequence below if
+a dry-run reports `duplicates_found > 0`.
+
+This file is a human-approved runbook, not an autonomous prompt.
+Do **not** add `<!-- autonomy: start -->` metadata to it. Do not
+copy it into `.cursor/prompts/`. Dispatchers under
 `ops/cline-run-*.sh` must **skip** anything in `ops/runbooks/`.
 
 **Owner:** Matt (or a human operator with shell access to Bob).
@@ -256,11 +258,20 @@ is confirmed.
 
 Prior `--apply` receipts on `brain.db` (2026-04-23):
 
-- `ops/verification/20260423-173120-cortex-dedup-backfill.json`:
-  `groups=1 duplicates_found=1 rows_deleted=1 keys_set=1`.
 - `ops/verification/20260423-173840-cortex-dedup-backfill.json`:
-  `groups=1 duplicates_found=1 rows_deleted=1 keys_set=1`.
+  `groups=1 duplicates_found=1 rows_deleted=1 keys_set=1 dry_run=false`
+- `ops/verification/20260423-190359-cortex-dedup-backfill.json`:
+  `groups=1 duplicates_found=1 rows_deleted=1 keys_set=1 dry_run=false`
 
-These demonstrate the backfill is idempotent and well-scoped; a
-subsequent `--dry-run` should report `duplicates_found=0` unless new
-duplicates have arrived.
+Both runs are idempotent — same duplicate detected and removed. The
+second run (run inside the container as part of the embeddings arm)
+confirms correct behaviour after a DB restore.
+
+Live DB state as of 2026-04-24:
+- `memories` total: 53,972
+- `dedupe_key IS NOT NULL`: 1 (the surviving row from the duplicate group)
+- `dedupe_key IS NULL`: 53,971 (historical rows with unresolvable source)
+- `idx_memories_dedupe_key`: PRESENT
+
+A subsequent `--dry-run` should report `duplicates_found=0` unless new
+URL-sourced or hint-sourced duplicates have arrived via `POST /remember`.
