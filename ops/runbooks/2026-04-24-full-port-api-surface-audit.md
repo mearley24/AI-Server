@@ -1,9 +1,15 @@
 # Runbook — Full Bob Port & API Surface Audit
 
-Status: ARMED (awaiting Bob operator)
+Status: DONE (snapshot delivered 2026-04-24 18:23 UTC, commit `0f8c97e2`)
 Created: 2026-04-24 (UTC), Claude Code (parent-agent docs-only pass)
-Paired prompt: `.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md`
+Closed: 2026-04-24 (UTC) — Claude Code parent-agent docs-only pass
+Paired prompt: `.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md` (Status: done)
 Parent receipt: `ops/verification/20260424-port-api-surface-audit-prompt-armed.txt`
+Delivery receipt: `ops/verification/20260424-182340-port-api-surface-audit/`
+Follow-ups armed (separate runbooks):
+- `ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md`
+- `ops/runbooks/2026-04-24-ports-md-registry-refresh.md`
+- `ops/runbooks/2026-04-24-port-8102-unknown-listener-evidence.md`
 
 ## Why this runbook exists
 

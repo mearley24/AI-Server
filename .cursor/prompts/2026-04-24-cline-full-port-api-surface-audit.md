@@ -1,8 +1,19 @@
 # Cline Prompt — Full Bob Port & API Surface Audit (read-only, no mutations)
 
-Status: active
+Status: done
 Owner: Cline (ACT MODE on Bob)
 Created: 2026-04-24 (UTC)
+Closed: 2026-04-24 (UTC) — Claude Code parent-agent docs-only pass
+Closure evidence:
+- Snapshot commit: `0f8c97e2` (ops(port-audit): full Bob port/API surface snapshot — 20260424-182340)
+- Receipt dir: `ops/verification/20260424-182340-port-api-surface-audit/`
+  (README.md, classification.md, bluebubbles-surface.txt, host-listeners.txt,
+  docker-ports.txt, launchd-ports.txt)
+- Counts emitted: 29 TCP listeners → 15 REQUIRED / 9 OPTIONAL / 1 UNKNOWN / 0 STALE
+- Follow-up prompts armed (separate files):
+  `.cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md`
+  `.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md`
+  `.cursor/prompts/2026-04-24-cline-port-8102-unknown-listener-evidence.md`
 Parent context: Matt asked "have we done a full audit of all ports recently
 to see what's used / not used and next steps?" and asked whether the
 BlueBubbles API connection should be turned off. Answer: the last full

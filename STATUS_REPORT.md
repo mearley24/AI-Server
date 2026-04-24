@@ -3478,3 +3478,45 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - [FOLLOWUP] Update PORTS.md — 6 active services missing, note inaccurate
 - [FOLLOWUP] Remove x-intake-lab from docker-compose.yml (port 8103, not running)
 - BlueBubbles: KEEP ENABLED — inbound live, outbound blocked at apple-script/macOS 26 layer only
+
+## Port & API Surface Audit — reconciliation + follow-ups armed (2026-04-24 UTC, Claude Code)
+
+Parent-agent docs-only pass. No Bob runtime actions (no `docker`,
+`launchctl`, `sudo`, firewall, `.env`, secrets, external sends, money/
+trading, destructive changes). Unrelated dirty files preserved.
+
+Closures applied this pass:
+
+- ~~.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md — Status: active~~ ✅ **done** (snapshot commit `0f8c97e2`; receipt `ops/verification/20260424-182340-port-api-surface-audit/`)
+- ~~ops/runbooks/2026-04-24-full-port-api-surface-audit.md — Status: ARMED~~ ✅ **DONE** (delivery receipt path linked in header)
+
+Audit-derived follow-ups armed (each = prompt + runbook + precheck +
+approval gate + rollback + verification receipt + STATUS_REPORT closure):
+
+- [FOLLOWUP] Remove decommissioned x-intake-lab from docker-compose.yml
+  (port 8103). Prompt: `.cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md`.
+  Runbook: `ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md`.
+- [FOLLOWUP] PORTS.md registry refresh (docs-only — 6 missing services,
+  loopback-only footnote inaccurate). Prompt:
+  `.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md`.
+  Runbook: `ops/runbooks/2026-04-24-ports-md-registry-refresh.md`.
+- [FOLLOWUP] :8102 UNKNOWN second listener — read-only evidence capture
+  to unblock the `[NEEDS_MATT]` verdict. Prompt:
+  `.cursor/prompts/2026-04-24-cline-port-8102-unknown-listener-evidence.md`.
+  Runbook: `ops/runbooks/2026-04-24-port-8102-unknown-listener-evidence.md`.
+
+BlueBubbles disable decision re-confirmed against audit evidence:
+
+- Inbound webhook: **live** (counters zero because Cortex restarted at
+  18:23 UTC — last PASS receipt `ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md`).
+- Outbound BlueBubbles send path: server healthy (`1.9.9`, `private_api: true`);
+  block is macOS 26 AppleScript + private-api helper, not the BlueBubbles
+  API itself.
+- Host AppleScript bridge fallback (`com.symphony.imessage-bridge`, :8199):
+  running; last SIGTERM was a prior restart, not a crash.
+- **Decision: KEEP ENABLED.** Disabling breaks Cortex iMessage ingest + x-intake
+  reply-leg fan-in. Any disable proposal must ship with rollback, :8199
+  fallback health check, Tailscale-only URL confirmation, and an audit of
+  every `[NEEDS_MATT]` / `[FOLLOWUP]` that still depends on the webhook.
+
+Reconciliation receipt: `ops/verification/20260424-port-api-surface-audit-reconciliation.md`.
