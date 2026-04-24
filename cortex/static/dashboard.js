@@ -77,6 +77,9 @@
     if (panel) panel.classList.add('active');
     if (btn)   btn.classList.add('active');
     window.location.hash = name === 'overview' ? '' : name;
+    if (['overview', 'xintake', 'symphony', 'autonomy'].includes(name)) {
+      loadToolAccess(name);
+    }
     if (name === 'xintake'     && !_xiLoaded) { _xiLoaded = true; loadXIntake(); }
     if (name === 'transcripts' && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
     if (name === 'autonomy'    && !_autonomyLoaded) { loadAutonomy(); }
@@ -98,6 +101,51 @@
   const _hashTab = window.location.hash.replace('#', '');
   if (['xintake', 'transcripts', 'symphony', 'autonomy'].includes(_hashTab))
     setTimeout(() => switchTab(_hashTab), 50);
+
+  // ── Tool access registry ──────────────────────────────────────────────────
+
+  const _toolAccessLoaded = Object.create(null);
+
+  function renderToolAccess(tools) {
+    if (!Array.isArray(tools) || tools.length === 0) {
+      return unavail('no tools registered for this tab');
+    }
+    return tools.map((t) => {
+      const port = (t.port != null) ? (':' + esc(t.port)) : '';
+      const cat = t.category ? esc(t.category) : '';
+      const meta = [cat, port].filter(Boolean).join(' · ');
+      const localLink = t.local_url
+        ? `<a class="tlink" href="${esc(t.local_url)}" target="_blank" rel="noopener" title="local on Bob">local ↗</a>`
+        : '';
+      const tsLink = t.tailscale_url
+        ? `<a class="tlink ts" href="${esc(t.tailscale_url)}" target="_blank" rel="noopener" title="Tailscale IP ${esc(t.tailscale_url)}">tailscale ↗</a>`
+        : (t.status === 'unknown'
+            ? `<span class="tlink unknown" title="port not documented in PORTS.md">tailscale —</span>`
+            : '');
+      const fqdnLink = t.tailscale_fqdn_url
+        ? `<a class="tlink ts" href="${esc(t.tailscale_fqdn_url)}" target="_blank" rel="noopener" title="Tailscale MagicDNS ${esc(t.tailscale_fqdn_url)}">magic ↗</a>`
+        : '';
+      const note = t.notes ? `<div class="tnote">${esc(t.notes)}</div>` : '';
+      return `<div class="tool-row" data-tool="${esc(t.name)}">
+        <span class="tname">${esc(t.name)}</span>
+        <span class="tmeta">${meta}</span>
+        <span class="tlinks">${localLink}${tsLink}${fqdnLink}</span>
+        ${note}
+      </div>`;
+    }).join('');
+  }
+
+  async function loadToolAccess(tab) {
+    const host = $('tool-access-' + tab);
+    if (!host) return;
+    if (_toolAccessLoaded[tab]) return;
+    const data = await fetchJson('/api/tools?tab=' + encodeURIComponent(tab));
+    if (!data) { host.innerHTML = unavail('registry unavailable'); return; }
+    host.innerHTML = renderToolAccess(data.tools || []);
+    _toolAccessLoaded[tab] = true;
+  }
+
+  window.loadToolAccess = loadToolAccess;
 
   // ── Badge helpers ─────────────────────────────────────────────────────────
 
@@ -784,6 +832,7 @@
   }
 
   refresh();
+  loadToolAccess('overview');
   setInterval(refresh, REFRESH_MS);
   setInterval(tickClock, 1000);
 

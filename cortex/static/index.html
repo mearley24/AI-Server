@@ -48,6 +48,10 @@
       <div id="services" class="svc-grid"><div class="unavailable">loading</div></div>
       <div class="small" id="services-summary" style="margin-top:8px"></div>
     </div>
+    <div class="card" id="tool-access-overview-card">
+      <h2>Tool Access <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">local / tailscale</span></h2>
+      <div id="tool-access-overview" class="tool-list"><div class="unavailable">loading</div></div>
+    </div>
     <div class="card">
       <h2>Email</h2>
       <div id="emails"><div class="unavailable">loading</div></div>
@@ -121,6 +125,12 @@
 ══════════════════════════════════════════════════════════════════════════ -->
 <div id="tab-xintake" class="tab-panel">
 <div id="panel-xintake">
+
+  <!-- Tool access -->
+  <div class="card" id="tool-access-xintake-card" style="margin:0 0 12px;">
+    <h2>Tool Access <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">x intake</span></h2>
+    <div id="tool-access-xintake" class="tool-list"><div class="unavailable">loading</div></div>
+  </div>
 
   <!-- Stats bar -->
   <div class="xi-stats-row">
@@ -204,6 +214,14 @@
 <div id="tab-symphony" class="tab-panel">
 <div id="panel-symphony" style="padding:16px 22px 80px;">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+    <!-- Full-width: Tool Access -->
+    <div style="grid-column:1 / -1;">
+      <div class="card" id="tool-access-symphony-card">
+        <h2>Tool Access <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">symphony ops</span></h2>
+        <div id="tool-access-symphony" class="tool-list"><div class="unavailable">loading</div></div>
+      </div>
+    </div>
 
     <!-- Full-width: Markup Tool -->
     <div style="grid-column:1 / -1;">
@@ -371,6 +389,10 @@
       <div class="card">
         <h2>Recent Verifications</h2>
         <div id="autonomy-verifs"><div class="unavailable">loading</div></div>
+      </div>
+      <div class="card" id="tool-access-autonomy-card">
+        <h2>Tool Access <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">autonomy / ops</span></h2>
+        <div id="tool-access-autonomy" class="tool-list"><div class="unavailable">loading</div></div>
       </div>
     </div>
 

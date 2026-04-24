@@ -103,6 +103,107 @@ def _is_followup_noise(followup: dict) -> bool:
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# ── Tool access registry ─────────────────────────────────────────────────────
+#
+# Single source of truth for tool links surfaced on the dashboard tabs.
+# Edit port / tab / notes here; the frontend reads this via /api/tools.
+#
+# Tailscale identifiers for Bob (set 2026-04-24):
+#   IP:         100.89.1.51
+#   MagicDNS:   bobs-mac-mini.tailbcf3fe.ts.net
+#
+# Ports are verified against PORTS.md on 2026-04-24. Entries whose port is
+# not yet documented are marked status="unknown" so the UI can render them
+# without implying they're reachable.
+BOB_TAILSCALE_IP = "100.89.1.51"
+BOB_TAILSCALE_FQDN = "bobs-mac-mini.tailbcf3fe.ts.net"
+
+
+def _tool(name: str, port: int | None, tab: str, category: str, *,
+          health_path: str | None = None, local_path: str = "/",
+          notes: str = "", status: str = "ok") -> dict:
+    """Build a tool registry entry.
+
+    ``status="ok"``         — port is documented in PORTS.md
+    ``status="unknown"``    — port / reachability not yet verified
+    ``status="lan_only"``   — host-bound service, LAN not Tailscale
+    """
+    entry: dict[str, Any] = {
+        "name": name,
+        "tab": tab,
+        "category": category,
+        "port": port,
+        "status": status,
+        "notes": notes,
+    }
+    if port is not None:
+        entry["local_url"] = f"http://127.0.0.1:{port}{local_path}"
+        entry["tailscale_url"] = f"http://{BOB_TAILSCALE_IP}:{port}{local_path}"
+        entry["tailscale_fqdn_url"] = (
+            f"http://{BOB_TAILSCALE_FQDN}:{port}{local_path}"
+        )
+        if health_path:
+            entry["health_url"] = f"http://127.0.0.1:{port}{health_path}"
+    else:
+        entry["local_url"] = None
+        entry["tailscale_url"] = None
+        entry["tailscale_fqdn_url"] = None
+    return entry
+
+
+# Tabs match the dashboard tab IDs: overview, xintake, symphony, autonomy
+TOOL_REGISTRY: list[dict[str, Any]] = [
+    # Overview tab — core Cortex + central services
+    _tool("Cortex Dashboard", 8102, "overview", "Core AI",
+          health_path="/health", local_path="/dashboard",
+          notes="Brain, memory, dashboard. Currently binds *:8102 — audit item."),
+    _tool("OpenClaw", 8099, "overview", "Core AI",
+          health_path="/health",
+          notes="Central LLM orchestration + routing."),
+    _tool("Cortex Autobuilder", 8115, "overview", "Core AI",
+          health_path="/health",
+          notes="Bob/Betty research loop + topic scanning."),
+
+    # X Intake tab
+    _tool("X Intake", 8101, "xintake", "Intelligence",
+          health_path="/health",
+          notes="X/Twitter link analysis + bookmarks queue."),
+
+    # Symphony Ops tab — business / communication tools
+    _tool("Markup Tool", 8088, "symphony", "Business",
+          local_path="/",
+          notes="Local markup utility. Bound 127.0.0.1 — reachable on Bob "
+                "host; Tailscale URL only works if `tailscale serve` "
+                "publishes :8088.",
+          status="lan_only"),
+    _tool("BlueBubbles", 1234, "symphony", "Communication",
+          health_path="/api/v1/server/info",
+          notes="iMessage bridge. Host service bound to all interfaces "
+                "(LAN-accessible)."),
+    _tool("Proposals", 8091, "symphony", "Business",
+          health_path="/health",
+          notes="Symphony proposal generation engine."),
+    _tool("iMessage Bridge", 8199, "symphony", "Communication",
+          health_path="/health",
+          notes="Two-way message bridge health/API. Bound 127.0.0.1.",
+          status="lan_only"),
+
+    # Autonomy tab — control plane / ops adjacent
+    _tool("Notification Hub", 8095, "autonomy", "Infrastructure",
+          health_path="/health",
+          notes="Alert routing and delivery."),
+    _tool("Intel Feeds", 8765, "autonomy", "Intelligence",
+          health_path="/health",
+          notes="News, Reddit, Polymarket monitors."),
+
+    # Mobile gateway — not yet confirmed in PORTS.md; surface as unknown
+    _tool("Mobile Gateway", None, "overview", "Infrastructure",
+          notes="Mobile gateway not documented in PORTS.md on 2026-04-24. "
+                "Update TOOL_REGISTRY in cortex/dashboard.py when port is "
+                "finalized.",
+          status="unknown"),
+]
+
 # Service map — ports updated for current stack (notification-hub=8095,
 # proposals=8091, no mission-control entry since cortex IS the dashboard)
 SERVICES: list[dict[str, Any]] = [
@@ -311,6 +412,28 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
     @app.get("/")
     async def root():
         return RedirectResponse("/dashboard")
+
+    # ── /api/tools — intentional tool access registry ───────────────────
+    @app.get("/api/tools")
+    async def api_tools(tab: str = ""):
+        """Return the tool access registry, optionally filtered by tab.
+
+        This is the single source of truth for "how do I reach tool X from
+        Bob or from Tailscale." Frontend renders the appropriate entries
+        on each tab. When a port changes, edit TOOL_REGISTRY in
+        cortex/dashboard.py — no frontend change required.
+        """
+        items = TOOL_REGISTRY
+        if tab:
+            items = [t for t in items if t.get("tab") == tab]
+        return {
+            "tools": items,
+            "count": len(items),
+            "tailscale": {
+                "ip": BOB_TAILSCALE_IP,
+                "fqdn": BOB_TAILSCALE_FQDN,
+            },
+        }
 
     # ── /api/services ───────────────────────────────────────────────────
     @app.get("/api/services")
