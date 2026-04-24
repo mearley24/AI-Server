@@ -26,6 +26,28 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Bob Docker/Memory Optimization Applied (2026-04-24 09:25 MDT, Claude Code)
+
+APPROVE ALL executed. Changes applied:
+
+- `scripts/bob-watchdog.sh` — Docker cooldown 180s → **300s** (WATCHDOG_VERSION bump needed for system copy)
+- `docker-compose.yml` — **x-intake-lab decommissioned** (512m freed, container stopped)
+- `~/Library/Application Support Docker Desktop/settings-store.json` — **MemoryMiB 4096 → 6144** (takes effect after Docker Desktop restart)
+- `~/Library/LaunchAgents/com.ollama.plist` — **KEEP_ALIVE 5m → 0**, MAX_LOADED_MODELS 2 → 1 (Ollama reloaded)
+- `docker system prune -a` + `docker builder prune -a` — **~11.5 GB disk reclaimed**
+
+Before/after:
+  Disk: 95% → 90% (11 GB → 22 GB free)
+  Memory pages free: 8,572 → 12,727
+  Ollama RAM: ~5.7 GB (models evicted, KEEP_ALIVE=0 prevents reload)
+  Docker VM: 4 GB → 6 GB (active after Docker Desktop restart)
+
+- [NEEDS_MATT] Restart Docker Desktop to apply the 6 GB VM memory setting
+- [NEEDS_MATT] `sudo setup/install_bob_watchdog.sh --deploy-system` to sync 300s cooldown to system copy
+- [FOLLOWUP] Move Docker Desktop from translocated path to `/Applications/` (reinstall)
+
+---
+
 ## BlueBubbles → Cortex Live Webhook Verification Prompt Added (2026-04-24 UTC, Claude Code)
 
 Parent-agent repo pass documenting the one remaining follow-up Matt
