@@ -453,6 +453,7 @@ services:
     volumes:
       - ./cortex:/app/cortex
       - ./data/cortex:/data/cortex
+      - ./data/client_intel:/data/client_intel
       - ./data/openclaw:/app/data/openclaw:ro
       - ./polymarket-bot/knowledge:/app/knowledge:ro
       - ./data/x_intake:/data/x_intake:ro

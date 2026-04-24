@@ -384,7 +384,7 @@ async def run_improvement() -> dict[str, Any]:
 
 # ── Client intelligence (read-only) ───────────────────────────────────────────
 
-_CLIENT_INTEL_DB = Path(os.environ.get("CORTEX_DATA_DIR", "/data/cortex")).parent.parent / "client_intel" / "message_thread_index.sqlite"
+_CLIENT_INTEL_DB = Path(os.environ.get("CLIENT_INTEL_DATA_DIR", "/data/client_intel")) / "message_thread_index.sqlite"
 
 
 @app.get("/api/client-intel/threads", tags=["client-intel"])
