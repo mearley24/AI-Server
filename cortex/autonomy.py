@@ -60,10 +60,21 @@ VALID_VERDICTS = frozenset(
     ["PASS", "FAIL", "PARTIAL", "GAP", "UNKNOWN", "ARMED", "CLOSED", "NEEDS_MATT"]
 )
 
-GATE_MARKERS = re.compile(
-    r"\[NEEDS_MATT\]|NEEDS_MATT|\[FOLLOWUP\]|ARMED|blocked|waiting|confirmation required",
+# Matches a line where a gate marker LEADS the line (after optional whitespace + "- ").
+# Rejects: inline prose, backtick mentions, section headings, historical references.
+_ACTIVE_GATE_LINE = re.compile(
+    r"^\s*-?\s*\[(NEEDS_MATT|FOLLOWUP|BLOCKED|ARMED)\]",
     re.IGNORECASE,
 )
+
+# For filename scanning only — looks for bracket form anywhere in the name.
+_GATE_IN_FILENAME = re.compile(
+    r"\[(NEEDS_MATT|FOLLOWUP|BLOCKED|ARMED)\]",
+    re.IGNORECASE,
+)
+
+# Legacy alias kept so classify_gate callers still compile; not used for line matching.
+GATE_MARKERS = _ACTIVE_GATE_LINE
 
 # ── Gate action-class triage ──────────────────────────────────────────────────
 
@@ -314,12 +325,14 @@ class HumanGateScanner:
             tail = all_lines[-_STATUS_TAIL_LINES:]
             for line in tail:
                 stripped = line.strip()
-                # Skip resolved markers — lines like "- ~~[NEEDS_MATT]..." or "~~[FOLLOWUP]..."
+                # Skip resolved strikethrough markers — "- ~~[MARKER]..." or "~~[MARKER]..."
                 if stripped.startswith("~~[") or stripped.startswith("- ~~["):
                     continue
-                m = GATE_MARKERS.search(line)
+                # Only treat lines where the bracket marker LEADS the line as active gates.
+                # This rejects prose/backtick mentions and section headings.
+                m = _ACTIVE_GATE_LINE.match(line)
                 if m:
-                    marker = m.group(0).upper().replace("[", "").replace("]", "")
+                    marker = m.group(1).upper()
                     gates.append(HumanGate(
                         source="STATUS_REPORT.md",
                         marker=marker,
@@ -336,9 +349,9 @@ class HumanGateScanner:
             return []
         gates: list[HumanGate] = []
         for p in sorted(directory.iterdir(), key=lambda x: x.name, reverse=True):
-            if p.is_file() and GATE_MARKERS.search(p.name):
-                m = GATE_MARKERS.search(p.name)
-                marker = (m.group(0).upper().replace("[", "").replace("]", "")) if m else "GATE"
+            if p.is_file() and _GATE_IN_FILENAME.search(p.name):
+                m = _GATE_IN_FILENAME.search(p.name)
+                marker = m.group(1).upper() if m else "GATE"
                 gates.append(HumanGate(
                     source=f"{kind}/{p.name}",
                     marker=marker,

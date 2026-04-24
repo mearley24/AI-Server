@@ -29,6 +29,7 @@ from cortex.autonomy import (
     VerificationScanner,
     classify_gate,
     register_autonomy_routes,
+    _ACTIVE_GATE_LINE,
 )
 
 
@@ -95,7 +96,71 @@ def test_verification_scanner_fail_verdict():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  3. HumanGateScanner — finds NEEDS_MATT
+#  3a. _ACTIVE_GATE_LINE regex — matches only leading bracket markers
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_active_gate_line_matches_leading_markers():
+    """Lines where the bracket marker leads must match."""
+    assert _ACTIVE_GATE_LINE.match("- [FOLLOWUP] do something")
+    assert _ACTIVE_GATE_LINE.match("[NEEDS_MATT] fund wallet")
+    assert _ACTIVE_GATE_LINE.match("  - [BLOCKED] issue here")
+    assert _ACTIVE_GATE_LINE.match("  [ARMED] runbook active")
+    assert _ACTIVE_GATE_LINE.match("- [followup] lowercase works")
+
+
+def test_active_gate_line_rejects_false_positives():
+    """Prose, backtick mentions, headings, and historical refs must NOT match."""
+    # Inline backtick mentions
+    assert not _ACTIVE_GATE_LINE.match("every `[NEEDS_MATT]` / `[FOLLOWUP]` that still depends")
+    assert not _ACTIVE_GATE_LINE.match("marked `[NEEDS_MATT]`")
+    # Section headings containing the word
+    assert not _ACTIVE_GATE_LINE.match("## Port Audit — reconciliation + follow-ups armed")
+    assert not _ACTIVE_GATE_LINE.match("## Bob-watchdog required-source subshell fix + [FOLLOWUP] alert")
+    # Narrative prose with blocked/armed/waiting as plain words
+    assert not _ACTIVE_GATE_LINE.match("- Verdict: BLOCKED — Docker daemon restarted")
+    assert not _ACTIVE_GATE_LINE.match("- BlueBubbles: KEEP ENABLED — outbound blocked at apple-script")
+    assert not _ACTIVE_GATE_LINE.match("- Status: ARMED")
+    # References inside longer sentences
+    assert not _ACTIVE_GATE_LINE.match("  Runbook remains gated (Matt-only [NEEDS_MATT])")
+    assert not _ACTIVE_GATE_LINE.match("  see `[FOLLOWUP: bluebubbles-send-method]`")
+
+
+def test_human_gate_scanner_no_false_positives():
+    """Scanner must not produce gates for prose / heading / backtick lines."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        status = d / "STATUS_REPORT.md"
+        status.write_text(
+            # Real active gate — must be captured
+            "- [NEEDS_MATT] Fund Polymarket wallet\n"
+            # Prose with backtick mention — must be ignored
+            "every `[NEEDS_MATT]` / `[FOLLOWUP]` that still depends on the webhook\n"
+            # Section heading — must be ignored
+            "## Port Audit — reconciliation + follow-ups armed (2026-04-24)\n"
+            # Narrative BLOCKED — must be ignored
+            "- Verdict: BLOCKED — Docker daemon restarted\n"
+            # Inline [FOLLOWUP] reference deep in a sentence — must be ignored
+            "  Runbook remains gated (Matt-only allowlist + [FOLLOWUP] restore)\n"
+            # Another real gate — must be captured
+            "- [FOLLOWUP] Complete historical backfill\n",
+            encoding="utf-8",
+        )
+        scanner = HumanGateScanner(
+            status_report=status,
+            runbooks_dir=d / "r",
+            prompts_dir=d / "p",
+        )
+        gates = scanner.scan()
+
+    assert len(gates) == 2, f"Expected 2 gates, got {len(gates)}: {[g.excerpt for g in gates]}"
+    markers = {g.marker for g in gates}
+    assert "NEEDS_MATT" in markers
+    assert "FOLLOWUP" in markers
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  3b. HumanGateScanner — finds NEEDS_MATT
 # ══════════════════════════════════════════════════════════════════════════════
 
 
