@@ -26,6 +26,55 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## NEEDS_MATT Clearance Reconciliation — Runbook Outcomes (2026-04-24 UTC, Claude Code)
+
+Parent-agent reconciliation pass against committed evidence for the
+three Bob-runtime `[NEEDS_MATT]` runbooks added in commit `4dd114ce`.
+**No runtime actions were performed:** no docker, no launchctl, no env
+mutation, no sudo, no external sends, no secrets read. Harness-owned
+dirty working-tree items (`.claude/**`, `.mcp.json`, `CLAUDE.md`)
+preserved as-is. Historical `ops/verification/` receipts untouched.
+
+Per-gate outcomes:
+
+| Gate | Runbook | Outcome | Evidence |
+|------|---------|---------|----------|
+| Cortex dedup live `--apply` | `ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md` (`Status: DONE`) | **ARMED — already ran** | `ops/verification/20260423-173120-cortex-dedup-backfill.json` + `20260423-173840-cortex-dedup-backfill.json` (each `rows_deleted=1`, idempotent). Runbook appendix records live DB state: 53,972 rows, `idx_memories_dedupe_key` present. |
+| BlueBubbles health plist | `ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md` (`Status: DONE`) | **ARMED — LaunchAgent live** | `ops/verification/20260424-083518-bluebubbles-health-arm.txt` — `run interval = 300`, `.err` empty, 269 log lines, BlueBubbles 1.9.9 healthy. |
+| X-intake reply-leg live smoke | `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md` (`Status: [NEEDS_MATT]`) | **DEFERRED — no evidence** | No `ops/verification/*x-intake-reply-leg-live-smoke*` receipt exists. Runbook remains gated (Matt-only allowlist + supervised DRY_RUN flip + immediate restore). External-send posture preserved. |
+
+Actions taken in this pass (repo-only):
+
+- Closed stale `[NEEDS_MATT]` bullets for cortex-dedup (L353, L390,
+  L410) and bluebubbles-health (L354, L448) by strikethrough + ✅
+  pointing to the runbook status + evidence receipts already
+  committed prior to this pass. Bullets are not deleted — the audit
+  history stays intact.
+- Left the two x-intake live-smoke `[NEEDS_MATT]` bullets (L355 +
+  L374) open. Annotated both to point at the authoritative runbook
+  and the new evidence-capture prompt.
+- Added `.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md`
+  — a targeted, self-contained orchestration prompt that either
+  (a) runs the runbook's Appendix dry-run-only variant to capture
+  reproducible evidence without any external send, or
+  (b) under explicit `SMOKE: x-intake-reply-leg TO=<matts-own-number>`
+  authorization, runs the full supervised live smoke. Default posture
+  is dry-run-only.
+- Ran `python3 scripts/needs_matt_inventory.py` before and after the
+  strikethroughs to quantify the reduction in actionable surface.
+
+No edits to files under `ops/verification/` older than this run. No
+changes to Polymarket funding markers (L1140, L1141, L1808). No
+changes to network-monitoring / watchdog / sudoers markers — separate
+tracks.
+
+Verification receipt for this pass:
+`ops/verification/20260424-150000-needs-matt-clearance-reconciliation.txt`
+(timestamps, per-gate probe outputs, inventory before/after, commit
+hash appended post-commit).
+
+---
+
 ## BlueBubbles Health — LaunchAgent Armed on Bob (2026-04-24 08:35 MDT, Claude Code)
 
 `com.symphony.bluebubbles-health` LaunchAgent confirmed ARMED. Was installed
@@ -350,9 +399,9 @@ land first") is now satisfied, so it is cleared to run.
 
 - [FOLLOWUP] Run `.cursor/prompts/2026-04-23-cline-cortex-embeddings.md` — author+test only; live `--apply` on `brain.db` stays `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`.
 - [FOLLOWUP] `docker compose up -d --build cortex` on Bob — unblocks three items in one command: exposes `GET /api/bluebubbles/health` (clears `cortex_http_404`); lets attachment-enrichment run against live webhooks; permits V6 live-DB inspection of `idx_memories_dedupe_key`.
-- [NEEDS_MATT] Cortex dedup live `--apply` (after backup + rebuild).
-- [NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist` via `cp` + `launchctl load`.
-- [NEEDS_MATT] X-intake reply-leg live smoke — `ALLOWED_TEST_RECIPIENTS`, `CORTEX_REPLY_DRY_RUN=0`, rebuild, one reply to Matt's own number, then restore `=1`.
+- ~~[NEEDS_MATT] Cortex dedup live `--apply` (after backup + rebuild).~~ ✅ Apply ran 2026-04-23 — receipts `ops/verification/20260423-173120-cortex-dedup-backfill.json` + `20260423-173840-cortex-dedup-backfill.json` (each `rows_deleted=1`); runbook `ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md` marked `Status: DONE`.
+- ~~[NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist` via `cp` + `launchctl load`.~~ ✅ Armed 2026-04-23 10:15 MDT — receipt `ops/verification/20260424-083518-bluebubbles-health-arm.txt` (`run interval = 300`, `.err` empty, BlueBubbles 1.9.9 healthy).
+- [NEEDS_MATT] X-intake reply-leg live smoke — `ALLOWED_TEST_RECIPIENTS`, `CORTEX_REPLY_DRY_RUN=0`, rebuild, one reply to Matt's own number, then restore `=1`. (No evidence yet — runbook `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md` still `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` + `[EXTERNAL_SEND]`. See also `.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md`.)
 
 Verification: `ops/verification/20260423-164850-five-prompt-reconciliation.md`
 
@@ -371,7 +420,7 @@ Commits: `6aa2102`, `7bc0f5e`, `cce41c4`, `c0b9d1f`
 
 **Test result:** 11 passed, 0.03s. **Outbound ACKs remain in `CORTEX_REPLY_DRY_RUN=1` mode.**
 
-- [NEEDS_MATT] Enable live sends:
+- [NEEDS_MATT] Enable live sends (still gated — no evidence of a live smoke; authoritative runbook is `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md`, which requires Matt-only `ALLOWED_TEST_RECIPIENTS`, supervised DRY_RUN flip, and immediate restore. Follow-up evidence-capture prompt: `.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md`):
   1. `bash scripts/set-env.sh ALLOWED_TEST_RECIPIENTS "iMessage;-;+19705193013"`
   2. `bash scripts/set-env.sh CORTEX_REPLY_DRY_RUN 0`
   3. `docker compose up -d --build x-intake`
@@ -387,9 +436,9 @@ Verification: `ops/verification/20260423-104458-x-intake-reply-leg-phases-2-6.tx
 Re-run confirming all prior dedup work intact. 12 tests pass (0.03s). Dry-run backfill
 produces correct merge plan. Docker not running so V6 live DB inspection deferred.
 
-- [NEEDS_MATT] Live backfill (after Docker up):
+- ~~[NEEDS_MATT] Live backfill (after Docker up):
   `cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)`
-  `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`
+  `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`~~ ✅ Ran 2026-04-23; receipts `ops/verification/20260423-173120-cortex-dedup-backfill.json` + `20260423-173840-cortex-dedup-backfill.json` (each `rows_deleted=1`, idempotent).
 - [FOLLOWUP] V6 live index verification once Cortex container is running.
 
 Verification: `ops/verification/20260423-103428-cortex-dedup.txt`
@@ -407,10 +456,10 @@ Commits: `716b14a`, `da532f3`, `758b31f`
 
 **Test result:** 12 passed in 0.07s
 
-- [NEEDS_MATT] Live backfill against `brain.db` (run after `docker compose up -d --build cortex`):
+- ~~[NEEDS_MATT] Live backfill against `brain.db` (run after `docker compose up -d --build cortex`):
   1. `cp /data/cortex/brain.db /data/cortex/brain.db.bak.$(date +%Y%m%d-%H%M%S)`
   2. Verify Cortex is not actively writing (or stop container)
-  3. `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`
+  3. `docker exec cortex python3 /app/scripts/cortex_dedup_backfill.py --apply`~~ ✅ Ran 2026-04-23 — receipts `ops/verification/20260423-173120-cortex-dedup-backfill.json` + `20260423-173840-cortex-dedup-backfill.json`; runbook `ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md` `Status: DONE`.
 - [FOLLOWUP] V6 live DB inspection once Docker is up — confirm `idx_memories_dedupe_key` present
 
 Verification: `ops/verification/20260423-103234-cortex-dedup.txt`
@@ -445,8 +494,8 @@ Added `setup/launchd/com.symphony.bluebubbles-health.plist`. Not loaded — arm 
 - All 46 launchd plists lint+label OK (`ops/tests/test_launchd_plists.py` added)
 - Live probe: BlueBubbles server healthy (v1.9.9); Cortex `/api/bluebubbles/health` returns 404
 
-- [NEEDS_MATT] Arm the LaunchAgent:
-  `cp setup/launchd/com.symphony.bluebubbles-health.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.symphony.bluebubbles-health.plist`
+- ~~[NEEDS_MATT] Arm the LaunchAgent:
+  `cp setup/launchd/com.symphony.bluebubbles-health.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.symphony.bluebubbles-health.plist`~~ ✅ Armed 2026-04-23 10:15 MDT — receipt `ops/verification/20260424-083518-bluebubbles-health-arm.txt` (already-loaded state documented; no double-load performed).
 - [FOLLOWUP] Add `GET /api/bluebubbles/health` to Cortex — currently 404; script exits 0 but cortex_health reports "unreachable".
 
 Verification: `ops/verification/20260423-101329-bluebubbles-health-plist.txt`
