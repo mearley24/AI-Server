@@ -729,8 +729,9 @@ _RULE_ACTIONS: list[list[Action]] = [
     [
         _make_action(
             "Dry-run embedding backfill (safe preview)",
-            "docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --dry-run",
+            "python3 /app/scripts/cortex_embed_backfill.py --dry-run",
             risk="low", requires_approval=False, timeout_sec=60,
+            host_required=False, env_hint="Runs inside Cortex container",
         ),
         _make_action(
             "Apply embedding backfill (Ollama provider)",
