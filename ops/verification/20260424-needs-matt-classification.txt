@@ -1,0 +1,148 @@
+NEEDS_MATT Classification + Clearance Orchestration — Verification
+Timestamp (UTC): 2026-04-24
+Host: sandbox (not Bob). Parent-agent docs-only repo pass.
+Pass: added one Cline orchestration prompt + STATUS_REPORT entry.
+
+No runtime actions performed by this repo pass:
+  - no docker / launchctl / sudo / env mutation / secrets read
+  - no external sends / posts / messages / opened ports
+  - no money/trading actions, no destructive changes
+  - harness-owned dirty paths preserved (.claude/**, .mcp.json, CLAUDE.md)
+  - no pre-existing ops/verification/* files modified
+
+=====================================================================
+Census (post-pass)
+=====================================================================
+Total [NEEDS_MATT] hits across repo (ex-.git):            464
+Non-verification (actionable-surface) hits:               134
+Non-verification files carrying the marker:                25
+  - Authoritative actionable entries live in STATUS_REPORT.md and
+    in the three ops/runbooks/2026-04-23-*.md files. All other hits
+    are doc/code-comment references or in-progress prompt headers
+    that self-identify as [BOB_CLINE_ONLY].
+
+=====================================================================
+Classification of current markers
+=====================================================================
+
+(b) Bob-runtime actions with existing human-approved runbook:
+
+  1. Cortex dedup live --apply on brain.db
+       STATUS_REPORT.md L140, L258
+       Runbook: ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md
+       Prior evidence already committed:
+         ops/verification/20260423-173120-cortex-dedup-backfill.json
+         ops/verification/20260423-173840-cortex-dedup-backfill.json
+         (both rows_deleted=1; idempotent re-run covered)
+
+  2. Arm com.symphony.bluebubbles-health.plist
+       STATUS_REPORT.md L141, L259, L346, L353, L622
+       Runbook: ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md
+       user-scope launchctl bootstrap, no sudo, no external surface
+
+(c) External-send action kept explicitly gated:
+
+  3. X-intake reply-leg live smoke
+       STATUS_REPORT.md L142, L260, L279
+       Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+       Default posture DRY_RUN_ONLY; live path requires explicit
+       Matt-only authorization string + recipient = Matt's own number.
+
+(c) External-economic, separate track, out-of-scope this pass:
+
+  4. Fund Polymarket wallet with USDC        STATUS_REPORT.md L1045, L1713
+  5. Send ~0.5 MATIC/POL for gas             STATUS_REPORT.md L1046
+
+(a) Already closed in-place with ✅ strikethrough, history-only:
+
+  - network-guard / dropout-watch items     STATUS_REPORT.md L561, L563, L580, L592, L593, L626
+  - watchdog system-daemon deploy           STATUS_REPORT.md L778, L838, L911 (L911 is ✅)
+
+(b) Separate track, not covered by the three runbooks:
+
+  - Sudoers/launchctl bootstrap for        STATUS_REPORT.md L665
+    network-guard plist                    (tracked under its own network-monitoring prompt)
+
+(d) Documentation / code-comment / prompt-internal references
+     (audit-only — must not be modified):
+
+  - ops/AGENT_VERIFICATION_PROTOCOL.md
+  - ops/AUTONOMOUS_EXECUTION_PIPELINE.md
+  - ops/status_report_summarizer.py  (regex that parses the tag)
+  - integrations/x_intake/reply_actions/ack.py:13  (explanatory comment)
+  - docs/audits/2026-04-23-*network-monitoring*.md
+  - docs/audits/2026-04-23-unfinished-setup-audit.md
+  - docs/network-monitoring-v2-prompt.md
+  - .cursor/prompts/full-system-sweep-and-audit.md
+  - .cursor/prompts/2026-04-23-cline-*                 (prior prompts)
+  - .cursor/prompts/audit-and-design-network-monitoring-v2.md
+
+(e) Historical frozen receipts (ops/verification/*):
+     330 hits across 88 files. Do NOT modify.
+
+=====================================================================
+New artifact produced by this pass
+=====================================================================
+
+  .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+    Category:  ops
+    Risk tier: high
+    Trigger:   manual
+    Status:    active
+    Purpose:   orchestrate — does not duplicate — the three existing
+               Bob-runtime runbooks. Per-gate authorization strings:
+                 ARM: cortex-dedup
+                 ARM: bluebubbles-health
+                 SMOKE: x-intake-reply-leg TO=<matts-own-number>
+                 DRY_RUN: x-intake-reply-leg
+                 SKIP: <gate-name>
+               Default posture for the x-intake live smoke is
+               DRY_RUN_ONLY. Explicit forbids list covers sudo,
+               destructive docker, env mutation, external sends,
+               harness-owned path edits, ops/verification/* edits.
+
+=====================================================================
+Path-exists checks
+=====================================================================
+
+  ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md           OK
+  ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md          OK
+  ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md     OK
+  ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md                 OK (closed gate, kept for reference)
+  .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md OK
+
+=====================================================================
+Header / status checks (new prompt)
+=====================================================================
+
+  Contains "autonomy: start"     ✓
+  Category: ops                  ✓
+  Risk tier: high                ✓
+  Trigger:   manual              ✓
+  Status:    active              ✓
+  Contains [NEEDS_MATT] markers  ✓  (uses them to scope the work)
+  References all three runbooks  ✓
+
+=====================================================================
+Runbook header sanity (unchanged files)
+=====================================================================
+
+  All three 2026-04-23 Bob-runtime runbooks retain:
+    [NEEDS_MATT]          ✓
+    [BOB_CLINE_ONLY]      ✓
+    "NOT auto-run by Computer / Cline / Claude Code / task-runner /
+     self-improvement loop" header line                           ✓
+    No <!-- autonomy: start --> metadata                          ✓
+
+=====================================================================
+What Matt / Cline should do next
+=====================================================================
+
+  On Bob, open Cline against ~/AI-Server and run:
+
+      .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+
+  Provide the per-gate authorization strings one at a time. Safer
+  defaults (DRY_RUN: x-intake-reply-leg and SKIP: <gate>) are always
+  valid. The prompt records receipts and updates STATUS_REPORT
+  strike-through marks only for gates that reach ARMED.

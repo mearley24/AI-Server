@@ -77,6 +77,39 @@ sandbox (plutil not available on Linux). No code or config changed.
 
 ---
 
+## NEEDS_MATT Clearance Orchestration Prompt Added (2026-04-24 UTC, Claude Code)
+
+Parent-agent docs-only pass added a single orchestration prompt that
+reconciles the three remaining Bob-runtime `[NEEDS_MATT]` gates
+against committed evidence and drives their matching runbooks under
+explicit per-gate operator authorization. **No runtime actions were
+performed by this repo pass:** no docker, no launchctl, no env
+mutation, no sudo, no external sends, no posts/messages, no opened
+ports, no secrets read. Harness-owned dirty working-tree items
+(`.claude/**`, `.mcp.json`, `CLAUDE.md`) preserved as-is per parent
+instruction.
+
+- New prompt: `.cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md`
+  — Status: `active`, Risk tier: `high`, Trigger: `manual`.
+- Orchestrates (does not duplicate) the three existing runbooks:
+  `ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md`,
+  `ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md`,
+  `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md`.
+- Gates each action behind a per-gate authorization string
+  (`ARM:`, `SMOKE:`, `DRY_RUN:`, `SKIP:`) the operator types in
+  chat; default posture for the x-intake live smoke stays
+  `DRY_RUN_ONLY`.
+- Leaves Polymarket funding markers (L1045/1046/1713), the
+  historical `ops/verification/*` receipts, and all doc/code-comment
+  `[NEEDS_MATT]` references untouched. Explicitly excludes editing
+  `ops/verification/` files older than the run.
+- Verification receipt for this repo pass:
+  `ops/verification/20260424-needs-matt-classification.txt`
+  (classification + path-exists + grep census; no code or config
+  changed).
+
+---
+
 ## Cortex Embeddings — Live Arm on Bob (2026-04-23 13:14 MDT, Claude Code)
 
 Runbook `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` executed.
