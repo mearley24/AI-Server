@@ -34,6 +34,10 @@
     Autonomy
     <span class="tab-count hidden" id="nav-autonomy-gates">0</span>
   </button>
+  <button class="tab-btn" data-tab="client-intel" role="tab">
+    Clients
+    <span class="tab-count hidden" id="nav-ci-count">0</span>
+  </button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -400,6 +404,32 @@
 </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB — CLIENT INTEL / RELATIONSHIP PROFILES
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-client-intel" class="tab-panel">
+<div id="panel-client-intel" style="padding:16px 22px 80px;max-width:1200px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <h2 style="margin:0;padding:0;border:0;">Relationship Profiles</h2>
+    <span id="ci-badge" style="padding:3px 12px;border-radius:100px;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)">loading…</span>
+    <button onclick="loadClientIntel()" style="margin-left:auto;font-size:11px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;">Refresh</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+    <div class="card">
+      <h2>Profiles <span id="ci-profiles-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>
+      <div id="ci-profiles"><div class="unavailable">loading</div></div>
+    </div>
+    <div class="card">
+      <h2>Proposed Facts <span id="ci-facts-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span>
+        <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">pending approval</span>
+      </h2>
+      <div id="ci-facts"><div class="unavailable">loading</div></div>
+    </div>
+  </div>
+</div>
+</div>
+
 <!-- ═══ FOOTER ═════════════════════════════════════════════════════════════ -->
 <footer>
   <div class="stats" id="footer-stats"></div>
@@ -418,5 +448,139 @@
 
 
 <script src="/static/dashboard.js"></script>
+
+<script>
+(function(){
+  'use strict';
+
+  // ── Tab wiring for client-intel ──────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', function() {
+    var orig = window._tabSwitchHook;
+    document.querySelectorAll('[data-tab="client-intel"]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (!window._ciLoaded) { loadClientIntel(); }
+      });
+    });
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  var _RT_COLOR = {
+    client: '#60a5fa', vendor: '#a78bfa', builder: '#34d399',
+    trade_partner: '#fbbf24', internal_team: '#94a3b8',
+    personal_work_related: '#f472b6',
+  };
+
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function fetchJson(url) {
+    try { const r = await fetch(url); return r.ok ? r.json() : null; }
+    catch(e) { return null; }
+  }
+
+  // ── Profile renderer ──────────────────────────────────────────────────────
+  function renderProfiles(data) {
+    var el = document.getElementById('ci-profiles');
+    var ct = document.getElementById('ci-profiles-count');
+    if (!data || data.error) { el.innerHTML = '<div class="unavailable">unavailable</div>'; return; }
+    var profiles = data.profiles || [];
+    ct.textContent = profiles.length ? '(' + profiles.length + ')' : '';
+    var nav = document.getElementById('nav-ci-count');
+    if (profiles.length) { nav.textContent = profiles.length; nav.classList.remove('hidden'); }
+    else { nav.classList.add('hidden'); }
+
+    if (!profiles.length) {
+      el.innerHTML = '<div class="small" style="color:var(--muted)">No profiles yet. Run: python3 scripts/extract_relationship_profiles.py --apply-approved</div>';
+      return;
+    }
+    el.innerHTML = profiles.map(function(p) {
+      var col = _RT_COLOR[p.relationship_type] || 'var(--muted)';
+      var sys = (p.systems_or_topics||[]).slice(0,4).join(', ') || '—';
+      var proj = (p.project_refs||[]).slice(0,3).join(', ') || '—';
+      var conf = (p.confidence * 100).toFixed(0);
+      var statusCol = p.status === 'approved' ? 'var(--green)' : p.status === 'archived' ? 'var(--muted)' : 'var(--yellow)';
+      return '<div style="border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:8px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+        + '<span style="font-size:10px;font-weight:700;color:' + col + ';">' + esc(p.relationship_type.replace(/_/g,' ').toUpperCase()) + '</span>'
+        + '<span class="small mono" style="color:var(--muted);flex:1;">' + esc(p.contact_masked) + '</span>'
+        + '<span style="font-size:10px;color:' + statusCol + ';font-weight:700;">' + esc(p.status) + '</span>'
+        + '<span style="font-size:10px;color:var(--muted);">' + conf + '%</span>'
+        + '</div>'
+        + '<div class="small" style="color:var(--text);margin-bottom:3px;">' + esc(p.summary||'') + '</div>'
+        + '<div class="small" style="color:var(--muted);">systems: ' + esc(sys) + '</div>'
+        + (proj !== '—' ? '<div class="small" style="color:var(--muted);">projects: ' + esc(proj) + '</div>' : '')
+        + '</div>';
+    }).join('');
+  }
+
+  // ── Facts renderer ────────────────────────────────────────────────────────
+  function renderFacts(data) {
+    var el = document.getElementById('ci-facts');
+    var ct = document.getElementById('ci-facts-count');
+    if (!data || data.error) { el.innerHTML = '<div class="unavailable">unavailable</div>'; return; }
+    var facts = data.facts || [];
+    ct.textContent = facts.length ? '(' + facts.length + ' pending)' : '';
+    if (!facts.length) {
+      el.innerHTML = '<div class="small" style="color:var(--green)">No pending facts.</div>';
+      return;
+    }
+    el.innerHTML = facts.slice(0,20).map(function(f) {
+      var conf = (f.confidence * 100).toFixed(0);
+      return '<div style="border-left:3px solid var(--border-2);padding:4px 8px;margin-bottom:6px;">'
+        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'
+        + '<span style="font-size:10px;font-weight:700;color:var(--gold-dim);">' + esc(f.fact_type) + '</span>'
+        + '<span style="font-size:11px;color:var(--text);flex:1;">' + esc(String(f.fact_value).slice(0,80)) + '</span>'
+        + '<span style="font-size:10px;color:var(--muted);">' + conf + '%</span>'
+        + '<button onclick="approveFact(\'' + esc(f.fact_id) + '\',this)" style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid var(--green);background:transparent;color:var(--green);cursor:pointer;">✓</button>'
+        + '<button onclick="rejectFact(\'' + esc(f.fact_id) + '\',this)" style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;">✗</button>'
+        + '</div>'
+        + (f.source_excerpt ? '<div class="small mono" style="color:var(--muted);font-size:9px;">' + esc(f.source_excerpt.slice(0,100)) + '</div>' : '')
+        + '</div>';
+    }).join('');
+    if (facts.length > 20) {
+      el.innerHTML += '<div class="small" style="color:var(--muted);margin-top:4px;">' + (facts.length - 20) + ' more… use API for full list.</div>';
+    }
+  }
+
+  // ── Fact actions ──────────────────────────────────────────────────────────
+  window.approveFact = async function(factId, btn) {
+    btn.disabled = true;
+    const r = await fetch('/api/client-intel/approve-fact', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({fact_id: factId}),
+    });
+    const d = await r.json();
+    if (d.status === 'ok') { btn.parentElement.parentElement.style.opacity = '0.4'; }
+    btn.disabled = false;
+  };
+
+  window.rejectFact = async function(factId, btn) {
+    btn.disabled = true;
+    const r = await fetch('/api/client-intel/reject-fact', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({fact_id: factId}),
+    });
+    const d = await r.json();
+    if (d.status === 'ok') { btn.parentElement.parentElement.remove(); }
+    btn.disabled = false;
+  };
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+  window._ciLoaded = false;
+  window.loadClientIntel = async function() {
+    var badge = document.getElementById('ci-badge');
+    badge.textContent = 'loading…';
+    const [pd, fd] = await Promise.all([
+      fetchJson('/api/client-intel/profiles'),
+      fetchJson('/api/client-intel/proposed-facts?accepted=pending&limit=100'),
+    ]);
+    renderProfiles(pd);
+    renderFacts(fd);
+    badge.textContent = pd ? (pd.count + ' profiles') : 'unavailable';
+    window._ciLoaded = true;
+  };
+})();
+</script>
 </body>
 </html>

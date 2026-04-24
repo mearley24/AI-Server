@@ -654,6 +654,189 @@ async def client_intel_summary() -> dict[str, Any]:
         conn.close()
 
 
+# ── Relationship Profiles ──────────────────────────────────────────────────────
+
+_PROFILES_DB     = _CLIENT_INTEL_DB.parent / "client_profiles.sqlite"
+_FACTS_DB        = _CLIENT_INTEL_DB.parent / "proposed_facts.sqlite"
+
+
+def _profiles_db_ro() -> sqlite3.Connection | None:
+    if not _PROFILES_DB.is_file():
+        return None
+    conn = sqlite3.connect(f"file:{_PROFILES_DB}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _facts_db_rw() -> sqlite3.Connection | None:
+    if not _FACTS_DB.is_file():
+        return None
+    conn = sqlite3.connect(str(_FACTS_DB))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.get("/api/client-intel/profiles", tags=["client-intel"])
+async def client_intel_profiles(
+    relationship_type: str = "all",
+    status: str = "all",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List relationship profiles.
+
+    relationship_type — client / vendor / builder / trade_partner /
+                        internal_team / personal_work_related / all
+    status            — proposed / approved / archived / all
+    """
+    limit = min(limit, 200)
+    conn = _profiles_db_ro()
+    if conn is None:
+        return {
+            "status": "unavailable",
+            "message": "Profiles DB not built yet. Run: python3 scripts/extract_relationship_profiles.py --apply-approved",
+            "profiles": [], "count": 0,
+        }
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if relationship_type != "all":
+            clauses.append("relationship_type = ?")
+            params.append(relationship_type)
+        if status != "all":
+            clauses.append("status = ?")
+            params.append(status)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = conn.execute(
+            f"SELECT profile_id, relationship_type, display_name, contact_handle, "
+            f"thread_ids, first_seen, last_seen, summary, open_requests, follow_ups, "
+            f"systems_or_topics, project_refs, dtools_project_refs, confidence, status, last_updated "
+            f"FROM profiles {where} ORDER BY confidence DESC, last_seen DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+        profiles = []
+        for r in rows:
+            profiles.append({
+                "profile_id":          r["profile_id"],
+                "relationship_type":   r["relationship_type"],
+                "display_name":        r["display_name"],
+                "contact_masked":      _mask_handle(r["contact_handle"]),
+                "thread_ids":          json.loads(r["thread_ids"] or "[]"),
+                "first_seen":          r["first_seen"],
+                "last_seen":           r["last_seen"],
+                "summary":             r["summary"],
+                "open_requests":       json.loads(r["open_requests"] or "[]"),
+                "follow_ups":          json.loads(r["follow_ups"] or "[]"),
+                "systems_or_topics":   json.loads(r["systems_or_topics"] or "[]"),
+                "project_refs":        json.loads(r["project_refs"] or "[]"),
+                "dtools_project_refs": json.loads(r["dtools_project_refs"] or "[]"),
+                "confidence":          r["confidence"],
+                "status":              r["status"],
+                "last_updated":        r["last_updated"],
+            })
+        return {"status": "ok", "count": len(profiles), "profiles": profiles}
+    except Exception as exc:
+        logger.warning("client_intel_profiles_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200], "profiles": [], "count": 0}
+    finally:
+        conn.close()
+
+
+@app.get("/api/client-intel/proposed-facts", tags=["client-intel"])
+async def client_intel_proposed_facts(
+    profile_id: str = "",
+    fact_type: str = "all",
+    accepted: str = "pending",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List proposed facts awaiting approval.
+
+    profile_id — filter by profile (empty = all profiles)
+    fact_type  — filter by type (system/request/issue/project_ref/etc) or 'all'
+    accepted   — pending (neither accepted nor rejected) / accepted / rejected / all
+    """
+    limit = min(limit, 500)
+    conn = _facts_db_rw()
+    if conn is None:
+        return {"status": "unavailable", "facts": [], "count": 0}
+    try:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if profile_id:
+            clauses.append("profile_id = ?")
+            params.append(profile_id)
+        if fact_type != "all":
+            clauses.append("fact_type = ?")
+            params.append(fact_type)
+        if accepted == "pending":
+            clauses.append("is_accepted=0 AND is_rejected=0")
+        elif accepted == "accepted":
+            clauses.append("is_accepted=1")
+        elif accepted == "rejected":
+            clauses.append("is_rejected=1")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = conn.execute(
+            f"SELECT fact_id, profile_id, thread_id, contact_handle, fact_type, "
+            f"fact_value, confidence, source_excerpt, source_timestamp, "
+            f"is_accepted, is_rejected, created_at "
+            f"FROM proposed_facts {where} "
+            f"ORDER BY confidence DESC, created_at DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+        facts = [dict(r) for r in rows]
+        return {"status": "ok", "count": len(facts), "facts": facts}
+    except Exception as exc:
+        logger.warning("client_intel_proposed_facts_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200], "facts": [], "count": 0}
+    finally:
+        conn.close()
+
+
+@app.post("/api/client-intel/approve-fact", tags=["client-intel"])
+async def client_intel_approve_fact(body: dict[str, Any]) -> dict[str, Any]:
+    """Accept a proposed fact — marks it as canonical."""
+    fact_id = (body or {}).get("fact_id", "").strip()
+    if not fact_id:
+        return {"status": "error", "error": "fact_id required"}
+    conn = _facts_db_rw()
+    if conn is None:
+        return {"status": "error", "error": "Facts DB not found"}
+    try:
+        row = conn.execute("SELECT fact_id, fact_type, fact_value FROM proposed_facts WHERE fact_id=?", (fact_id,)).fetchone()
+        if row is None:
+            return {"status": "error", "error": f"fact_id '{fact_id}' not found"}
+        conn.execute("UPDATE proposed_facts SET is_accepted=1, is_rejected=0 WHERE fact_id=?", (fact_id,))
+        conn.commit()
+        logger.info("client_intel_fact_accepted fact_id=%s type=%s", fact_id, row["fact_type"])
+        return {"status": "ok", "fact_id": fact_id, "fact_type": row["fact_type"], "fact_value": row["fact_value"], "action": "accepted"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/client-intel/reject-fact", tags=["client-intel"])
+async def client_intel_reject_fact(body: dict[str, Any]) -> dict[str, Any]:
+    """Reject a proposed fact — excludes it from canonical profile."""
+    fact_id = (body or {}).get("fact_id", "").strip()
+    if not fact_id:
+        return {"status": "error", "error": "fact_id required"}
+    conn = _facts_db_rw()
+    if conn is None:
+        return {"status": "error", "error": "Facts DB not found"}
+    try:
+        row = conn.execute("SELECT fact_id, fact_type, fact_value FROM proposed_facts WHERE fact_id=?", (fact_id,)).fetchone()
+        if row is None:
+            return {"status": "error", "error": f"fact_id '{fact_id}' not found"}
+        conn.execute("UPDATE proposed_facts SET is_rejected=1, is_accepted=0 WHERE fact_id=?", (fact_id,))
+        conn.commit()
+        logger.info("client_intel_fact_rejected fact_id=%s type=%s", fact_id, row["fact_type"])
+        return {"status": "ok", "fact_id": fact_id, "fact_type": row["fact_type"], "fact_value": row["fact_value"], "action": "rejected"}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+    finally:
+        conn.close()
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 

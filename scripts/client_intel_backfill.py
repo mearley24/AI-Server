@@ -157,34 +157,48 @@ def init_schemas() -> None:
     with sqlite3.connect(PROFILES_DB) as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS profiles (
-                profile_id      TEXT PRIMARY KEY,
-                contact_handle  TEXT NOT NULL UNIQUE,
-                display_name    TEXT DEFAULT '',
-                category        TEXT DEFAULT 'unknown',
-                work_confidence REAL DEFAULT 0.0,
-                project_signals TEXT DEFAULT '{}',
-                thread_count    INTEGER DEFAULT 0,
-                last_updated    TEXT NOT NULL,
-                is_reviewed     INTEGER DEFAULT 0
+                profile_id          TEXT PRIMARY KEY,
+                relationship_type   TEXT NOT NULL DEFAULT 'unknown',
+                display_name        TEXT DEFAULT '',
+                contact_handle      TEXT NOT NULL,
+                thread_ids          TEXT DEFAULT '[]',
+                first_seen          TEXT DEFAULT '',
+                last_seen           TEXT DEFAULT '',
+                summary             TEXT DEFAULT '',
+                open_requests       TEXT DEFAULT '[]',
+                follow_ups          TEXT DEFAULT '[]',
+                systems_or_topics   TEXT DEFAULT '[]',
+                project_refs        TEXT DEFAULT '[]',
+                dtools_project_refs TEXT DEFAULT '[]',
+                confidence          REAL DEFAULT 0.0,
+                status              TEXT DEFAULT 'proposed',
+                last_updated        TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_profiles_handle ON profiles(contact_handle);
+            CREATE INDEX IF NOT EXISTS idx_profiles_type   ON profiles(relationship_type);
+            CREATE INDEX IF NOT EXISTS idx_profiles_status ON profiles(status);
         """)
 
     with sqlite3.connect(PROPOSED_FACTS_DB) as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS proposed_facts (
-                fact_id             TEXT PRIMARY KEY,
-                thread_id           TEXT NOT NULL,
-                contact_handle      TEXT NOT NULL,
-                fact_type           TEXT NOT NULL,
-                fact_value          TEXT NOT NULL,
-                confidence          REAL DEFAULT 0.0,
-                source_message_id   TEXT DEFAULT '',
-                is_accepted         INTEGER DEFAULT 0,
-                is_rejected         INTEGER DEFAULT 0,
-                created_at          TEXT NOT NULL
+                fact_id          TEXT PRIMARY KEY,
+                profile_id       TEXT NOT NULL DEFAULT '',
+                thread_id        TEXT NOT NULL,
+                contact_handle   TEXT NOT NULL,
+                fact_type        TEXT NOT NULL,
+                fact_value       TEXT NOT NULL,
+                confidence       REAL DEFAULT 0.0,
+                source_excerpt   TEXT DEFAULT '',
+                source_timestamp TEXT DEFAULT '',
+                is_accepted      INTEGER DEFAULT 0,
+                is_rejected      INTEGER DEFAULT 0,
+                created_at       TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_facts_thread ON proposed_facts(thread_id);
-            CREATE INDEX IF NOT EXISTS idx_facts_handle ON proposed_facts(contact_handle);
+            CREATE INDEX IF NOT EXISTS idx_facts_profile ON proposed_facts(profile_id);
+            CREATE INDEX IF NOT EXISTS idx_facts_thread  ON proposed_facts(thread_id);
+            CREATE INDEX IF NOT EXISTS idx_facts_handle  ON proposed_facts(contact_handle);
+            CREATE INDEX IF NOT EXISTS idx_facts_type    ON proposed_facts(fact_type);
         """)
 
 
