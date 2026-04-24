@@ -66,6 +66,19 @@ async def _cortex_dismiss(ctx: ActionContext) -> Dict[str, Any]:
     return {"handler": "cortex_dismiss", "status": "ok"}
 
 
+async def _send_reply(ctx: ActionContext) -> Dict[str, Any]:
+    """Send an explicit body string as the outbound ACK — no Cortex side-effect.
+
+    Use this when the action should transmit a specific pre-composed message
+    rather than a handler-generated confirmation string.  Set context["body"]
+    to the exact text to send.
+    """
+    body = (ctx.context.get("body") or "").strip()
+    if not body:
+        return {"handler": "send_reply", "status": "skip", "reason": "no_body_in_context"}
+    return {"handler": "send_reply", "status": "ok", "body": body}
+
+
 async def _escalate_to_matt(ctx: ActionContext) -> Dict[str, Any]:
     # Write a Cortex note — no external message, no upload.
     payload = {
@@ -93,6 +106,7 @@ HANDLER_REGISTRY: Dict[str, Callable[[ActionContext], Awaitable[Dict[str, Any]]]
     "cortex_remember":  _cortex_remember,
     "cortex_dismiss":   _cortex_dismiss,
     "escalate_to_matt": _escalate_to_matt,
+    "send_reply":       _send_reply,
 }
 
 
@@ -173,6 +187,10 @@ class Dispatcher:
 
 
 def _ack_text(handler_name: str, result: Dict[str, Any]) -> str:
+    if handler_name == "send_reply":
+        # Body is passed through directly — no fixed confirmation string.
+        body = result.get("body", "")
+        return body if body else "Done ✓"
     if handler_name == "cortex_remember":
         return "Saved to Bob's memory ✓"
     if handler_name == "cortex_dismiss":

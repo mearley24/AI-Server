@@ -204,3 +204,84 @@ async def test_e2e_dry_run_ack_goes_to_ring(tmp_path: Path):
 
     after = len(get_ring())
     assert after > before
+
+
+@pytest.mark.asyncio
+async def test_e2e_send_reply_passes_explicit_body(tmp_path: Path):
+    """send_reply handler must deliver the exact body string set in context["body"],
+    not a hardcoded confirmation like 'Saved to Bob's memory ✓'."""
+    store = _make_store(tmp_path)
+    THREAD = "iMessage;-;+18609171850"
+    EXPECTED = "Bob live reply-leg explicit-body test."
+
+    store.create(
+        valid_slots=[1],
+        context={
+            "slot_handler_map": {"1": "send_reply"},
+            "thread_guid": THREAD,
+            "body": EXPECTED,
+        },
+        expiry_seconds=300,
+        thread_guid=THREAD,
+    )
+
+    dispatcher = Dispatcher(store)
+    captured: list[str] = []
+
+    async def capture_ack(thread_guid: str, text: str, *, dry_run: bool = True) -> dict:
+        captured.append(text)
+        return {"ok": True, "dry_run": dry_run}
+
+    await process_message(
+        json.dumps({
+            "text": "reply 1",
+            "chat_guid": THREAD,
+            "from": "18609171850",
+            "message_id": "expl-test-001",
+        }),
+        store, dispatcher, capture_ack, dry_run=True,
+    )
+
+    assert len(captured) == 1, f"Expected 1 ACK, got {len(captured)}"
+    assert captured[0] == EXPECTED, (
+        f"ACK text mismatch.\n  got:      {captured[0]!r}\n  expected: {EXPECTED!r}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_e2e_send_reply_skip_when_no_body(tmp_path: Path):
+    """send_reply with no body in context must produce 'Done ✓' fallback, not crash."""
+    store = _make_store(tmp_path)
+    THREAD = "iMessage;-;+18609171850"
+
+    store.create(
+        valid_slots=[1],
+        context={
+            "slot_handler_map": {"1": "send_reply"},
+            "thread_guid": THREAD,
+            # deliberately no 'body' key
+        },
+        expiry_seconds=300,
+        thread_guid=THREAD,
+    )
+
+    dispatcher = Dispatcher(store)
+    captured: list[str] = []
+
+    async def capture_ack(thread_guid: str, text: str, *, dry_run: bool = True) -> dict:
+        captured.append(text)
+        return {"ok": True, "dry_run": dry_run}
+
+    await process_message(
+        json.dumps({
+            "text": "reply 1",
+            "chat_guid": THREAD,
+            "from": "18609171850",
+            "message_id": "expl-test-002",
+        }),
+        store, dispatcher, capture_ack, dry_run=True,
+    )
+
+    # send_reply with no body returns skip — dispatcher falls back to "Done ✓"
+    assert len(captured) == 1
+    assert captured[0] == "Done ✓"
