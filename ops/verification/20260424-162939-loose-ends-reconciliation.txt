@@ -1,0 +1,115 @@
+Loose-Ends Reconciliation — Verification Receipt
+Timestamp (UTC): 20260424-162939
+Host: sandbox (not Bob). Parent-agent docs-only repo pass.
+Runner: Claude Code
+Pass: closure blocks + STATUS_REPORT updates + audit doc.
+
+No runtime actions performed by this repo pass:
+  - no docker / launchctl / sudo / env mutation / secrets read
+  - no external sends / posts / messages / opened ports
+  - no money/trading actions, no destructive changes
+  - harness-owned dirty paths preserved (.claude/**, .mcp.json, CLAUDE.md)
+  - no pre-existing ops/verification/* files modified
+
+=====================================================================
+Changes this pass
+=====================================================================
+
+Prompts closed (Status: active → Status: done + closure block):
+  .cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md
+  .cursor/prompts/2026-04-23-cline-bluebubbles-attachment-bodies.md
+  .cursor/prompts/2026-04-23-cline-cortex-dedup-upsert.md
+  .cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md
+  .cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md
+  .cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md
+
+Runbooks annotated (Status header updated to DONE):
+  ops/runbooks/2026-04-24-bluebubbles-cortex-live-webhook.md
+  ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md
+
+STATUS_REPORT.md:
+  - New "Loose-Ends Reconciliation (2026-04-24 UTC, Claude Code)"
+    entry at top, listing closed items and remaining open work.
+  - "BlueBubbles → Cortex Live Webhook Verification (2026-04-24 UTC,
+    Claude Code)" entry annotated as "— superseded" with the
+    PASS-webhook-only receipt path. Original FAIL-no-webhook text
+    retained as history.
+  - Three follow-up bullets in the lower prompt-creation entry
+    struck through with ~~...~~ ✅ and receipts.
+
+Audit doc added:
+  docs/audits/2026-04-24-loose-ends-reconciliation.md
+
+=====================================================================
+Before / after signals
+=====================================================================
+
+Prompts with "Status: active" (2026-04-2*-cline-*.md):
+  before: 8
+  after:  2
+    (kept open by design:
+     2026-04-24-cline-x-intake-reply-leg-evidence-capture.md,
+     2026-04-24-cline-needs-matt-clearance-orchestration.md)
+
+Runbooks with "**Status:** `active`" header:
+  before: 1 (ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md)
+  after:  0
+
+NEEDS_MATT inventory:
+  before:  active=18, strikethrough=8
+  after:   active=16, strikethrough=10
+
+=====================================================================
+Bounded verification commands + results
+=====================================================================
+
+python3 -m py_compile scripts/needs_matt_inventory.py
+  → compile-ok
+
+python3 scripts/needs_matt_inventory.py | head -15
+  → Counts: total=195, active=16, strikethrough=10,
+    runbook-header=7, doc-reference=82, prompt-reference=80,
+    historical=0.
+
+grep -c "^Status:\s*active" .cursor/prompts/2026-04-2*-cline-*.md
+  (non-zero only):
+  → .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md:1
+    .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md:1
+
+grep -l "^\*\*Status:\*\* `active`" ops/runbooks/*.md
+  → (empty)
+
+ls (path existence):
+  docs/audits/2026-04-24-loose-ends-reconciliation.md        ✓
+  ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md ✓
+  ops/verification/20260424-151202-bob-docker-crash-diagnostic.md     ✓
+
+git diff --stat (this pass, excluding unrelated harness-owned dirty paths):
+  .cursor/prompts/2026-04-23-cline-bluebubbles-attachment-bodies.md    |  14
+  .cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md         |  14
+  .cursor/prompts/2026-04-23-cline-cortex-dedup-upsert.md              |  14
+  .cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md    |  17
+  .cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md | 20
+  .cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md     | 22
+  STATUS_REPORT.md                                                     |  61
+  ops/runbooks/2026-04-24-bluebubbles-cortex-live-webhook.md           |  19
+  ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md               |   9
+  docs/audits/2026-04-24-loose-ends-reconciliation.md                  | new
+  ops/verification/20260424-162939-loose-ends-reconciliation.txt       | new (this file)
+
+=====================================================================
+Open items after this pass (intentionally not closed)
+=====================================================================
+
+1. X-Intake reply-leg LIVE SMOKE (outbound BlueBubbles send_text):
+     Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+              (Status: PRECHECKS_PASSED)
+     Prompt:  .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md
+              (Status: active)
+     No ops/verification/*reply-leg-evidence* file has landed yet.
+
+2. Docker Desktop restart (to apply MemoryMiB=6144 setting). [NEEDS_MATT]
+3. sudo setup/install_bob_watchdog.sh --deploy-system. [NEEDS_MATT]
+4. Docker Desktop reinstall from translocated path to /Applications/. [FOLLOWUP]
+
+5. NEEDS_MATT orchestration prompt kept active because it wraps #1.

@@ -4,8 +4,20 @@
 Category: data
 Risk tier: medium
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-24 by Claude Code (parent-agent loose-ends reconciliation).
+Commits: `716b14a`, `da532f3`, `758b31f`, `bc8ffdf`, `50feea8`
+— "Completed + verified (re-run)" in STATUS_REPORT.md L537.
+12 tests pass (`ops/tests/test_cortex_dedup.py`).
+Live `--apply` ran on Bob 2026-04-23 via arm runbook
+`ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md` (`Status: DONE`);
+receipts `ops/verification/20260423-173120-cortex-dedup-backfill.json` +
+`20260423-173840-cortex-dedup-backfill.json` (each `rows_deleted=1`, idempotent).
+Reconciliation audit: `docs/audits/2026-04-24-loose-ends-reconciliation.md`.
+<!-- closure: end -->
 
 # Cortex Cross-Source Dedup (UNIQUE / Upsert) — Cline-first
 

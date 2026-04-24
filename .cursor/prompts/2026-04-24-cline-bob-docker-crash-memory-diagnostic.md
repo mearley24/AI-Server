@@ -10,8 +10,28 @@ run dev). Use bounded commands: timeout, --lines N, --since, head/sed
 Category: ops
 Risk tier: high
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-24 by Claude Code (parent-agent loose-ends reconciliation).
+Diagnostic evidence: `ops/verification/20260424-151202-bob-docker-crash-diagnostic.md`
+(Classification: A memory-pressure + C disk-pressure + E Docker Desktop
+translocated-path crash + F mild watchdog false-recovery).
+APPROVE ALL applied on Bob 2026-04-24 09:25 MDT (commit `275f2a83`,
+STATUS_REPORT.md L39–L57):
+- `scripts/bob-watchdog.sh` Docker cooldown 180s → **300s**
+- `docker-compose.yml` **x-intake-lab decommissioned** (512m freed)
+- Docker Desktop `MemoryMiB` 4096 → **6144**
+- Ollama `KEEP_ALIVE=0`, `MAX_LOADED_MODELS=1`
+- `docker system prune -a` + `docker builder prune -a` reclaimed ~11.5 GB
+Remaining items (tracked in STATUS_REPORT.md L55–L57, out of this prompt's scope):
+- [NEEDS_MATT] Restart Docker Desktop to apply 6 GB VM setting
+- [NEEDS_MATT] `sudo setup/install_bob_watchdog.sh --deploy-system`
+- [FOLLOWUP] Reinstall Docker Desktop to `/Applications/` (translocated path)
+Runbook: `ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md`.
+Reconciliation audit: `docs/audits/2026-04-24-loose-ends-reconciliation.md`.
+<!-- closure: end -->
 
 **Title:** Bob Docker Crash / Memory Diagnostic & Optimization — bounded
 read-only investigation of recurring Docker crashes on Bob (Mac Mini M4)

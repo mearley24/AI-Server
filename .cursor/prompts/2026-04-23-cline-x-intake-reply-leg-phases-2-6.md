@@ -4,8 +4,23 @@
 Category: messaging
 Risk tier: high
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-24 by Claude Code (parent-agent loose-ends reconciliation).
+Commits: `6aa2102`, `7bc0f5e`, `cce41c4`, `c0b9d1f`, `15484a3`
+— "Completed + verified" in STATUS_REPORT.md L539.
+Verification receipt: `ops/verification/20260423-104458-x-intake-reply-leg-phases-2-6.txt`.
+11 tests pass (`ops/tests/test_reply_leg_e2e.py` + `test_reply_leg_guards.py`).
+Default posture: `CORTEX_REPLY_DRY_RUN=1` — outbound ACKs dry-run by default.
+Live-enable path remains gated and is tracked separately: runbook
+`ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md`
+(`Status: PRECHECKS_PASSED` — awaiting external send + DRY_RUN=0 flip) and
+follow-up evidence prompt
+`.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md`.
+Reconciliation audit: `docs/audits/2026-04-24-loose-ends-reconciliation.md`.
+<!-- closure: end -->
 
 # X-Intake Reply-Leg Phases 2–6 — Executor / Router (Cline-first)
 

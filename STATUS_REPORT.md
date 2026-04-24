@@ -26,13 +26,53 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
-## BlueBubbles → Cortex Live Webhook Verification (2026-04-24 UTC, Claude Code)
+## Loose-Ends Reconciliation (2026-04-24 UTC, Claude Code)
 
-- Prompt: `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md`
-- Evidence: `ops/verification/20260424-154222-bluebubbles-cortex-live-webhook.md`
-- Verdict: **`FAIL-no-webhook`** — root cause: `private_api: false`
-- Webhook URL correct (`http://127.0.0.1:8102/hooks/bluebubbles`), Cortex handler ready, but BlueBubbles Private API is disabled so incoming iMessages are never forwarded as webhook events
-- `[FOLLOWUP: bluebubbles-private-api-disabled]` — enable Private API in BlueBubbles Settings UI → Private API → Enable; follow https://docs.bluebubbles.app/server/private-api-setup. Once enabled, zero code changes needed — pipeline is ready.
+Parent-agent docs-only pass reconciling stale `Status: active` prompts
+and runbooks against committed evidence. No Bob runtime actions, no
+`launchctl`, `docker`, `sudo`, env mutation, external sends, ports,
+secrets, money/trading, or destructive changes.
+
+Closed this pass (closure blocks added, citing existing evidence):
+
+- `.cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md` → `done`
+- `.cursor/prompts/2026-04-23-cline-bluebubbles-attachment-bodies.md` → `done`
+- `.cursor/prompts/2026-04-23-cline-cortex-dedup-upsert.md` → `done`
+- `.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md` → `done`
+- `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md` → `done` (Verdict `PASS-webhook-only`, receipt `ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md`)
+- `.cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md` → `done` (APPROVE ALL applied, commit `275f2a83`)
+- `ops/runbooks/2026-04-24-bluebubbles-cortex-live-webhook.md` → `Status: DONE`
+- `ops/runbooks/2026-04-24-bob-docker-crash-diagnostic.md` → `Status: DONE`
+
+Top-level STATUS_REPORT BlueBubbles webhook entry annotated as
+**superseded**; three companion `[NEEDS_MATT]` / `[FOLLOWUP]` bullets
+struck through with ✅ and receipts.
+
+Remaining open items (intentionally not closed — evidence still pending):
+
+- X-Intake reply-leg **live smoke** (outbound BlueBubbles `send_text`)
+  — authoritative runbook `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md`
+  (`Status: PRECHECKS_PASSED`); follow-up evidence prompt
+  `.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md`.
+- Docker Desktop restart + watchdog system-deploy + translocated-path
+  reinstall (tracked at L55–L57 above).
+- NEEDS_MATT orchestration prompt — kept `active` because it wraps the
+  still-open reply-leg gate.
+
+Full audit: `docs/audits/2026-04-24-loose-ends-reconciliation.md`.
+
+---
+
+## BlueBubbles → Cortex Live Webhook Verification (2026-04-24 UTC, Claude Code) — superseded
+
+_Superseded by the re-run at `ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md` (verdict **`PASS-webhook-only`**) after the webhook URL was corrected from `http://cortex:8102/...` (Docker-only hostname) to `http://127.0.0.1:8102/hooks/bluebubbles` (loopback form). The entries below are preserved as history._
+
+- Prompt: `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md` (now `Status: done`)
+- First run: `ops/verification/20260424-154222-bluebubbles-cortex-live-webhook.md` — Verdict `FAIL-no-webhook` (URL misconfigured)
+- Re-run (authoritative): `ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md` — Verdict **`PASS-webhook-only`**; webhook leg live, allowlist is the gate.
+- `~~[FOLLOWUP: bluebubbles-private-api-disabled]~~` ✅ Resolved — root cause was Webhook URL misconfiguration, not Private API. Fixed per commit `e610cddb`.
+- [FOLLOWUP] To reach `PASS-webhook-and-policy`, add a trusted test number to `config/bluebubbles_routing.json` `inbound.allowed_phones`.
+- [FOLLOWUP: structured-log-visibility] `bluebubbles_webhook` `logger.info` lines not appearing in `docker logs cortex` despite `CORTEX_LOG_LEVEL=INFO`; investigate logging handler configuration in `cortex/engine.py:33`.
 
 ---
 
@@ -114,12 +154,13 @@ Key design choices recorded in the prompt:
 
 Follow-up ownership:
 
-- [FOLLOWUP] Matt runs `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md` on Bob via Cline after coordinating an external sender.
-- [NEEDS_MATT] Inspect BlueBubbles Settings UI Webhook URL and record under Step 2.
-- [NEEDS_MATT] Coordinate external-number iMessage send for Step 5 (nonce supplied by prompt Step 0).
+- ~~[FOLLOWUP] Matt runs `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md` on Bob via Cline after coordinating an external sender.~~ ✅ Ran 2026-04-24 — receipt `ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md`, verdict `PASS-webhook-only`.
+- ~~[NEEDS_MATT] Inspect BlueBubbles Settings UI Webhook URL and record under Step 2.~~ ✅ Done 2026-04-24 — URL corrected from `http://cortex:8102/...` to `http://127.0.0.1:8102/hooks/bluebubbles` (commits `03dddc34`, `e610cddb`).
+- ~~[NEEDS_MATT] Coordinate external-number iMessage send for Step 5 (nonce supplied by prompt Step 0).~~ ✅ Done 2026-04-24 — external send from `+1XXXXXXX1850` at ~2026-04-24T16:17 UTC triggered 3 HTTP-200 POSTs to `/hooks/bluebubbles`.
 
 _Created by Claude Code on 2026-04-24 UTC. No runtime/external message
-action performed by this repo pass._
+action performed by this repo pass. Closed 2026-04-24 — see loose-ends
+reconciliation `docs/audits/2026-04-24-loose-ends-reconciliation.md`._
 
 ---
 

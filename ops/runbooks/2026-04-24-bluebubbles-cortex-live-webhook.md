@@ -1,10 +1,21 @@
 # Runbook — BlueBubbles → Cortex Live Webhook Verification (Bob, 2026-04-24)
 
+**Status:** `DONE` — webhook leg verified live 2026-04-24 UTC.
+Verdict `PASS-webhook-only`. Evidence
+`ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md`
+(inbound_count 0→3 after external send from distinct phone number, all
+3 events HTTP 200 at `/hooks/bluebubbles`, policy-dropped by
+`allow_owner_only` because sender was not on `inbound.allowed_phones`).
+Reaching `PASS-webhook-and-policy` requires adding a trusted test
+number to `config/bluebubbles_routing.json` `inbound.allowed_phones`
+— that is a separate, future gate, not a re-run of this runbook.
+
 Human-approved companion runbook for the autonomous prompt at
-`.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md`.
-This file is **human reference** — it is not autonomy-tagged and must
-be skipped by the dispatcher (per the autonomous-prompt standard,
-runbooks do not carry `<!-- autonomy: start -->` metadata).
+`.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md`
+(now `Status: done`). This file is **human reference** — it is not
+autonomy-tagged and must be skipped by the dispatcher (per the
+autonomous-prompt standard, runbooks do not carry
+`<!-- autonomy: start -->` metadata).
 
 ## Purpose
 

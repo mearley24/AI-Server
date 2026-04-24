@@ -1,7 +1,12 @@
 # Bob Docker Crash / Memory Diagnostic — Human Runbook
 
-**Status:** `active` — companion to
-`.cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md`.
+**Status:** `DONE` — diagnostic ran 2026-04-24 09:12 MDT
+(receipt `ops/verification/20260424-151202-bob-docker-crash-diagnostic.md`);
+APPROVE ALL applied 09:25 MDT (commit `275f2a83`, STATUS_REPORT.md L39–L57).
+Remaining follow-ups — restart Docker Desktop, deploy watchdog to system
+path, reinstall Docker Desktop to `/Applications/` — tracked as individual
+`[NEEDS_MATT]` / `[FOLLOWUP]` bullets, not by re-running this runbook.
+Companion prompt: `.cursor/prompts/2026-04-24-cline-bob-docker-crash-memory-diagnostic.md`.
 
 This file is a human-approved runbook, not an autonomous prompt.
 Do **not** add `<!-- autonomy: start -->` metadata. Do not copy into

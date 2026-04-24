@@ -4,8 +4,20 @@
 Category: messaging
 Risk tier: medium
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-24 by Claude Code (parent-agent loose-ends reconciliation).
+Commits: `fe5f778`, `525940d` — "Completed + verified" in STATUS_REPORT.md L536
+(Five-Prompt Reconciliation table). Verification receipt:
+`ops/verification/20260423-102015-bluebubbles-attachment-bodies.txt`.
+14 tests pass (`ops/tests/test_bluebubbles_attachments.py`).
+[FOLLOWUP] A Cortex rebuild is still needed on Bob so the in-container
+image carries the attachment-enrichment path; tracked in STATUS_REPORT.md
+L625–L626 (separate from this prompt's scope).
+Reconciliation audit: `docs/audits/2026-04-24-loose-ends-reconciliation.md`.
+<!-- closure: end -->
 
 # BlueBubbles Attachment Bodies + Outbound-Reply Consolidation (Cline-first)
 

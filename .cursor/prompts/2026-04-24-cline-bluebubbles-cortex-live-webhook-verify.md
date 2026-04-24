@@ -10,8 +10,26 @@ run dev). Use bounded commands: timeout, --lines N, --since, head/sed
 Category: messaging
 Risk tier: high
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-24 by Claude Code (parent-agent loose-ends reconciliation).
+Verdict: `PASS-webhook-only` — webhook leg is live; allowlist is the gate.
+Evidence: `ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md`
+(inbound_count 0→3 after external send from distinct phone number;
+all 3 events HTTP 200 at `/hooks/bluebubbles`, policy-dropped by
+`allow_owner_only` because sender was not on `inbound.allowed_phones`).
+Commit trail: `03dddc34` (FAIL-no-webhook — URL was `http://cortex:8102/...`),
+`e610cddb` (PASS-webhook-only — fixed to `http://127.0.0.1:8102/...`).
+Runbook: `ops/runbooks/2026-04-24-bluebubbles-cortex-live-webhook.md`.
+Followups (tracked separately, not this prompt):
+- To reach `PASS-webhook-and-policy`, add a trusted test number to
+  `config/bluebubbles_routing.json` `inbound.allowed_phones`.
+- `[FOLLOWUP: structured-log-visibility]` — `bluebubbles_webhook` logger
+  lines not appearing in `docker logs cortex` despite `CORTEX_LOG_LEVEL=INFO`.
+Reconciliation audit: `docs/audits/2026-04-24-loose-ends-reconciliation.md`.
+<!-- closure: end -->
 
 **Title:** BlueBubbles → Cortex Fully-Live Webhook Verification — confirm
 an inbound iMessage from a **different** number reaches the BlueBubbles
