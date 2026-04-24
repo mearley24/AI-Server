@@ -100,3 +100,102 @@ def test_dashboard_route_serves_html_and_assets() -> None:
     assert css.status_code == 200
     assert js.status_code == 200
     assert css.content and js.content
+
+
+# ── Tool access registry ────────────────────────────────────────────────────
+#
+# Protects the contract between cortex/dashboard.py's TOOL_REGISTRY and the
+# dashboard UI so future edits to the registry don't silently break rendering.
+
+
+def _wire_bare_app():
+    """Spin up a FastAPI app with only dashboard routes — no CortexEngine."""
+    import sys
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from cortex.dashboard import register_dashboard_routes
+    app = FastAPI()
+    register_dashboard_routes(app, lambda: None)
+    return TestClient(app)
+
+
+def test_api_tools_returns_registry():
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/api/tools")
+    assert r.status_code == 200
+    data = r.json()
+    assert "tools" in data and isinstance(data["tools"], list)
+    assert data["count"] == len(data["tools"])
+    # Tailscale identity is surfaced for the UI to render.
+    assert data["tailscale"]["ip"] == "100.89.1.51"
+    assert data["tailscale"]["fqdn"] == "bobs-mac-mini.tailbcf3fe.ts.net"
+    # Every entry has the keys the frontend renderer reads.
+    required = {"name", "tab", "category", "port", "status", "notes",
+                "local_url", "tailscale_url", "tailscale_fqdn_url"}
+    for tool in data["tools"]:
+        assert required.issubset(tool.keys()), f"missing keys on {tool}"
+    # Tabs must match the dashboard tab panel ids.
+    valid_tabs = {"overview", "xintake", "symphony", "autonomy"}
+    assert {t["tab"] for t in data["tools"]} <= valid_tabs
+
+
+def test_api_tools_filter_by_tab():
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/api/tools?tab=symphony")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] > 0
+    assert all(t["tab"] == "symphony" for t in data["tools"])
+    # Markup Tool lives on the symphony tab — regression guard for the
+    # primary tool the user called out.
+    names = {t["name"] for t in data["tools"]}
+    assert "Markup Tool" in names
+
+
+def test_api_tools_cortex_entry_has_tailscale_urls():
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/tools?tab=overview").json()
+    cortex = next((t for t in data["tools"] if t["name"] == "Cortex Dashboard"), None)
+    assert cortex is not None, "Cortex Dashboard must be in the registry"
+    assert cortex["port"] == 8102
+    assert cortex["local_url"] == "http://127.0.0.1:8102/dashboard"
+    assert cortex["tailscale_url"] == "http://100.89.1.51:8102/dashboard"
+    assert (
+        cortex["tailscale_fqdn_url"]
+        == "http://bobs-mac-mini.tailbcf3fe.ts.net:8102/dashboard"
+    )
+
+
+def test_index_html_has_tool_access_containers():
+    """The renderer targets these ids; if they disappear, the UI breaks."""
+    html = (STATIC_DIR / "index.html").read_text()
+    for tab in ("overview", "xintake", "symphony", "autonomy"):
+        assert f'id="tool-access-{tab}"' in html, (
+            f"missing tool-access container for tab={tab}"
+        )
+
+
+def test_dashboard_js_wires_tool_access():
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "loadToolAccess" in js
+    assert "/api/tools" in js
