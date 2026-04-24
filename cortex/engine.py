@@ -18,6 +18,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
+from cortex.autonomy import register_autonomy_routes
 from cortex.bluebubbles import register_bluebubbles_routes
 from cortex.config import CORTEX_LOG_LEVEL, CORTEX_PORT, REDIS_URL
 from cortex.dashboard import register_dashboard_routes, register_intel_briefing_routes
@@ -253,6 +254,7 @@ app = FastAPI(title="Bob's Cortex", version="1.0.0")
 register_dashboard_routes(app, lambda: engine)
 register_intel_briefing_routes(app)
 register_bluebubbles_routes(app)
+register_autonomy_routes(app)
 
 
 @app.on_event("startup")

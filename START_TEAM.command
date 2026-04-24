@@ -50,7 +50,7 @@ ensure_launch_agent "com.symphony.trading-api"
 
 # Start Betty worker in background
 echo "👤 Starting Betty (research specialist)..."
-python3 orchestrator/autonomous_worker.py --worker betty --interval 60 >> orchestrator/logs/betty_worker.log 2>&1 &
+# Removed stale Betty autonomous_worker launcher
 BETTY_PID=$!
 echo "   PID: $BETTY_PID"
 

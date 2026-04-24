@@ -33,7 +33,7 @@ done
 # Also kill by process name (fallback)
 pkill -f "bob_brain.py" 2>/dev/null
 pkill -f "event_server.py" 2>/dev/null
-pkill -f "autonomous_worker.py" 2>/dev/null
+# Removed stale autonomous_worker stop command
 
 echo "✅ All processes stopped."
 echo ""

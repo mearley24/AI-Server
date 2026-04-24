@@ -305,6 +305,10 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
   </button>
   <button class="tab-btn" data-tab="transcripts" role="tab">Transcripts &amp; Gems</button>
   <button class="tab-btn" data-tab="symphony" role="tab">Symphony Ops</button>
+  <button class="tab-btn" data-tab="autonomy" role="tab">
+    Autonomy
+    <span class="tab-count hidden" id="nav-autonomy-gates">0</span>
+  </button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -603,6 +607,46 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
 </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB 5 — AUTONOMY CONTROL PLANE
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-autonomy" class="tab-panel">
+<div id="panel-autonomy" style="padding:16px 22px 80px;max-width:1200px;">
+
+  <!-- Status bar -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <h2 style="margin:0;padding:0;border:0;">Autonomy Control Plane</h2>
+    <span id="autonomy-badge" style="padding:3px 12px;border-radius:100px;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)">loading…</span>
+    <button onclick="loadAutonomy()" style="margin-left:auto;font-size:11px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;">Refresh</button>
+    <span id="autonomy-ts" class="small" style="color:var(--muted)"></span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+    <!-- Col A: Questions -->
+    <div>
+      <div class="card">
+        <h2>10 Autonomy Questions</h2>
+        <div id="autonomy-questions"><div class="unavailable">loading</div></div>
+      </div>
+    </div>
+
+    <!-- Col B: Gates + Verifications -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card" id="autonomy-gates-card">
+        <h2>Human Gates <span id="autonomy-gates-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>
+        <div id="autonomy-gates"><div class="unavailable">loading</div></div>
+      </div>
+      <div class="card">
+        <h2>Recent Verifications</h2>
+        <div id="autonomy-verifs"><div class="unavailable">loading</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
 <!-- ═══ FOOTER ═════════════════════════════════════════════════════════════ -->
 <footer>
   <div class="stats" id="footer-stats"></div>
@@ -701,6 +745,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     window.location.hash = name === 'overview' ? '' : name;
     if (name === 'xintake'     && !_xiLoaded) { _xiLoaded = true; loadXIntake(); }
     if (name === 'transcripts' && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
+    if (name === 'autonomy'    && !_autonomyLoaded) { loadAutonomy(); }
     if (name === 'symphony') {
       if (!_symLoaded) { _symLoaded = true; loadSymphonyOps(); }
       checkMarkupHealth();
@@ -717,7 +762,7 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
   const _hashTab = window.location.hash.replace('#', '');
-  if (['xintake', 'transcripts', 'symphony'].includes(_hashTab))
+  if (['xintake', 'transcripts', 'symphony', 'autonomy'].includes(_hashTab))
     setTimeout(() => switchTab(_hashTab), 50);
 
   // ── Badge helpers ─────────────────────────────────────────────────────────
@@ -1594,6 +1639,111 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     if (!data) { digestEl.textContent = 'unavailable'; return; }
     const s = data.summary || data.headline || data.digest || '';
     digestEl.textContent = s || 'No digest available';
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  AUTONOMY CONTROL PLANE
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const _STATUS_ICON = { ok: '&#10003;', warn: '&#9888;', fail: '&#10007;', unknown: '?' };
+  const _STATUS_COLOR = { ok: 'var(--green)', warn: 'var(--yellow)', fail: 'var(--red)', unknown: 'var(--muted)' };
+
+  function _verdictColor(v) {
+    if (!v) return 'var(--muted)';
+    if (v === 'PASS' || v === 'CLOSED') return 'var(--green)';
+    if (v === 'FAIL') return 'var(--red)';
+    if (v === 'GAP' || v === 'PARTIAL') return 'var(--yellow)';
+    if (v === 'NEEDS_MATT' || v === 'ARMED') return 'var(--purple)';
+    return 'var(--muted)';
+  }
+
+  function renderAutonomy(data) {
+    if (!data || data.error) {
+      $('autonomy-badge').textContent = 'error';
+      $('autonomy-badge').style.color = 'var(--red)';
+      $('autonomy-questions').innerHTML = unavail(data?.error || 'failed to load');
+      $('autonomy-gates').innerHTML = unavail();
+      $('autonomy-verifs').innerHTML = unavail();
+      return;
+    }
+
+    // Badge
+    const overall = data.overall_status || 'unknown';
+    const badge = $('autonomy-badge');
+    badge.textContent = overall.toUpperCase();
+    badge.style.color = _STATUS_COLOR[overall] || 'var(--muted)';
+    badge.style.borderColor = _STATUS_COLOR[overall] || 'var(--border)';
+    $('autonomy-ts').textContent = data.generated_at ? 'as of ' + timeAgo(data.generated_at) : '';
+
+    // Nav badge (gate count)
+    const gateCount = (data.human_gates || []).filter((g) => g.marker === 'NEEDS_MATT').length;
+    const navBadge = $('nav-autonomy-gates');
+    if (gateCount > 0) { navBadge.textContent = gateCount; navBadge.classList.remove('hidden'); }
+    else navBadge.classList.add('hidden');
+
+    // Questions grid
+    const qs = data.questions || [];
+    if (!qs.length) {
+      $('autonomy-questions').innerHTML = unavail('no questions returned');
+    } else {
+      $('autonomy-questions').innerHTML = '<ul>' + qs.map((q) => {
+        const ic = _STATUS_ICON[q.status] || '?';
+        const col = _STATUS_COLOR[q.status] || 'var(--muted)';
+        return `<li style="padding:6px 0;display:grid;grid-template-columns:18px 1fr;gap:8px;align-items:start;">
+          <span style="color:${col};font-weight:700;font-size:13px;">${ic}</span>
+          <div>
+            <div style="font-size:12px;color:var(--text);margin-bottom:2px;">${esc(q.label)}</div>
+            <div class="small" style="color:var(--muted);line-height:1.4;">${esc(q.detail)}</div>
+          </div>
+        </li>`;
+      }).join('') + '</ul>';
+    }
+
+    // Human gates
+    const gates = (data.human_gates || []).slice(0, 10);
+    const gatesCard = $('autonomy-gates-card');
+    const needsMatt = gates.filter((g) => g.marker === 'NEEDS_MATT').length;
+    $('autonomy-gates-count').textContent = gates.length ? `(${gates.length} open)` : '';
+    if (needsMatt > 0) gatesCard.classList.add('alert'); else gatesCard.classList.remove('alert');
+    if (!gates.length) {
+      $('autonomy-gates').innerHTML = '<div class="small" style="color:var(--green)">&#10003; no open gates</div>';
+    } else {
+      $('autonomy-gates').innerHTML = '<ul>' + gates.map((g) => {
+        const markerCol = g.marker === 'NEEDS_MATT' ? 'var(--red)' : 'var(--yellow)';
+        return `<li style="padding:5px 0;">
+          <span style="font-size:10px;font-weight:700;color:${markerCol};margin-right:6px;">${esc(g.marker)}</span>
+          <span class="small" style="color:var(--muted)">${esc(g.source)}</span>
+          <div class="small" style="color:var(--text);margin-top:2px;line-height:1.35;">${esc((g.excerpt||'').slice(0,120))}</div>
+        </li>`;
+      }).join('') + '</ul>';
+    }
+
+    // Verifications
+    const verifs = (data.recent_verifications || []).slice(0, 8);
+    if (!verifs.length) {
+      $('autonomy-verifs').innerHTML = '<div class="small">no verifications found</div>';
+    } else {
+      $('autonomy-verifs').innerHTML = '<ul>' + verifs.map((v) => {
+        const vcol = _verdictColor(v.verdict);
+        const ts = v.timestamp ? timeAgo(v.timestamp) : '';
+        return `<li style="padding:5px 0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:10px;font-weight:700;color:${vcol};min-width:52px;">${esc(v.verdict)}</span>
+            <span class="small mono" style="color:var(--gold-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(v.topic)}</span>
+            <span class="small" style="color:var(--muted);white-space:nowrap;">${esc(ts)}</span>
+          </div>
+          ${v.summary ? `<div class="small" style="color:var(--muted);margin-top:1px;line-height:1.35;">${esc(v.summary.slice(0,100))}</div>` : ''}
+        </li>`;
+      }).join('') + '</ul>';
+    }
+  }
+
+  let _autonomyLoaded = false;
+
+  window.loadAutonomy = async function loadAutonomy() {
+    const data = await fetchJson('/api/autonomy/overview');
+    renderAutonomy(data);
+    _autonomyLoaded = true;
   };
 
 })();
