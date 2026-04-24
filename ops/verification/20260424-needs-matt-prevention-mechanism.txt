@@ -1,0 +1,166 @@
+NEEDS_MATT Prevention Mechanism — Verification
+=====================================================================
+Timestamp (UTC):  2026-04-24
+Host:             sandbox (not Bob). Parent-agent docs/tools-only pass.
+Purpose:          Add durable repo-owned mechanism so stale
+                  [NEEDS_MATT] markers stop causing confusion.
+Parent task:      follow-up to commit 3f9bea0a (2026-04-24 Cline
+                  orchestration prompt + classification receipt).
+
+No runtime actions performed by this repo pass:
+  - no docker / launchctl / sudo / env mutation / secrets read
+  - no external sends / posts / messages / opened ports
+  - no money/trading actions, no destructive changes
+  - harness-owned dirty paths preserved (.claude/**, .mcp.json, CLAUDE.md)
+  - no pre-existing ops/verification/* files modified
+
+=====================================================================
+New artifacts (all repo-owned, all reversible by revert)
+=====================================================================
+
+  docs/needs-matt-policy.md
+    Authoritative policy for [NEEDS_MATT] markers:
+      - six classes (active / closed / runbook-header / doc-reference
+        / prompt-reference / historical)
+      - required metadata for active markers: Owner, Opened,
+        Review-by, Evidence, Next
+      - closure rules (strikethrough + ✅ with evidence; never delete)
+      - duplicate / cross-reference handling
+      - false-positive exclusions
+      - advisory-only posture (no CI block today; escalation path
+        documented)
+
+  scripts/needs_matt_inventory.py  (Python 3, pure stdlib, executable)
+    Repo scanner that:
+      - classifies every [NEEDS_MATT] hit
+      - flags active markers that are stale (past Review-by, or
+        opened > --stale-days ago; default 14)
+      - flags active markers that are under-specified (missing any of
+        Owner / Opened / Review-by / Evidence / Next within 7 lines
+        below the bullet)
+      - excludes ops/verification/* by default (historical receipts);
+        --include-history lifts the exclusion for forensic audits
+      - exit code 0 always — advisory, not a gate
+      - flags: --all / --json / --stale-days N / --include-history /
+               --write PATH
+    Runs py_compile clean (no syntax errors).
+
+  .cursor/prompts/needs-matt-hygiene-check.md
+    Periodic cleanup prompt, Category: docs, Risk tier: low,
+    Trigger: manual, Status: active. Drives: run checker, close
+    stale markers by evidence, add missing metadata, write a
+    timestamped receipt. Explicit safety forbids: no runtime
+    actions, no edits to frozen receipts, no harness-owned path
+    edits, never delete an active bullet.
+
+=====================================================================
+Modified artifacts
+=====================================================================
+
+  .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+    - Inserted Phase 3.5 "Post-runbook hygiene check (mandatory)":
+      run the inventory script, verify strikethroughs landed for
+      any ARMED gate, record out-of-scope under-specified counts,
+      point to the hygiene-check prompt for the next pass.
+    - Updated Phase 4.1 to stage the new Phase-3.5 inventory receipt.
+    - Added `python3 scripts/needs_matt_inventory.py | head -20` to
+      the Required tests/checks block.
+
+  STATUS_REPORT.md
+    - Added new section "NEEDS_MATT Hygiene Mechanism — Policy +
+      Inventory Script (2026-04-24 UTC, Claude Code)" right after
+      the existing 2026-04-24 orchestration entry. Section documents
+      the three new artifacts and the exact commands to find/remove
+      stale markers in the future.
+
+=====================================================================
+Sample first run
+=====================================================================
+
+$ python3 scripts/needs_matt_inventory.py
+
+NEEDS_MATT inventory
+============================================================
+Scanned repo: /home/user/workspace/AI-Server-4a9b1de7
+Timestamp:    2026-04-24T14:43:23
+
+Counts:
+  total hits                 : 163
+  active (open gates)        : 19
+    of which stale           : 0
+    of which under-specified : 19
+  strikethrough (closed)     : 5
+  runbook-header             : 7
+  doc-reference              : 67
+  prompt-reference           : 65
+  historical (ops/verification): 0
+
+Interpretation:
+  - 0 stale active markers — no review-by date has lapsed yet,
+    because the metadata block has not been backfilled. After the
+    first hygiene pass (`.cursor/prompts/needs-matt-hygiene-check.md`)
+    populates Opened/Review-by for existing active bullets, the
+    stale count will become meaningful on subsequent runs.
+  - 19 under-specified active markers — every existing active
+    STATUS_REPORT bullet pre-dates the new metadata schema. These
+    are the concrete targets for the first hygiene pass.
+  - 65 prompt-reference hits — expected; `.cursor/prompts/` files
+    routinely quote [NEEDS_MATT] in their guidance text. Not gates.
+  - 67 doc-reference hits — expected; `docs/audits/*`, code
+    comments, and policy mentions. Not gates.
+  - 5 strikethrough hits — already-closed markers kept as history.
+  - 7 runbook-header hits — the four ops/runbooks/2026-04-23-*.md
+    files and related mentions.
+  - 0 historical hits — ops/verification/* excluded by default as
+    intended.
+
+=====================================================================
+Future command to find/remove stale [NEEDS_MATT] markers
+=====================================================================
+
+Always-safe, advisory, no mutations:
+
+    python3 scripts/needs_matt_inventory.py
+
+Full enumeration with per-hit classification:
+
+    python3 scripts/needs_matt_inventory.py --all
+
+Machine-readable output for tooling:
+
+    python3 scripts/needs_matt_inventory.py --json
+
+Write a timestamped receipt:
+
+    python3 scripts/needs_matt_inventory.py \
+      --write ops/verification/$(date -u +%Y%m%d-%H%M%S)-needs-matt-inventory.txt
+
+To drive the actual cleanup (close stale markers by evidence, add
+missing metadata, write a receipt, commit):
+
+    .cursor/prompts/needs-matt-hygiene-check.md
+
+=====================================================================
+Path-exists checks
+=====================================================================
+
+  docs/needs-matt-policy.md                                         OK
+  scripts/needs_matt_inventory.py                                   OK (mode 755)
+  .cursor/prompts/needs-matt-hygiene-check.md                       OK
+  .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md  OK (modified)
+  STATUS_REPORT.md                                                  OK (modified)
+  ops/verification/20260424-needs-matt-classification.txt           OK (pre-existing, unchanged)
+
+=====================================================================
+Safety attestation
+=====================================================================
+
+  - No sudo, launchctl, docker, env mutation, secrets read.
+  - No edits to .claude/**, .mcp.json, CLAUDE.md.
+  - No edits to any ops/verification/* file that existed before
+    this run.
+  - No external network sends, no posts, no messages, no opened
+    ports, no money/trading actions.
+  - Inventory script is read-only (scans files, writes only to the
+    optional --write PATH).
+  - Policy is advisory; not wired into CI as a block.

@@ -128,6 +128,50 @@ instruction.
 
 ---
 
+## NEEDS_MATT Hygiene Mechanism — Policy + Inventory Script (2026-04-24 UTC, Claude Code)
+
+Follow-up durable prevention pass so stale `[NEEDS_MATT]` markers stop
+causing confusion. **No runtime actions:** no docker, no launchctl, no
+sudo, no env mutation, no external sends. Repo-owned artifacts only.
+
+New artifacts:
+
+- `docs/needs-matt-policy.md` — authoritative policy. Classes (active /
+  closed / runbook-header / doc-reference / prompt-reference /
+  historical), required metadata for active markers (Owner, Opened,
+  Review-by, Evidence, Next), closure rules (strikethrough + ✅ with
+  evidence, never delete), duplicate handling, and the scope of the
+  inventory script.
+- `scripts/needs_matt_inventory.py` — pure-stdlib Python scanner.
+  Classifies every `[NEEDS_MATT]` hit, flags active markers that are
+  stale (past `Review-by`, or older than a default 14-day window) or
+  under-specified (missing required metadata). Excludes
+  `ops/verification/*` by default so frozen receipts don't inflate the
+  surface. Exit code is always 0 — advisory, not a CI blocker.
+- `.cursor/prompts/needs-matt-hygiene-check.md` — periodic cleanup
+  prompt (Category: docs, Risk tier: low, Trigger: manual). Runs the
+  checker, closes stale markers by evidence, adds missing metadata,
+  writes a timestamped receipt.
+
+Command to find/remove stale markers in the future:
+
+```
+python3 scripts/needs_matt_inventory.py
+python3 scripts/needs_matt_inventory.py --all
+python3 scripts/needs_matt_inventory.py --write ops/verification/<stamp>-needs-matt-inventory.txt
+```
+
+The 2026-04-24 clearance orchestration prompt now includes a
+mandatory Phase-3.5 step that runs the inventory script after any
+ARMED gate and verifies the STATUS_REPORT strikethrough landed
+before the final commit.
+
+Verification receipt for this repo pass:
+`ops/verification/20260424-needs-matt-prevention-mechanism.txt`
+(first-run counts + path-exists + policy doc diff stats).
+
+---
+
 ## Cortex Embeddings — Live Arm on Bob (2026-04-23 13:14 MDT, Claude Code)
 
 Runbook `ops/runbooks/2026-04-23-cortex-embeddings-bob-arm.md` executed.

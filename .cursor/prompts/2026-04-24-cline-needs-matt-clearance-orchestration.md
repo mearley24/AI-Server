@@ -228,6 +228,32 @@ containing:
 - A final `git diff --stat HEAD~1..HEAD` snippet (captured after
   the commit — append in a second write if needed).
 
+### Phase 3.5 — Post-runbook hygiene check (mandatory)
+
+After the per-gate runbooks complete and **before** the Phase-4
+commit, run the inventory checker and close any stale markers by
+evidence. This prevents the exact confusion class (`[NEEDS_MATT] is
+causing a lot of issues`) that motivated this orchestration.
+
+3.5.1 `python3 scripts/needs_matt_inventory.py --write ops/verification/<YYYYMMDD-HHMMSS>-needs-matt-inventory-post-orchestration.txt`
+
+3.5.2 Read the receipt. For each gate that this pass transitioned to
+`ARMED`, verify the corresponding STATUS_REPORT bullet is now
+struck-through with ✅ and an evidence path. If the inventory still
+reports it as active, the Phase-2 strikethrough was missed — fix
+before commit.
+
+3.5.3 For any markers the checker reports as **stale** or
+**under-specified** that are *not* in scope for this orchestration
+(i.e. the Polymarket items or unrelated historical entries), do
+**not** modify them here. Record their count in the Phase-3
+verification receipt and point to
+`.cursor/prompts/needs-matt-hygiene-check.md` as the next pass.
+
+3.5.4 Policy reference: `docs/needs-matt-policy.md`. The checker is
+advisory — exit code is always 0; this step is a sanity gate on the
+diff, not a blocker.
+
 ### Phase 4 — Commit + push
 
 4.1 `git add` only:
@@ -235,6 +261,7 @@ containing:
 - `.cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md`
   (this file)
 - the new verification receipt under `ops/verification/`
+- the Phase-3.5 inventory receipt under `ops/verification/`
 - `STATUS_REPORT.md` (the Phase-2 edits)
 - any gate-specific receipt files that the runbooks wrote
 
@@ -268,6 +295,7 @@ ls ops/runbooks/2026-04-23-*.md
 ls .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
 head -20 .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
 grep -n "^Status:" .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+python3 scripts/needs_matt_inventory.py | head -20
 git diff --stat HEAD
 ```
 
