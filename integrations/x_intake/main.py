@@ -118,6 +118,102 @@ async def health():
     return {"status": "healthy", "service": "x-intake"}
 
 
+@app.get("/status")
+async def status_endpoint():
+    """Operational status: queue path, durability, listener health.
+
+    Safe to call while Redis/X API are down — never touches the network.
+    Useful as a runbook first step: ``curl http://127.0.0.1:8101/status``.
+    """
+    try:
+        from queue_db import DB_PATH as _DB_PATH
+    except ImportError:
+        _DB_PATH = None  # type: ignore[assignment]
+
+    listener_alive = bool(_listener_task is not None and not _listener_task.done())
+    db_path_str = str(_DB_PATH) if _DB_PATH else ""
+    db_exists = False
+    db_writable = False
+    if _DB_PATH is not None:
+        try:
+            db_exists = _DB_PATH.exists()
+            _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            db_writable = os.access(str(_DB_PATH.parent), os.W_OK)
+        except Exception:
+            pass
+
+    stats = {}
+    if _db_get_stats is not None:
+        try:
+            stats = _db_get_stats()
+        except Exception as exc:
+            stats = {"error": str(exc)[:100]}
+
+    return {
+        "service": "x-intake",
+        "port": PORT,
+        "listener_alive": listener_alive,
+        "redis_url": REDIS_URL,
+        "imessage_bridge_url": IMESSAGE_BRIDGE_URL,
+        "db_path": db_path_str,
+        "db_exists": db_exists,
+        "db_writable": db_writable,
+        "queue": stats,
+        "dedup_ttl_seconds": _PROCESSED_URL_TTL_SECONDS,
+        "active_dedup_keys": len(_PROCESSED_URLS),
+    }
+
+
+@app.post("/import")
+async def import_endpoint(body: dict):
+    """Offline backlog import: enqueue one or more X URLs without calling any
+    live social API. Idempotent by canonical URL.
+
+    Body::
+
+        {
+          "urls": ["https://x.com/...", "https://x.com/..."],
+          "notes": {"https://x.com/...": "handwritten gist"},
+          "source": "manual"   // optional, default "manual"
+        }
+
+    Or a single URL::
+
+        {"url": "https://x.com/handle/status/123", "note": "..."}
+    """
+    try:
+        try:
+            from manual_import import import_many, import_url
+        except ImportError:
+            from integrations.x_intake.manual_import import import_many, import_url  # type: ignore[no-redef]
+    except Exception as exc:
+        return {"ok": False, "error": f"import module unavailable: {exc}"}
+
+    source = (body or {}).get("source", "manual")
+
+    if "url" in (body or {}) and "urls" not in (body or {}):
+        result = import_url(
+            url=body["url"],
+            note=body.get("note", "") or "",
+            source=source,
+        )
+        return {"ok": True, "results": [result.to_dict()]}
+
+    urls = (body or {}).get("urls") or []
+    if not isinstance(urls, list) or not urls:
+        return {"ok": False, "error": "provide 'url' or non-empty 'urls' list"}
+    notes = (body or {}).get("notes") or {}
+    results = import_many(urls, notes=notes, source=source)
+    return {
+        "ok": True,
+        "count": len(results),
+        "inserted": sum(1 for r in results if r.status == "inserted"),
+        "already_present": sum(1 for r in results if r.status == "already_present"),
+        "skipped": sum(1 for r in results if r.status == "skipped"),
+        "results": [r.to_dict() for r in results],
+    }
+
+
 def _analyze_with_llm(text: str, author: str, has_video: bool, transcript: str = "") -> dict:
     """Use OpenAI to analyze the post content with Matt's relevance profile."""
     api_key = OPENAI_API_KEY

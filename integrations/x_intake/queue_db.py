@@ -14,17 +14,47 @@ Rows older than 30 days are pruned on each write to keep the file small.
 from __future__ import annotations
 
 import json
+import os
+import re
 import sqlite3
 import time
 from pathlib import Path
 from typing import Optional
 
-DB_PATH = Path("/data/x_intake/queue.db")
+# Durable path on the host-mounted volume by default. Override with
+# X_INTAKE_DB_PATH so host-run CLI tools (manual_import.py) can point at
+# ./data/x_intake/queue.db from the repo root.
+DB_PATH = Path(os.getenv("X_INTAKE_DB_PATH", "/data/x_intake/queue.db"))
+
+_TWEET_ID_RE = re.compile(
+    r"https?://(?:x\.com|twitter\.com)/([^/?#]+)/status/(\d+)", re.I
+)
+
+
+def canonical_url(url: str) -> str:
+    """Normalize a tweet URL so x.com/twitter.com and query junk collapse.
+
+    Keeps non-tweet URLs as-is (with trailing junk stripped) so the dedupe
+    index still works for anything a user imports manually.
+    """
+    if not url:
+        return ""
+    m = _TWEET_ID_RE.match(url)
+    if m:
+        return f"https://x.com/{m.group(1).lower()}/status/{m.group(2)}"
+    return url.strip().rstrip("/?#")
+
+
+def extract_tweet_id(url: str) -> Optional[str]:
+    """Return the numeric tweet id from a URL, or None if not a tweet URL."""
+    m = _TWEET_ID_RE.match(url or "")
+    return m.group(2) if m else None
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS x_intake_queue (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     url             TEXT    NOT NULL,
+    canonical_url   TEXT    DEFAULT '',
     author          TEXT    DEFAULT '',
     post_type       TEXT    DEFAULT 'info',
     relevance       INTEGER DEFAULT 0,
@@ -37,20 +67,29 @@ CREATE TABLE IF NOT EXISTS x_intake_queue (
     has_transcript  INTEGER DEFAULT 0,
     transcript_path TEXT    DEFAULT '',
     analyzed        INTEGER DEFAULT 0,
+    error_msg       TEXT    DEFAULT '',
     created_at      REAL    NOT NULL,
     reviewed_at     REAL,
     review_note     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_xi_status     ON x_intake_queue(status);
 CREATE INDEX IF NOT EXISTS idx_xi_created    ON x_intake_queue(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_xi_transcript ON x_intake_queue(has_transcript, analyzed);
 """
 
 # Columns added after initial schema — applied to existing databases.
+# Order matters: each ALTER runs independently, failures (column already
+# exists) are swallowed. Indexes that depend on migrated columns go below.
 _MIGRATE_COLUMNS = [
     "ALTER TABLE x_intake_queue ADD COLUMN transcript_path TEXT DEFAULT ''",
     "ALTER TABLE x_intake_queue ADD COLUMN analyzed INTEGER DEFAULT 0",
     "ALTER TABLE x_intake_queue ADD COLUMN error_msg TEXT DEFAULT ''",
+    "ALTER TABLE x_intake_queue ADD COLUMN canonical_url TEXT DEFAULT ''",
+]
+
+# Indexes that reference possibly-migrated columns. Built after ALTERs run.
+_POST_MIGRATE_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_xi_transcript ON x_intake_queue(has_transcript, analyzed)",
+    "CREATE INDEX IF NOT EXISTS idx_xi_canonical  ON x_intake_queue(canonical_url)",
 ]
 
 _PRUNE_DAYS = 30
@@ -68,6 +107,12 @@ def _conn() -> sqlite3.Connection:
             conn.commit()
         except sqlite3.OperationalError:
             pass  # Column already exists
+    for stmt in _POST_MIGRATE_INDEXES:
+        try:
+            conn.execute(stmt)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
@@ -121,15 +166,33 @@ def enqueue(
         status = _infer_status(relevance)
         has_sig = bool((poly_signals or {}).get("signals"))
         suggested_dest = _infer_dest(relevance, has_sig)
+        canon = canonical_url(url)
         conn = _conn()
+
+        # Idempotency: if a row already exists for this canonical URL, return
+        # its id without re-inserting. Callers are free to then enrich the row
+        # (e.g. via set_analyzed or a manual update). Only dedupe when the
+        # existing row was indexed with a canonical URL — older rows may have
+        # canonical_url=''.
+        if canon:
+            existing = conn.execute(
+                "SELECT id FROM x_intake_queue WHERE canonical_url = ? LIMIT 1",
+                (canon,),
+            ).fetchone()
+            if existing is not None:
+                row_id = int(existing["id"])
+                conn.close()
+                return row_id
+
         cur = conn.execute(
             """INSERT INTO x_intake_queue
-               (url, author, post_type, relevance, summary, action,
+               (url, canonical_url, author, post_type, relevance, summary, action,
                 suggested_dest, status, source, poly_signals,
                 has_transcript, transcript_path, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 url,
+                canon,
                 author,
                 post_type,
                 relevance,
@@ -151,6 +214,23 @@ def enqueue(
         return row_id
     except Exception:
         return 0
+
+
+def find_by_url(url: str) -> Optional[dict]:
+    """Return the queue row matching this tweet URL (canonicalized), or None."""
+    canon = canonical_url(url)
+    if not canon:
+        return None
+    try:
+        conn = _conn()
+        row = conn.execute(
+            "SELECT * FROM x_intake_queue WHERE canonical_url = ? LIMIT 1",
+            (canon,),
+        ).fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception:
+        return None
 
 
 def get_queue(status: Optional[str] = None, limit: int = 50) -> list[dict]:
