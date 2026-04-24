@@ -1,0 +1,49 @@
+Self-improvement loop — verification artifact
+=============================================
+Prompt path:    (inline — launched via process self-improvement inbox task)
+UTC timestamp:  2026-04-24T16:50:00Z
+Collector run:  SELF_IMPROVE_SKIP_COLLECT not set; collector assumed to have run prior to this prompt (per scripts/self-improve.sh process design)
+
+Inbox files evaluated
+---------------------
+1. 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+   → Archive: EXISTS (already processed — skipped)
+   → Card:    EXISTS (already processed — skipped)
+   → Status:  needs fetch
+
+2. 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+   → Archive: EXISTS (already processed — skipped)
+   → Card:    EXISTS (already processed — skipped)
+   → Status:  needs fetch
+
+3. 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+   → Archive: EXISTS (already processed — skipped)
+   → Card:    EXISTS (already processed — skipped)
+   → Status:  needs fetch
+
+4. 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+   → Archive: EXISTS (already processed — skipped)
+   → Card:    EXISTS (already processed — skipped)
+   → Status:  needs fetch
+
+Skipped (oversize): none
+New cards produced: 0
+New prompts drafted: 0
+
+Card summary (all already-existing, confirmed valid)
+-----------------------------------------------------
+All 4 cards carry Status: needs fetch. Each inbox item is a raw X URL
+sent to the business iMessage number (+19705193013) with no message
+body beyond the URL. Tweet content is required before relevance can
+be assessed. No auto-run promotion is possible without the tweet body.
+
+Underlying pattern note: the iMessage→inbox pipeline is working
+correctly — URLs are captured and archived. The efficiency gap is that
+URL-only items with no surrounding text will always land as `needs fetch`
+until either (a) the collector is enhanced to call x_intake's ingest API
+for X links at collection time, or (b) a fetch turn runs with web access.
+Card 20260422T111725Z…-card.md documents this bridge hypothesis (Impact 2,
+Effort 2, Risk 2) and recommends it as a future `auto-run via ai-dispatch`
+candidate once tweet content confirms relevance.
+
+STATUS: OK (idempotent run — all items previously processed)

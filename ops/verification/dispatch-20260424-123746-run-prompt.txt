@@ -1,0 +1,18 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260424-123746
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
+
+=== claude output ===
+Done. Here's the summary of this run:
+
+**Self-improvement inbox — 2026-04-24T16:50Z**
+
+- **4 inbox items** evaluated (oldest first, well within the 20-item cap)
+- **0 new cards produced** — all 4 were already archived and carded from a prior run (fully idempotent)
+- All 4 cards carry `Status: needs fetch`: each is a bare X URL forwarded via iMessage from the business number with no surrounding text. Tweet content is required before relevance can be scored or an efficiency lever identified.
+- **No prompts drafted** (no auto-safe cards this run)
+- Underlying pattern: the iMessage→inbox capture pipeline is working correctly; the gap is that URL-only items will always be `needs fetch` until either the collector is enhanced to call `x_intake`'s ingest API at collection time, or a web-access fetch turn runs. The existing card for `ihtesham2005` documents this bridge hypothesis (Impact 2 / Effort 2 / Risk 2).
+
+Artifacts written:
+- `ops/verification/self-improve-20260424T165000Z.txt`
+- `STATUS_REPORT.md` — new section `### Self-improvement loop — 2026-04-24T16:50:00Z` inserted
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-123746-run-prompt.txt
