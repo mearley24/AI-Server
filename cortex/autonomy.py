@@ -65,6 +65,59 @@ GATE_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
+# ── Gate action-class triage ──────────────────────────────────────────────────
+
+# Evaluated in priority order: first match wins.
+_WAITING_EXTERNAL_KW = re.compile(
+    r"\b(wallet|fund|usdc|matic|polygon|deposit|payment|gas fee"
+    r"|macbook|matt.s machine|matt.s macbook|ios.app|symphonyops"
+    r"|physical|device|third.party|provider|account status"
+    r"|keychain unlock|unlock.*keychain|apple id"
+    r"|private.api helper|trusted number|merge conflict)\b",
+    re.IGNORECASE,
+)
+_APPROVAL_REQUIRED_KW = re.compile(
+    r"\b(sudo|password|credential|secret|api.key"
+    r"|cortex_reply_dry_run|allowed_test_recipients|dry_run=0"
+    r"|live.send|outbound.send|external.send|send.*imessage"
+    r"|applescript|osascript|macos permission|automation permission"
+    r"|approval required|approve|sign off"
+    r"|restart.*docker|docker.*restart)\b",
+    re.IGNORECASE,
+)
+_NEEDS_MATT_KW = re.compile(
+    r"\b(client|legal|customer|contract|billing|invoice"
+    r"|matt decides|human decision|human only"
+    r"|configure.*manually|manually configure"
+    r"|macbook|matt.s machine)\b",
+    re.IGNORECASE,
+)
+_AUTO_FIX_KW = re.compile(
+    r"\b(prune|truncate|cp /dev/null|cleanup|clean up|delete.*log"
+    r"|copy.*plist|plist.*launchagents|launchagents.*visibility"
+    r"|network.guard.err|dropout.watch.*plist|log rotation"
+    r"|image prune|docker.*prune|remove.*stale|housekeeping)\b",
+    re.IGNORECASE,
+)
+
+
+def classify_gate(excerpt: str, marker: str) -> str:
+    """Triage a human gate into one of five action classes.
+
+    Priority order: WAITING_EXTERNAL > APPROVAL_REQUIRED > NEEDS_MATT >
+    AUTO_FIX > AUTO_REVIEW (default).
+    """
+    text = excerpt + " " + marker
+    if _WAITING_EXTERNAL_KW.search(text):
+        return "WAITING_EXTERNAL"
+    if _APPROVAL_REQUIRED_KW.search(text):
+        return "APPROVAL_REQUIRED"
+    if _NEEDS_MATT_KW.search(text):
+        return "NEEDS_MATT"
+    if _AUTO_FIX_KW.search(text):
+        return "AUTO_FIX"
+    return "AUTO_REVIEW"
+
 
 @dataclass
 class Verification:
@@ -85,6 +138,7 @@ class HumanGate:
     source: str              # filename / path
     marker: str              # NEEDS_MATT / [FOLLOWUP] / etc.
     excerpt: str             # short excerpt for context
+    action_class: str = "AUTO_REVIEW"  # AUTO_FIX / AUTO_REVIEW / APPROVAL_REQUIRED / WAITING_EXTERNAL / NEEDS_MATT
 
 
 @dataclass
@@ -106,6 +160,7 @@ class AutonomyOverview:
     human_gates: list[HumanGate] = field(default_factory=list)
     recent_verifications: list[Verification] = field(default_factory=list)
     questions: list[AutonomyQuestion] = field(default_factory=list)
+    gate_summary: dict[str, int] = field(default_factory=dict)  # counts by action_class
 
 
 # ── VerificationScanner ───────────────────────────────────────────────────────
@@ -269,6 +324,7 @@ class HumanGateScanner:
                         source="STATUS_REPORT.md",
                         marker=marker,
                         excerpt=stripped[:160],
+                        action_class=classify_gate(stripped, marker),
                     ))
         except Exception as exc:
             logger.debug("autonomy.status_report_scan_error err=%s", exc)
@@ -287,6 +343,7 @@ class HumanGateScanner:
                     source=f"{kind}/{p.name}",
                     marker=marker,
                     excerpt=f"{kind} filename contains gate marker",
+                    action_class=classify_gate(p.name, marker),
                 ))
         return gates
 
@@ -354,12 +411,18 @@ class AutonomyAssessor:
         else:
             overall = "ok"
 
+        active_gates = gates[:20]
+        gate_summary: dict[str, int] = {}
+        for g in active_gates:
+            gate_summary[g.action_class] = gate_summary.get(g.action_class, 0) + 1
+
         return AutonomyOverview(
             generated_at=datetime.now(timezone.utc).isoformat(),
             overall_status=overall,
-            human_gates=gates[:20],
+            human_gates=active_gates,
             recent_verifications=verifications[:10],
             questions=questions,
+            gate_summary=gate_summary,
         )
 
     # ── Individual checks ─────────────────────────────────────────────────────
@@ -456,13 +519,21 @@ class AutonomyAssessor:
     def _what_is_blocked_on_matt(self, gates: list[HumanGate]) -> AutonomyQuestion:
         key = "what_is_blocked_on_matt"
         label = "What is blocked on Matt?"
-        nm = [g for g in gates if "NEEDS_MATT" in g.marker]
-        fu = [g for g in gates if "FOLLOWUP" in g.marker or "ARMED" in g.marker]
-        if not nm and not fu:
-            return _q(key, label, "ok", "no open NEEDS_MATT or FOLLOWUP gates found")
-        excerpts = "; ".join(g.excerpt[:60] for g in nm[:3])
-        detail = f"{len(nm)} NEEDS_MATT, {len(fu)} FOLLOWUP/ARMED — e.g.: {excerpts}"
-        return _q(key, label, "warn", detail[:300])
+        truly_blocked = [g for g in gates if g.action_class in ("NEEDS_MATT", "WAITING_EXTERNAL", "APPROVAL_REQUIRED")]
+        auto_fixable  = [g for g in gates if g.action_class == "AUTO_FIX"]
+        auto_review   = [g for g in gates if g.action_class == "AUTO_REVIEW"]
+        if not gates:
+            return _q(key, label, "ok", "no open gates found")
+        parts = []
+        if truly_blocked:
+            excerpts = "; ".join(g.excerpt[:50] for g in truly_blocked[:2])
+            parts.append(f"{len(truly_blocked)} need Matt ({excerpts})")
+        if auto_fixable:
+            parts.append(f"{len(auto_fixable)} AUTO_FIX ready")
+        if auto_review:
+            parts.append(f"{len(auto_review)} AUTO_REVIEW queued")
+        status = "warn" if truly_blocked else "ok"
+        return _q(key, label, status, " | ".join(parts)[:300])
 
     def _what_failed_recently(self, verifications: list[Verification]) -> AutonomyQuestion:
         key = "what_failed_recently"

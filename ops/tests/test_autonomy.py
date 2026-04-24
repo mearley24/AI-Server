@@ -27,6 +27,7 @@ from cortex.autonomy import (
     AutonomyOverview,
     Verification,
     VerificationScanner,
+    classify_gate,
     register_autonomy_routes,
 )
 
@@ -153,7 +154,78 @@ def test_human_gate_scanner_ignores_strikethrough():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  4. /api/autonomy/overview — returns valid JSON with required keys
+#  4. classify_gate — action_class triage
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_classify_gate_auto_fix():
+    assert classify_gate("prune logs/network-guard.err after stable day", "FOLLOWUP") == "AUTO_FIX"
+    assert classify_gate("copy dropout-watch plist to ~/Library/LaunchAgents/", "FOLLOWUP") == "AUTO_FIX"
+    assert classify_gate("docker image prune reclaim space", "FOLLOWUP") == "AUTO_FIX"
+
+
+def test_classify_gate_approval_required():
+    assert classify_gate("sudo setup/install_bob_watchdog.sh --deploy-system", "NEEDS_MATT") == "APPROVAL_REQUIRED"
+    assert classify_gate("CORTEX_REPLY_DRY_RUN=0 live send outbound iMessage", "NEEDS_MATT") == "APPROVAL_REQUIRED"
+    assert classify_gate("AppleScript access required for BlueBubbles send", "FOLLOWUP") == "APPROVAL_REQUIRED"
+
+
+def test_classify_gate_waiting_external():
+    assert classify_gate("Fund Polymarket wallet with USDC on Polygon", "NEEDS_MATT") == "WAITING_EXTERNAL"
+    assert classify_gate("ios-app merge conflict on Matt's MacBook", "NEEDS_MATT") == "WAITING_EXTERNAL"
+    assert classify_gate("keychain unlock required for Docker build", "FOLLOWUP") == "WAITING_EXTERNAL"
+
+
+def test_classify_gate_needs_matt():
+    assert classify_gate("legal review of contract terms", "NEEDS_MATT") == "NEEDS_MATT"
+    assert classify_gate("billing decision for client project", "NEEDS_MATT") == "NEEDS_MATT"
+
+
+def test_classify_gate_auto_review_default():
+    assert classify_gate("complete historical embedding backfill", "FOLLOWUP") == "AUTO_REVIEW"
+    assert classify_gate("investigate Docker daemon stability", "FOLLOWUP") == "AUTO_REVIEW"
+    assert classify_gate("no obvious keyword here", "FOLLOWUP") == "AUTO_REVIEW"
+
+
+def test_gate_summary_in_overview():
+    """AutonomyOverview.gate_summary counts gates by action_class."""
+    gates = [
+        HumanGate(source="s", marker="FOLLOWUP", excerpt="prune logs/network-guard.err", action_class="AUTO_FIX"),
+        HumanGate(source="s", marker="NEEDS_MATT", excerpt="Fund wallet USDC", action_class="WAITING_EXTERNAL"),
+        HumanGate(source="s", marker="NEEDS_MATT", excerpt="sudo install watchdog", action_class="APPROVAL_REQUIRED"),
+        HumanGate(source="s", marker="FOLLOWUP", excerpt="complete backfill", action_class="AUTO_REVIEW"),
+        HumanGate(source="s", marker="FOLLOWUP", excerpt="another backfill", action_class="AUTO_REVIEW"),
+    ]
+    summary: dict[str, int] = {}
+    for g in gates:
+        summary[g.action_class] = summary.get(g.action_class, 0) + 1
+    assert summary == {"AUTO_FIX": 1, "WAITING_EXTERNAL": 1, "APPROVAL_REQUIRED": 1, "AUTO_REVIEW": 2}
+
+
+def test_human_gate_scanner_attaches_action_class():
+    """HumanGateScanner sets action_class on returned gates."""
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        status = d / "STATUS_REPORT.md"
+        status.write_text(
+            "- [NEEDS_MATT] Fund Polymarket wallet — deposit USDC\n"
+            "- [FOLLOWUP] prune logs/network-guard.err after stable day\n",
+            encoding="utf-8",
+        )
+        scanner = HumanGateScanner(
+            status_report=status,
+            runbooks_dir=d / "runbooks",
+            prompts_dir=d / "prompts",
+        )
+        gates = scanner.scan()
+
+    classes = {g.action_class for g in gates}
+    assert "WAITING_EXTERNAL" in classes, f"Expected WAITING_EXTERNAL (wallet), got {classes}"
+    assert "AUTO_FIX" in classes, f"Expected AUTO_FIX (prune logs), got {classes}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  5. /api/autonomy/overview — returns valid JSON with required keys
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -182,7 +254,7 @@ def test_autonomy_overview_endpoint_returns_required_keys():
 
     assert resp.status_code == 200
     data = resp.json()
-    required_keys = {"generated_at", "overall_status", "human_gates", "recent_verifications", "questions"}
+    required_keys = {"generated_at", "overall_status", "human_gates", "recent_verifications", "questions", "gate_summary"}
     assert required_keys.issubset(data.keys()), (
         f"Missing keys: {required_keys - data.keys()}"
     )

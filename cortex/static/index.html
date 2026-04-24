@@ -1675,8 +1675,10 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     badge.style.borderColor = _STATUS_COLOR[overall] || 'var(--border)';
     $('autonomy-ts').textContent = data.generated_at ? 'as of ' + timeAgo(data.generated_at) : '';
 
-    // Nav badge (gate count)
-    const gateCount = (data.human_gates || []).filter((g) => g.marker === 'NEEDS_MATT').length;
+    // Nav badge (only truly-human gates)
+    const gateCount = (data.human_gates || []).filter(
+      (g) => ['NEEDS_MATT','APPROVAL_REQUIRED','WAITING_EXTERNAL'].includes(g.action_class)
+    ).length;
     const navBadge = $('nav-autonomy-gates');
     if (gateCount > 0) { navBadge.textContent = gateCount; navBadge.classList.remove('hidden'); }
     else navBadge.classList.add('hidden');
@@ -1699,23 +1701,48 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
       }).join('') + '</ul>';
     }
 
-    // Human gates
-    const gates = (data.human_gates || []).slice(0, 10);
+    // Human gates — grouped by action_class
+    const gates = data.human_gates || [];
     const gatesCard = $('autonomy-gates-card');
-    const needsMatt = gates.filter((g) => g.marker === 'NEEDS_MATT').length;
+    const summary = data.gate_summary || {};
+    const humanBlocked = (summary['NEEDS_MATT']||0) + (summary['APPROVAL_REQUIRED']||0) + (summary['WAITING_EXTERNAL']||0);
     $('autonomy-gates-count').textContent = gates.length ? `(${gates.length} open)` : '';
-    if (needsMatt > 0) gatesCard.classList.add('alert'); else gatesCard.classList.remove('alert');
+    if (humanBlocked > 0) gatesCard.classList.add('alert'); else gatesCard.classList.remove('alert');
+
+    const _ACTION_COLOR = {
+      'NEEDS_MATT':        'var(--red)',
+      'APPROVAL_REQUIRED': 'var(--red)',
+      'WAITING_EXTERNAL':  'var(--yellow)',
+      'AUTO_REVIEW':       'var(--blue)',
+      'AUTO_FIX':          'var(--green)',
+    };
+    const _ACTION_ORDER = ['NEEDS_MATT','APPROVAL_REQUIRED','WAITING_EXTERNAL','AUTO_REVIEW','AUTO_FIX'];
+
     if (!gates.length) {
       $('autonomy-gates').innerHTML = '<div class="small" style="color:var(--green)">&#10003; no open gates</div>';
     } else {
-      $('autonomy-gates').innerHTML = '<ul>' + gates.map((g) => {
-        const markerCol = g.marker === 'NEEDS_MATT' ? 'var(--red)' : 'var(--yellow)';
-        return `<li style="padding:5px 0;">
-          <span style="font-size:10px;font-weight:700;color:${markerCol};margin-right:6px;">${esc(g.marker)}</span>
-          <span class="small" style="color:var(--muted)">${esc(g.source)}</span>
-          <div class="small" style="color:var(--text);margin-top:2px;line-height:1.35;">${esc((g.excerpt||'').slice(0,120))}</div>
-        </li>`;
-      }).join('') + '</ul>';
+      // Build summary chips + grouped list
+      const chips = _ACTION_ORDER.filter((k) => summary[k]).map((k) => {
+        const col = _ACTION_COLOR[k] || 'var(--muted)';
+        return `<span style="display:inline-block;font-size:10px;font-weight:700;color:${col};border:1px solid ${col};border-radius:4px;padding:1px 7px;margin-right:4px;">${k.replace('_',' ')} ${summary[k]}</span>`;
+      }).join('');
+
+      const grouped = _ACTION_ORDER.reduce((acc, k) => {
+        const grp = gates.filter((g) => g.action_class === k);
+        if (!grp.length) return acc;
+        const col = _ACTION_COLOR[k] || 'var(--muted)';
+        acc += `<li style="padding:4px 0 2px;">
+          <div style="font-size:10px;font-weight:800;color:${col};letter-spacing:.06em;margin-bottom:3px;">${k.replace(/_/g,' ')}</div>
+          <ul style="margin:0;padding:0 0 0 10px;list-style:disc;">` +
+          grp.map((g) => `<li style="padding:2px 0;">
+            <span class="small mono" style="color:var(--muted)">${esc(g.source)}</span>
+            <div class="small" style="color:var(--text);line-height:1.35;">${esc((g.excerpt||'').slice(0,120))}</div>
+          </li>`).join('') +
+          `</ul></li>`;
+        return acc;
+      }, '');
+
+      $('autonomy-gates').innerHTML = `<div style="margin-bottom:8px;">${chips}</div><ul>${grouped}</ul>`;
     }
 
     // Verifications
