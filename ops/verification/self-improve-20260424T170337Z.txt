@@ -1,0 +1,39 @@
+Prompt path: ops/self_improvement/ (invoked via: scripts/self-improve.sh process)
+UTC timestamp: 2026-04-24T17:03:37Z
+
+Inbox files found (excluding .gitkeep):
+  20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+  20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+  20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+  20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+
+Inbox files processed this run: 0 (all already processed — idempotency rule)
+Inbox files skipped (oversize): 0
+Inbox files already processed (archive + card exist):
+  20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+    → archive: ops/self_improvement/archive/ [committed]
+    → card:    ops/self_improvement/cards/...ihtesham2005...-card.md [committed]
+    → status:  needs fetch
+  20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+    → archive: ops/self_improvement/archive/ [untracked — prior run, uncommitted]
+    → card:    ops/self_improvement/cards/...-card.md [untracked — prior run, uncommitted]
+    → status:  needs fetch
+  20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+    → archive: ops/self_improvement/archive/ [untracked — prior run, uncommitted]
+    → card:    ops/self_improvement/cards/...-card.md [untracked — prior run, uncommitted]
+    → status:  needs fetch
+  20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+    → archive: ops/self_improvement/archive/ [untracked — prior run, uncommitted]
+    → card:    ops/self_improvement/cards/...-card.md [untracked — prior run, uncommitted]
+    → status:  needs fetch
+
+Cards produced this run: 0 (all items already had cards)
+New prompt files drafted this run: 0
+Collector ran this turn: unknown (SELF_IMPROVE_SKIP_COLLECT not set; collector output not observable from this turn)
+
+Prior run recorded in STATUS_REPORT: "### Self-improvement loop — 2026-04-24T17:00:00Z"
+  inbox processed: 4, cards: 3 new + 1 already-processed
+  All three 20260424T items produced: needs fetch (tweet content required)
+  Recurring pattern: 4 consecutive iMessage X-URL cards, all needs-fetch → iMessage→x_intake auto-routing gap remains open
+
+STATUS: OK (no-op run — all inbox items already processed per idempotency rule)
