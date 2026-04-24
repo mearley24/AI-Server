@@ -38,3 +38,16 @@ Last updated: 2026-04-24
 - Redis password and all secrets live in `.env` (never hardcode in source files)
 - To check service health: `curl http://127.0.0.1:<port>/health`
 - Host service (imessage-server.py) runs outside Docker on the Mac Mini
+
+## Localhost-Locked AI Server Services — 2026-04-24
+
+| Port | Bind | Service | Purpose | Exposure |
+|---:|---|---|---|---|
+| 8103 | 127.0.0.1 | file-watcher / Cortex intake | Local file ingestion and health endpoint | Local only |
+| 8199 | 127.0.0.1 | iMessage bridge | Two-way message bridge health/API | Local only |
+| 8421 | 127.0.0.1 | trading-api | Local trading/analysis API | Local only |
+| 11434 | 127.0.0.1 | Ollama | Local LLM API | Local only |
+| 8088 | 127.0.0.1 | markup-tool | Local markup utility | Local only |
+| 8801 | 127.0.0.1 | vault-pwa | Local vault web app/API | Local only |
+
+Note: `com.ollama` is disabled. `homebrew.mxcl.ollama` is the active safe Ollama launcher.
