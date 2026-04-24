@@ -3287,3 +3287,12 @@ _Implemented by Claude Code on 2026-04-23 (AUTO_APPROVE). Committed via clean `g
 - Evidence: ops/verification/20260424-160905-bluebubbles-cortex-live-webhook.md
 - Verdict: FAIL-no-webhook
 - [FOLLOWUP: bluebubbles-webhook-url-mismatch] — URL shows cortex:8102 (Docker-only hostname); host-side LaunchAgent cannot resolve it. Fix: change to http://127.0.0.1:8102/hooks/bluebubbles then re-run verification.
+
+## BlueBubbles → Cortex Live Webhook Verification — Re-run after URL fix (2026-04-24 UTC, Claude Code)
+- Prompt: .cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md
+- Prior run (FAIL): ops/verification/20260424-160905-bluebubbles-cortex-live-webhook.md
+- Evidence: ops/verification/20260424-161534-bluebubbles-cortex-live-webhook.md
+- Verdict: PASS-webhook-only
+- Fix applied: BlueBubbles Webhook URL changed from http://cortex:8102 to http://127.0.0.1:8102/hooks/bluebubbles
+- [NOTE: multi-delivery] inbound_count=3 for single send (expected multi-event behavior, unconfirmed)
+- [FOLLOWUP: structured-log-visibility] logger.info lines not surfacing in docker logs cortex
