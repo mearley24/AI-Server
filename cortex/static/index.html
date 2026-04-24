@@ -638,6 +638,12 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
         <div id="autonomy-gates"><div class="unavailable">loading</div></div>
       </div>
       <div class="card">
+        <h2>Investigations <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">AUTO_REVIEW gates</span>
+          <button onclick="loadInvestigations()" style="margin-left:auto;font-size:11px;padding:2px 9px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;float:right;">Run</button>
+        </h2>
+        <div id="autonomy-investigations"><div class="unavailable">click Run to investigate AUTO_REVIEW gates</div></div>
+      </div>
+      <div class="card">
         <h2>Recent Verifications</h2>
         <div id="autonomy-verifs"><div class="unavailable">loading</div></div>
       </div>
@@ -1771,6 +1777,51 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
     const data = await fetchJson('/api/autonomy/overview');
     renderAutonomy(data);
     _autonomyLoaded = true;
+  };
+
+  function _confColor(c) {
+    if (c >= 0.7) return 'var(--green)';
+    if (c >= 0.4) return 'var(--yellow)';
+    return 'var(--muted)';
+  }
+
+  function renderInvestigations(data) {
+    const el = $('autonomy-investigations');
+    if (!data || data.error) { el.innerHTML = unavail(data?.error || 'failed'); return; }
+    const invs = data.investigations || [];
+    if (!invs.length) {
+      el.innerHTML = '<div class="small" style="color:var(--green)">No AUTO_REVIEW gates to investigate.</div>';
+      return;
+    }
+    el.innerHTML = invs.map((inv) => {
+      const conf = (inv.confidence * 100).toFixed(0);
+      const confCol = _confColor(inv.confidence);
+      const evidenceSummary = (inv.evidence || []).map((e) =>
+        `<li style="padding:1px 0;"><span style="color:var(--gold-dim);min-width:140px;display:inline-block;">${esc(e.label||e.type)}</span>` +
+        `<span class="small mono" style="color:var(--muted);">${esc(String(e.content??'').slice(0,120))}</span></li>`
+      ).join('');
+      return `<div style="border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:10px;font-weight:700;color:var(--blue);">AUTO_REVIEW</span>
+          <span class="small mono" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(inv.gate_source)}</span>
+          <span style="font-size:11px;font-weight:700;color:${confCol};">${conf}% confidence</span>
+        </div>
+        <div style="font-size:12px;color:var(--text);margin-bottom:4px;">${esc(inv.root_cause_hypothesis)}</div>
+        <div class="small" style="color:var(--muted);margin-bottom:4px;line-height:1.4;">
+          ${esc((inv.gate_excerpt||'').slice(0,120))}
+        </div>
+        ${evidenceSummary ? `<ul style="margin:4px 0 6px;padding:0 0 0 4px;list-style:none;">${evidenceSummary}</ul>` : ''}
+        <div style="font-size:11px;background:var(--surface-2);border-radius:4px;padding:5px 8px;margin-top:4px;color:var(--text);">
+          <span style="color:var(--muted);margin-right:4px;">Proposed fix:</span>${esc(inv.proposed_fix)}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  window.loadInvestigations = async function loadInvestigations() {
+    $('autonomy-investigations').innerHTML = '<div class="small">investigating…</div>';
+    const data = await fetchJson('/api/autonomy/investigations');
+    renderInvestigations(data);
   };
 
 })();

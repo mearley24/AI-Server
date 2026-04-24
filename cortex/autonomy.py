@@ -5,7 +5,8 @@ Provides:
 - VerificationScanner — reads ops/verification/ for recent PASS/FAIL/etc. verdicts
 - HumanGateScanner — finds NEEDS_MATT / [FOLLOWUP] markers across key files
 - AutonomyAssessor — answers 10 autonomy-readiness questions via cheap local checks
-- register_autonomy_routes(app) — mounts GET /api/autonomy/overview on the FastAPI app
+- InvestigationEngine — for each AUTO_REVIEW gate: gathers evidence, produces hypothesis + proposed fix
+- register_autonomy_routes(app) — mounts GET /api/autonomy/overview + /api/autonomy/investigations
 """
 
 from __future__ import annotations
@@ -160,6 +161,20 @@ class AutonomyQuestion:
     label: str
     status: str              # ok / warn / fail / unknown
     detail: str
+
+
+@dataclass
+class Investigation:
+    """Structured investigation report for one AUTO_REVIEW gate."""
+
+    gate_excerpt: str
+    gate_source: str
+    root_cause_hypothesis: str
+    evidence: list[dict[str, Any]]   # [{type, source, content}]
+    proposed_fix: str
+    confidence: float                # 0.0 – 1.0
+    investigated_at: str
+    status: str = "complete"         # complete | partial | no_evidence
 
 
 @dataclass
@@ -585,8 +600,247 @@ class AutonomyAssessor:
 # ── Route registration ────────────────────────────────────────────────────────
 
 
+# ── Investigation engine ──────────────────────────────────────────────────────
+
+_INV_CACHE_TTL = 600  # seconds before re-investigating same gate
+_MAX_LOG_LINES = 50
+_MAX_FILE_BYTES = 32 * 1024   # 32 KB cap on any single evidence piece
+
+# Keyword → (hypothesis_template, evidence_sources, proposed_fix)
+_INVESTIGATION_RULES: list[tuple[re.Pattern, str, list[dict], str]] = [
+    (
+        re.compile(r"backfill|embed", re.I),
+        "Cortex embedding backfill is incomplete or stalled.",
+        [
+            {"type": "db_count",    "label": "embedded rows",      "query": "SELECT COUNT(*) FROM memory_embeddings"},
+            {"type": "db_count",    "label": "total memories",     "query": "SELECT COUNT(*) FROM memories WHERE importance>0"},
+            {"type": "env_flag",    "label": "CORTEX_EMBEDDINGS_ENABLED"},
+            {"type": "file_tail",   "label": "embed backfill log", "path": "data/task_runner/heartbeat.txt"},
+        ],
+        "Run: docker exec cortex python3 /app/scripts/cortex_embed_backfill.py --apply --provider ollama --db /data/cortex/brain.db",
+    ),
+    (
+        re.compile(r"docker.*daemon|daemon.*crash|crash.loop|docker.*stability|docker.*restart", re.I),
+        "Docker Desktop daemon instability — likely memory pressure or keychain-locked rebuild attempts.",
+        [
+            {"type": "docker_ps",   "label": "container health"},
+            {"type": "file_tail",   "label": "watchdog log",       "path": "data/task_runner/bob-watchdog.log"},
+            {"type": "file_stat",   "label": "watchdog heartbeat", "path": "data/task_runner/watchdog_heartbeat.txt"},
+            {"type": "health_url",  "label": "cortex health",      "url": "http://127.0.0.1:8102/health"},
+        ],
+        "Run scripts/docker-recover.sh if daemon is down. Unlock keychain (security unlock-keychain) before --build.",
+    ),
+    (
+        re.compile(r"network.guard|network.*guard|guard.*daemon", re.I),
+        "network-guard daemon may be crash-looping or stale.",
+        [
+            {"type": "file_tail",   "label": "network-guard.log",  "path": "logs/network-guard.log"},
+            {"type": "file_tail",   "label": "network-guard.err",  "path": "logs/network-guard.err"},
+            {"type": "file_stat",   "label": "guard log mtime",    "path": "logs/network-guard.log"},
+        ],
+        "Check launchctl list | grep network-guard; reload plist if stale.",
+    ),
+    (
+        re.compile(r"dropout.watch|network.*dropout|dropout.*network", re.I),
+        "dropout-watch LaunchAgent status unknown.",
+        [
+            {"type": "file_json",   "label": "dropout status",     "path": "data/network_watch/dropout_watch_status.json"},
+            {"type": "file_stat",   "label": "status mtime",       "path": "data/network_watch/dropout_watch_status.json"},
+        ],
+        "Verify launchctl list | grep dropout-watch; re-arm if not running.",
+    ),
+    (
+        re.compile(r"task.runner|task runner|watchdog", re.I),
+        "Task runner or watchdog may be stale or stopped.",
+        [
+            {"type": "file_stat",   "label": "heartbeat mtime",    "path": "data/task_runner/heartbeat.txt"},
+            {"type": "file_tail",   "label": "heartbeat content",  "path": "data/task_runner/heartbeat.txt"},
+            {"type": "file_tail",   "label": "watchdog log",       "path": "data/task_runner/bob-watchdog.log"},
+        ],
+        "Run: launchctl list | grep task-runner; if stopped, launchctl load ~/Library/LaunchAgents/com.symphony.task-runner.plist",
+    ),
+    (
+        re.compile(r"log.*prun|prun.*log|network.guard.err|truncat", re.I),
+        "Log file has not been pruned; disk space may be wasted.",
+        [
+            {"type": "file_stat",   "label": "file size",          "path": "logs/network-guard.err"},
+        ],
+        "Run: cp /dev/null logs/network-guard.err  (safe — guard is healthy, only pre-fix tracebacks remain)",
+    ),
+    (
+        re.compile(r"plist.*launchagent|launchagent.*plist|dropout.*copy|copy.*plist", re.I),
+        "LaunchAgent plist not copied to ~/Library/LaunchAgents/ for standard visibility.",
+        [
+            {"type": "file_stat",   "label": "setup plist",        "path": "setup/launchd/com.symphony.network-dropout-watch.plist"},
+        ],
+        "Run: cp setup/launchd/com.symphony.network-dropout-watch.plist ~/Library/LaunchAgents/",
+    ),
+]
+
+_DEFAULT_HYPOTHESIS = "Gate requires review; no specific pattern matched."
+_DEFAULT_FIX = "Review gate context and determine the appropriate action manually."
+
+
+def _collect_evidence(sources: list[dict], repo: Path) -> list[dict[str, Any]]:
+    """Gather bounded evidence from each source descriptor. Never raises."""
+    results: list[dict[str, Any]] = []
+    for src in sources:
+        kind = src.get("type", "")
+        label = src.get("label", kind)
+        try:
+            if kind == "file_tail":
+                p = repo / src["path"]
+                if p.is_file() and p.stat().st_size <= _MAX_FILE_BYTES * 3:
+                    lines = p.read_text(errors="replace").splitlines()
+                    tail = lines[-_MAX_LOG_LINES:]
+                    results.append({"type": kind, "label": label, "source": str(p),
+                                    "content": "\n".join(tail), "lines": len(tail)})
+                elif p.is_file():
+                    results.append({"type": kind, "label": label, "source": str(p),
+                                    "content": f"(file too large: {p.stat().st_size} bytes — skipped)"})
+                else:
+                    results.append({"type": kind, "label": label, "source": str(p), "content": "file not found"})
+
+            elif kind == "file_stat":
+                p = repo / src["path"]
+                if p.is_file():
+                    st = p.stat()
+                    age_min = (time.time() - st.st_mtime) / 60
+                    results.append({"type": kind, "label": label, "source": str(p),
+                                    "content": f"size={st.st_size}B  age={age_min:.0f}min"})
+                else:
+                    results.append({"type": kind, "label": label, "source": str(p), "content": "not found"})
+
+            elif kind == "file_json":
+                p = repo / src["path"]
+                if p.is_file():
+                    raw = p.read_text(errors="replace")[:_MAX_FILE_BYTES]
+                    try:
+                        parsed = json.loads(raw)
+                        results.append({"type": kind, "label": label, "source": str(p), "content": parsed})
+                    except Exception:
+                        results.append({"type": kind, "label": label, "source": str(p), "content": raw[:300]})
+                else:
+                    results.append({"type": kind, "label": label, "source": str(p), "content": "not found"})
+
+            elif kind == "db_count":
+                conn = sqlite3.connect(str(_CORTEX_DB), timeout=2)
+                row = conn.execute(src["query"]).fetchone()
+                conn.close()
+                results.append({"type": kind, "label": label, "content": int(row[0]) if row else 0})
+
+            elif kind == "env_flag":
+                flag = src["label"]
+                val = os.environ.get(flag, "(not set)")
+                results.append({"type": kind, "label": flag, "content": val})
+
+            elif kind == "docker_ps":
+                import subprocess
+                out = subprocess.run(
+                    ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
+                    capture_output=True, text=True, timeout=5
+                ).stdout.strip()
+                results.append({"type": kind, "label": label, "content": out or "(no output)"})
+
+            elif kind == "health_url":
+                resp = httpx.get(src["url"], timeout=3)
+                body = resp.json() if resp.status_code == 200 else resp.text[:200]
+                results.append({"type": kind, "label": label, "source": src["url"], "content": body})
+
+        except Exception as exc:
+            results.append({"type": kind, "label": label, "content": f"error: {exc!s:.120}"})
+    return results
+
+
+def _derive_confidence(evidence: list[dict]) -> float:
+    """Estimate confidence 0–1 based on how much evidence was gathered."""
+    if not evidence:
+        return 0.1
+    found = sum(1 for e in evidence if "not found" not in str(e.get("content", ""))
+                and "error:" not in str(e.get("content", "")))
+    return min(0.9, 0.3 + 0.15 * found)
+
+
+def investigate_gate(gate: "HumanGate", repo: Path) -> Investigation:
+    """Produce a structured investigation report for one AUTO_REVIEW gate."""
+    text = gate.excerpt + " " + gate.source
+    hypothesis = _DEFAULT_HYPOTHESIS
+    sources: list[dict] = []
+    fix = _DEFAULT_FIX
+
+    for pattern, hyp, srcs, proposed in _INVESTIGATION_RULES:
+        if pattern.search(text):
+            hypothesis = hyp
+            sources = srcs
+            fix = proposed
+            break
+
+    evidence = _collect_evidence(sources, repo)
+    confidence = _derive_confidence(evidence)
+    status = "complete" if evidence else "no_evidence"
+
+    return Investigation(
+        gate_excerpt=gate.excerpt[:200],
+        gate_source=gate.source,
+        root_cause_hypothesis=hypothesis,
+        evidence=evidence,
+        proposed_fix=fix,
+        confidence=confidence,
+        investigated_at=datetime.now(timezone.utc).isoformat(),
+        status=status,
+    )
+
+
+class InvestigationCache:
+    """Thread-safe in-memory cache for investigation results with TTL."""
+
+    def __init__(self, ttl: float = _INV_CACHE_TTL) -> None:
+        self._ttl = ttl
+        self._store: dict[str, tuple[float, Investigation]] = {}
+
+    def _key(self, gate: "HumanGate") -> str:
+        return f"{gate.source}::{gate.excerpt[:80]}"
+
+    def get(self, gate: "HumanGate") -> Investigation | None:
+        key = self._key(gate)
+        entry = self._store.get(key)
+        if entry and (time.time() - entry[0]) < self._ttl:
+            return entry[1]
+        return None
+
+    def put(self, gate: "HumanGate", inv: Investigation) -> None:
+        self._store[self._key(gate)] = (time.time(), inv)
+
+    def all(self) -> list[Investigation]:
+        now = time.time()
+        return [inv for ts, inv in self._store.values() if (now - ts) < self._ttl]
+
+    def clear_stale(self) -> None:
+        now = time.time()
+        self._store = {k: v for k, v in self._store.items() if (now - v[0]) < self._ttl}
+
+
+_investigation_cache = InvestigationCache()
+
+
+async def run_investigations(gates: list["HumanGate"], repo: Path) -> list[Investigation]:
+    """Run investigate_gate for each AUTO_REVIEW gate, using cache."""
+    auto_review = [g for g in gates if g.action_class == "AUTO_REVIEW"]
+    results: list[Investigation] = []
+    loop = asyncio.get_event_loop()
+    for gate in auto_review:
+        cached = _investigation_cache.get(gate)
+        if cached:
+            results.append(cached)
+            continue
+        inv = await loop.run_in_executor(None, investigate_gate, gate, repo)
+        _investigation_cache.put(gate, inv)
+        results.append(inv)
+    return results
+
+
 def register_autonomy_routes(app: FastAPI) -> None:
-    """Mount GET /api/autonomy/overview on the Cortex FastAPI app."""
+    """Mount GET /api/autonomy/overview and GET /api/autonomy/investigations."""
     assessor = AutonomyAssessor()
 
     @app.get("/api/autonomy/overview", tags=["autonomy"])
@@ -595,6 +849,8 @@ def register_autonomy_routes(app: FastAPI) -> None:
         try:
             overview = await assessor.assess()
             data = asdict(overview)
+            # Kick off investigations for AUTO_REVIEW gates (non-blocking — results cached)
+            asyncio.create_task(run_investigations(overview.human_gates, REPO))
             return data
         except Exception as exc:
             logger.error("autonomy_overview_error err=%s", exc)
@@ -602,4 +858,25 @@ def register_autonomy_routes(app: FastAPI) -> None:
                 "error": str(exc),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
                 "overall_status": "fail",
+            }
+
+    @app.get("/api/autonomy/investigations", tags=["autonomy"])
+    async def autonomy_investigations() -> dict[str, Any]:
+        """Return cached investigation reports for AUTO_REVIEW gates."""
+        try:
+            # Also trigger fresh investigations on direct call
+            overview = await assessor.assess()
+            invs = await run_investigations(overview.human_gates, REPO)
+            return {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "count": len(invs),
+                "investigations": [asdict(i) for i in invs],
+            }
+        except Exception as exc:
+            logger.error("autonomy_investigations_error err=%s", exc)
+            return {
+                "error": str(exc),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "count": 0,
+                "investigations": [],
             }

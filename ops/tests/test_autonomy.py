@@ -382,3 +382,87 @@ def test_autonomy_assessor_returns_ten_questions():
     assert "can_receive_messages" in keys
     assert "what_is_blocked_on_matt" in keys
     assert "what_is_bob_doing_next" in keys
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  8. InvestigationEngine
+# ══════════════════════════════════════════════════════════════════════════════
+
+import time as _time
+
+from cortex.autonomy import (
+    investigate_gate,
+    InvestigationCache,
+    Investigation,
+    run_investigations,
+)
+
+
+def test_investigate_gate_returns_investigation():
+    """investigate_gate must return a valid Investigation for any gate."""
+    gate = HumanGate(
+        source="STATUS_REPORT.md",
+        marker="FOLLOWUP",
+        excerpt="- [FOLLOWUP] Complete historical embedding backfill",
+        action_class="AUTO_REVIEW",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        inv = investigate_gate(gate, repo)
+    assert isinstance(inv, Investigation)
+    assert "embed" in inv.root_cause_hypothesis.lower() or inv.root_cause_hypothesis
+    assert isinstance(inv.evidence, list)
+    assert 0.0 <= inv.confidence <= 1.0
+    assert inv.proposed_fix
+    assert inv.investigated_at
+
+
+def test_investigate_gate_matches_backfill_rule():
+    """backfill keyword should match the embedding rule."""
+    gate = HumanGate(
+        source="STATUS_REPORT.md", marker="FOLLOWUP",
+        excerpt="complete historical embedding backfill", action_class="AUTO_REVIEW",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        inv = investigate_gate(gate, Path(tmp))
+    assert "embed" in inv.root_cause_hypothesis.lower()
+    assert "backfill" in inv.proposed_fix.lower() or "embed" in inv.proposed_fix.lower()
+
+
+def test_investigate_gate_unknown_gate_uses_defaults():
+    """Unknown gate text should return default hypothesis without crashing."""
+    gate = HumanGate(
+        source="STATUS_REPORT.md", marker="FOLLOWUP",
+        excerpt="some completely unknown gate text", action_class="AUTO_REVIEW",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        inv = investigate_gate(gate, Path(tmp))
+    assert inv.root_cause_hypothesis  # not empty
+    assert inv.status in ("complete", "no_evidence", "partial")
+
+
+def test_investigation_cache_ttl():
+    """InvestigationCache returns None after TTL expires."""
+    cache = InvestigationCache(ttl=0.01)  # 10ms TTL
+    gate = HumanGate(source="s", marker="FOLLOWUP", excerpt="test", action_class="AUTO_REVIEW")
+    inv = Investigation(
+        gate_excerpt="test", gate_source="s", root_cause_hypothesis="h",
+        evidence=[], proposed_fix="fix", confidence=0.5,
+        investigated_at="now", status="complete",
+    )
+    cache.put(gate, inv)
+    assert cache.get(gate) is not None
+    _time.sleep(0.02)
+    assert cache.get(gate) is None
+
+
+def test_run_investigations_skips_non_auto_review():
+    """run_investigations must only process AUTO_REVIEW gates."""
+    gates = [
+        HumanGate(source="s", marker="NEEDS_MATT", excerpt="fund wallet", action_class="WAITING_EXTERNAL"),
+        HumanGate(source="s", marker="FOLLOWUP", excerpt="complete backfill", action_class="AUTO_REVIEW"),
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        results = asyncio.run(run_investigations(gates, Path(tmp)))
+    assert len(results) == 1
+    assert results[0].gate_excerpt == "complete backfill"
