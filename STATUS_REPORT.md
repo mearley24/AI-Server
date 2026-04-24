@@ -26,6 +26,16 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## BlueBubbles → Cortex Live Webhook Verification (2026-04-24 UTC, Claude Code)
+
+- Prompt: `.cursor/prompts/2026-04-24-cline-bluebubbles-cortex-live-webhook-verify.md`
+- Evidence: `ops/verification/20260424-154222-bluebubbles-cortex-live-webhook.md`
+- Verdict: **`FAIL-no-webhook`** — root cause: `private_api: false`
+- Webhook URL correct (`http://127.0.0.1:8102/hooks/bluebubbles`), Cortex handler ready, but BlueBubbles Private API is disabled so incoming iMessages are never forwarded as webhook events
+- `[FOLLOWUP: bluebubbles-private-api-disabled]` — enable Private API in BlueBubbles Settings UI → Private API → Enable; follow https://docs.bluebubbles.app/server/private-api-setup. Once enabled, zero code changes needed — pipeline is ready.
+
+---
+
 ## Bob Docker/Memory Optimization Applied (2026-04-24 09:25 MDT, Claude Code)
 
 APPROVE ALL executed. Changes applied:
