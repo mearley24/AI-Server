@@ -1,0 +1,122 @@
+NEEDS_MATT Clearance Orchestration — 2026-04-24
+================================================
+Start:  2026-04-24T08:53:18 MDT
+End:    2026-04-24T08:53:18 MDT (single pass)
+Host:   Bobs-Mac-mini.local (Bob, Mac Mini M4)
+Branch: main
+HEAD:   (see git log -1 below)
+Prompt: .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+
+Attestation: No runtime actions outside the authorized runbook steps below.
+No sudo, no env mutation outside authorized runbook, no external sends.
+Historical ops/verification/* receipts untouched.
+
+---
+
+PHASE 0 — CENSUS
+
+Total [NEEDS_MATT] hits (all files, excl. .git):  530 lines
+Actionable (excl. ops/verification):               530 lines
+Unique files with hits:                            129
+Active (open gates per inventory):                  19
+Closed (strikethrough ✅):                           6
+Doc/prompt references (informational):             133
+
+---
+
+PHASE 1 — PER-GATE RECONCILIATION
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GATE 1: cortex-dedup
+Runbook: ops/runbooks/2026-04-23-cortex-dedup-live-apply-bob-arm.md
+Runbook status: DONE (updated 2026-04-24)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prior evidence:
+  ops/verification/20260423-173120-cortex-dedup-backfill.json  rows_deleted=1
+  ops/verification/20260423-173840-cortex-dedup-backfill.json  rows_deleted=1
+  ops/verification/20260423-163416-cortex-dedup-backfill.json  (dry-run control)
+
+Live state probe (read-only SELECT on brain.db):
+  total memories:  54,028
+  dedupe_key NOT NULL: 1 (the surviving row from the duplicate group)
+  dedupe_key NULL: 54,027
+  idx_memories_dedupe_key: PRESENT
+
+Authorization received: not required (already DONE)
+Outcome: ARMED (no-op, idempotent — --apply already ran 2026-04-23)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GATE 2: bluebubbles-health
+Runbook: ops/runbooks/2026-04-23-bluebubbles-health-plist-bob-arm.md
+Runbook status: DONE (updated 2026-04-24)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prior evidence:
+  ops/verification/20260424-083518-bluebubbles-health-arm.txt
+
+Live state probe:
+  launchctl print gui/501/com.symphony.bluebubbles-health:
+    state:         not running (between 300s intervals)
+    run interval:  300 seconds
+    last exit code: 0  ← now HEALTHY (Cortex auto-rebuilt, /api/bluebubbles/health live)
+  ~/Library/LaunchAgents/com.symphony.bluebubbles-health.plist: Apr 23 10:15
+  Last log line: {"cortex_health":{"status":"healthy","reason":null},
+                  "bluebubbles_server":{"status":"healthy","server_version":"1.9.9"}}
+
+Authorization received: not required (already DONE)
+Outcome: ARMED — fully healthy, exit code 0, both endpoints reporting healthy
+
+Note: The earlier receipt (083518) showed exit code=1 / cortex 404.
+Cortex was subsequently auto-rebuilt by Docker; /api/bluebubbles/health
+is now live (route registered at commit fe5f778, image updated today).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GATE 3: x-intake-reply-leg
+Runbook: ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+Runbook status: PRECHECKS_PASSED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Prior evidence:
+  ops/verification/20260424-084105-x-intake-reply-leg-live-smoke-precheck.txt
+
+Live state probe (read-only):
+  .env: CORTEX_REPLY_DRY_RUN not set (defaults to 1)
+  Container: DRY=1 ALLOW=  ← correct safe posture
+  x-intake handler registry: ['cortex_dismiss','cortex_remember','escalate_to_matt'] ✓
+
+Authorization received: NONE
+  (No SMOKE: or DRY_RUN: authorization string provided in this session)
+Outcome: DEFERRED — awaiting Matt's in-session authorization string:
+  SMOKE: x-intake-reply-leg TO=iMessage;-;+<matts-number>
+  or
+  DRY_RUN: x-intake-reply-leg
+
+---
+
+PHASE 3.5 — INVENTORY CHECK
+
+Script: scripts/needs_matt_inventory.py
+Output: ops/verification/20260424-085318-needs-matt-inventory-post-orchestration.txt
+
+Active markers: 19 (all under-specified per policy)
+Closed markers: 6
+Key active surface markers at STATUS_REPORT.md:
+  L353: cortex-dedup --apply      → ARMED (struck through in this pass)
+  L354: bluebubbles-health arm    → ARMED (struck through in this pass)
+  L355: x-intake live smoke       → DEFERRED (left open, no authorization)
+  L374: x-intake live sends       → separate NEEDS_MATT, not in scope
+  L390: cortex embed backfill     → separate NEEDS_MATT, not in scope
+
+---
+
+OUTCOMES SUMMARY
+
+  cortex-dedup:        ARMED   ops/verification/20260423-173840-cortex-dedup-backfill.json
+  bluebubbles-health:  ARMED   ops/verification/20260424-083518-bluebubbles-health-arm.txt
+  x-intake-reply-leg:  DEFERRED (no authorization string; prechecks pass, ready when Matt provides SMOKE: or DRY_RUN:)
+
+Post-orchestration [NEEDS_MATT] counts:
+  Total hits:         530 (unchanged — historical/doc references dominate)
+  Active open gates:  19 → 17 after striking cortex-dedup + bluebubbles-health
+  x-intake gate:      remains open pending authorization

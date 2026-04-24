@@ -26,6 +26,27 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## NEEDS_MATT Clearance Orchestration (2026-04-24 08:53 MDT, Claude Code)
+
+Three-gate reconciliation pass against committed evidence.
+
+| Gate | Outcome | Receipt |
+|------|---------|---------|
+| cortex-dedup `--apply` | ~~NEEDS_MATT~~ ✅ **ARMED** — 1 dup removed 2026-04-23, index present | `20260423-173840-cortex-dedup-backfill.json` |
+| bluebubbles-health plist | ~~NEEDS_MATT~~ ✅ **ARMED** — exit=0, both endpoints healthy | `20260424-083518-bluebubbles-health-arm.txt` |
+| x-intake reply-leg smoke | **DEFERRED** — prechecks pass; no SMOKE:/DRY_RUN: authorization | `20260424-084105-x-intake-reply-leg-live-smoke-precheck.txt` |
+
+Post-orchestration: 17 active open gates (from 19), 530 total hits (historical/doc references dominate).
+
+- [NEEDS_MATT] x-intake reply-leg live smoke — to activate, provide in-session authorization string:
+  `SMOKE: x-intake-reply-leg TO=iMessage;-;+<your-number>`
+  or `DRY_RUN: x-intake-reply-leg`
+
+Orchestration receipt: `ops/verification/20260424-085318-needs-matt-clearance-orchestration.txt`
+Inventory receipt: `ops/verification/20260424-085318-needs-matt-inventory-post-orchestration.txt`
+
+---
+
 ## BlueBubbles Health — LaunchAgent Armed on Bob (2026-04-24 08:35 MDT, Claude Code)
 
 `com.symphony.bluebubbles-health` LaunchAgent confirmed ARMED. Was installed
@@ -350,9 +371,9 @@ land first") is now satisfied, so it is cleared to run.
 
 - [FOLLOWUP] Run `.cursor/prompts/2026-04-23-cline-cortex-embeddings.md` — author+test only; live `--apply` on `brain.db` stays `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]`.
 - [FOLLOWUP] `docker compose up -d --build cortex` on Bob — unblocks three items in one command: exposes `GET /api/bluebubbles/health` (clears `cortex_http_404`); lets attachment-enrichment run against live webhooks; permits V6 live-DB inspection of `idx_memories_dedupe_key`.
-- [NEEDS_MATT] Cortex dedup live `--apply` (after backup + rebuild).
-- [NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist` via `cp` + `launchctl load`.
-- [NEEDS_MATT] X-intake reply-leg live smoke — `ALLOWED_TEST_RECIPIENTS`, `CORTEX_REPLY_DRY_RUN=0`, rebuild, one reply to Matt's own number, then restore `=1`.
+- ~~[NEEDS_MATT] Cortex dedup live `--apply` (after backup + rebuild).~~ ✅ Done 2026-04-23 — 1 duplicate removed; `idx_memories_dedupe_key` present. Receipt: `ops/verification/20260423-173840-cortex-dedup-backfill.json`
+- ~~[NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist` via `cp` + `launchctl load`.~~ ✅ Done 2026-04-23 10:15 — run interval 300s, `last exit code=0`, both endpoints healthy. Receipt: `ops/verification/20260424-083518-bluebubbles-health-arm.txt`
+- [NEEDS_MATT] X-intake reply-leg live smoke — `ALLOWED_TEST_RECIPIENTS`, `CORTEX_REPLY_DRY_RUN=0`, rebuild, one reply to Matt's own number, then restore `=1`. (Prechecks passed 2026-04-24; awaiting in-session `SMOKE:` or `DRY_RUN:` authorization. Receipt: `ops/verification/20260424-084105-x-intake-reply-leg-live-smoke-precheck.txt`)
 
 Verification: `ops/verification/20260423-164850-five-prompt-reconciliation.md`
 

@@ -1,0 +1,65 @@
+NEEDS_MATT inventory
+============================================================
+Scanned repo: /Users/bob/AI-Server
+Timestamp:    2026-04-24T08:53:26
+
+Counts:
+  total hits                 : 164
+  active (open gates)        : 19
+    of which stale           : 0
+    of which under-specified : 19
+  strikethrough (closed)     : 6
+  runbook-header             : 6
+  doc-reference              : 68
+  prompt-reference           : 65
+  historical (ops/verification): 0
+
+Under-specified active markers (missing required metadata):
+  STATUS_REPORT.md:321  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Ordered arm sequence (do in order):
+  STATUS_REPORT.md:353  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Cortex dedup live `--apply` (after backup + rebuild).
+  STATUS_REPORT.md:354  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Arm `com.symphony.bluebubbles-health.plist` via `cp` + `launchctl load`.
+  STATUS_REPORT.md:355  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] X-intake reply-leg live smoke — `ALLOWED_TEST_RECIPIENTS`, `CORTEX_REPLY_DRY_RUN=0`, rebuild, one reply to Matt's own number, then restore `=1`.
+  STATUS_REPORT.md:374  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Enable live sends:
+  STATUS_REPORT.md:390  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Live backfill (after Docker up):
+  STATUS_REPORT.md:410  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Live backfill against `brain.db` (run after `docker compose up -d --build cortex`):
+  STATUS_REPORT.md:448  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Arm the LaunchAgent:
+  STATUS_REPORT.md:622  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Still the same two blockers from the Phase-1 section below,
+  STATUS_REPORT.md:687  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] `launchctl bootstrap gui/$(id -u) /Users/bob/AI-Server/setup/launchd/com.symphony.network-dropout-watch.plist`
+  STATUS_REPORT.md:688  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Fix `tools/network_guard_daemon.py` `security_utils` import, then reload network-guard plist.
+  STATUS_REPORT.md:717  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Arm dropout-watch LaunchAgent (no sudo required):
+  STATUS_REPORT.md:721  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Fix network-guard crash — resolve `security_utils` import in
+  STATUS_REPORT.md:760  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Decide when to `sudo launchctl bootstrap` the new
+  STATUS_REPORT.md:873  missing: owner, opened, review-by, evidence, next
+    **- [NEEDS_MATT] Deploy to Bob (one sudo command):**
+  STATUS_REPORT.md:933  missing: owner, opened, review-by, evidence, next
+    **- [NEEDS_MATT] Deploy to Bob (one sudo command):**
+  STATUS_REPORT.md:1140  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Fund wallet `0xa791E3090312981A1E18ed93238e480a03E7C0d2` with USDC once DNS fixed.
+  STATUS_REPORT.md:1141  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] Send ~0.5 MATIC/POL to same wallet for gas.
+  STATUS_REPORT.md:1808  missing: owner, opened, review-by, evidence, next
+    - [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code change needed — bot re-
+
+Next actions:
+  1. Open docs/needs-matt-policy.md for the metadata schema.
+  2. For each stale hit: either close with evidence (wrap in
+     ~~...~~ + ✅ + date + evidence path) or extend review-by
+     with a recorded reason.
+  3. For each under-specified hit: add Owner/Opened/Review-by/
+     Evidence/Next lines below the bullet.
+
+See docs/needs-matt-policy.md for the full policy and lifecycle.
