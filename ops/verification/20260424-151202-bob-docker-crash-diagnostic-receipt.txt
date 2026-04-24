@@ -1,0 +1,32 @@
+Bob Docker Crash Diagnostic — Receipt
+======================================
+Timestamp: 2026-04-24T15:12:02Z (09:12:02 MDT)
+Report:    ops/verification/20260424-151202-bob-docker-crash-diagnostic.md
+Report lines: (see below after commit)
+
+Classification: A (Memory pressure — host-level) PRIMARY
+  + C (Disk pressure) SECONDARY
+  + E (Docker Desktop crash — daemon-level) SECONDARY
+  + F (Watchdog false recovery — mild) SECONDARY
+
+STATUS_REPORT.md lines before: 3205
+
+Key numbers:
+  Host free RAM:          126 MB (critical)
+  memory_pressure pages:  8,572 (< 10,000 threshold — near-stop)
+  Ollama RAM:             5,710 MB (qwen3:8b + nomic-embed-text loaded)
+  Docker VM allocation:   3,830 MB
+  Disk /Data:             95% full (11 GB free)
+  Docker reclaimable:     25.2 GB (images + build cache)
+  Watchdog recoveries:    2 in last 2h
+
+Approval strings that unblock follow-up prompts:
+  APPROVE: docker-desktop-resources  → raise VM memory to 6 GB
+  APPROVE: compose-memory-limits     → tighten per-service mem_limits
+  APPROVE: watchdog-throttle         → bump Docker probe cooldown to 300s
+  (no approval needed for: Docker Desktop reinstall, ollama stop, docker prune)
+
+Stop conditions: none fired (near-fire on memory_pressure pages)
+External sends: none
+Env secrets printed: none
+Mutations: none (read-only diagnostic)

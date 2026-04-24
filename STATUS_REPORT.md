@@ -26,6 +26,22 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+## Bob Docker Crash Diagnostic (2026-04-24 09:12 MDT, Claude Code)
+
+Classification: **A (host memory) + C (disk) + E (Docker Desktop daemon) + F (watchdog churn)**
+
+Root cause: Ollama holds 5.7 GB (qwen3:8b + nomic-embed-text loaded); Docker VM = 3.83 GB; host has 126 MB free RAM, disk at 95%. Docker Desktop running from translocated path (zombie-daemon root cause).
+
+- [FOLLOWUP] Reinstall Docker Desktop to `/Applications/` (fixes zombie-daemon — user action, no script)
+- [FOLLOWUP] `ollama stop` + `OLLAMA_KEEP_ALIVE=0` — frees 5.7 GB immediately
+- [FOLLOWUP] `docker system prune -a` — reclaims 25 GB disk (separate reviewed prompt)
+- [FOLLOWUP] Raise Docker VM to 6 GB after Ollama quieted (`APPROVE: docker-desktop-resources`)
+- [FOLLOWUP] Watchdog cooldown 180→300s (`APPROVE: watchdog-throttle`)
+
+Report: `ops/verification/20260424-151202-bob-docker-crash-diagnostic.md`
+
+---
+
 ## X-Intake Reply-Leg — DRY_RUN_ONLY Smoke on Bob (2026-04-24 09:09 MDT, Claude Code)
 
 Full listener→dispatcher→cortex→ACK chain verified via synthetic Redis event.
