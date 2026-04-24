@@ -1,0 +1,14 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260424-120628
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
+
+=== claude output ===
+All 4 inbox items were already processed (archive + cards exist from earlier runs today). This run produced no new cards.
+
+**Summary:**
+- Inbox: 4 items examined, 4 already processed (idempotent)
+- Cards: 0 new — all 4 are `needs fetch` (iMessage-forwarded X links whose tweet content is unknown)
+- Verification artifact: `ops/verification/self-improve-20260424T180711Z.txt`
+- STATUS_REPORT: appended `### Self-improvement loop — 20260424T180711Z`
+
+The recurring pattern across all 4 cards is the same: X links arriving via iMessage need an iMessage→x_intake auto-routing bridge to avoid manual re-queuing. That bridge proposal is already noted in the existing cards; content can't be scored further until the tweets are fetched.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-120628-run-prompt.txt
