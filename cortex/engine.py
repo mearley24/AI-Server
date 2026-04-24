@@ -382,66 +382,203 @@ async def run_improvement() -> dict[str, Any]:
     }
 
 
-# ── Client intelligence (read-only) ───────────────────────────────────────────
+# ── Client intelligence ────────────────────────────────────────────────────────
+# is_reviewed values:
+#   -1 → not yet reviewed (dry-run proposal)
+#    0 → rejected (not a client/work thread)
+#    1 → approved (confirmed client thread, eligible for profile extraction)
 
-_CLIENT_INTEL_DB = Path(os.environ.get("CLIENT_INTEL_DATA_DIR", "/data/client_intel")) / "message_thread_index.sqlite"
+_CLIENT_INTEL_DB = Path(
+    os.environ.get("CLIENT_INTEL_DATA_DIR", "/data/client_intel")
+) / "message_thread_index.sqlite"
+
+# Host-side fallback (for direct cortex API calls without Docker bind mount)
+if not _CLIENT_INTEL_DB.parent.is_dir():
+    _CLIENT_INTEL_DB = Path("/Users/bob/AI-Server/data/client_intel") / "message_thread_index.sqlite"
+
+
+def _client_intel_db_rw() -> sqlite3.Connection | None:
+    """Open thread index for read-write. Returns None if DB missing."""
+    if not _CLIENT_INTEL_DB.is_file():
+        return None
+    conn = sqlite3.connect(str(_CLIENT_INTEL_DB))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _client_intel_db_ro() -> sqlite3.Connection | None:
+    """Open thread index for read-only. Returns None if DB missing."""
+    if not _CLIENT_INTEL_DB.is_file():
+        return None
+    conn = sqlite3.connect(f"file:{_CLIENT_INTEL_DB}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _mask_handle(handle: str) -> str:
+    return handle[:3] + "***" + handle[-2:] if len(handle) > 6 else "***"
+
+
+def _row_to_thread(r: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "thread_id": r["thread_id"],
+        "contact_masked": _mask_handle(r["contact_handle"]),
+        "message_count": r["message_count"],
+        "sample_count": r["sample_count"],
+        "date_first": r["date_first"],
+        "date_last": r["date_last"],
+        "category": r["category"],
+        "work_confidence": r["work_confidence"],
+        "reason_codes": json.loads(r["reason_codes"] or "[]"),
+        "is_reviewed": r["is_reviewed"],
+        "review_status": {-1: "pending", 0: "rejected", 1: "approved"}.get(
+            r["is_reviewed"], "unknown"
+        ),
+    }
 
 
 @app.get("/api/client-intel/threads", tags=["client-intel"])
 async def client_intel_threads(
     category: str = "work",
     min_confidence: float = 0.5,
+    reviewed: str = "all",
     limit: int = 50,
 ) -> dict[str, Any]:
-    """Read-only view of classified message threads from the client intel index.
+    """List classified message threads.
 
-    category — filter by work / personal / mixed / unknown / all
-    min_confidence — minimum work_confidence threshold (0.0–1.0)
-    limit — max rows to return (capped at 200)
+    category     — work / personal / mixed / unknown / all
+    min_confidence — 0.0–1.0
+    reviewed     — all / false (pending, is_reviewed=-1) / true (approved, is_reviewed=1) / rejected
+    limit        — capped at 200
     """
     limit = min(limit, 200)
-    db_path = _CLIENT_INTEL_DB
-    if not db_path.is_file():
+    conn = _client_intel_db_ro()
+    if conn is None:
         return {
             "status": "unavailable",
             "message": "Thread index not yet built. Run: python3 scripts/client_intel_backfill.py --dry-run --limit 100",
-            "threads": [],
-            "count": 0,
+            "threads": [], "count": 0,
         }
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
-        where = "WHERE work_confidence >= ?"
+        clauses: list[str] = ["work_confidence >= ?"]
         params: list[Any] = [min_confidence]
         if category != "all":
-            where += " AND category = ?"
+            clauses.append("category = ?")
             params.append(category)
+        if reviewed == "false":
+            clauses.append("is_reviewed = -1")
+        elif reviewed == "true":
+            clauses.append("is_reviewed = 1")
+        elif reviewed == "rejected":
+            clauses.append("is_reviewed = 0")
+        where = "WHERE " + " AND ".join(clauses)
         rows = conn.execute(
-            f"SELECT thread_id, contact_handle, message_count, date_first, date_last, "
+            f"SELECT thread_id, contact_handle, message_count, sample_count, date_first, date_last, "
             f"category, work_confidence, reason_codes, is_reviewed, created_at "
             f"FROM threads {where} ORDER BY work_confidence DESC, date_last DESC LIMIT ?",
             params + [limit],
         ).fetchall()
-        conn.close()
-        threads = []
-        for r in rows:
-            handle = r["contact_handle"]
-            masked = handle[:3] + "***" + handle[-2:] if len(handle) > 6 else "***"
-            threads.append({
-                "thread_id": r["thread_id"],
-                "contact_masked": masked,
-                "message_count": r["message_count"],
-                "date_first": r["date_first"],
-                "date_last": r["date_last"],
-                "category": r["category"],
-                "work_confidence": r["work_confidence"],
-                "reason_codes": json.loads(r["reason_codes"] or "[]"),
-                "is_reviewed": r["is_reviewed"],
-            })
+        threads = [_row_to_thread(r) for r in rows]
         return {"status": "ok", "count": len(threads), "threads": threads}
     except Exception as exc:
         logger.warning("client_intel_threads_error err=%s", exc)
         return {"status": "error", "error": str(exc)[:200], "threads": [], "count": 0}
+    finally:
+        conn.close()
+
+
+@app.post("/api/client-intel/approve-thread", tags=["client-intel"])
+async def client_intel_approve_thread(body: dict[str, Any]) -> dict[str, Any]:
+    """Approve or reject a classified thread for client profile extraction.
+
+    Body: { "thread_id": "...", "approved": true|false }
+
+    approved=true  → is_reviewed=1 (confirmed client thread)
+    approved=false → is_reviewed=0 (rejected, excluded from future processing)
+
+    All approvals are explicit — nothing is auto-approved.
+    """
+    thread_id = (body or {}).get("thread_id", "").strip()
+    approved = (body or {}).get("approved")
+    if not thread_id:
+        return {"status": "error", "error": "thread_id required"}
+    if approved is None:
+        return {"status": "error", "error": "approved (true|false) required"}
+
+    conn = _client_intel_db_rw()
+    if conn is None:
+        return {"status": "error", "error": "Thread index not found"}
+    try:
+        row = conn.execute(
+            "SELECT thread_id, contact_handle, category, work_confidence, is_reviewed "
+            "FROM threads WHERE thread_id = ?", (thread_id,)
+        ).fetchone()
+        if row is None:
+            return {"status": "error", "error": f"thread_id '{thread_id}' not found"}
+
+        new_status = 1 if approved else 0
+        label = "approved" if approved else "rejected"
+        conn.execute(
+            "UPDATE threads SET is_reviewed = ? WHERE thread_id = ?",
+            (new_status, thread_id),
+        )
+        conn.commit()
+
+        logger.info(
+            "client_intel_thread_reviewed",
+            thread_id=thread_id,
+            contact=_mask_handle(row["contact_handle"]),
+            action=label,
+            category=row["category"],
+            confidence=row["work_confidence"],
+        )
+        return {
+            "status": "ok",
+            "thread_id": thread_id,
+            "action": label,
+            "contact_masked": _mask_handle(row["contact_handle"]),
+            "category": row["category"],
+            "work_confidence": row["work_confidence"],
+            "message": f"Thread {label}. {'Eligible for profile extraction.' if approved else 'Excluded from future processing.'}",
+        }
+    except Exception as exc:
+        logger.warning("client_intel_approve_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200]}
+    finally:
+        conn.close()
+
+
+@app.get("/api/client-intel/summary", tags=["client-intel"])
+async def client_intel_summary() -> dict[str, Any]:
+    """Review progress summary — counts by category and review status."""
+    conn = _client_intel_db_ro()
+    if conn is None:
+        return {"status": "unavailable", "counts": {}}
+    try:
+        rows = conn.execute(
+            "SELECT category, is_reviewed, COUNT(*) as n FROM threads GROUP BY category, is_reviewed"
+        ).fetchall()
+        counts: dict[str, Any] = {}
+        for r in rows:
+            cat = r["category"]
+            rev = {-1: "pending", 0: "rejected", 1: "approved"}.get(r["is_reviewed"], "unknown")
+            counts.setdefault(cat, {})[rev] = r["n"]
+        pending_work = conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE category='work' AND is_reviewed=-1"
+        ).fetchone()[0]
+        approved = conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE is_reviewed=1"
+        ).fetchone()[0]
+        return {
+            "status": "ok",
+            "pending_work_review": pending_work,
+            "approved_total": approved,
+            "counts_by_category": counts,
+        }
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+    finally:
+        conn.close()
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
