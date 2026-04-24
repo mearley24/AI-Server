@@ -535,7 +535,7 @@ services:
       - TRANSCRIPT_DIR=/data/transcripts
       - CORTEX_URL=http://cortex:8102
       - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY:-}
-      - CORTEX_REPLY_DRY_RUN=1
+      - CORTEX_REPLY_DRY_RUN=${CORTEX_REPLY_DRY_RUN:-1}
       - ALLOWED_TEST_RECIPIENTS=${ALLOWED_TEST_RECIPIENTS:-}
     depends_on:
       redis:
