@@ -1055,6 +1055,25 @@ async def organize_bookmarks(request: dict):
 
 # ── Action Queue API ─────────────────────────────────────────────────────────
 
+@app.get("/reply-receipts")
+async def list_reply_receipts(limit: int = 50):
+    """Return the last *limit* reply-action receipts from reply_receipts.ndjson.
+
+    Each entry records the outcome of a send_ack call: dry-run, live success,
+    live failure, allowlist block, or fallback-path used.
+    Recipient is redacted to last-4 digits + SHA-256 hash prefix.
+    """
+    try:
+        from reply_actions.ack import get_receipts
+        receipts = get_receipts(limit=limit)
+        return {
+            "count": len(receipts),
+            "receipts": receipts,
+        }
+    except Exception as exc:
+        return {"count": 0, "receipts": [], "error": str(exc)[:200]}
+
+
 @app.get("/actions")
 async def list_actions(status: str = "pending", limit: int = 20):
     """List queued actions."""

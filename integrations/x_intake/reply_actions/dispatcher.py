@@ -183,7 +183,10 @@ class Dispatcher:
             ack_text = "Action failed — Bob logged it."
 
         thread_guid = ctx.context.get("thread_guid", "")
-        await send_ack(thread_guid, ack_text, dry_run=dry_run)
+        await send_ack(
+            thread_guid, ack_text, dry_run=dry_run,
+            action_id=ctx.action_id, action_type=handler_name or "",
+        )
 
 
 def _ack_text(handler_name: str, result: Dict[str, Any]) -> str:
