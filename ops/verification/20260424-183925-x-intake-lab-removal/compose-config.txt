@@ -1,0 +1,20 @@
+calendar-agent
+clawwork
+client-portal
+cortex
+cortex-autobuilder
+dtools-bridge
+email-monitor
+intel-feeds
+notification-hub
+openclaw
+polymarket-bot
+proposals
+redis
+rsshub
+voice-receptionist
+vpn
+x-alpha-collector
+x-intake
+
+(Full resolved config omitted — contains env vars. Services list above confirms parse success and x-intake-lab absent.)

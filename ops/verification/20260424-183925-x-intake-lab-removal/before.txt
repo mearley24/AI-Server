@@ -1,0 +1,11 @@
+Precheck outputs — 20260424-183925
+
+1. git status: clean on docker-compose.yml, PORTS.md, STATUS_REPORT.md
+2. x-intake-lab NOT in docker ps (not running)
+3. No stopped x-intake-lab container found
+4. Volume ai-server_x-intake-lab-data exists — size 3.842 kB, LINKS 0 (effectively empty)
+5. x-intake-lab lines in docker-compose.yml: 558, 560, 564, 580, 733
+   x-intake-lab line in PORTS.md: 21
+6. No other service references x-intake-lab as depends_on/links/env — safe to remove
+
+All prechecks PASS. Operator approved: APPROVE APPLY

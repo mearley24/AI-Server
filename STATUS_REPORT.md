@@ -26,6 +26,21 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+### Self-improvement loop — 2026-04-24T16:50:00Z
+
+inbox processed: 4, cards: 0 new (4 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 4 needs-fetch)
+
+All 4 inbox items were previously archived and carded in an earlier run — this was a fully idempotent pass. No new cards or prompts were drafted. All items are raw X URLs from iMessage with no message body; tweet content must be fetched before relevance can be scored.
+
+- `20260422T111725Z-…-ihtesham2005-…-card.md` — needs fetch (X URL, tweet body unknown)
+- `20260424T163001Z-…-jameszmsun-…-card.md` — needs fetch (X URL, tweet body unknown)
+- `20260424T163001Z-…-nousresearch-…-card.md` — needs fetch (X URL, tweet body unknown)
+- `20260424T163001Z-…-openswarm-…-card.md` — needs fetch (X URL, tweet body unknown)
+
+Verification: `ops/verification/self-improve-20260424T165000Z.txt`
+
+---
+
 ## Port & API Surface Audit — prompt armed (2026-04-24 UTC, Claude Code)
 
 Parent-agent docs-only pass. Matt asked (a) whether a recent full audit
@@ -3520,3 +3535,7 @@ BlueBubbles disable decision re-confirmed against audit evidence:
   every `[NEEDS_MATT]` / `[FOLLOWUP]` that still depends on the webhook.
 
 Reconciliation receipt: `ops/verification/20260424-port-api-surface-audit-reconciliation.md`.
+
+- ~~[FOLLOWUP] Remove x-intake-lab from docker-compose.yml (port 8103, not running)~~ ✅
+  Removed in commit (pending) on 2026-04-24. Volume ai-server_x-intake-lab-data (3.842 kB, empty) retained — separate approval needed to drop it.
+  Receipt: ops/verification/20260424-183925-x-intake-lab-removal/
