@@ -1,0 +1,91 @@
+CORTEX AUTONOMY CONTROL PLANE V1 — VERIFICATION
+================================================
+Timestamp : 2026-04-24 13:46:20 MDT
+Prompt    : cortex-autonomy-control-plane-v1
+Agent     : Claude Sonnet 4.6 (1M context) via Claude Code
+
+VERDICT: PASS
+
+=== Files Changed ===
+cortex/autonomy.py              NEW  — full autonomy control plane module
+cortex/engine.py                MOD  — register_autonomy_routes added at startup
+cortex/static/index.html        MOD  — Autonomy tab added (nav + panel + JS)
+ops/tests/test_autonomy.py      NEW  — 6 focused unit tests
+
+=== Endpoint ===
+GET /api/autonomy/overview
+Returns JSON: { generated_at, overall_status, human_gates[], recent_verifications[], questions[] }
+Tags: autonomy
+
+=== Dashboard Path ===
+http://localhost:8102/dashboard  →  "Autonomy" tab (5th tab in nav)
+Direct link: http://localhost:8102/dashboard#autonomy
+
+=== Module Structure (cortex/autonomy.py) ===
+Data models    : Verification, HumanGate, AutonomyQuestion, AutonomyOverview (dataclasses)
+VerificationScanner
+  - Scans ops/verification/, up to 50 most-recent files
+  - Bounded: first 40 lines, skip >500 KB files
+  - Parses: path, timestamp, topic, verdict (PASS/FAIL/PARTIAL/GAP/UNKNOWN/ARMED/CLOSED/NEEDS_MATT), summary
+HumanGateScanner
+  - Scans STATUS_REPORT.md (last 200 lines)
+  - Scans ops/runbooks/ and .cursor/prompts/ filenames for gate keywords
+  - Markers: NEEDS_MATT, [FOLLOWUP], ARMED, blocked, waiting, confirmation required
+  - Returns up to 20 gates, most-recent first
+AutonomyAssessor
+  - Answers 10 autonomy questions via cheap local checks (httpx, fs, env)
+  - Returns AutonomyOverview with overall_status (ok/warn/degraded)
+register_autonomy_routes(app)
+  - Mounts GET /api/autonomy/overview on FastAPI app
+
+=== 10 Autonomy Questions ===
+1. is_bob_alive              — GET /health response check
+2. can_receive_messages      — /api/bluebubbles/health inbound_count
+3. can_write_memory          — /health memories.total > 0
+4. can_use_embeddings        — CORTEX_EMBEDDINGS_ENABLED env check
+5. can_execute_signed_tasks  — data/task_runner/heartbeat.txt mtime
+6. can_send_outbound         — /api/bluebubbles/health last_ping_ok_at
+7. what_is_blocked_on_matt   — HumanGateScanner NEEDS_MATT count
+8. what_failed_recently      — VerificationScanner FAIL/GAP verdicts
+9. what_got_verified_recently — VerificationScanner PASS/CLOSED last 5
+10. what_is_bob_doing_next   — ops/work_queue/pending/ file count
+
+=== Tests Run ===
+python3 -m pytest ops/tests/test_autonomy.py -v
+
+test_verification_scanner_pass_verdict          PASSED
+test_verification_scanner_fail_verdict          PASSED
+test_human_gate_scanner_finds_needs_matt        PASSED
+test_autonomy_overview_endpoint_returns_required_keys  PASSED
+test_verification_scanner_skips_oversized_files PASSED
+test_autonomy_assessor_returns_ten_questions    PASSED
+
+6 passed in 0.11s
+
+Full suite (149 tests): 147 passed, 1 failed, 1 error
+Pre-existing failures (not caused by this change):
+  FAILED test_plist_has_label[com.symphony.self-improvement.plist]  — invalid XML in plist
+  ERROR  test_git_helper_returns_on_timeout                         — missing pytest fixture
+
+=== Known Limitations ===
+- HTTP checks use localhost; when cortex is not running (e.g. during testing),
+  is_bob_alive / can_receive_messages / can_send_outbound will show "fail/warn" —
+  this is expected behavior (they should degrade gracefully).
+- BlueBubbles health check falls back to "warn" rather than "fail" when the
+  endpoint is unreachable, because BlueBubbles absence does not prevent all
+  autonomy. NEEDS_MATT gate marker detection in STATUS_REPORT.md scans only
+  the last 200 lines — earlier history is not surfaced (intentional).
+- No persistent caching; each /api/autonomy/overview call re-scans disk.
+  For a high-traffic dashboard this is acceptable (files are small, reads fast).
+- Embeddings check is env-only; no live Ollama ping in this version.
+
+=== Next Recommended Slice (v2) ===
+- Add caching with TTL (e.g. 60s) to avoid repeated disk scans on rapid refreshes
+- Add live Ollama connectivity probe for embeddings question
+- Wire a CronCreate job to POST a summarized autonomy snapshot to /remember
+  daily, so Bob accumulates trend data on his own autonomy health over time
+- Add "last_autonomy_ok_at" timestamp to /health endpoint
+- Add per-question historical sparklines to the dashboard panel
+
+Root cause: N/A (new feature)
+Fix applied: Implemented cortex/autonomy.py with scanners, assessor, and route.
