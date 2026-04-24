@@ -41,6 +41,26 @@ APPROVED =  1
 
 STATUS_LABEL = {PENDING: "pending", REJECTED: "rejected", APPROVED: "approved"}
 
+VALID_RELATIONSHIP_TYPES = frozenset({
+    "client", "vendor", "builder", "trade_partner",
+    "internal_team", "personal_work_related", "unknown",
+})
+
+RELATIONSHIP_CHOICES = {
+    "c": "client",
+    "v": "vendor",
+    "b": "builder",
+    "t": "trade_partner",
+    "i": "internal_team",
+    "p": "personal_work_related",
+    "u": "unknown",
+}
+RELATIONSHIP_MENU = (
+    "  [c] client          [v] vendor       [b] builder\n"
+    "  [t] trade_partner   [i] internal     [p] personal_work_related\n"
+    "  [u] unknown (default)"
+)
+
 
 # ── Masking ───────────────────────────────────────────────────────────────────
 
@@ -170,6 +190,31 @@ def set_reviewed(conn: sqlite3.Connection, thread_id: str, status: int) -> None:
     conn.commit()
 
 
+def set_relationship(conn: sqlite3.Connection, thread_id: str, rel_type: str) -> None:
+    conn.execute("UPDATE threads SET relationship_type=? WHERE thread_id=?", (rel_type, thread_id))
+    conn.commit()
+
+
+def prompt_relationship(conn: sqlite3.Connection, thread_id: str) -> str:
+    """Prompt operator to select a relationship type after approving. Returns chosen type."""
+    print(f"\n       Select relationship type:")
+    print(RELATIONSHIP_MENU)
+    while True:
+        try:
+            choice = input("       > ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            rel = "unknown"
+            set_relationship(conn, thread_id, rel)
+            print(f"       → relationship_type = {rel}")
+            return rel
+        rel = RELATIONSHIP_CHOICES.get(choice, "")
+        if rel:
+            set_relationship(conn, thread_id, rel)
+            print(f"       → relationship_type = {rel}\n")
+            return rel
+        print(f"       ? Enter one of: {', '.join(RELATIONSHIP_CHOICES)}")
+
+
 # ── Display ───────────────────────────────────────────────────────────────────
 
 def print_summary(conn: sqlite3.Connection) -> None:
@@ -279,7 +324,8 @@ def run_review(
 
             if choice in ("y", "yes"):
                 set_reviewed(conn, r["thread_id"], APPROVED)
-                print("       ✓ Approved — eligible for profile extraction.\n")
+                print("       ✓ Approved — eligible for profile extraction.")
+                prompt_relationship(conn, r["thread_id"])
                 approved_count += 1
                 break
             elif choice in ("n", "no"):

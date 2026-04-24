@@ -129,22 +129,30 @@ def init_schemas() -> None:
     with sqlite3.connect(THREAD_INDEX_DB) as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS threads (
-                thread_id       TEXT PRIMARY KEY,
-                chat_guid       TEXT NOT NULL,
-                contact_handle  TEXT NOT NULL,
-                message_count   INTEGER DEFAULT 0,
-                sample_count    INTEGER DEFAULT 0,
-                date_first      TEXT,
-                date_last       TEXT,
-                category        TEXT DEFAULT 'unknown',
-                work_confidence REAL DEFAULT 0.0,
-                reason_codes    TEXT DEFAULT '[]',
-                is_reviewed     INTEGER DEFAULT 0,
-                created_at      TEXT NOT NULL
+                thread_id         TEXT PRIMARY KEY,
+                chat_guid         TEXT NOT NULL,
+                contact_handle    TEXT NOT NULL,
+                message_count     INTEGER DEFAULT 0,
+                sample_count      INTEGER DEFAULT 0,
+                date_first        TEXT,
+                date_last         TEXT,
+                category          TEXT DEFAULT 'unknown',
+                work_confidence   REAL DEFAULT 0.0,
+                reason_codes      TEXT DEFAULT '[]',
+                is_reviewed       INTEGER DEFAULT 0,
+                relationship_type TEXT DEFAULT 'unknown',
+                created_at        TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_threads_category ON threads(category);
             CREATE INDEX IF NOT EXISTS idx_threads_confidence ON threads(work_confidence DESC);
+            -- Migration: add relationship_type to existing DBs
+            -- SQLite ignores duplicate column errors with IF NOT EXISTS unavailable for columns,
+            -- so we use a pragma check pattern instead.
         """)
+        # Add column to existing tables that predate this schema version
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
+        if "relationship_type" not in existing:
+            conn.execute("ALTER TABLE threads ADD COLUMN relationship_type TEXT DEFAULT 'unknown'")
 
     with sqlite3.connect(PROFILES_DB) as conn:
         conn.executescript("""

@@ -419,7 +419,14 @@ def _mask_handle(handle: str) -> str:
     return handle[:3] + "***" + handle[-2:] if len(handle) > 6 else "***"
 
 
+VALID_RELATIONSHIP_TYPES = frozenset({
+    "client", "vendor", "builder", "trade_partner",
+    "internal_team", "personal_work_related", "unknown",
+})
+
+
 def _row_to_thread(r: sqlite3.Row) -> dict[str, Any]:
+    keys = {d[0] for d in r.description} if hasattr(r, "description") else set(r.keys())
     return {
         "thread_id": r["thread_id"],
         "contact_masked": _mask_handle(r["contact_handle"]),
@@ -434,6 +441,7 @@ def _row_to_thread(r: sqlite3.Row) -> dict[str, Any]:
         "review_status": {-1: "pending", 0: "rejected", 1: "approved"}.get(
             r["is_reviewed"], "unknown"
         ),
+        "relationship_type": r["relationship_type"] if "relationship_type" in keys else "unknown",
     }
 
 
@@ -474,7 +482,8 @@ async def client_intel_threads(
         where = "WHERE " + " AND ".join(clauses)
         rows = conn.execute(
             f"SELECT thread_id, contact_handle, message_count, sample_count, date_first, date_last, "
-            f"category, work_confidence, reason_codes, is_reviewed, created_at "
+            f"category, work_confidence, reason_codes, is_reviewed, "
+            f"coalesce(relationship_type,'unknown') as relationship_type, created_at "
             f"FROM threads {where} ORDER BY work_confidence DESC, date_last DESC LIMIT ?",
             params + [limit],
         ).fetchall()
@@ -510,7 +519,8 @@ async def client_intel_approve_thread(body: dict[str, Any]) -> dict[str, Any]:
         return {"status": "error", "error": "Thread index not found"}
     try:
         row = conn.execute(
-            "SELECT thread_id, contact_handle, category, work_confidence, is_reviewed "
+            "SELECT thread_id, contact_handle, category, work_confidence, is_reviewed, "
+            "coalesce(relationship_type,'unknown') as relationship_type "
             "FROM threads WHERE thread_id = ?", (thread_id,)
         ).fetchone()
         if row is None:
@@ -539,10 +549,73 @@ async def client_intel_approve_thread(body: dict[str, Any]) -> dict[str, Any]:
             "contact_masked": _mask_handle(row["contact_handle"]),
             "category": row["category"],
             "work_confidence": row["work_confidence"],
+            "relationship_type": row["relationship_type"],
             "message": f"Thread {label}. {'Eligible for profile extraction.' if approved else 'Excluded from future processing.'}",
         }
     except Exception as exc:
         logger.warning("client_intel_approve_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200]}
+    finally:
+        conn.close()
+
+
+@app.post("/api/client-intel/set-relationship", tags=["client-intel"])
+async def client_intel_set_relationship(body: dict[str, Any]) -> dict[str, Any]:
+    """Set relationship_type for an approved thread.
+
+    Body: { "thread_id": "...", "relationship_type": "client" }
+
+    Valid types: client | vendor | builder | trade_partner |
+                 internal_team | personal_work_related | unknown
+
+    Only applies to approved threads (is_reviewed=1).
+    Does not change approval status.
+    """
+    thread_id = (body or {}).get("thread_id", "").strip()
+    rel_type  = (body or {}).get("relationship_type", "").strip().lower()
+    if not thread_id:
+        return {"status": "error", "error": "thread_id required"}
+    if rel_type not in VALID_RELATIONSHIP_TYPES:
+        return {
+            "status": "error",
+            "error": f"Invalid relationship_type '{rel_type}'. "
+                     f"Valid: {sorted(VALID_RELATIONSHIP_TYPES)}",
+        }
+    conn = _client_intel_db_rw()
+    if conn is None:
+        return {"status": "error", "error": "Thread index not found"}
+    try:
+        row = conn.execute(
+            "SELECT thread_id, contact_handle, is_reviewed FROM threads WHERE thread_id=?",
+            (thread_id,),
+        ).fetchone()
+        if row is None:
+            return {"status": "error", "error": f"thread_id '{thread_id}' not found"}
+        if row["is_reviewed"] != 1:
+            return {
+                "status": "error",
+                "error": "relationship_type can only be set on approved threads (is_reviewed=1). "
+                         "Approve the thread first via /api/client-intel/approve-thread.",
+            }
+        conn.execute(
+            "UPDATE threads SET relationship_type=? WHERE thread_id=?",
+            (rel_type, thread_id),
+        )
+        conn.commit()
+        logger.info(
+            "client_intel_relationship_set",
+            thread_id=thread_id,
+            contact=_mask_handle(row["contact_handle"]),
+            relationship_type=rel_type,
+        )
+        return {
+            "status": "ok",
+            "thread_id": thread_id,
+            "relationship_type": rel_type,
+            "contact_masked": _mask_handle(row["contact_handle"]),
+        }
+    except Exception as exc:
+        logger.warning("client_intel_set_relationship_error err=%s", exc)
         return {"status": "error", "error": str(exc)[:200]}
     finally:
         conn.close()
