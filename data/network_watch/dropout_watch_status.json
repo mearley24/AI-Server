@@ -1,14 +1,29 @@
 {
   "success": true,
-  "running": false,
-  "pid": 24740,
-  "updated_at": "2026-04-04T18:56:51.720644",
-  "health": "lan_or_router_down",
+  "running": true,
+  "pid": 52527,
+  "updated_at": "2026-04-23T13:57:32.735001",
+  "health": "healthy",
   "targets": {
     "gateway": "192.168.1.1",
     "wan": "1.1.1.1",
     "control4": "",
     "sonos": ""
   },
-  "stopped": true
+  "sample": {
+    "gateway": {
+      "host": "192.168.1.1",
+      "ok": true,
+      "latency_ms": 0.618,
+      "return_code": 0,
+      "duration_ms": 9.24
+    },
+    "wan": {
+      "host": "1.1.1.1",
+      "ok": true,
+      "latency_ms": 13.241,
+      "return_code": 0,
+      "duration_ms": 20.89
+    }
+  }
 }

@@ -1,0 +1,213 @@
+=== task-runner preflight ===
+started_at: 2026-04-23T16:10:06-06:00
+finished_at: 2026-04-23T16:10:06-06:00
+ok: False
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged: 0
+
+UNSAFE CONFLICTS (not auto-resolved — must be handled manually):
+  ! UU data/task_runner/bob-watchdog-state/docker
+  ! UU data/task_runner/bob_watchdog_heartbeat.txt
+  ! UU data/task_runner/watchdog_heartbeat.txt
+  ! UU ops/alerts/bob_watchdog.alerts
+
+commit: none (nothing to commit or push deferred)
+
+notes:
+  * commit rc=128: U	data/task_runner/bob-watchdog-state/docker
+U	data/task_runner/bob_watchdog_heartbeat.txt
+U	data/task_runner/watchdog_heartbeat.txt
+U	ops/alerts/bob_watchdog.alerts
+error: Committing is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+
+
+--- raw git status --porcelain (post-preflight) ---
+MM data/network_watch/dropout_watch_status.json
+UU data/task_runner/bob-watchdog-state/docker
+ M data/task_runner/bob-watchdog-state/x_intake
+UU data/task_runner/bob_watchdog_heartbeat.txt
+M  data/task_runner/heartbeat.txt
+UU data/task_runner/watchdog_heartbeat.txt
+UU ops/alerts/bob_watchdog.alerts
+A  ops/verification/20260423-135735-preflight.txt
+A  ops/verification/20260423-135835-preflight.txt
+A  ops/verification/20260423-135935-preflight.txt
+A  ops/verification/20260423-140036-preflight.txt
+A  ops/verification/20260423-140125-preflight.txt
+A  ops/verification/20260423-140225-preflight.txt
+A  ops/verification/20260423-140255-preflight.txt
+A  ops/verification/20260423-140355-preflight.txt
+A  ops/verification/20260423-140425-preflight.txt
+A  ops/verification/20260423-140525-preflight.txt
+A  ops/verification/20260423-140555-preflight.txt
+A  ops/verification/20260423-140656-preflight.txt
+A  ops/verification/20260423-140725-preflight.txt
+A  ops/verification/20260423-140826-preflight.txt
+A  ops/verification/20260423-140926-preflight.txt
+A  ops/verification/20260423-141026-preflight.txt
+A  ops/verification/20260423-141127-preflight.txt
+A  ops/verification/20260423-141227-preflight.txt
+A  ops/verification/20260423-141327-preflight.txt
+A  ops/verification/20260423-141428-preflight.txt
+A  ops/verification/20260423-141456-preflight.txt
+A  ops/verification/20260423-141556-preflight.txt
+A  ops/verification/20260423-141626-preflight.txt
+A  ops/verification/20260423-141727-preflight.txt
+A  ops/verification/20260423-141756-preflight.txt
+A  ops/verification/20260423-141857-preflight.txt
+A  ops/verification/20260423-141957-preflight.txt
+A  ops/verification/20260423-142057-preflight.txt
+A  ops/verification/20260423-142158-preflight.txt
+A  ops/verification/20260423-142258-preflight.txt
+A  ops/verification/20260423-142359-preflight.txt
+A  ops/verification/20260423-142459-preflight.txt
+A  ops/verification/20260423-142527-preflight.txt
+A  ops/verification/20260423-142627-preflight.txt
+A  ops/verification/20260423-142657-preflight.txt
+A  ops/verification/20260423-142757-preflight.txt
+A  ops/verification/20260423-142827-preflight.txt
+A  ops/verification/20260423-142928-preflight.txt
+A  ops/verification/20260423-143028-preflight.txt
+A  ops/verification/20260423-143128-preflight.txt
+A  ops/verification/20260423-143229-preflight.txt
+A  ops/verification/20260423-143329-preflight.txt
+A  ops/verification/20260423-143429-preflight.txt
+A  ops/verification/20260423-143529-preflight.txt
+A  ops/verification/20260423-143558-preflight.txt
+A  ops/verification/20260423-143658-preflight.txt
+A  ops/verification/20260423-143728-preflight.txt
+A  ops/verification/20260423-143828-preflight.txt
+A  ops/verification/20260423-143858-preflight.txt
+A  ops/verification/20260423-143958-preflight.txt
+A  ops/verification/20260423-144059-preflight.txt
+A  ops/verification/20260423-144159-preflight.txt
+A  ops/verification/20260423-144259-preflight.txt
+A  ops/verification/20260423-144359-preflight.txt
+A  ops/verification/20260423-144500-preflight.txt
+A  ops/verification/20260423-144600-preflight.txt
+A  ops/verification/20260423-144628-preflight.txt
+A  ops/verification/20260423-144729-preflight.txt
+A  ops/verification/20260423-144759-preflight.txt
+A  ops/verification/20260423-144859-preflight.txt
+A  ops/verification/20260423-144929-preflight.txt
+A  ops/verification/20260423-145029-preflight.txt
+A  ops/verification/20260423-145129-preflight.txt
+A  ops/verification/20260423-145230-preflight.txt
+A  ops/verification/20260423-145330-preflight.txt
+A  ops/verification/20260423-145430-preflight.txt
+A  ops/verification/20260423-145531-preflight.txt
+A  ops/verification/20260423-145631-preflight.txt
+A  ops/verification/20260423-145659-preflight.txt
+A  ops/verification/20260423-145800-preflight.txt
+A  ops/verification/20260423-145829-preflight.txt
+A  ops/verification/20260423-145930-preflight.txt
+A  ops/verification/20260423-150000-preflight.txt
+A  ops/verification/20260423-150100-preflight.txt
+A  ops/verification/20260423-150200-preflight.txt
+A  ops/verification/20260423-150301-preflight.txt
+A  ops/verification/20260423-150401-preflight.txt
+A  ops/verification/20260423-150502-preflight.txt
+A  ops/verification/20260423-150602-preflight.txt
+A  ops/verification/20260423-150702-preflight.txt
+A  ops/verification/20260423-150730-preflight.txt
+A  ops/verification/20260423-150831-preflight.txt
+A  ops/verification/20260423-150900-preflight.txt
+A  ops/verification/20260423-151001-preflight.txt
+A  ops/verification/20260423-151030-preflight.txt
+A  ops/verification/20260423-151131-preflight.txt
+A  ops/verification/20260423-151231-preflight.txt
+A  ops/verification/20260423-151332-preflight.txt
+A  ops/verification/20260423-151432-preflight.txt
+A  ops/verification/20260423-151532-preflight.txt
+A  ops/verification/20260423-151633-preflight.txt
+A  ops/verification/20260423-151733-preflight.txt
+A  ops/verification/20260423-151801-preflight.txt
+A  ops/verification/20260423-151901-preflight.txt
+A  ops/verification/20260423-151931-preflight.txt
+A  ops/verification/20260423-152031-preflight.txt
+A  ops/verification/20260423-152101-preflight.txt
+A  ops/verification/20260423-152202-preflight.txt
+A  ops/verification/20260423-152302-preflight.txt
+A  ops/verification/20260423-152402-preflight.txt
+A  ops/verification/20260423-152502-preflight.txt
+A  ops/verification/20260423-152603-preflight.txt
+A  ops/verification/20260423-152703-preflight.txt
+A  ops/verification/20260423-152803-preflight.txt
+A  ops/verification/20260423-152832-preflight.txt
+A  ops/verification/20260423-152932-preflight.txt
+A  ops/verification/20260423-153002-preflight.txt
+A  ops/verification/20260423-153102-preflight.txt
+A  ops/verification/20260423-153132-preflight.txt
+A  ops/verification/20260423-153232-preflight.txt
+A  ops/verification/20260423-153333-preflight.txt
+A  ops/verification/20260423-153433-preflight.txt
+A  ops/verification/20260423-153533-preflight.txt
+A  ops/verification/20260423-153634-preflight.txt
+A  ops/verification/20260423-153734-preflight.txt
+A  ops/verification/20260423-153834-preflight.txt
+A  ops/verification/20260423-153903-preflight.txt
+A  ops/verification/20260423-154003-preflight.txt
+A  ops/verification/20260423-154033-preflight.txt
+A  ops/verification/20260423-154133-preflight.txt
+A  ops/verification/20260423-154203-preflight.txt
+A  ops/verification/20260423-154303-preflight.txt
+A  ops/verification/20260423-154404-preflight.txt
+A  ops/verification/20260423-154504-preflight.txt
+A  ops/verification/20260423-154604-preflight.txt
+A  ops/verification/20260423-154704-preflight.txt
+A  ops/verification/20260423-154805-preflight.txt
+A  ops/verification/20260423-154905-preflight.txt
+A  ops/verification/20260423-154933-preflight.txt
+A  ops/verification/20260423-155034-preflight.txt
+A  ops/verification/20260423-155104-preflight.txt
+A  ops/verification/20260423-155204-preflight.txt
+A  ops/verification/20260423-155234-preflight.txt
+A  ops/verification/20260423-155334-preflight.txt
+A  ops/verification/20260423-155434-preflight.txt
+A  ops/verification/20260423-155535-preflight.txt
+A  ops/verification/20260423-155635-preflight.txt
+A  ops/verification/20260423-155735-preflight.txt
+A  ops/verification/20260423-155836-preflight.txt
+A  ops/verification/20260423-155936-preflight.txt
+A  ops/verification/20260423-160004-preflight.txt
+A  ops/verification/20260423-160105-preflight.txt
+A  ops/verification/20260423-160134-preflight.txt
+A  ops/verification/20260423-160235-preflight.txt
+A  ops/verification/20260423-160304-preflight.txt
+A  ops/verification/20260423-160405-preflight.txt
+?? ops/verification/20260423-160505-preflight.txt
+?? ops/verification/20260423-160605-preflight.txt
+?? ops/verification/20260423-160705-preflight.txt
+?? ops/verification/20260423-160806-preflight.txt
+?? ops/verification/20260423-160906-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": false,
+  "commit_sha": "",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [],
+  "finished_at": "2026-04-23T16:10:06-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [
+    "commit rc=128: U\tdata/task_runner/bob-watchdog-state/docker\nU\tdata/task_runner/bob_watchdog_heartbeat.txt\nU\tdata/task_runner/watchdog_heartbeat.txt\nU\tops/alerts/bob_watchdog.alerts\nerror: Committing is not possible because you have unmerged files.\nhint: Fix them up in the work tree, and then use 'git add/rm <file>'\nhint: as appropriate to mark resolution and make a commit.\nfatal: Exiting because of an unresolved conflict.\n"
+  ],
+  "ok": false,
+  "report_path": "",
+  "started_at": "2026-04-23T16:10:06-06:00",
+  "unsafe_conflicts": [
+    "UU data/task_runner/bob-watchdog-state/docker",
+    "UU data/task_runner/bob_watchdog_heartbeat.txt",
+    "UU data/task_runner/watchdog_heartbeat.txt",
+    "UU ops/alerts/bob_watchdog.alerts"
+  ]
+}
