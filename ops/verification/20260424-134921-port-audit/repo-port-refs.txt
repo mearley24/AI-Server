@@ -1,0 +1,501 @@
+=== PORT REFERENCES IN REPO ===
+./BOB_DEPLOY_GUIDE.md:120:curl localhost:8430/health
+./BOB_DEPLOY_GUIDE.md:123:curl localhost:8430/status
+./BOB_DEPLOY_GUIDE.md:166:curl localhost:8430/positions
+./BOB_DEPLOY_GUIDE.md:169:curl localhost:8430/pnl
+./BOB_DEPLOY_GUIDE.md:172:curl localhost:8430/positions?platform=kalshi
+./BOB_DEPLOY_GUIDE.md:173:curl localhost:8430/positions?platform=crypto
+./BOB_DEPLOY_GUIDE.md:226:| `curl localhost:8430/health` | Health check |
+./BOB_DEPLOY_GUIDE.md:227:| `curl localhost:8430/status` | Platform + strategy status |
+./BOB_DEPLOY_GUIDE.md:228:| `curl localhost:8430/positions` | Open positions |
+./BOB_DEPLOY_GUIDE.md:229:| `curl localhost:8430/pnl` | Profit & loss |
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:72:    private var localhostFallbackURL: String { "http://127.0.0.1:8420" }
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:192:        // Derive Ollama URL from base URL (same host, port 11434)
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:196:            .components(separatedBy: ":").first ?? "localhost"
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:197:        return "http://\(host):11434"
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:232:            .components(separatedBy: ":").first ?? "localhost"
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:233:        return "http://\(host):1234"
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:241:            .components(separatedBy: ":").first ?? "localhost"
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:250:            .components(separatedBy: ":").first ?? "localhost"
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:302:                // LAN/Tailscale health checks can be slower than localhost.
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:2335:            localhostFallbackURL,
+./ios-app/SymphonyOps/SymphonyOps/APIClient.swift:2337:        if trimmed.contains("localhost") || trimmed.contains("127.0.0.1") {
+Binary file ./ios-app/SymphonyOps/SymphonyOps/Assets.xcassets/AppIcon.appiconset/AppIcon.png matches
+./ios-app/SymphonyOps/SymphonyOps/ContentView.swift:3071:                    ActionRow(title: "Fix Trading API (:8421)", icon: "bolt.horizontal.circle.fill") {
+./ios-app/SymphonyOps/SymphonyOps/ContentView.swift:4065:                    Text("If URL is localhost/127.0.0.1 and unreachable, app auto-falls back to Tailscale host.")
+./ios-app/SymphonyOps/SymphonyOps/ContentView.swift:4145:                        serverURL = "http://127.0.0.1:8420"
+./ios-app/SymphonyOps/SymphonyOps/Info.plist:64:			<key>127.0.0.1</key>
+./ios-app/SymphonyOps/SymphonyOps/Info.plist:91:			<key>localhost</key>
+./ios-app/README.md:8:- **SymphonyProjects**: projects-focused app (`Projects` + `Settings`)
+./ios-app/README.md:9:- **SymphonySales**: sales-focused app (`Sales` + `Settings`)
+./ios-app/README.md:10:- **SymphonyInstall**: install-focused app (`Install` + `Settings`)
+./ios-app/README.md:11:- **SymphonyOpsField**: ops-focused app (`Ops` + `Settings`)
+./ios-app/README.md:26:pip install fastapi uvicorn
+./ios-app/README.md:30:API runs at `http://localhost:8420`
+./ios-app/README.md:76:- **Local**: Use `http://localhost:8420` (Simulator only)
+./ios-app/README.md:77:- **Tailscale**: Use your Mac's Tailscale hostname like `http://bob-mac-mini:8420`
+./ios-app/SymphonyTrading/README.md:13:- Default base URL: `http://bobs-mac-mini:8421`
+./ios-app/SymphonyTrading/SymphonyTrading/APIClient.swift:21:        UserDefaults.standard.string(forKey: "trading_api_base_url") ?? "http://bobs-mac-mini:8421"
+Binary file ./ios-app/SymphonyTrading/SymphonyTrading/Assets.xcassets/AppIcon.appiconset/AppIcon.png matches
+./ios-app/SymphonyMarkup/SymphonyMarkup/ContentView.swift:138:                            draftURL = "http://localhost:8091"
+./ios-app/SymphonyMarkup/SymphonyMarkup/ContentView.swift:286:        if host == "localhost" || host == "127.0.0.1" || host == "::1" { return false }
+./.cursor/rules/infrastructure.mdc:17:├── Bob the Conductor          (Node.js, port 3000)
+./.cursor/rules/infrastructure.mdc:20:├── Ollama                     (port 11434, localhost only)
+./.cursor/rules/infrastructure.mdc:26:- Ollama must NEVER be exposed on a public interface — bind to `127.0.0.1:11434` only.
+./.cursor/rules/infrastructure.mdc:27:- Bob's Express server listens on `0.0.0.0:3000` but is reverse-proxied behind Nginx with TLS.
+./.cursor/rules/infrastructure.mdc:28:- Tailscale MagicDNS is used for inter-node communication (e.g., `bob.tail1234.ts.net`).
+./.cursor/rules/project.mdc:32:- **JavaScript**: `'use strict'`; CommonJS modules; 2-space indent; single quotes.
+./.cursor/rules/project.mdc:33:- **Python**: PEP 8; type hints where practical; docstrings on public functions.
+./.cursor/rules/project.mdc:34:- **Shell scripts**: `#!/usr/bin/env bash`; `set -euo pipefail`; comment every non-obvious step.
+./.cursor/prompts/close-the-loop-part2.md:3:**Prereq:** Redis reachable (`redis-cli -h 127.0.0.1 -p 6379 ping` → `PONG`).
+./.cursor/prompts/close-the-loop-part2.md:41:redis-cli -h 127.0.0.1 PING
+./.cursor/prompts/close-the-loop-part2.md:43:curl -sS "http://127.0.0.1:8099/intelligence/events-log?limit=5"
+./.cursor/prompts/cline-prompt-K-x-intake-bot-bridge.md:278:Add handlers inside the `async for message in pubsub.listen():` loop, after the existing `elif channel == "polymarket:volume_alerts":` block:
+./.cursor/prompts/fix-kraken-avellaneda-mm.md:18:**Fix**: In `polymarket-bot/src/main.py` around line 339, change:
+./.cursor/prompts/fix-kraken-avellaneda-mm.md:43:**Fix**: In `polymarket-bot/strategies/crypto/avellaneda_market_maker.py`, in the `start()` method, add exchange connection before existing logic:
+./.cursor/prompts/fix-xintake-emailmonitor-april5.md:214:curl -s http://127.0.0.1:8101/health
+./.cursor/prompts/fix-xintake-emailmonitor-april5.md:216:curl -s -X POST http://127.0.0.1:8101/analyze \
+./.cursor/prompts/fix-xintake-emailmonitor-april5.md:218:  -d '{"url": "https://x.com/elonmusk/status/1234567890"}' | python3 -m json.tool
+./.cursor/prompts/fix-xintake-emailmonitor-april5.md:401:curl -s -X POST http://127.0.0.1:8101/analyze \
+./.cursor/prompts/symphony-mega-prompt.md:449:curl -s http://localhost:8098/api/wallet 2>/dev/null | head -3 || echo "MC wallet endpoint not responding yet"
+./.cursor/prompts/cline-prompt-Y-notes-cortex-ingest.md:158:   - POST to http://localhost:8102/remember with the full note body
+./.cursor/prompts/cline-prompt-Y-notes-cortex-ingest.md:188:c) Query Cortex: curl http://localhost:8102/health to verify memories grew
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:43:1. **Core logic**: Monitor active markets via Gamma API for 24h price change. When a market moves >30¢ in <12 hours on volume <1,000 shares → fade candidate. Buy the opposite side. Target: reversion to 50% of the move.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:45:2. **Entry filters**:
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:52:3. **Exit rules**:
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:57:4. **Validation**: Cross-reference copytrade data — if multiple high-quality wallets (>70% WR) entered same direction, skip (real movement). Check orderbook depth — spread >5¢ → skip (illiquid).
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:73:1. **Edge**: Near-certain markets misprice the losing side at 3-8¢. Buy cheap side, hold through resolution. 20:1 payoff. ~5% win rate is profitable.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:75:2. **Scanner**: Run every 5 minutes (`TICK_INTERVAL_SECONDS = 300`). Fetch markets resolving within 1-3 hours. Min volume $10,000.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:77:3. **Cheap side detection**: One side ≤8¢ (`MAX_ENTRY_PRICE = 0.08`). Min 100 shares available at ask.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:79:4. **LLM validation**: Ask gpt-4o-mini "is the expensive side virtually certain?" — 5-second timeout. Cache per condition_id. Default to approved if LLM unavailable.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:81:5. **Constants**: `POSITION_SIZE_USD = 3.00`, `MAX_POSITIONS = 20`, `MAX_TOTAL_EXPOSURE = 100.00`.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:83:6. **Safety guards**: Position count limit, exposure cap, bankroll check.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:85:7. **Exit**: Hold through resolution — no active exit. Detect resolution via `market["closed"]`, compute PNL, track `ScalpStats`.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:87:8. **Tracking**: Persist stats to Redis `signals:presolution_scalp:stats` and history to `signals:presolution_scalp:history`.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:89:9. **Registration**: Add to `STRATEGY_ALLOCATIONS` with `presolution_scalp: 0.15`. Adjust weather_trader down to 0.35.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:91:10. **`PresolutionPosition` dataclass**: See spec for exact fields.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:124:4. **Integration**:
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:198:6. **Market data snapshots**: Save hourly snapshot of all active markets to `polymarket-bot/data/snapshots/`. Retain 30 days.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:212:2. **Docker network checks**:
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:220:4. **Mission Control integration**: Publish network status to Redis `system:network` every check.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:230:   - Configure `OLLAMA_HOST=0.0.0.0:11434`
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:239:3. **Integration**: Replace OpenAI calls where possible:
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:244:4. **Embeddings**: Use `nomic-embed-text` on Maestro for all vector ops. ChromaDB points to Maestro's embedding endpoint.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:246:5. **Monitoring**: Maestro health in Mission Control, daily cost savings report, alert if offline >10 min.
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:252:- **Build order within this prompt**: Auto-6 → Auto-7 → Auto-11 → Auto-2 → Auto-1 → Auto-20 → Auto-14 → Auto-15
+./.cursor/prompts/wave3-4-trading-strategies-analytics.md:255:- **Test each strategy imports cleanly**: `python -c "from strategies.mean_reversion import MeanReversion; print('OK')"`
+./.cursor/prompts/cline-prompt-Z-dashboard-fix.md:4:Fix every tile in the Cortex dashboard (`cortex/dashboard.py` + `cortex/static/index.html`) so they all display correct, live data. The dashboard is served at `:8102/dashboard`.
+./.cursor/prompts/cline-prompt-Z-dashboard-fix.md:170:Then verify each tile at `http://127.0.0.1:8102/dashboard`:
+./.cursor/prompts/perplexity-computer-ai-server-status.md:9:You are helping **prioritize, verify, and finish** work on **Symphony AI-Server**: Docker (OpenClaw, polymarket-bot, Mission Control, Redis, VPN, email-monitor, etc.), the **orchestrator tick**, **Redis / events**, and **Mission Control** UI. Treat paths in this repo as source of truth.
+./.cursor/prompts/perplexity-computer-ai-server-status.md:78:| **“Trading bot unreachable”** in OpenClaw | `polymarket-bot` down / **8430** not listening on **vpn** stack. Check `docker compose ps`, `curl http://127.0.0.1:8430/health`, `docker exec openclaw curl -sS http://vpn:8430/health`. |
+./.cursor/prompts/perplexity-computer-ai-server-status.md:79:| **`curl 127.0.0.1:8430` fails** | **vpn** + bot share network (`network_mode: service:vpn`). Restart **redis → vpn → polymarket-bot** order. |
+./.cursor/prompts/next-level-gaps.md:7:- `docker-compose.yml` has `PERPLEXITY_API_KEY`, `OLLAMA_HOST` env vars
+./.cursor/prompts/next-level-gaps.md:110:- If `position_usd < 5`: use Ollama on Betty (`OLLAMA_HOST` env var, model `llama3.1:8b`)
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:35:      - "127.0.0.1:1200:1200"
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:48:      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:1200"]
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:62:**Important**: The `TWITTER_AUTH_TOKEN` env var must be set. Matt needs to extract the `auth_token` cookie from a logged-in X session:
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:155:**Note**: Matt should review and customize this list. Handles can be added/removed at any time by editing this file and restarting the collector.
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:204:IMESSAGE_BRIDGE_URL = os.getenv("IMESSAGE_BRIDGE_URL", "http://host.docker.internal:8199")
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:617:      - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:745:4. Wait 30s for RSSHub to start, then verify: `curl http://localhost:1200`
+./.cursor/prompts/cline-prompt-L-x-alpha-collector.md:746:5. Test one feed: `curl "http://localhost:1200/twitter/user/Polymarket"` — should return RSS XML
+./.cursor/prompts/cline-prompt-cleanup-final.md:31:| openwebui | 3000 → 8080 | — | Local LLM UI |
+./.cursor/prompts/cortex-memory-system.md:52:CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8097"]
+./.cursor/prompts/cortex-memory-system.md:59:uvicorn>=0.34
+./.cursor/prompts/cortex-memory-system.md:534:        "trigger_pattern": "imessage + port 8199 + python path + permissions",
+./.cursor/prompts/cortex-memory-system.md:703:3. Check: `curl http://localhost:8097/health` → `{"status": "ok", "entries": N, "paths": N}`
+./.cursor/prompts/cortex-memory-system.md:704:4. Check: `curl http://localhost:8097/api/stats` → stats object
+./.cursor/prompts/cortex-memory-system.md:705:5. Check: `curl "http://localhost:8097/api/paths/relevant?q=docker+build"` → returns the "--no-cache" path
+./.cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md:59:  reads to `127.0.0.1:8102` (Cortex) and the LAN-only BlueBubbles
+./.cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md:64:- **No secrets**: never `cat .env`. The script already loads
+./.cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md:126:curl -sS -m 8 http://127.0.0.1:8102/api/bluebubbles/health | head -c 400
+./.cursor/prompts/2026-04-23-cline-bluebubbles-health-plist.md:213:curl -sS -m 8 http://127.0.0.1:8102/api/bluebubbles/health | head -c 400
+./.cursor/prompts/close-the-loop.md:36:        async for msg in pubsub.listen():
+./.cursor/prompts/close-the-loop.md:416:Verify: `curl -s localhost:8098/health && curl -s localhost:8098/api/services | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{d[\"healthy\"]}/{d[\"total\"]} healthy')"`
+./.cursor/prompts/close-the-loop.md:426:curl -s localhost:8098/health          # Mission Control
+./.cursor/prompts/close-the-loop.md:427:curl -s localhost:8098/api/services    # All service health
+./.cursor/prompts/close-the-loop.md:428:curl -s localhost:8098/api/intelligence # Decision journal + patterns
+./.cursor/prompts/close-the-loop.md:429:curl -s localhost:8098/status          # Employee status + connections
+./.cursor/prompts/close-the-loop.md:434:- **VPN DNS**: polymarket-bot uses `network_mode: service:vpn` — if VPN container restarts, bot loses network. Fix: `docker restart polymarket-bot` after VPN restart
+./.cursor/prompts/close-the-loop.md:435:- **Redis IP drift**: bot connects via container IP (172.18.0.x) not hostname. After compose restart, IP may change. Fix: use `redis` hostname in compose network, or re-check IP with `docker inspect redis | grep IPAddress`
+./.cursor/prompts/close-the-loop.md:436:- **Port 3000 conflict**: Open WebUI and OpenClaw both want 3000 internally. Map OpenClaw to 8099 externally.
+./.cursor/prompts/close-the-loop.md:437:- **host.docker.internal**: works on Docker Desktop for Mac. If using Lima/Colima, add `extra_hosts: ["host.docker.internal:host-gateway"]`
+./.cursor/prompts/close-the-loop.md:438:- **Disk pressure**: polymarket-bot logs can grow. Add `logging: { driver: json-file, options: { max-size: "50m", max-file: "3" } }` to heavy services
+./.cursor/prompts/cline-prompt-T-approval-drain.md:29:   - Log the expiry to Cortex: POST to `http://cortex:8102/remember` with category="system", title="Auto-expired stale approval", content=details
+./.cursor/prompts/cline-prompt-T-approval-drain.md:85:curl -s http://127.0.0.1:8102/health | python3 -m json.tool
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:40:- **Services touched:** `x-intake` (port 8101), `cortex` (port 8102). Do NOT touch `polymarket-bot`, `email-monitor`, `markup-tool` (8088), or `client-portal`.
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:72:curl -s http://127.0.0.1:8102/api/x-intake/stats | python3 -m json.tool
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:73:curl -s 'http://127.0.0.1:8102/api/x-intake/items?limit=5' | python3 -m json.tool
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:74:curl -s http://127.0.0.1:8101/health
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:165:- Open the Cortex UI at `http://127.0.0.1:8102/` and click the **X Intake** tab. Confirm rows render and counts are live.
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:201:curl -s 'http://127.0.0.1:8102/api/x-intake/items?limit=3' | python3 -m json.tool | head -40
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:204:#     open http://127.0.0.1:8102/  → X Intake tab → confirm row is there with summary
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:241:- [ ] `curl http://127.0.0.1:8102/api/x-intake/items?limit=5` returns the test row as JSON.
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:250:- A fix requires changing `markup-tool` (8088), `client-portal`, `polymarket-bot`, or `email-monitor`.
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:291:SERVICES: x-intake (8101), cortex (8102)
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:292:OFF_LIMITS: markup-tool (8088), client-portal, polymarket-bot, email-monitor
+./.cursor/prompts/cline-prompt-x-intake-diagnose-and-fix.md:293:TEST_CMD: bash scripts/pull.sh && docker compose up -d --build x-intake && curl -s http://127.0.0.1:8101/health
+./.cursor/prompts/cline-prompt-x-intake-full-loop.md:29:      - REQUEST_TIMEOUT=30000
+./.cursor/prompts/cline-prompt-x-intake-full-loop.md:32:      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:1200"]
+./.cursor/prompts/cline-prompt-x-intake-full-loop.md:56:      - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:6:**Depends on:** `.env` has `OLLAMA_HOST=http://192.168.1.199:11434` (set in Phase 1).
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:12:- `knowledge-scanner/processor.py` — already has `_process_with_ollama()` + Haiku fallback. Just needs OLLAMA_HOST set.
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:21:The scanner's `processor.py` already has Ollama-first with Claude Haiku fallback. It reads `OLLAMA_HOST` from env. The compose file has `OLLAMA_HOST=${OLLAMA_HOST:-}` and `.env` now has the correct value.
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:30:docker exec knowledge-scanner printenv OLLAMA_HOST
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:31:# Expected: http://192.168.1.199:11434
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:55:        ollama_host = os.environ.get("OLLAMA_HOST", "")
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:203:    ollama_host = os.getenv("OLLAMA_HOST", "")
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:233:Add `OLLAMA_HOST` to the calendar-agent environment if not already present:
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:237:    - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:244:    - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:256:# Verify OLLAMA_HOST is set in all three
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:257:docker exec knowledge-scanner printenv OLLAMA_HOST
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:258:docker exec calendar-agent printenv OLLAMA_HOST
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:259:docker exec openclaw printenv OLLAMA_HOST
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:260:# All should return: http://192.168.1.199:11434
+./.cursor/prompts/phase2-local-first-knowledge-pipeline.md:281:- All three services have `OLLAMA_HOST=http://192.168.1.199:11434`
+./.cursor/prompts/cline-prompt-Z2-dashboard-freshness.md:104:Verify at `http://127.0.0.1:8102/dashboard`:
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:54:- **Owner/Lead Integrator**: Matt Earley
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:55:- **Phone**: (970) 519-3013
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:56:- **Email**: info@symphonysh.com
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:57:- **Service Area**: Denver metro, Front Range, mountain communities (Vail, Aspen, Breckenridge area)
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:58:- **Specialties**: Control4 whole-home automation, Lutron lighting (Caseta, RadioRA3, HomeWorks), Sonos & distributed audio, home theater (Dolby Atmos, laser projection), security cameras (Luma), structured wiring, networking (Araknis, Ruckus)
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:59:- **Business Hours**: Monday–Friday, 8:00 AM – 6:00 PM Mountain Time
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:60:- **After Hours**: Take a message, offer next-business-day callback. For emergencies (no power, security system down, active leak near electronics), text Matt immediately.
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:66:- **Pre-wire**: Running all low-voltage cabling (Cat6, speaker wire, control wiring) during construction or renovation
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:67:- **Trim/Installation**: Mounting speakers, displays, cameras, touch panels, keypads, and networking equipment
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:68:- **Programming**: Control4 system programming, lighting scene setup, audio zone configuration
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:69:- **Commissioning**: Full system testing, client walkthrough, handoff documentation
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:70:- **Ongoing Support**: Service calls, system updates, seasonal maintenance
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:188:          context += `- **${name}**: ${notes}\n`;
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:307:      - PORT=3000
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:313:      - SERVER_URL=${VOICE_SERVER_URL:-http://localhost:8093}
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:319:      - "127.0.0.1:8093:3000"
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:382:cloudflared tunnel run --url http://localhost:8093 bob-voice
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:587:    async for msg in pubsub.listen():
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:608:            description=f"**Caller**: {caller} ({phone})\n**Summary**: {summary}\n**Time**: {data.get('timestamp', 'unknown')}\n\n{data.get('notes', '')}",
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:619:            description=f"**From**: {sender}\n**Subject**: {subject}\n**Action needed**: {data.get('action', 'Review and respond')}\n\n{data.get('snippet', '')}",
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:631:                description=f"**Client**: {client}\n**Address**: {data.get('address', '')}\n**Issue**: {data.get('issue', '')}\n**Scheduled**: {data.get('datetime', '')}\n\nPrep checklist:\n- [ ] Review client history\n- [ ] Check required equipment\n- [ ] Confirm with client day before",
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:641:            description=f"**Proposal**: {data.get('proposal', '')}\n**Expected impact**: {data.get('impact', 'unknown')}\n**Risk**: {data.get('risk', 'unknown')}\n\nGenerated by the cortex improvement loop.",
+./.cursor/prompts/cline-prompt-N-operations-backbone.md:802:- Never expose services on 0.0.0.0 — always 127.0.0.1
+./.cursor/prompts/local-first-x-intake.md:12:- `openclaw/llm_router.py` — existing local-first router (Ollama at 192.168.1.199:11434, llama3.1:8b and qwen3:8b)
+./.cursor/prompts/local-first-x-intake.md:42:OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+./.cursor/prompts/local-first-x-intake.md:204:        url = f"{OLLAMA_HOST.rstrip('/')}/api/chat"
+./.cursor/prompts/local-first-x-intake.md:317:OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://192.168.1.199:11434")
+./.cursor/prompts/local-first-x-intake.md:322:        url = f"{OLLAMA_HOST.rstrip('/')}/api/chat"
+./.cursor/prompts/local-first-x-intake.md:375:curl -s http://192.168.1.199:11434/api/tags | python3 -c "
+./.cursor/prompts/local-first-x-intake.md:414:OLLAMA_HOST=http://192.168.1.199:11434
+./.cursor/prompts/local-first-x-intake.md:427:curl -sf http://192.168.1.199:11434/api/tags | python3 -c "import sys,json; print([m['name'] for m in json.load(sys.stdin)['models']])"
+./.cursor/prompts/local-first-x-intake.md:433:curl -s -X POST http://127.0.0.1:8101/analyze \
+./.cursor/prompts/cline-prompt-Y2-notes-jxa-fix.md:109:curl -s http://localhost:8102/health | python3 -c "import sys,json; d=json.load(sys.stdin); print('memories:', d['memories']['total'])"
+./.cursor/prompts/wrap-it-up.md:107:- Service ports table (Mission Control :8098, OpenClaw :8099, Email :8092, Calendar :8094, Notifications :8095, D-Tools :8091/:8096, Bot :8430, Redis :6379, WebUI :3000, Preprocessor :8028)
+./.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md:84:- No network calls outside of `localhost` and — only under `SMOKE:`
+./.cursor/prompts/cleanup-test-learn.md:115:if curl -sf http://127.0.0.1:8099/health >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:122:if curl -sf http://127.0.0.1:8099/briefing/status >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:129:if curl -sf http://127.0.0.1:8092/health >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:138:    if curl -sf "http://127.0.0.1:8098/health" >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:143:    if curl -sf "http://127.0.0.1:8098/dashboard?token=$MC_TOKEN" >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:153:if curl -sf http://127.0.0.1:8430/health >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:160:if curl -sf http://127.0.0.1:8101/health >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:167:if curl -sf http://127.0.0.1:8765/health >/dev/null 2>&1; then
+./.cursor/prompts/cleanup-test-learn.md:181:if redis-cli -h 127.0.0.1 ping 2>/dev/null | grep -q PONG; then
+./.cursor/prompts/cleanup-test-learn.md:189:EXPOSED=$(docker ps --format '{{.Ports}}' 2>/dev/null | grep "0.0.0.0" | grep -v "8098")
+./.cursor/prompts/cleanup-test-learn.md:191:    check "All ports 127.0.0.1 (except MC 8098)" "PASS"
+./.cursor/prompts/cleanup-test-learn.md:443:curl -s http://127.0.0.1:8099/learning/trading | python3 -m json.tool
+./.cursor/prompts/cleanup-test-learn.md:444:curl -s http://127.0.0.1:8099/learning/projects | python3 -m json.tool
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:9:- All OLLAMA_HOST references updated to Bob (192.168.1.189:11434)
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:26:      - "127.0.0.1:8103:8101"
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:32:      - CORTEX_URL=http://cortex:8102
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:33:      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.189:11434}
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:51:      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8101/health', timeout=3)"]
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:64:- `OLLAMA_HOST` now points to Bob (192.168.1.189) not Maestro
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:90:- Update endpoints from Maestro IP to `http://192.168.1.189:11434`
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:137:    "ollama_port": 11434,
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:138:    "ollama_host": "0.0.0.0",
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:159:  "endpoint": "http://TBD:11434",
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:165:  "health_check": "http://TBD:11434/api/tags",
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:166:  "fallback_endpoint": "http://TBD:11434"
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:180:M2_OLLAMA_HOST=http://TBD:11434
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:219:launchctl setenv OLLAMA_HOST "0.0.0.0"
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:228:curl -s http://127.0.0.1:11434/api/tags && printf '\nOllama OK.\n'
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:275:ifconfig | grep "inet " | grep -v 127.0.0.1 | awk "{print \$2}" | head -1
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:281:printf '3. Test from Bob: curl http://<tailscale-ip>:11434/api/tags\n'
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:356:  curl http://<m2-tailscale-ip>:11434/api/tags
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:359:  curl http://100.89.1.51:11434/api/tags
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:375:HOST="${1:-http://127.0.0.1:11434}"
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:452:bash scripts/ollama-benchmark.sh http://127.0.0.1:11434
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:480:bash scripts/ollama-benchmark.sh http://127.0.0.1:11434
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:489:- **Markup tool** (`tools/markup_app/server.py`) on port 8088 via launchd — leave completely alone
+./.cursor/prompts/cline-prompt-bob-primary-m2-worker.md:496:- [ ] x-intake-lab health endpoint responding on port 8103
+./.cursor/prompts/cline-prompt-M-cortex.md:600:        async for msg in pubsub.listen():
+./.cursor/prompts/cline-prompt-M-cortex.md:765:      - OLLAMA_HOST=${OLLAMA_HOST:-http://192.168.1.199:11434}
+./.cursor/prompts/cline-prompt-M-cortex.md:792:import uvicorn
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:59:1. **Health checks in docker-compose.yml**: Every service should have a `healthcheck:` block.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:65:   - **If missing**: Add them now. Read the spec.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:67:2. **Startup dependencies**: `depends_on` with `condition: service_healthy`
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:69:   - **If missing**: Add them now.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:71:3. **`scripts/startup.sh`**: Starts iMessage bridge first (host process), waits for port 8199, then `docker compose up -d --build`, tails logs 30s, sends iMessage confirming all healthy.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:72:   - **If missing**: Create it per the spec.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:73:   - **If exists**: Verify it actually works — check iMessage bridge start command, port wait logic, compose invocation.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:75:4. **`scripts/healthcheck.sh`**: Checks all container health + iMessage bridge. Restarts unhealthy services. Notifies Matt.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:76:   - **If missing**: Create it.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:77:   - **If exists**: Verify it detects real failures.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:79:5. **Restart policy**: All services should have `restart: unless-stopped`.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:81:6. **Port binding**: ALL ports must bind `127.0.0.1:XXXX:XXXX` except Mission Control (8098 can bind `0.0.0.0` for Tailscale access).
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:82:   - Audit docker-compose.yml. Fix any that bind `0.0.0.0`.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:96:   - **Test**: `grep -n "volume" polymarket-bot/strategies/polymarket_copytrade.py`
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:103:   - **Test**: `grep -n "rolling" polymarket-bot/strategies/wallet_scoring.py`
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:109:   - **Test**: `grep -n "drift\|on.chain\|polygon" polymarket-bot/src/pnl_tracker.py`
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:115:   - **Test**: `grep -n "heartbeat\|redeem_status\|alert" polymarket-bot/src/redeemer.py`
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:120:   - **Test**: `grep -n "category_exception\|0.92\|blacklist" polymarket-bot/strategies/polymarket_copytrade.py`
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:122:**For each missing item**: Implement it per the spec in `cursor-prompts/DONE/Auto-8-risk-management-hardening.md`.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:136:2. **Reconciliation with internal state**:
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:143:3. **True bankroll calculation**:
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:149:4. **Startup recovery**:
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:154:5. **Notifications**: All notifications show Available + Positions + Portfolio?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:156:6. **Drift alerting**: >10% change in 5 min → alert. Portfolio <$500 → alert. USDC <$50 → alert.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:158:7. **Redis keys**: `portfolio:snapshot`, `portfolio:history`, `portfolio:positions`, `portfolio:alerts` all populated?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:160:8. **API**: `GET /api/portfolio` returns PositionSnapshot?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:162:9. **Persistence**: On SIGTERM → dumps to `data/position_state.json`? On startup → loads as initial state?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:164:**If anything is missing or broken**: Implement per `cursor-prompts/DONE/Auto-21-position-reconciliation.md`.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:179:2. **RBI wired into main loop**: Is `rbi_pipeline.run_cycle()` called every 30 minutes from `src/main.py`? If not, wire it in as an async background task.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:181:3. **CVD detector connected**: Does it connect to Polymarket CLOB WebSocket? Does it produce signals? Are signals consumed by strategy_manager via `set_cvd_signal()` or Redis keys `cvd:signal:{condition_id}`?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:183:4. **Strategy Manager orchestration**: Does it start all strategies with correct allocations (weather 40%, copytrade 35%, CVD/arb 25%)? Are there broken imports?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:185:5. **Intel feeds → ideas.txt**: Do high-scoring signals (>80) auto-create entries in `ideas.txt`? Does RBI pick them up?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:189:1. **email-monitor → bob_orchestrator wired**: When router.py categorizes an actionable email, does it call bob_orchestrator or publish to `email:actionable` Redis channel?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:191:2. **bob_orchestrator handle_email_event**: Does it dispatch based on category → action (draft_response, triage_bid, escalate)?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:193:3. **auto_responder wired**: Does it draft responses into Zoho as DRAFTS (not auto-send)?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:195:4. **bid_triage → iMessage**: Does bid analysis summary go to Matt via iMessage?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:197:5. **Decision matrix**: Does `agents/bob_conductor.yml` exist with routing table?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:199:6. **Test**: Publish a mock email event to `email:actionable`, verify bob_orchestrator logs a response action.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:203:1. **Docker service**: Is `intel-feeds` in docker-compose.yml? Is it running?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:204:2. **Monitors functional**: Reddit (old.reddit.com JSON), news (RSS), Polymarket (Gamma API volume spikes)?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:205:3. **Signal aggregator**: Dedup across sources? Score 0-100? >80 → auto-create in ideas.txt?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:206:4. **Runner**: Async loop, correct intervals (Reddit 15min, news 10min, Polymarket 5min)?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:207:5. **Notification**: High-scoring signals → Redis `notifications:trading`?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:211:1. **Tests exist**: `polymarket-bot/tests/` populated with test files?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:212:2. **Key test files**: `test_weather_trader.py`, `test_copytrade.py`, `test_exit_engine.py`, `test_strategy_manager.py`?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:213:3. **Test infrastructure**: `conftest.py` with fixtures? `pytest.ini`?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:214:4. **Run**: `cd polymarket-bot && pytest -v --tb=short 2>&1 | tail -30` — how many pass/fail?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:215:5. **If minimal coverage**: Build tests per the spec in `cursor-prompts/DONE/Auto-13-test-suite.md`.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:219:1. **Secrets**: `vault.py` wired as single source? Private keys NOT in `.env`?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:220:2. **API auth**: Internal APIs have API key auth? Mission Control has basic auth?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:221:3. **Audit logging**: `audit.py` logging trades, emails sent, proposals generated?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:222:4. **Port binding**: All ports `127.0.0.1` except Mission Control?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:223:5. **Wallet safety**: Max single trade $25 hardcoded? Daily loss limit -$50 → auto-pause?
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:263:- **Build order**: Wave 0 (Auto-5) → Wave 1 (Auto-8, Auto-21) → Wave 2 (API-1, API-2, Auto-10, Auto-13, Auto-19) → Bonus verifications
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:265:- **For each check**: If the feature exists and works → log PASS. If it exists but is broken → fix it. If it doesn't exist → build it per the spec.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:266:- **Commit each wave separately**: `verify: wave 0 — docker health checks confirmed`, `fix: wave 1 — position syncer startup recovery missing`, etc.
+./.cursor/prompts/wave0-2-foundation-hardening-verification.md:267:- **Redis password**: `d1fff1065992d132b000c01d6012fa52` (the actual password on Bob — there was a mismatch fixed earlier)
+./.cursor/prompts/cline-prompt-task-runner.md:53:  "task_id": "20260417-083000-bert-hostkey-pin",
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:5:Add a "Symphony Ops" tab to the Cortex dashboard (`cortex/static/index.html`) that gives Matt a single pane of glass for all Symphony Smart Homes business tools. Many of these tools exist in the codebase but have no UI entry point — they ran on Lovable or were CLI-only. This tab makes them all accessible from the Cortex dashboard at `http://localhost:8102`.
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:35:The markup app runs as a standalone server at `http://localhost:8091` (or `http://192.168.1.199:8091` on LAN). It is NOT in Docker — it runs on the host via `python3 tools/markup_app/server.py`.
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:38:1. **Change the markup app default port to 8088** — update `tools/markup_app/server.py` default from 8091 to 8088
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:48:      <a href="http://192.168.1.199:8088" target="_blank" class="btn">Open Full ↗</a>
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:51:  <iframe id="markup-frame" src="http://localhost:8088" 
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:57:    <p class="small">Start it on Bob: <code style="color:var(--gold);">python3 ~/AI-Server/tools/markup_app/server.py --port 8088</code></p>
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:66:    const r = await fetch('http://localhost:8088/health', {signal: AbortSignal.timeout(3000)});
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:272:MARKUP_URL = os.environ.get("MARKUP_URL", "http://host.docker.internal:8088")
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:415:- Replace: `parser.add_argument("--port", type=int, default=8088`
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:416:- Also update the docstring at the top of the file from 8091 to 8088
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:417:- Update the README.md references from 8091 to 8088
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:423:1. Update `tools/markup_app/server.py` default port to 8088 and update its README
+./.cursor/prompts/cline-prompt-symphony-ops-tab.md:441:- **The markup app runs on HOST, not Docker** — it needs macOS filesystem access for iCloud sync. The iframe connects to `localhost:8088` (or LAN IP)
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:16:  `.cursor/prompts/2026-04-24-cline-port-8102-unknown-listener-evidence.md`
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:62:lsof -nP -iUDP 2>/dev/null | awk '/\*:/ {print}' | sort -u
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:67:- `loopback` — `127.0.0.1:*` or `[::1]:*` only
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:68:- `lan` — `0.0.0.0:*`, `*:*`, or bound to the Tailscale / en0 address
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:124:- Cortex route: `POST /hooks/bluebubbles` on `127.0.0.1:8102`
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:138:  `:8199`, `com.symphony.imessage-bridge` launchd), which shells to
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:148:curl -sS -m 5 http://127.0.0.1:8102/api/bluebubbles/health | python3 -m json.tool
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:154:curl -sS -m 5 http://127.0.0.1:8102/api/bluebubbles/health \
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:187:- `OPTIONAL` — experimental or low-use (x-intake-lab :8103, portfolio-site
+./.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md:223:- a verification that the AppleScript bridge (`:8199`) is healthy as a
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:7:Mission Control (8098) is a dumb dashboard — it polls other services for health and displays data it doesn't own. Cortex (8102) is Bob's actual brain — memory, goals, improvement loops, digests, opportunity scanning. But Cortex has no UI, and Mission Control has no intelligence. They should be one service.
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:10:- Cortex serves the dashboard at port 8102 (absorbs all MC functionality)
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:104:Every service should POST to `http://cortex:8102/remember` after significant events. The remember endpoint already exists — use it.
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:142:   fetch('http://cortex:8102/remember', {
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:168:      - "8102:8102"
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:174:      - CORTEX_PORT=8102
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:175:      - OLLAMA_HOST=http://host.docker.internal:11434
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:177:      test: ["CMD", "curl", "-f", "http://localhost:8102/health"]
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:187:3. **Update all references:** Any service that pointed to `mission-control:8098` should now point to `cortex:8102`.
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:189:4. **Update CLAUDE.md:** Replace mission-control entry with cortex in the service table. Remove the old MC port 8098. Cortex is now at 8102 and serves the dashboard.
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:205:curl -s http://127.0.0.1:8102/health
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:208:curl -s http://127.0.0.1:8102/dashboard | head -5
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:211:curl -s http://127.0.0.1:8102/api/services | python3 -m json.tool | head -20
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:212:curl -s http://127.0.0.1:8102/api/activity | python3 -m json.tool | head -10
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:213:curl -s http://127.0.0.1:8102/memories | python3 -m json.tool | head -10
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:214:curl -s http://127.0.0.1:8102/goals | python3 -m json.tool | head -10
+./.cursor/prompts/cline-prompt-S-cortex-dashboard.md:217:curl -s http://127.0.0.1:8102/health
+./.cursor/prompts/perplexity-computer-mission-control-handoff.md:49:   `loadTradingView()` is **more than a JSON dump** now (positions table, category P&amp;L, bot JSON block), but it can still be **polished**: better hierarchy, mobile tables, error states when `vpn:8430` is down.
+./.cursor/prompts/perplexity-computer-mission-control-handoff.md:64:| **Host:** `curl 127.0.0.1:8430` → empty reply / refused | Bot down or port not bound; **`127.0.0.1:8430:8430`** maps to **`vpn`** container shared with bot. |
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:26:Edit the Ollama service config so it binds to `0.0.0.0:11434` (not just localhost). On macOS this means setting the environment variable:
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:29:launchctl setenv OLLAMA_HOST "0.0.0.0"
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:39:curl http://192.168.1.189:11434/api/tags
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:43:The global speed fix (commit `b6a4641`) already switched models to `llama3.2:3b`. Now update the Ollama base URL everywhere it appears. Search the entire repo for any reference to `192.168.1.199` (Maestro) or `localhost:11434` and replace with Bob's address.
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:63:Replace with: `http://192.168.1.189:11434`
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:107:The markup tool (`tools/markup_app/server.py`) runs on port 8088 via launchd plist `com.symphony.markup-app` with KeepAlive. It is NOT a Docker container. Leave it completely alone.
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:110:- [ ] Ollama installed and running on Bob (`192.168.1.189:11434`)
+./.cursor/prompts/cline-prompt-ollama-on-bob-cleanup.md:115:- [ ] Markup tool on port 8088 untouched
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:20:curl -s http://127.0.0.1:8099/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:21:curl -s http://127.0.0.1:8102/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:22:curl -s http://127.0.0.1:8092/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:23:curl -s http://127.0.0.1:8095/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:24:curl -s http://127.0.0.1:8101/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:25:curl -s http://127.0.0.1:8103/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:26:curl -s http://127.0.0.1:8115/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:32:curl -s http://127.0.0.1:11434/api/tags
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:39:curl -s http://127.0.0.1:8088/health || curl -s http://127.0.0.1:8088/
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:50:curl -s http://127.0.0.1:8101/queue/stats
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:51:curl -s "http://127.0.0.1:8101/queue?status=pending&limit=50"
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:71:curl -s http://127.0.0.1:8101/queue/stats
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:81:curl -s http://127.0.0.1:8103/health
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:87:curl -s "http://127.0.0.1:8102/api/memories?limit=10&source=x-intake"
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:88:curl -s "http://127.0.0.1:8102/api/memories?limit=10&source=x-intake-lab"
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:93:curl -s "http://127.0.0.1:8102/query" -H "Content-Type: application/json" -d '{"query": "latest x intake analysis"}'
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:99:curl -s "http://127.0.0.1:8102/api/memories?limit=5&source=x_intel"
+./.cursor/prompts/cline-prompt-verify-and-ingest-x-links.md:118:- Touch the markup tool on 8088
+./.cursor/prompts/cline-prompt-disk-cleanup.md:28:**WARNING**: Named volumes with data (like `x-intake-lab-data`, `redis_data`) are preserved by `docker system prune`. But verify with `docker volume ls` before and after.
+./.cursor/prompts/cline-prompt-disk-cleanup.md:80:bash scripts/ollama-benchmark.sh http://127.0.0.1:11434
+./.cursor/prompts/polymarket-cleanup-and-sync.md:149:1. **Verify Redis connection** — the URL might be wrong (needs container IP, not localhost)
+./.cursor/prompts/cline-prompt-bluebubbles-secure-setup.md:130:pdftotext BlueBubbles_Secure_Setup_Guide.pdf - | grep -c "tailscale serve --bg --https=443 1234"
+./.cursor/prompts/mission-control-dashboard.md:32:- Try `GET http://openclaw:3000/api/jobs` or `/api/tasks` — check the openclaw/ directory  
+./.cursor/prompts/mission-control-dashboard.md:49:docker exec email-monitor curl -s http://localhost:8092/docs 2>/dev/null || docker exec email-monitor curl -s http://localhost:8092/openapi.json 2>/dev/null
+./.cursor/prompts/mission-control-dashboard.md:51:docker exec calendar-agent curl -s http://localhost:8094/docs 2>/dev/null
+./.cursor/prompts/mission-control-dashboard.md:53:docker exec openclaw curl -s http://localhost:3000/docs 2>/dev/null
+./.cursor/prompts/mission-control-dashboard.md:136:curl -s http://localhost:8098/health
+./.cursor/prompts/mission-control-dashboard.md:137:curl -s http://localhost:8098/api/services | python3 -m json.tool | head -20
+./.cursor/prompts/mission-control-dashboard.md:138:curl -s http://localhost:8098/api/emails | python3 -m json.tool | head -20
+./.cursor/prompts/mission-control-dashboard.md:139:curl -s http://localhost:8098/api/calendar | python3 -m json.tool | head -20
+./.cursor/prompts/cline-prompt-bob-marketing-ops.md:10:- Use Ollama for content generation (Bob's llama3.2:3b at http://192.168.1.189:11434)
+./.cursor/prompts/cline-prompt-bob-marketing-ops.md:14:- iMessage notifications go through the existing bridge at `http://host.docker.internal:8199`
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:14:- **Missing entries (6 active services):** 1234 (BlueBubbles), 8088
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:15:  (markup-tool), 8199 (imessage-bridge), 8421 (trading-api), 8801
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:16:  (vault-pwa), 11434 (Ollama).
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:17:- **Inaccurate footnote:** PORTS.md says "All ports bind to `127.0.0.1`
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:18:  only (no external exposure)" — false. Ports 1234, 8199, 8421, 11434
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:19:  bind `*` (LAN-wide); port 8102 has a second unexplained LAN-wide
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:20:  binding (see the `:8102` evidence-gap prompt).
+./.cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md:31:- Replace the "All ports bind to `127.0.0.1` only" line with a truthful
+./.cursor/prompts/cline-prompt-rebuild-24-7.md:25:**Expected**: You should see `scanner_querying topic=...` lines, NOT `scanner_no_perplexity_key` or `scanner_ollama_error` dominating every cycle. If you see Perplexity queries succeeding and Ollama processing (or OpenAI fallback), the scanner is working.
+./.cursor/prompts/cline-prompt-rebuild-24-7.md:32:- Ollama on Maestro (192.168.1.199:11434) is unreachable AND OpenAI key is missing
+./.cursor/prompts/cline-prompt-rebuild-24-7.md:34:- Test Maestro connectivity: `curl -s http://192.168.1.199:11434/api/tags | head -5`
+./.cursor/prompts/cline-prompt-rebuild-24-7.md:42:**Expected**: You should see tick cycles for XRP/USD, NOT `Incorrect padding` errors. The base64 padding fix auto-corrects malformed secrets.
+./.cursor/prompts/cline-prompt-rebuild-24-7.md:63:curl -s http://127.0.0.1:8102/stats 2>/dev/null | python3 -m json.tool
+./.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md:91:- **No secrets**: never `cat .env`, never print BlueBubbles API
+./.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md:94:- **No destructive data changes**: the executor never `DELETE`s
+./.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md:98:  approved** via the local approved reply path and **test mode**:
+./.cursor/prompts/2026-04-23-cline-x-intake-reply-leg-phases-2-6.md:111:- **Executor sandboxing**:
+./.cursor/prompts/wave5-6-business-automation-brain.md:89:Listen on `notifications:email`, `notifications:telegram`, `notifications:send`. **CRITICAL**: Check if `imessage-server.py` already subscribes to `notifications:imessage` — if so, do NOT also subscribe to avoid duplicates. Use `notifications:send` as unified inbound.
+./.cursor/prompts/wave5-6-business-automation-brain.md:135:1. **Intake**: consultation request → new project → LLM parses walkthrough notes into structured room configs → pull matching room packages
+./.cursor/prompts/wave5-6-business-automation-brain.md:146:4. **Review**: Auto-run preflight before any proposal goes out. Flag issues, block until resolved.
+./.cursor/prompts/wave5-6-business-automation-brain.md:152:6. **D-Tools sync**: proposal accepted → auto-create D-Tools project → import equipment → generate SOW → create 22-issue Linear project
+./.cursor/prompts/wave5-6-business-automation-brain.md:160:1. **iCloud SymphonySH folder**: Diagnose why empty on Bob. Fix iCloud sync. Document setup in `setup/nodes/BOB_ICLOUD_SETUP.md`.
+./.cursor/prompts/wave5-6-business-automation-brain.md:162:2. **Dropbox folder structure**: Standardize per the spec:
+./.cursor/prompts/wave5-6-business-automation-brain.md:172:3. **Proposal version management**: New PDF → upload to `Client/Proposals/`, move old version to `Archive/`. Use Dropbox Python SDK with refresh token.
+./.cursor/prompts/wave5-6-business-automation-brain.md:208:1. **Trading summary**: Yesterday's P/L by strategy, portfolio value, bankroll, best/worst trades, positions needing attention, paper trading results
+./.cursor/prompts/wave5-6-business-automation-brain.md:210:2. **Business summary**: Unread emails (count + top 3), today's calendar events, new leads/bid invitations, follow-ups due today, Linear blocked issues
+./.cursor/prompts/wave5-6-business-automation-brain.md:212:3. **System health**: All services green/yellow/red, container restarts overnight, VPN status, disk usage if >70%
+./.cursor/prompts/wave5-6-business-automation-brain.md:214:4. **Intelligence**: Top signals overnight, markets with big moves, new high-volume markets
+./.cursor/prompts/wave5-6-business-automation-brain.md:216:5. **Format**: Clean, scannable, bullet points, <20 lines. Link to Mission Control.
+./.cursor/prompts/wave5-6-business-automation-brain.md:306:- **Lead**: `client_tracker.create()`, create Linear ticket, log source
+./.cursor/prompts/wave5-6-business-automation-brain.md:307:- **Proposal Sent**: `follow_up_tracker.schedule_follow_ups()` (Day 3, 7, 14), create Dropbox folder structure, log date
+./.cursor/prompts/wave5-6-business-automation-brain.md:308:- **Deposit Received**: `payment_tracker.watch_deposit()`, on confirm → auto-transition to project_setup
+./.cursor/prompts/wave5-6-business-automation-brain.md:309:- **Project Setup**: `follow_up_tracker.cancel_remaining()`, `project_template.create_project()` (22-issue Linear), kickoff email, iMessage Matt
+./.cursor/prompts/wave5-6-business-automation-brain.md:310:- **Commissioning**: Generate checklist from system design
+./.cursor/prompts/wave5-6-business-automation-brain.md:311:- **Handoff**: Access codes, concierge KB URL, support terms PDF. Watch final payment. Schedule 30-day check-in.
+./.cursor/prompts/wave5-6-business-automation-brain.md:312:- **Complete**: Archive Linear project, move Dropbox to Archive, update client_tracker
+./.cursor/prompts/wave5-6-business-automation-brain.md:329:- **Build order**: API-6 → Auto-9 → Auto-16 → Auto-18 → Auto-3 → Auto-17 → API-11 → API-12 → API-13
+./.cursor/prompts/wave5-6-business-automation-brain.md:332:- **Commit each part separately**: `feat: add Hermes multi-platform messaging (API-6)`
+./.cursor/prompts/cline-prompt-AA-claude-max-setup.md:77:printf 'model_list:\n  - model_name: claude-opus\n    litellm_params:\n      model: claude-opus-4-20250514\n      api_base: http://localhost:8080\n  - model_name: claude-sonnet\n    litellm_params:\n      model: claude-sonnet-4-20250514\n      api_base: http://localhost:8080\nlitellm_settings:\n  drop_params: true\n  set_verbose: false\n' > ops/litellm_config.yaml
+./.cursor/prompts/cline-prompt-AA-claude-max-setup.md:89:curl -s http://localhost:4000/health 2>&1 | tee -a /tmp/claude_auth_check.txt
+./.cursor/prompts/cline-prompt-AA-claude-max-setup.md:107:printf '# Cline + Claude Max Setup\n\nLast updated: %s\n\n## Cline API Configuration\n\n- API Provider: Claude Code\n- Path to claude CLI: %s\n- Model for heavy prompts: claude-opus-4-20250514\n- Model for fast prompts: claude-sonnet-4-20250514\n\n## LiteLLM Proxy\n\n- Running at: http://localhost:4000\n- Config: ops/litellm_config.yaml\n- LaunchAgent: ~/Library/LaunchAgents/ai.symphony.litellm-proxy.plist\n- Logs: /tmp/litellm_proxy.log\n\n## Services That Need Proxy Update\n\nSee ops/verification/ latest AA verification file for the full list.\n\n## Notes\n\nMax subscription active until ~May 11 2026. After that revert services\nto direct Anthropic API key. The ANTHROPIC_API_KEY in .env is the fallback.\n' "$(date '+%Y-%m-%d')" "$(which claude)" > docs/cline-claude-max-setup.md
+./.cursor/prompts/cline-prompt-AA-claude-max-setup.md:136:printf 'LiteLLM proxy health: %s\n' "$(curl -s http://localhost:4000/health 2>&1)" >> "$REPORT"
+./.cursor/prompts/security-consolidation.md:98:10. All LLM processing MUST route through Ollama first (`OLLAMA_HOST` env var). Only fall back to cloud APIs if Ollama is unreachable. This keeps scanning essentially free 24/7.
+./.cursor/prompts/security-consolidation.md:168:   - `"Cortex": 8102`
+./.cursor/prompts/security-consolidation.md:201:| `scripts/imessage-server.py` line 103 | `"redis://:d19c9b0faebeee9927555eb8d6b28ec9@127.0.0.1:6379"` | `os.environ.get("REDIS_URL", "redis://127.0.0.1:6379")` |
+./.cursor/prompts/security-consolidation.md:272:| 8102 | Cortex | cortex | Brain, memory, dashboard (1582+ memories) | Core AI |
+./.cursor/prompts/security-consolidation.md:287:- All ports bind to `127.0.0.1` only (no external exposure)
+./.cursor/prompts/security-consolidation.md:289:- To check service health: `curl http://127.0.0.1:<port>/health`
+./.cursor/prompts/cline-prompt-Z4-trading-dashboard-live.md:4:The Cortex dashboard (port 8102) shows "unavailable" for Wallet, Positions, and P&L because `position_syncer.py` only publishes to Redis once at startup. There is no periodic sync loop. The bot is actively trading (100 open positions worth $465, 2500+ trades executed) but the dashboard cannot see any of it.
+./.cursor/prompts/cline-prompt-Z4-trading-dashboard-live.md:184:- **TODAY**: realized P&L from today's redeems minus today's trades (filter by timestamp)
+./.cursor/prompts/cline-prompt-Z4-trading-dashboard-live.md:185:- **ALL-TIME**: total realized P&L
+./.cursor/prompts/lessons-learned-april4.md:96:- **Root cause:** VPN routing captures all traffic (AllowedIPs = 0.0.0.0/0), blocking host.docker.internal resolution. Redis bound to 127.0.0.1 initially, then changed to 0.0.0.0 but VPN still blocked it.
+./.cursor/prompts/lessons-learned-april4.md:257:Add to AGENTS.md as a hard rule: "Services NEVER import Python modules from other containers. All inter-service communication is via HTTP endpoints. If openclaw needs email-monitor data, it calls GET http://email-monitor:8092/api/endpoint. If email-monitor needs auto-responder logic, it POSTs to http://openclaw:3000/api/auto-respond."
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:45:- `simple` (classification, yes/no, extraction) → Ollama `llama3.1:8b` at `http://192.168.1.199:11434`
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:74:#### Docker networking note: `192.168.1.199:11434` is Maestro/Betty iMac LAN IP. Accessible from containers on host network.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:84:1. **Preprocessor**: Paste raw text → strip ANSI, dedup logs, compress JSON, summarize patterns → output compressed markdown with token estimate.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:95:5. **Smart paste rules**: Detect content type (Docker logs, terminal, email, JSON, git diff, traceback, config, code) → apply type-specific compression.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:97:6. **Credit calculator**: Estimate cost in current thread vs fresh thread. Alert if >20K credits.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:117:3. **Knowledge extraction**: Extract WiFi/alarm/gate codes from access_code notes → save to `knowledge/projects/[name]/access_codes.md`. Add to `.gitignore`.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:119:4. **Cleanup report**: iMessage to Matt with keep/archive/delete/review counts.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:121:5. **Scheduled**: launchd daily at midnight. Also expose via `POST /api/notes/index`.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:123:6. **CLI**: `--index`, `--report`, `--extract-codes`, `--folders`, `--search`, `--dry-run`
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:181:2. **OpenAI Realtime**: Bridge Twilio G.711 μ-law audio to OpenAI. Inject caller context from memory into system prompt. Handle 10 function calls from `call_scripts.py`.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:183:3. **Caller Memory**: Redis-backed. `caller:{e164_number}` hash. Pre-seed from `data/clients.json`.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:185:4. **Emergency Handler**: Real-time transcript scanning. P1 → immediate transfer + SMS. P2 → SMS + notify. 5-min cooldown.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:187:5. **SMS Follow-Up**: Post-call SMS by intent. Only if call >30 seconds.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:189:6. **Voice Analytics**: Redis logging. Daily summary at 6 PM via iMessage.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:191:7. **Docker**: port 8089. Separate from existing voice webhook on 8088.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:201:1. **Knowledge Ingestion**: D-Tools export + device manuals → ChromaDB vector store. `nomic-embed-text` embeddings via Ollama.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:203:2. **Client Onboarding**: Single CLI command provisions new client. Validates D-Tools export, creates registry entry, builds KB, generates system prompt, self-tests.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:205:3. **Concierge Server**: FastAPI with REST chat and WebSocket streaming. RAG: embed query → ChromaDB top 5 → augmented prompt → Ollama llama3.1:8b → stream response.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:207:4. **Docker Stack**: Self-contained `docker-compose.yml` (Ollama, ChromaDB, concierge, nginx). Single `docker compose up -d` from cold.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:221:3. **Auth**: Simple API key header (`X-API-Key`). No OAuth.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:225:5. **CORS**: localhost + 100.x.x.x (Tailscale).
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:227:6. **Docker**: port 8421 on polymarket-bot.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:229:7. **iOS verification**: Check Swift project structure, flag obvious issues. Don't rewrite.
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:289:- **Build order**: Wave 7 (Auto-23 → Auto-28 → Auto-25 → API-3 → API-4 → Auto-22) → Wave 8 (Auto-29) → Wave 9 (API-8 → API-9 → API-10 → Auto-12 → Auto-4 → Auto-27) → Wave 10 (API-14 → API-15 → Auto-24)
+./.cursor/prompts/wave7-10-optimization-revenue-dreamland.md:292:- **Commit each part separately**: `feat: add LLM cost optimization router (Auto-23)`
+./.cursor/prompts/cline-prompt-treasury-wire.md:120:**IMPORTANT**: The `record_trading_pnl` method is cumulative (it adds to monthly totals), so you need to track what has already been recorded. Add a simple delta tracker:
+./.cursor/prompts/full-system-sweep-and-audit.md:31:- HTTP `/health` sweep on every host-exposed port (8091–8103, 8115, 8430,
+./.cursor/prompts/full-system-sweep-and-audit.md:32:  8765, 8199 — the iMessage bridge).
+./.cursor/prompts/full-system-sweep-and-audit.md:51:- Cortex: `curl http://127.0.0.1:8102/api/bluebubbles/health` — last inbound
+./.cursor/prompts/full-system-sweep-and-audit.md:79:   must rewrite `@redis:` → `@127.0.0.1:`. Check: `grep -n "_host_redis_url"
+./.cursor/prompts/cline-prompt-Z5-strategy-overhaul.md:5:- **Sports**: -$618 (23% win rate, $1,514 spent) — random match betting with zero edge
+./.cursor/prompts/cline-prompt-Z5-strategy-overhaul.md:6:- **Crypto**: -$185 (31% win rate) — spray-and-pray on price brackets
+./.cursor/prompts/cline-prompt-Z5-strategy-overhaul.md:7:- **Weather**: -$163 (48% win rate, $1,071 spent) — exact-temp coin flips at high cost
+./.cursor/prompts/cline-prompt-Z5-strategy-overhaul.md:8:- **GTA VI memes + Genius token**: -$222 dead money in unresolved markets
+./.cursor/prompts/cline-prompt-Z5-strategy-overhaul.md:10:**What works**: Bitcoin price bracket bets with conviction (+$178 single winner), esports with high confidence (+$67), cheap "No" bets on absurd long-duration events.
+./.cursor/prompts/cline-prompt-Z5-strategy-overhaul.md:12:**Goal**: Stop the bleeding, concentrate capital on proven edges, implement minimum ROI thresholds.
+./.cursor/prompts/DONE/high-impact-wave2-april5.md:210:curl -s http://127.0.0.1:8430/strategies/status 2>/dev/null | python3 -m json.tool
+./.cursor/prompts/DONE/high-impact-wave2-april5.md:278:curl -s http://127.0.0.1:8430/strategies/status | python3 -m json.tool
+./.cursor/prompts/DONE/high-impact-wave2-april5.md:281:curl -s "http://127.0.0.1:8098/trading?token=$(grep MISSION_CONTROL_TOKEN /Users/bob/AI-Server/.env | cut -d= -f2)" | head -20
+./.cursor/prompts/DONE/high-impact-wave2-april5.md:310:- All new API endpoints must work without auth (bot runs on localhost)
+./.cursor/prompts/DONE/ship-everything-april5.md:32:**All ports must bind to 127.0.0.1** — never `0.0.0.0`. The only exception is Mission Control (see P1-1 below) which needs Tailscale network access.
+./.cursor/prompts/DONE/ship-everything-april5.md:40:**Status**: Cursor prompt exists at `.cursor/prompts/scope-tracker-pipeline.md` — never run.
+./.cursor/prompts/DONE/ship-everything-april5.md:41:**What to build**: Read that prompt and implement it fully.
+./.cursor/prompts/DONE/ship-everything-april5.md:53:**Status**: Cursor prompt exists at `.cursor/prompts/testimonial-collection-flow.md` — never run.
+./.cursor/prompts/DONE/ship-everything-april5.md:54:**What to build**: Read that prompt and implement it fully.
+./.cursor/prompts/DONE/ship-everything-april5.md:67:**Status**: `maybe_send_briefing()` exists in `orchestrator.py` (line 982). It generates a briefing at 6 AM MT and calls `self.notify("briefing", briefing)` which goes to notification-hub, which sends via iMessage bridge.
+./.cursor/prompts/DONE/ship-everything-april5.md:69:**Problem**: Never confirmed the briefing actually arrives on Matt's phone. The chain is:
+./.cursor/prompts/DONE/ship-everything-april5.md:70:`orchestrator → notification-hub:8095/notify → POST to iMessage bridge:8199 → AppleScript → Messages.app`
+./.cursor/prompts/DONE/ship-everything-april5.md:72:**What to fix**:
+./.cursor/prompts/DONE/ship-everything-april5.md:84:**Status**: `auto_responder.py` exists in `openclaw/`. Both `orchestrator.py` (line 461) and `email-monitor/monitor.py` (line 719) import it. The email-monitor import was fixed tonight to use `/app/openclaw` instead of `../openclaw`.
+./.cursor/prompts/DONE/ship-everything-april5.md:86:**What to verify and fix**:
+./.cursor/prompts/DONE/ship-everything-april5.md:98:**Status**: Port is `127.0.0.1:8098` — inaccessible from Matt's phone or laptop.
+./.cursor/prompts/DONE/ship-everything-april5.md:100:**What to fix**: Mission Control needs to be accessible from the Tailscale network (100.x.x.x range) but NOT from the general LAN. The approach:
+./.cursor/prompts/DONE/ship-everything-april5.md:102:1. Change the port binding in `docker-compose.yml` from `127.0.0.1:8098:8098` to `0.0.0.0:8098:8098`
+./.cursor/prompts/DONE/ship-everything-april5.md:107:3. Add a note in `knowledge/operations-runbook.md` that Mission Control is the ONE exception to the 127.0.0.1 rule, protected by auth token instead
+./.cursor/prompts/DONE/ship-everything-april5.md:113:**Status**: Code exists at `integrations/x_intake/` with `pipeline.py`, `post_fetcher.py`, `analyzer.py`, `bookmark_scraper.py`, `video_transcriber.py`. Well-architected but NOT wired into any Docker service or the orchestrator.
+./.cursor/prompts/DONE/ship-everything-april5.md:115:**What to build**:
+./.cursor/prompts/DONE/ship-everything-april5.md:123:       - "127.0.0.1:8101:8101"
+./.cursor/prompts/DONE/ship-everything-april5.md:126:       - IMESSAGE_BRIDGE_URL=http://host.docker.internal:8199
+./.cursor/prompts/DONE/ship-everything-april5.md:143:**Status**: Code exists at `polymarket-bot/strategies/crypto/avellaneda_market_maker.py` (722 lines). NOT in docker-compose. NOT running. Last checked March 24. No `KRAKEN_API_KEY` or `KRAKEN_SECRET` in `.env.example` or docker-compose.
+./.cursor/prompts/DONE/ship-everything-april5.md:145:**What to build**:
+./.cursor/prompts/DONE/ship-everything-april5.md:165:**Status**: `position_syncer.py` exists and loads positions from on-chain data on startup. The logs show `copytrade_positions_loaded: 38, copytrade_positions_restored: 38` on restart. But the weather strategy shows `open_positions: 0` because it tracks positions separately.
+./.cursor/prompts/DONE/ship-everything-april5.md:167:**What to fix**:
+./.cursor/prompts/DONE/ship-everything-april5.md:179:**What to do**: There are two Topletz projects in Linear:
+./.cursor/prompts/DONE/ship-everything-april5.md:190:**Status**: D-Tools integration currently works via the browser_agent (Playwright screen scraping). A proper API key has never been generated.
+./.cursor/prompts/DONE/ship-everything-april5.md:192:**What to do**:
+./.cursor/prompts/DONE/ship-everything-april5.md:199:**Status**: The Polymarket Data API returns all historical positions (100+) including zero-balance ones. The dust sweeper (just deployed) handles selling low-value positions. But resolved positions with zero token balance still show up.
+./.cursor/prompts/DONE/ship-everything-april5.md:201:**What to fix**: In `position_syncer.py` or the redeemer:
+./.cursor/prompts/DONE/ship-everything-april5.md:212:**What to do**: Add a script at `scripts/rename-imacs.sh` that:
+./.cursor/prompts/DONE/ship-everything-april5.md:222:**What to do**: Create a script at `scripts/setup-ollama-maestro.sh` that:
+./.cursor/prompts/DONE/ship-everything-april5.md:227:5. Configures the AI-Server stack to use Maestro as an Ollama backend (add `OLLAMA_HOST` env var pointing to Maestro's IP)
+./.cursor/prompts/DONE/ship-everything-april5.md:242:# 2. No 0.0.0.0 ports (except Mission Control 8098 which has auth)
+./.cursor/prompts/DONE/ship-everything-april5.md:243:docker ps --format "{{.Ports}}" | grep "0.0.0.0" | grep -v 8098
+./.cursor/prompts/DONE/ship-everything-april5.md:249:curl -s http://127.0.0.1:8099/health | python3 -c "import sys,json; print(json.load(sys.stdin).get('auto_responder', 'NOT FOUND'))"
+./.cursor/prompts/DONE/ship-everything-april5.md:252:curl -s http://127.0.0.1:8099/briefing/status | python3 -m json.tool
+./.cursor/prompts/DONE/ship-everything-april5.md:255:curl -s http://127.0.0.1:8098/health?token=$(grep MISSION_CONTROL_TOKEN .env | cut -d= -f2)

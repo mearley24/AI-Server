@@ -15,7 +15,7 @@ printf '\nStep 2: Pulling llama3.2:3b...\n'
 ollama pull llama3.2:3b
 
 printf '\nStep 3: Configuring Ollama to listen on all interfaces...\n'
-launchctl setenv OLLAMA_HOST "0.0.0.0"
+launchctl setenv OLLAMA_HOST "127.0.0.1:11434"
 
 printf '\nStep 4: Restarting Ollama...\n'
 pkill ollama 2>/dev/null || true

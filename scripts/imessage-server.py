@@ -1596,5 +1596,5 @@ if __name__ == "__main__":
                 pass
             super().server_bind()
 
-    server = ReusableHTTPServer(("0.0.0.0", PORT), Handler)
+    server = ReusableHTTPServer(("127.0.0.1", PORT), Handler)
     server.serve_forever()

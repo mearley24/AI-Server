@@ -1,0 +1,20 @@
+=== DOCKER PORTS ===
+NAMES                PORTS
+polymarket-bot       
+vpn                  127.0.0.1:8430->8430/tcp
+dtools-bridge        127.0.0.1:8096->5050/tcp
+rsshub               1200/tcp
+x-intake             127.0.0.1:8101->8101/tcp
+cortex               127.0.0.1:8102->8102/tcp
+email-monitor        127.0.0.1:8092->8092/tcp
+proposals            127.0.0.1:8091->8091/tcp
+notification-hub     127.0.0.1:8095->8095/tcp
+cortex-autobuilder   127.0.0.1:8115->8115/tcp
+x-alpha-collector    
+openclaw             127.0.0.1:8099->3000/tcp
+clawwork             127.0.0.1:8097->8097/tcp
+voice-receptionist   127.0.0.1:8093->3000/tcp
+intel-feeds          127.0.0.1:8765->8765/tcp
+client-portal        8096/tcp
+calendar-agent       127.0.0.1:8094->8094/tcp
+redis                127.0.0.1:6379->6379/tcp
