@@ -1401,11 +1401,28 @@ def _build_draft_with_context(
         confidence = 0.75 if not quality_downgraded else 0.55
 
     elif accepted_equip:
-        # Equipment name only — always safe to use.
+        # Equipment on file but no accepted issue or request.
+        # Apply the same capability-aware wording as the issue/request branches
+        # so Sonos → self-fix, network → remote, unknown → neutral check-in.
         eq  = accepted_equip[0]
         cap = _system_cap(eq)
-        if cap["remote"]:
-            draft = f"Checking in on your {eq} — everything holding up? I can take a quick look remotely if not."
+        fix = cap["self_fix"]
+        can_remote = cap["remote"]
+        if fix and can_remote:
+            draft = (
+                f"Got it — {_personalise_fix(fix, eq)}. "
+                f"If that doesn't sort it, I'll check remotely and let you know."
+            )
+        elif fix:
+            draft = (
+                f"Got it — {_personalise_fix(fix, eq)}. "
+                f"If it's still acting up after that, I can swing by and take a look."
+            )
+        elif can_remote:
+            draft = (
+                f"Got it — I'll check on your {eq} remotely. "
+                f"Give me a few minutes and I'll let you know what I find."
+            )
         else:
             draft = f"Checking in on your {eq} — everything holding up okay?"
         reasoning_parts.append(f"Equipment on file: '{eq}'")
@@ -1599,6 +1616,19 @@ async def x_intake_context_card(
             accepted_by_type.setdefault(f["fact_type"], []).append(entry)
         else:
             unverified_by_type.setdefault(f["fact_type"], []).append(entry)
+
+    # Override stale profile summary columns with values derived from CURRENT
+    # accepted facts only.  The profiles table was written at extraction time
+    # and may include fact values that have since been rejected by the quality
+    # audit (e.g. speech fragments, generic "Let me know").
+    profile["open_requests"] = [
+        f["fact_value"] for f in facts
+        if f["is_accepted"] and f["fact_type"] == "request"
+    ][:5]
+    profile["follow_ups"] = [
+        f["fact_value"] for f in facts
+        if f["is_accepted"] and f["fact_type"] == "follow_up"
+    ][:5]
 
     import secrets as _secrets
     receipts = _receipts_for_handle(handle)
@@ -1870,6 +1900,16 @@ async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
         (accepted_by_type if f["is_accepted"] else unverified_by_type).setdefault(
             f["fact_type"], []
         ).append(entry)
+
+    # Refresh stale profile summary columns from current accepted facts only.
+    profile["open_requests"] = [
+        f["fact_value"] for f in facts
+        if f["is_accepted"] and f["fact_type"] == "request"
+    ][:5]
+    profile["follow_ups"] = [
+        f["fact_value"] for f in facts
+        if f["is_accepted"] and f["fact_type"] == "follow_up"
+    ][:5]
 
     receipts = _receipts_for_handle(handle)
     action   = _suggest_action(accepted_by_type, profile["relationship_type"])
