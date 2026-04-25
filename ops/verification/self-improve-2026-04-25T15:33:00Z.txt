@@ -1,0 +1,46 @@
+# Self-improvement inbox processing
+
+**Prompt path:** /loop dynamic self-improvement processing
+**UTC timestamp:** 2026-04-25T15:33:00Z
+
+## Inbox processing summary
+
+**Inbox filenames processed:** 14 items
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md ✓
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md ✓ 
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md (already processed)
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md (already processed)
+- 20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451.md (already processed)
+- 20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033.md (already processed)
+- 20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034.md (already processed)
+- 20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536.md (already processed)
+- 20260425T033947Z-imessage-x-com-sharbel-status-2047672262963171774.md (already processed)
+- 20260425T033947Z-imessage-x-com-shanerobinett-status-2047692184518787185.md (already processed)
+- 20260425T033947Z-imessage-x-com-divyansht91162-status-2047610118423126494.md (already processed)
+- 20260425T033948Z-imessage-x-com-eng-khairallah1-status-2047693100118880488.md (already processed)
+- 20260425T033948Z-imessage-x-com-sprytixl-status-2047558635933348035.md (already processed)
+- 20260425T044431Z-imessage-x-com-moondevonyt-status-2047634331162800514.md (already processed)
+
+**Skipped:** 0 (oversize)
+**Unchanged:** 11 (idempotency - already had matching archive + card files)
+
+## Card filenames produced with Status
+
+**New cards created:** 3 total
+- ops/self_improvement/cards/20260424-20260425-consolidated-imessage-urls-card.md → Status: auto-run via ai-dispatch
+- ops/self_improvement/cards/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md → Status: auto-run via ai-dispatch  
+- ops/self_improvement/cards/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md → Status: needs fetch
+
+## Newly drafted prompt files
+
+- .cursor/prompts/self-improvement/batch-similar-imessage-urls.md (auto-safe batch processing improvement)
+
+## Collector status
+
+SELF_IMPROVE_SKIP_COLLECT not detected - collector should have run before this processing phase.
+
+## Archive operations
+
+All 14 inbox items successfully copied to ops/self_improvement/archive/ (preserving untouched input record).
+
+STATUS: OK
