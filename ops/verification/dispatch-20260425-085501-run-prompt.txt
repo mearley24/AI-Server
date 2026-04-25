@@ -1,0 +1,21 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260425-085501
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
+Perfect! I've completed the self-improvement inbox processing.
+
+## Summary
+
+- **Found**: 18 inbox files 
+- **Processed**: 0 (all already had archive copies and corresponding cards)
+- **Status**: All items were previously processed, with latest cards created at 07:20 UTC today
+
+All files followed the same pattern - iMessage captures of bare X.com URLs that require either fetch capability or external connector follow-up to score properly. The idempotency check worked correctly, skipping already-processed items.
+
+**Artifacts created**:
+- Verification report: `ops/verification/20260425T145617Z-self-improve.txt`
+- STATUS_REPORT.md entry showing no new processing required
+
+The self-improvement pipeline is working correctly with proper idempotency handling.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260425-085501-run-prompt.txt
