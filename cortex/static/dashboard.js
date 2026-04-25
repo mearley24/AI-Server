@@ -80,7 +80,7 @@
     if (['overview', 'xintake', 'symphony', 'autonomy'].includes(name)) {
       loadToolAccess(name);
     }
-    if (name === 'xintake'     && !_xiLoaded) { _xiLoaded = true; loadXIntake(); }
+    if (name === 'xintake'     && !_xiLoaded) { _xiLoaded = true; loadXIntake(); loadFollowUps(); }
     if (name === 'transcripts' && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
     if (name === 'autonomy'    && !_autonomyLoaded) { loadAutonomy(); }
     if (name === 'symphony') {
@@ -1621,5 +1621,73 @@
     var data = await fetchJson('/api/x-intake/context-card?' + param);
     renderContextCard(data);
   };
+
+  // ── Follow-up engine ──────────────────────────────────────────────────────
+
+  window.loadFollowUps = async function loadFollowUps() {
+    const el    = $('xi-follow-ups');
+    const badge = $('xi-fu-count');
+    if (el) el.innerHTML = '<div class="unavailable">loading…</div>';
+    const data = await fetchJson('/api/x-intake/follow-ups?threshold_hours=2&limit=20');
+    renderFollowUps(data);
+    // Update the Cortex nav badge if available
+    const navBadge = document.getElementById('nav-fu-count');
+    if (navBadge && data && data.count > 0) {
+      navBadge.textContent = data.count;
+      navBadge.classList.remove('hidden');
+    }
+  };
+
+  function renderFollowUps(data) {
+    const el    = $('xi-follow-ups');
+    const badge = $('xi-fu-count');
+    if (!el) return;
+
+    if (!data || data.status !== 'ok') {
+      el.innerHTML = '<div class="unavailable">unavailable</div>';
+      return;
+    }
+
+    const items = data.follow_ups || [];
+    if (badge) badge.textContent = items.length ? `(${items.length})` : '';
+
+    if (!items.length) {
+      el.innerHTML = '<div class="small" style="color:var(--green)">✓ All inbound messages have responses.</div>';
+      return;
+    }
+
+    el.innerHTML = items.map((item) => {
+      const p       = item.profile || {};
+      const rtLabel = (p.relationship_type || 'unknown').replace(/_/g, ' ').toUpperCase();
+      const rtColor = (_XI_RT_COLORS[p.relationship_type] || 'var(--muted)');
+      const elapsed = item.elapsed_hours >= 24
+        ? `${(item.elapsed_hours / 24).toFixed(1)}d`
+        : `${item.elapsed_hours}h`;
+      const systems   = (p.systems_or_topics || []).slice(0, 3).join(', ');
+      const draftConf = item.confidence ? ` · ${(item.confidence * 100).toFixed(0)}%` : '';
+      const qBadge    = item.draft_quality_status === 'pass'
+        ? '<span style="color:var(--green);font-size:8px;">✓ clean</span>'
+        : item.draft_quality_status === 'fallback'
+        ? '<span style="color:var(--yellow);font-size:8px;">~ fallback</span>'
+        : '';
+
+      return `<div style="border:1px solid var(--border);border-radius:5px;padding:7px 10px;margin-bottom:7px;">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
+    <span style="font-size:9px;font-weight:700;color:${rtColor};">${esc(rtLabel)}</span>
+    <span class="mono" style="font-size:9px;color:var(--muted);">${esc(item.contact_masked || '')}</span>
+    <span style="font-size:9px;color:var(--red);font-weight:700;margin-left:auto;">${esc(elapsed)} ago</span>
+  </div>
+  ${systems ? `<div style="font-size:9px;color:var(--muted);margin-bottom:2px;">systems: ${esc(systems)}</div>` : ''}
+  ${item.suggested_next_action ? `<div style="font-size:10px;color:var(--blue);border-left:2px solid var(--blue);padding-left:5px;margin-bottom:4px;">${esc(item.suggested_next_action.slice(0, 90))}</div>` : ''}
+  ${item.draft_reply ? `<details style="margin-bottom:4px;"><summary style="font-size:9px;color:var(--muted);cursor:pointer;">draft reply ${draftConf} ${qBadge} ▸</summary>
+    <div style="font-size:10px;color:var(--text);margin-top:3px;padding:4px 7px;background:var(--surface-2);border-radius:3px;white-space:pre-wrap;">${esc(item.draft_reply.slice(0, 300))}</div>
+  </details>` : ''}
+  <button onclick="document.getElementById('ctx-thread-input').value='${esc(item.contact_masked)}';switchTab('xintake');setTimeout(loadContextCard,50);"
+    style="font-size:9px;padding:1px 8px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:pointer;">
+    view context →
+  </button>
+</div>`;
+    }).join('');
+  }
 
 })();

@@ -140,6 +140,15 @@
     <div id="tool-access-xintake" class="tool-list"><div class="unavailable">loading</div></div>
   </div>
 
+  <!-- Needs Follow-Up -->
+  <div class="card" id="xi-fu-card" style="margin:0 0 14px;border-left:3px solid var(--red);">
+    <h2>Needs Follow-Up
+      <span id="xi-fu-count" class="small" style="color:var(--red);font-weight:700;text-transform:none;letter-spacing:0;margin-left:8px;"></span>
+      <button onclick="loadFollowUps()" style="margin-left:auto;font-size:10px;padding:2px 9px;border-radius:4px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:pointer;">↻</button>
+    </h2>
+    <div id="xi-follow-ups"><div class="unavailable">loading…</div></div>
+  </div>
+
   <!-- Stats bar -->
   <div class="xi-stats-row">
     <div class="xi-stat">

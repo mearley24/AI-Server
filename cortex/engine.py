@@ -1942,6 +1942,162 @@ async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ── Follow-up engine ───────────────────────────────────────────────────────────
+
+import time as _time
+import datetime as _dt
+
+_X_INTAKE_QUEUE_DB = _X_INTAKE_DATA_DIR / "queue.db"
+
+
+def _queue_rows_with_context(limit: int = 500) -> list[dict]:
+    """Return x_intake_queue rows that have sender_guid + non-trivial context_json.
+
+    The queue DB is mounted read-only in this container.
+    Returns an empty list silently if unavailable.
+    """
+    if not _X_INTAKE_QUEUE_DB.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{_X_INTAKE_QUEUE_DB}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, sender_guid, context_json, created_at "
+            "FROM x_intake_queue "
+            "WHERE sender_guid != '' "
+            "  AND context_json IS NOT NULL "
+            "  AND context_json NOT IN ('', '{}') "
+            "ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def _approvals_index() -> dict[str, float]:
+    """Return {contact_masked → latest_approval_unix_ts} from reply_approvals.ndjson."""
+    if not _APPROVAL_LOG.is_file():
+        return {}
+    index: dict[str, float] = {}
+    try:
+        for line in _APPROVAL_LOG.read_text(errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                a = json.loads(line)
+            except Exception:
+                continue
+            masked = a.get("contact_masked", "")
+            if not masked:
+                continue
+            try:
+                ts = _dt.datetime.fromisoformat(
+                    a.get("approved_at", "").replace("Z", "+00:00")
+                ).timestamp()
+            except Exception:
+                continue
+            if index.get(masked, 0.0) < ts:
+                index[masked] = ts
+    except Exception:
+        pass
+    return index
+
+
+@app.get("/api/x-intake/follow-ups", tags=["x-intake"])
+async def x_intake_follow_ups(
+    threshold_hours: float = 2.0,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return inbound messages that need a follow-up reply.
+
+    Logic (derived, no new storage):
+      - Reads x_intake_queue rows that have sender_guid + enriched context_json.
+      - Groups by contact (one entry per contact, most-recent message wins).
+      - An item is a follow-up when:
+          elapsed > threshold_hours  AND
+          no approved reply after the message timestamp.
+      - Sorted oldest-first (most overdue at top).
+
+    Returns only internal Cortex data — no messages are sent.
+
+    threshold_hours — how old a message must be before surfacing (default 2.0)
+    limit           — max items returned (default 20)
+    """
+    threshold_seconds = threshold_hours * 3600
+    now = _time.time()
+
+    rows = _queue_rows_with_context(limit=500)
+    if not rows:
+        return {
+            "status": "ok", "count": 0, "follow_ups": [],
+            "threshold_hours": threshold_hours,
+        }
+
+    # Parse context JSON; skip rows without a valid contact
+    enriched: list[dict] = []
+    for row in rows:
+        try:
+            ctx = json.loads(row["context_json"] or "{}")
+        except Exception:
+            continue
+        contact_masked = ctx.get("contact_masked", "")
+        if not contact_masked or ctx.get("status") == "no_handle":
+            continue
+        enriched.append({
+            "queue_item_id":         row["id"],
+            "contact_masked":        contact_masked,
+            "created_at":            row["created_at"],
+            "has_context_card":      ctx.get("status") in ("ok", "no_profile"),
+            "has_draft_reply":       bool((ctx.get("draft_reply") or "").strip()),
+            "draft_reply":           ctx.get("draft_reply", ""),
+            "confidence":            ctx.get("confidence", 0.0),
+            "draft_quality_status":  ctx.get("draft_quality_status", ""),
+            "profile":               ctx.get("profile") or {},
+            "suggested_next_action": ctx.get("suggested_next_action", ""),
+        })
+
+    # Keep only the most-recent row per contact
+    by_contact: dict[str, dict] = {}
+    for item in enriched:
+        c = item["contact_masked"]
+        if c not in by_contact or item["created_at"] > by_contact[c]["created_at"]:
+            by_contact[c] = item
+
+    # Build approval index: contact → latest approved_at unix ts
+    approvals = _approvals_index()
+
+    # Filter and annotate
+    follow_ups: list[dict] = []
+    for item in by_contact.values():
+        elapsed = now - item["created_at"]
+        if elapsed < threshold_seconds:
+            continue                                # Too recent — not overdue yet
+
+        latest_approved_at = approvals.get(item["contact_masked"], 0.0)
+        has_approved = latest_approved_at > item["created_at"]
+        item["has_approved_reply"] = has_approved
+
+        if has_approved:
+            continue                                # Already replied
+
+        item["elapsed_seconds"] = round(elapsed)
+        item["elapsed_hours"]   = round(elapsed / 3600, 1)
+        follow_ups.append(item)
+
+    follow_ups.sort(key=lambda x: x["created_at"])  # oldest first
+    follow_ups = follow_ups[:limit]
+
+    return {
+        "status":          "ok",
+        "count":           len(follow_ups),
+        "threshold_hours": threshold_hours,
+        "follow_ups":      follow_ups,
+    }
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 
