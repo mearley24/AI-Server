@@ -433,9 +433,7 @@
       <div id="ci-profiles"><div class="unavailable">loading</div></div>
     </div>
     <div class="card">
-      <h2>Proposed Facts <span id="ci-facts-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span>
-        <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">pending approval</span>
-      </h2>
+      <h2>Proposed Facts <span id="ci-facts-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>
       <div id="ci-facts"><div class="unavailable">loading</div></div>
     </div>
   </div>
@@ -583,31 +581,50 @@
   }
 
   // ── Facts renderer ────────────────────────────────────────────────────────
+  // data comes from ?accepted=all so we can show pending + state summary
   function renderFacts(data) {
     var el = document.getElementById('ci-facts');
     var ct = document.getElementById('ci-facts-count');
     if (!data || data.error) { el.innerHTML = '<div class="unavailable">unavailable</div>'; return; }
-    var facts = data.facts || [];
-    ct.textContent = facts.length ? '(' + facts.length + ' pending)' : '';
-    if (!facts.length) {
-      el.innerHTML = '<div class="small" style="color:var(--green)">No pending facts.</div>';
+    var all = data.facts || [];
+    var pending  = all.filter(function(f) { return !f.is_accepted && !f.is_rejected; });
+    var accepted = all.filter(function(f) { return f.is_accepted; });
+    var rejected = all.filter(function(f) { return f.is_rejected; });
+
+    // Header count: "N pending · M accepted · P rejected"
+    var parts = [];
+    if (pending.length)  parts.push('<span style="color:var(--yellow)">' + pending.length + ' pending</span>');
+    if (accepted.length) parts.push('<span style="color:var(--green)">' + accepted.length + ' accepted</span>');
+    if (rejected.length) parts.push('<span style="color:var(--muted)">' + rejected.length + ' rejected</span>');
+    ct.innerHTML = parts.length ? '(' + parts.join(' · ') + ')' : '';
+
+    if (!all.length) {
+      el.innerHTML = '<div class="small" style="color:var(--muted)">No proposed facts yet. Run extraction script.</div>';
       return;
     }
-    el.innerHTML = facts.slice(0,20).map(function(f) {
+    // Show pending first, then accepted (dimmed), then rejected (dimmed)
+    var rows = pending.concat(accepted, rejected).slice(0, 40);
+    el.innerHTML = rows.map(function(f) {
       var conf = (f.confidence * 100).toFixed(0);
-      return '<div style="border-left:3px solid var(--border-2);padding:4px 8px;margin-bottom:6px;">'
+      var isPending  = !f.is_accepted && !f.is_rejected;
+      var isAccepted = f.is_accepted;
+      var opacity    = isPending ? '1' : '0.45';
+      var borderCol  = isAccepted ? 'var(--green)' : (f.is_rejected ? 'var(--red)' : 'var(--border-2)');
+      return '<div style="border-left:3px solid ' + borderCol + ';padding:4px 8px;margin-bottom:6px;opacity:' + opacity + ';">'
         + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">'
         + '<span style="font-size:10px;font-weight:700;color:var(--gold-dim);">' + esc(f.fact_type) + '</span>'
         + '<span style="font-size:11px;color:var(--text);flex:1;">' + esc(String(f.fact_value).slice(0,80)) + '</span>'
         + '<span style="font-size:10px;color:var(--muted);">' + conf + '%</span>'
-        + '<button onclick="approveFact(\'' + esc(f.fact_id) + '\',this)" style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid var(--green);background:transparent;color:var(--green);cursor:pointer;">✓</button>'
-        + '<button onclick="rejectFact(\'' + esc(f.fact_id) + '\',this)" style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;">✗</button>'
+        + (isPending
+            ? '<button onclick="approveFact(\'' + esc(f.fact_id) + '\',this)" style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid var(--green);background:transparent;color:var(--green);cursor:pointer;">✓</button>'
+            + '<button onclick="rejectFact(\'' + esc(f.fact_id) + '\',this)" style="font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid var(--red);background:transparent;color:var(--red);cursor:pointer;">✗</button>'
+            : '<span style="font-size:9px;color:var(--muted);">' + (isAccepted ? '✓ accepted' : '✗ rejected') + '</span>')
         + '</div>'
         + (f.source_excerpt ? '<div class="small mono" style="color:var(--muted);font-size:9px;">' + esc(f.source_excerpt.slice(0,100)) + '</div>' : '')
         + '</div>';
     }).join('');
-    if (facts.length > 20) {
-      el.innerHTML += '<div class="small" style="color:var(--muted);margin-top:4px;">' + (facts.length - 20) + ' more… use API for full list.</div>';
+    if (all.length > 40) {
+      el.innerHTML += '<div class="small" style="color:var(--muted);margin-top:4px;">' + (all.length - 40) + ' more… use API for full list.</div>';
     }
   }
 
@@ -641,7 +658,7 @@
     badge.textContent = 'loading…';
     const [pd, fd] = await Promise.all([
       fetchJson('/api/client-intel/profiles'),
-      fetchJson('/api/client-intel/proposed-facts?accepted=pending&limit=100'),
+      fetchJson('/api/client-intel/proposed-facts?accepted=all&limit=200'),
     ]);
     renderProfiles(pd);
     renderFacts(fd);

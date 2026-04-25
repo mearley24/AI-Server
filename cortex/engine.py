@@ -676,6 +676,14 @@ def _facts_db_rw() -> sqlite3.Connection | None:
     return conn
 
 
+def _facts_db_ro() -> sqlite3.Connection | None:
+    if not _FACTS_DB.is_file():
+        return None
+    conn = sqlite3.connect(f"file:{_FACTS_DB}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 @app.get("/api/client-intel/profiles", tags=["client-intel"])
 async def client_intel_profiles(
     relationship_type: str = "all",
@@ -848,8 +856,9 @@ async def client_intel_profile_detail(profile_id: str) -> dict[str, Any]:
     p_conn = _profiles_db_ro()
     if p_conn is None:
         return {"status": "unavailable", "message": "Profiles DB not built yet.", "profile": None, "facts_by_type": {}}
-    f_conn = _facts_db_rw()
+    f_conn = None
     try:
+        f_conn = _facts_db_ro()
         row = p_conn.execute(
             "SELECT profile_id, relationship_type, display_name, contact_handle, "
             "thread_ids, first_seen, last_seen, summary, open_requests, follow_ups, "

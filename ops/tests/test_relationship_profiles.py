@@ -416,3 +416,104 @@ class TestFragmentFiltering:
             assert f["thread_id"] == "tid1"
             assert f["is_accepted"] == 0
             assert f["is_rejected"] == 0
+
+
+# ── Profile detail API (engine-level) ─────────────────────────────────────────
+
+class TestProfileDetailDb:
+    """Test the DB queries that back GET /api/client-intel/profiles/{profile_id}."""
+
+    def _make_dbs(self, tmp_path):
+        """Create in-memory profiles + facts DBs with one profile and two facts."""
+        prof_db = str(tmp_path / "profiles.sqlite")
+        fact_db = str(tmp_path / "facts.sqlite")
+
+        pc = sqlite3.connect(prof_db)
+        _ensure_profiles_schema(pc)
+        pc.execute(
+            "INSERT INTO profiles VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("prof1", "client", "", "+15551234567",
+             '["tid1"]', "2026-01-01T00:00:00+00:00", "2026-04-01T00:00:00+00:00",
+             "Systems/topics: Sonos. 2 proposed fact(s) extracted",
+             '["check the Sonos"]', '[]', '["Sonos"]', '[]', '[]',
+             0.60, "proposed", "2026-04-24T10:00:00+00:00"),
+        )
+        pc.commit(); pc.close()
+
+        fc = sqlite3.connect(fact_db)
+        _ensure_facts_schema(fc)
+        fc.execute(
+            "INSERT INTO proposed_facts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("fid1", "prof1", "tid1", "+15551234567", "equipment", "Sonos",
+             0.75, "The Sonos is offline", "2026-04-01T10:00:00+00:00", 0, 0, "now"),
+        )
+        fc.execute(
+            "INSERT INTO proposed_facts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("fid2", "prof1", "tid1", "+15551234567", "request", "check the Sonos",
+             0.70, "Can you check the Sonos system?", "2026-04-01T10:01:00+00:00", 1, 0, "now"),
+        )
+        fc.commit(); fc.close()
+        return prof_db, fact_db
+
+    def test_profile_found(self, tmp_path):
+        prof_db, fact_db = self._make_dbs(tmp_path)
+        pc = sqlite3.connect(f"file:{prof_db}?mode=ro", uri=True)
+        pc.row_factory = sqlite3.Row
+        row = pc.execute("SELECT * FROM profiles WHERE profile_id=?", ("prof1",)).fetchone()
+        pc.close()
+        assert row is not None
+        assert row["relationship_type"] == "client"
+        assert row["contact_handle"] == "+15551234567"
+
+    def test_profile_not_found_returns_none(self, tmp_path):
+        prof_db, _ = self._make_dbs(tmp_path)
+        pc = sqlite3.connect(f"file:{prof_db}?mode=ro", uri=True)
+        pc.row_factory = sqlite3.Row
+        row = pc.execute("SELECT * FROM profiles WHERE profile_id=?", ("nonexistent",)).fetchone()
+        pc.close()
+        assert row is None
+
+    def test_facts_grouped_by_type(self, tmp_path):
+        _, fact_db = self._make_dbs(tmp_path)
+        fc = sqlite3.connect(f"file:{fact_db}?mode=ro", uri=True)
+        fc.row_factory = sqlite3.Row
+        rows = fc.execute(
+            "SELECT fact_id, fact_type, fact_value, is_accepted, is_rejected "
+            "FROM proposed_facts WHERE profile_id=? "
+            "ORDER BY fact_type, confidence DESC",
+            ("prof1",),
+        ).fetchall()
+        fc.close()
+        by_type = {}
+        for r in rows:
+            by_type.setdefault(r["fact_type"], []).append(dict(r))
+        assert "equipment" in by_type
+        assert "request" in by_type
+        assert by_type["equipment"][0]["fact_value"] == "Sonos"
+        assert by_type["request"][0]["is_accepted"] == 1
+
+    def test_contact_handle_not_in_profile_response(self, tmp_path):
+        prof_db, _ = self._make_dbs(tmp_path)
+        pc = sqlite3.connect(f"file:{prof_db}?mode=ro", uri=True)
+        pc.row_factory = sqlite3.Row
+        row = pc.execute("SELECT * FROM profiles WHERE profile_id=?", ("prof1",)).fetchone()
+        pc.close()
+        # Simulate what the API does: mask the handle
+        from cortex.engine import _mask_handle
+        masked = _mask_handle(row["contact_handle"])
+        assert "+15551234567" not in masked
+        assert "***" in masked
+
+    def test_facts_include_all_states(self, tmp_path):
+        _, fact_db = self._make_dbs(tmp_path)
+        fc = sqlite3.connect(f"file:{fact_db}?mode=ro", uri=True)
+        fc.row_factory = sqlite3.Row
+        rows = fc.execute(
+            "SELECT fact_id, is_accepted, is_rejected FROM proposed_facts WHERE profile_id=?",
+            ("prof1",),
+        ).fetchall()
+        fc.close()
+        states = {r["fact_id"]: (r["is_accepted"], r["is_rejected"]) for r in rows}
+        # fid1 is pending, fid2 is accepted
+        assert states["fid1"] == (0, 0)
+        assert states["fid2"] == (1, 0)
