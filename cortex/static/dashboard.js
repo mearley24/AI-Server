@@ -662,14 +662,23 @@
     const systems  = (p.systems_or_topics || []).slice(0,4).join(', ');
     const openReqs = (p.open_requests || []).slice(0,2);
     const conf     = ((ctx.confidence || 0) * 100).toFixed(0);
+    const confColor = ctx.confidence >= 0.75 ? 'var(--green)' : ctx.confidence >= 0.50 ? 'var(--yellow)' : 'var(--muted)';
     const unverifiedCount = Object.values(ctx.unverified_facts || {}).reduce((s,a) => s + a.length, 0);
+    const actionId = esc(ctx.action_id || '');
+    const contactMasked = esc(ctx.contact_masked || '');
+    // Stable element id scoped to the queue item
+    const ctxId = 'xictx-' + (item.id || Math.random().toString(36).slice(2));
 
-    let h = `<div class="xi-ctx-card">`;
+    let h = `<div class="xi-ctx-card" id="${ctxId}">`;
+
+    // Header row: relationship type, contact, confidence
     h += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">`;
     h += `<span style="font-size:9px;font-weight:700;color:${rtColor};">${esc(rtLabel)}</span>`;
-    h += `<span class="mono" style="font-size:9px;color:var(--muted);">${esc(ctx.contact_masked||'')}</span>`;
-    h += `<span style="font-size:9px;color:var(--muted);margin-left:auto;">${conf}%</span>`;
+    h += `<span class="mono" style="font-size:9px;color:var(--muted);">${contactMasked}</span>`;
+    h += `<span style="font-size:9px;font-weight:600;color:${confColor};margin-left:auto;">${conf}% confidence</span>`;
     h += `</div>`;
+
+    // Profile summary + signals
     if (p.summary) h += `<div style="font-size:10px;color:var(--text);margin-bottom:2px;">${esc(p.summary.slice(0,120))}</div>`;
     if (systems)   h += `<div style="font-size:9px;color:var(--muted);">systems: ${esc(systems)}</div>`;
     if (openReqs.length) {
@@ -681,15 +690,113 @@
     if (ctx.suggested_next_action) {
       h += `<div style="font-size:10px;color:var(--blue);margin-top:4px;border-left:2px solid var(--blue);padding-left:5px;">${esc(ctx.suggested_next_action.slice(0,100))}</div>`;
     }
+
+    // Draft reply + reasoning toggle
     if (ctx.draft_reply) {
-      h += `<details style="margin-top:4px;"><summary style="font-size:9px;color:var(--muted);cursor:pointer;">draft reply ▸</summary>`;
-      h += `<div style="font-size:10px;color:var(--text);margin-top:3px;padding:5px 8px;background:var(--surface-2);border-radius:3px;white-space:pre-wrap;">${esc(ctx.draft_reply.slice(0,200))}</div>`;
-      h += `<button disabled title="Auto-send disabled" style="margin-top:4px;font-size:9px;padding:1px 8px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:not-allowed;">✉ Send (disabled)</button>`;
-      h += `</details>`;
+      const draftEsc = esc(ctx.draft_reply.slice(0,400));
+      const reasonEsc = esc(ctx.reasoning || '');
+
+      h += `<div style="margin-top:6px;border:1px solid var(--border);border-radius:4px;padding:6px 8px;background:var(--surface-2);">`;
+      h += `<div style="font-size:9px;font-weight:700;color:var(--gold-dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Draft Reply</div>`;
+
+      // Editable textarea (hidden by default, shown for Edit+Approve)
+      h += `<div id="${ctxId}-draft-display" style="font-size:10px;color:var(--text);white-space:pre-wrap;margin-bottom:4px;">${draftEsc}</div>`;
+      h += `<textarea id="${ctxId}-draft-edit" rows="3" style="display:none;width:100%;font-size:10px;padding:4px;background:var(--surface);color:var(--text);border:1px solid var(--border-2);border-radius:3px;resize:vertical;box-sizing:border-box;">${draftEsc}</textarea>`;
+
+      // Reasoning toggle
+      if (reasonEsc) {
+        h += `<details style="margin-bottom:5px;"><summary style="font-size:9px;color:var(--muted);cursor:pointer;">why this reply ▸</summary>`;
+        h += `<div style="font-size:9px;color:var(--muted);margin-top:3px;font-style:italic;">${reasonEsc}</div>`;
+        h += `</details>`;
+      }
+
+      // Source facts (collapsed)
+      if (ctx.source_facts && ctx.source_facts.length) {
+        h += `<details style="margin-bottom:5px;"><summary style="font-size:9px;color:var(--muted);cursor:pointer;">source facts (${ctx.source_facts.length}) ▸</summary><div style="margin-top:3px;">`;
+        ctx.source_facts.forEach((sf) => {
+          const tag = sf.verified ? '<span style="color:var(--green);font-size:8px;">✓</span>' : '<span style="color:var(--yellow);font-size:8px;">~</span>';
+          h += `<div style="font-size:9px;color:var(--muted);">${tag} ${esc(sf.fact_type)}: ${esc(sf.fact_value.slice(0,60))}</div>`;
+        });
+        h += `</div></details>`;
+      }
+
+      // Approval buttons
+      h += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">`;
+      h += `<button disabled title="Auto-send is disabled — use Approve Only or Edit+Approve"
+               style="font-size:9px;padding:2px 8px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:not-allowed;">
+               ✉ Approve &amp; Send (disabled)</button>`;
+      h += `<button onclick="approveReply('${ctxId}','${actionId}','${contactMasked}','approve_only')"
+               style="font-size:9px;padding:2px 9px;border-radius:3px;border:1px solid var(--green);background:transparent;color:var(--green);cursor:pointer;">
+               ✓ Approve Only</button>`;
+      h += `<button onclick="approveReply('${ctxId}','${actionId}','${contactMasked}','edit_approve')"
+               id="${ctxId}-edit-btn"
+               style="font-size:9px;padding:2px 9px;border-radius:3px;border:1px solid var(--blue);background:transparent;color:var(--blue);cursor:pointer;">
+               ✎ Edit + Approve</button>`;
+      h += `</div>`;
+      h += `<div id="${ctxId}-status" style="font-size:9px;margin-top:3px;display:none;"></div>`;
+      h += `</div>`;  // end draft box
     }
-    h += `</div>`;
+
+    h += `</div>`;  // end xi-ctx-card
     return h;
   }
+
+  // ── Reply approval handler ─────────────────────────────────────────────────
+  window.approveReply = async function(ctxId, actionId, contactMasked, mode) {
+    const statusEl   = document.getElementById(ctxId + '-status');
+    const displayEl  = document.getElementById(ctxId + '-draft-display');
+    const editEl     = document.getElementById(ctxId + '-draft-edit');
+    const editBtn    = document.getElementById(ctxId + '-edit-btn');
+
+    if (mode === 'edit_approve') {
+      // First click: toggle to edit mode
+      if (editEl && editEl.style.display === 'none') {
+        if (displayEl) displayEl.style.display = 'none';
+        editEl.style.display = 'block';
+        editEl.focus();
+        if (editBtn) { editBtn.textContent = '✓ Confirm Edit'; editBtn.style.color = 'var(--green)'; editBtn.style.borderColor = 'var(--green)'; }
+        return;
+      }
+      // Second click: confirm with edit
+    }
+
+    const draftReply = displayEl ? displayEl.textContent : '';
+    const editedReply = (editEl && editEl.style.display !== 'none') ? editEl.value.trim() : '';
+    const finalReply  = editedReply || draftReply;
+
+    if (!finalReply) { if (statusEl) { statusEl.textContent = 'No reply text.'; statusEl.style.display = 'block'; } return; }
+
+    if (statusEl) { statusEl.textContent = 'Saving…'; statusEl.style.color = 'var(--muted)'; statusEl.style.display = 'block'; }
+
+    try {
+      const r = await fetch('/api/x-intake/approve-reply', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          action_id:      actionId,
+          approved:       true,
+          draft_reply:    draftReply.slice(0,500),
+          edited_reply:   editedReply.slice(0,500),
+          contact_masked: contactMasked,
+          confidence:     0,
+        }),
+      });
+      const d = await r.json();
+      if (d.status === 'ok') {
+        if (statusEl) {
+          statusEl.textContent = d.edited ? '✓ Edited reply approved (not sent)' : '✓ Reply approved (not sent)';
+          statusEl.style.color = 'var(--green)'; statusEl.style.display = 'block';
+        }
+        if (editEl) editEl.style.display = 'none';
+        if (displayEl) { displayEl.style.display = 'block'; if (editedReply) displayEl.textContent = editedReply; }
+        if (editBtn) { editBtn.disabled = true; editBtn.style.opacity = '0.4'; }
+      } else {
+        if (statusEl) { statusEl.textContent = 'Error: ' + (d.error || d.message || 'unknown'); statusEl.style.color = 'var(--red)'; statusEl.style.display = 'block'; }
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.textContent = 'Network error.'; statusEl.style.color = 'var(--red)'; statusEl.style.display = 'block'; }
+    }
+  };
 
   function renderXiItems(items) {
     const host = $('xi-items');

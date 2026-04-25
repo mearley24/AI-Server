@@ -1049,19 +1049,158 @@ def _receipts_for_handle(handle: str, limit: int = 5) -> list[dict]:
     return results
 
 
-def _draft_reply(open_requests: list[str], systems: list[str], rel_type: str) -> str:
-    """Generate a rule-based draft reply from profile facts. Never auto-sent."""
-    if open_requests:
-        req = open_requests[0][:100]
-        return f"Hi, I wanted to follow up on your request — {req}. I'll get back to you shortly with an update."
-    if systems:
+def _build_draft_with_context(
+    profile: dict,
+    accepted_by_type: dict[str, list[dict]],
+    unverified_by_type: dict[str, list[dict]],
+    recent_replies: list[dict],
+    last_message: str = "",
+) -> dict[str, Any]:
+    """Build a draft reply with reasoning, confidence, and source_facts.
+
+    Priority order:
+      1. Accepted issue + equipment facts  → service-call draft
+      2. Accepted request + equipment      → follow-up on request
+      3. Open requests from profile        → generic follow-up
+      4. Accepted equipment / system       → system check-in
+      5. Unverified issue / request        → cautious follow-up
+      6. Relationship-type fallback
+    Never hallucinates: only references facts that are explicitly present.
+    Rejected facts are already excluded upstream (is_rejected=0 SQL filter).
+    Pending facts used only as secondary signal; confidence capped at 0.75.
+    """
+    rel_type = profile.get("relationship_type", "unknown")
+    open_reqs = profile.get("open_requests", [])
+    systems   = profile.get("systems_or_topics", [])
+
+    accepted_issues   = [f["fact_value"] for f in accepted_by_type.get("issue", [])]
+    accepted_requests = [f["fact_value"] for f in accepted_by_type.get("request", [])]
+    accepted_equip    = [
+        f["fact_value"]
+        for f in accepted_by_type.get("equipment", []) + accepted_by_type.get("system", [])
+    ]
+    unverified_issues   = [f["fact_value"] for f in unverified_by_type.get("issue", [])]
+    unverified_requests = [f["fact_value"] for f in unverified_by_type.get("request", [])]
+
+    source_facts: list[dict] = []
+    reasoning_parts: list[str] = []
+
+    def _record(ftype: str, val: str, verified: bool) -> None:
+        source_facts.append({"fact_type": ftype, "fact_value": val[:80], "verified": verified})
+
+    for f in accepted_by_type.get("issue", [])[:2]:
+        _record("issue", f["fact_value"], True)
+    for f in accepted_by_type.get("request", [])[:2]:
+        _record("request", f["fact_value"], True)
+    for f in (accepted_by_type.get("equipment", []) + accepted_by_type.get("system", []))[:3]:
+        _record(f["fact_type"], f["fact_value"], True)
+    for f in (unverified_by_type.get("issue", []) + unverified_by_type.get("request", []))[:2]:
+        _record(f["fact_type"], f["fact_value"], False)
+
+    # ── Draft selection ───────────────────────────────────────────────────────
+    draft: str
+    confidence: float
+
+    if accepted_issues and accepted_equip:
+        issue = accepted_issues[0][:100]
+        eq    = accepted_equip[0]
+        draft = (
+            f"Hi, I saw your message about an issue with your {eq}. "
+            f"I'd like to schedule a service call to address: {issue}. "
+            f"What times work for you?"
+        )
+        reasoning_parts += [f"Active issue: '{issue}'", f"Equipment on file: '{eq}'"]
+        confidence = 0.90
+
+    elif accepted_issues:
+        issue = accepted_issues[0][:100]
+        draft = (
+            f"Hi, I wanted to follow up on the issue you reported: {issue}. "
+            f"Let me know your availability so we can get this resolved."
+        )
+        reasoning_parts.append(f"Active issue: '{issue}'")
+        confidence = 0.85
+
+    elif accepted_requests and accepted_equip:
+        req = accepted_requests[0][:100]
+        eq  = accepted_equip[0]
+        draft = (
+            f"Hi, following up on your request — {req}. "
+            f"I'll review your {eq} setup and get back to you with next steps."
+        )
+        reasoning_parts += [f"Request: '{req}'", f"Equipment: '{eq}'"]
+        confidence = 0.85
+
+    elif open_reqs:
+        req = open_reqs[0][:100]
+        draft = (
+            f"Hi, I wanted to follow up on your request — {req}. "
+            f"Let me look into this and get back to you shortly."
+        )
+        reasoning_parts.append(f"Open request from profile: '{req}'")
+        confidence = 0.75
+
+    elif accepted_equip:
+        eq = accepted_equip[0]
+        draft = (
+            f"Hi, reaching out about your {eq} system. "
+            f"Everything still working well, or is there anything I can help with?"
+        )
+        reasoning_parts.append(f"Equipment on file: '{eq}'")
+        confidence = 0.70
+
+    elif systems:
         sys_name = systems[0]
-        return f"Hi, reaching out about your {sys_name} system. Let me know if you need any assistance or if anything has changed."
-    if rel_type == "vendor":
-        return "Hi, following up on our recent conversation. Please let me know the latest on availability and lead time."
-    if rel_type in ("builder", "trade_partner"):
-        return "Hi, just checking in on scheduling. Let me know when you're ready to coordinate the next phase."
-    return "Hi, thanks for reaching out. I'll look into that and get back to you shortly."
+        draft = (
+            f"Hi, reaching out about your {sys_name} setup. "
+            f"Let me know if you need any assistance or if anything has changed."
+        )
+        reasoning_parts.append(f"System from profile: '{sys_name}'")
+        confidence = 0.65
+
+    elif unverified_issues:
+        issue = unverified_issues[0][:100]
+        draft = (
+            f"Hi, I wanted to follow up — it looks like there may have been an issue "
+            f"({issue}). Let me know if you still need help."
+        )
+        reasoning_parts.append(f"Unverified issue (pending approval): '{issue}'")
+        confidence = 0.50
+
+    elif rel_type == "vendor":
+        draft = "Hi, following up on our recent conversation. Please let me know the latest on availability and lead time."
+        reasoning_parts.append("Vendor relationship — standard follow-up")
+        confidence = 0.45
+
+    elif rel_type in ("builder", "trade_partner"):
+        draft = "Hi, just checking in on scheduling. Let me know when you're ready to coordinate the next phase."
+        reasoning_parts.append(f"Relationship type: {rel_type}")
+        confidence = 0.45
+
+    else:
+        draft = "Hi, thanks for reaching out. I'll look into that and get back to you shortly."
+        reasoning_parts.append("No specific facts — generic acknowledgement")
+        confidence = 0.30
+
+    # Last-message context as reasoning annotation only (never injected into draft)
+    if last_message and len(last_message) > 10:
+        reasoning_parts.append(f"Last message: \"{last_message[:80].strip()}\"")
+
+    # Recent-reply annotation
+    if recent_replies:
+        ts = recent_replies[0].get("ts", "")[:10]
+        reasoning_parts.append(f"Last reply logged: {ts}")
+
+    # Cap confidence when unverified facts are the primary signal
+    if unverified_by_type and not accepted_by_type and confidence > 0.55:
+        confidence = 0.55
+
+    return {
+        "draft_reply":  draft,
+        "reasoning":    "; ".join(reasoning_parts) or "No facts available.",
+        "confidence":   round(confidence, 2),
+        "source_facts": source_facts[:8],
+    }
 
 
 def _suggest_action(facts_by_type: dict[str, list[dict]], rel_type: str) -> str:
@@ -1120,17 +1259,21 @@ async def x_intake_context_card(
     profile_row = _profile_by_handle(handle)
 
     if profile_row is None:
+        import secrets as _secrets
         return {
-            "status": "no_profile",
-            "contact_masked": masked,
-            "message": "No relationship profile found for this contact.",
-            "profile": None,
-            "accepted_facts": {},
-            "unverified_facts": {},
-            "recent_replies": _receipts_for_handle(handle),
+            "status":                "no_profile",
+            "action_id":             _secrets.token_hex(6),
+            "contact_masked":        masked,
+            "message":               "No relationship profile found for this contact.",
+            "profile":               None,
+            "accepted_facts":        {},
+            "unverified_facts":      {},
+            "recent_replies":        _receipts_for_handle(handle),
             "suggested_next_action": "No profile — consider reviewing this contact",
-            "draft_reply": "Hi, thanks for reaching out. I'll get back to you shortly.",
-            "confidence": 0.0,
+            "draft_reply":           "Hi, thanks for reaching out. I'll get back to you shortly.",
+            "reasoning":             "No relationship profile on file — generic safe reply.",
+            "confidence":            0.25,
+            "source_facts":          [],
         }
 
     # Build profile dict (masked)
@@ -1169,20 +1312,230 @@ async def x_intake_context_card(
         else:
             unverified_by_type.setdefault(f["fact_type"], []).append(entry)
 
+    import secrets as _secrets
     receipts = _receipts_for_handle(handle)
-    draft = _draft_reply(profile["open_requests"], profile["systems_or_topics"], profile["relationship_type"])
-    action = _suggest_action(accepted_by_type, profile["relationship_type"])
+    action   = _suggest_action(accepted_by_type, profile["relationship_type"])
+    built    = _build_draft_with_context(
+        profile=profile,
+        accepted_by_type=accepted_by_type,
+        unverified_by_type=unverified_by_type,
+        recent_replies=receipts,
+    )
+    action_id = _secrets.token_hex(6)  # fresh per request; used by approve-reply
 
     return {
-        "status":               "ok",
-        "contact_masked":       masked,
-        "profile":              profile,
-        "accepted_facts":       accepted_by_type,
-        "unverified_facts":     unverified_by_type,
-        "recent_replies":       receipts,
+        "status":                "ok",
+        "action_id":             action_id,
+        "contact_masked":        masked,
+        "profile":               profile,
+        "accepted_facts":        accepted_by_type,
+        "unverified_facts":      unverified_by_type,
+        "recent_replies":        receipts,
         "suggested_next_action": action,
-        "draft_reply":          draft,
-        "confidence":           profile_row["confidence"],
+        "draft_reply":           built["draft_reply"],
+        "reasoning":             built["reasoning"],
+        "confidence":            built["confidence"],
+        "source_facts":          built["source_facts"],
+    }
+
+
+# ── Reply approval flow ────────────────────────────────────────────────────────
+
+_APPROVAL_LOG = _X_INTAKE_DATA_DIR / "reply_approvals.ndjson"
+
+
+def _write_approval_record(record: dict[str, Any]) -> None:
+    """Append an approval record to reply_approvals.ndjson. Never raises."""
+    try:
+        _APPROVAL_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _APPROVAL_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except Exception as exc:
+        logger.warning("reply_approval_write_failed err=%s", str(exc)[:100])
+
+
+@app.post("/api/x-intake/approve-reply", tags=["x-intake"])
+async def x_intake_approve_reply(body: dict[str, Any]) -> dict[str, Any]:
+    """Log an operator approval of a draft reply. Does NOT send.
+
+    Body:
+      action_id     — from context-card response (used as correlation key)
+      approved      — must be true to store; false is a no-op
+      edited_reply  — optional override; if omitted, draft_reply is used
+      draft_reply   — the original draft (for logging / diffing)
+      contact_masked — already-masked contact reference (never raw phone)
+      reasoning     — why the draft was generated (for audit trail)
+      confidence    — 0–1 float from context-card
+
+    Behaviour:
+      - Validates that approved=true.
+      - Stores final_reply (edited_reply if present, else draft_reply) to
+        reply_approvals.ndjson — never to any live send path.
+      - Returns approval_id and stored record (masked).
+    """
+    import secrets as _secrets
+    import time as _time
+
+    body = body or {}
+    if not body.get("approved"):
+        return {"status": "not_approved", "message": "approved must be true to store an approval."}
+
+    action_id     = str(body.get("action_id", "")).strip()
+    draft_reply   = str(body.get("draft_reply", "")).strip()
+    edited_reply  = str(body.get("edited_reply", "")).strip()
+    contact_masked = str(body.get("contact_masked", "")).strip()
+    reasoning     = str(body.get("reasoning", "")).strip()
+    confidence    = float(body.get("confidence", 0.0))
+
+    if not action_id:
+        return {"status": "error", "error": "action_id required"}
+
+    final_reply = edited_reply if edited_reply else draft_reply
+    if not final_reply:
+        return {"status": "error", "error": "draft_reply or edited_reply required"}
+
+    # Sanity-check: contact_masked must not contain raw digits run > 6 chars
+    # (a belt-and-suspenders guard; the UI already masks before sending).
+    import re as _re
+    if _re.search(r"\d{7,}", contact_masked):
+        contact_masked = _mask_handle(contact_masked)
+
+    approval_id = _secrets.token_hex(6)
+    record = {
+        "approval_id":    approval_id,
+        "action_id":      action_id,
+        "contact_masked": contact_masked,
+        "draft_reply":    draft_reply[:500],
+        "final_reply":    final_reply[:500],
+        "edited":         bool(edited_reply and edited_reply != draft_reply),
+        "reasoning":      reasoning[:300],
+        "confidence":     round(confidence, 3),
+        "approved_at":    datetime.now(timezone.utc).isoformat(),
+        "status":         "approved",
+    }
+    _write_approval_record(record)
+    logger.info(
+        "reply_approved approval_id=%s action_id=%s contact=%s edited=%s",
+        approval_id, action_id, contact_masked, record["edited"],
+    )
+    return {
+        "status":      "ok",
+        "approval_id": approval_id,
+        "action_id":   action_id,
+        "contact_masked": contact_masked,
+        "final_reply": final_reply,
+        "edited":      record["edited"],
+        "stored":      True,
+        "send_triggered": False,
+    }
+
+
+@app.post("/api/x-intake/simulate-incoming", tags=["x-intake"])
+async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
+    """Simulate an inbound iMessage for testing the context-card + approval flow.
+
+    Body:
+      contact_handle — E.164 phone (e.g. '+13035257532'); OR
+      thread_guid    — 'any;-;+13035257532' format
+      message_text   — optional last message content (used in reasoning)
+
+    Returns the same shape as GET /api/x-intake/context-card plus action_id.
+    No real messages are touched; no sends occur.
+    """
+    import secrets as _secrets
+
+    body = body or {}
+    thread_guid    = str(body.get("thread_guid", "")).strip()
+    contact_handle = str(body.get("contact_handle", "")).strip()
+    last_message   = str(body.get("message_text", "")).strip()[:200]
+
+    handle = _lookup_contact_handle(thread_guid, contact_handle)
+    if not handle:
+        return {
+            "status":  "no_handle",
+            "message": "Provide thread_guid or contact_handle",
+            "simulated": True,
+        }
+
+    masked = _mask_handle(handle)
+    profile_row = _profile_by_handle(handle)
+
+    if profile_row is None:
+        return {
+            "status":                "no_profile",
+            "action_id":             _secrets.token_hex(6),
+            "contact_masked":        masked,
+            "message":               "No relationship profile found for this contact.",
+            "profile":               None,
+            "accepted_facts":        {},
+            "unverified_facts":      {},
+            "recent_replies":        _receipts_for_handle(handle),
+            "suggested_next_action": "No profile — consider reviewing this contact",
+            "draft_reply":           "Hi, thanks for reaching out. I'll get back to you shortly.",
+            "reasoning":             "No relationship profile on file — generic safe reply.",
+            "confidence":            0.25,
+            "source_facts":          [],
+            "simulated":             True,
+        }
+
+    profile = {
+        "profile_id":        profile_row["profile_id"],
+        "relationship_type": profile_row["relationship_type"],
+        "display_name":      profile_row["display_name"],
+        "contact_masked":    masked,
+        "first_seen":        profile_row["first_seen"],
+        "last_seen":         profile_row["last_seen"],
+        "summary":           profile_row["summary"],
+        "open_requests":     json.loads(profile_row["open_requests"] or "[]"),
+        "follow_ups":        json.loads(profile_row["follow_ups"] or "[]"),
+        "systems_or_topics": json.loads(profile_row["systems_or_topics"] or "[]"),
+        "project_refs":      json.loads(profile_row["project_refs"] or "[]"),
+        "status":            profile_row["status"],
+        "confidence":        profile_row["confidence"],
+    }
+
+    facts = _facts_for_profile(profile_row["profile_id"])
+    accepted_by_type: dict[str, list[dict]] = {}
+    unverified_by_type: dict[str, list[dict]] = {}
+    for f in facts:
+        entry = {
+            "fact_id":          f["fact_id"],
+            "fact_type":        f["fact_type"],
+            "fact_value":       f["fact_value"],
+            "confidence":       f["confidence"],
+            "source_excerpt":   f["source_excerpt"],
+            "source_timestamp": f["source_timestamp"],
+        }
+        (accepted_by_type if f["is_accepted"] else unverified_by_type).setdefault(
+            f["fact_type"], []
+        ).append(entry)
+
+    receipts = _receipts_for_handle(handle)
+    action   = _suggest_action(accepted_by_type, profile["relationship_type"])
+    built    = _build_draft_with_context(
+        profile=profile,
+        accepted_by_type=accepted_by_type,
+        unverified_by_type=unverified_by_type,
+        recent_replies=receipts,
+        last_message=last_message,
+    )
+    action_id = _secrets.token_hex(6)
+
+    return {
+        "status":                "ok",
+        "action_id":             action_id,
+        "contact_masked":        masked,
+        "profile":               profile,
+        "accepted_facts":        accepted_by_type,
+        "unverified_facts":      unverified_by_type,
+        "recent_replies":        receipts,
+        "suggested_next_action": action,
+        "draft_reply":           built["draft_reply"],
+        "reasoning":             built["reasoning"],
+        "confidence":            built["confidence"],
+        "source_facts":          built["source_facts"],
+        "simulated":             True,
+        "last_message":          last_message or None,
     }
 
 
