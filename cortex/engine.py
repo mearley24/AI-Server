@@ -2006,34 +2006,59 @@ def _approvals_index() -> dict[str, float]:
     return index
 
 
+# ── Follow-up priority table ──────────────────────────────────────────────────
+# (relationship_type → (threshold_hours, priority_label, priority_rank))
+# priority_rank: lower number = higher urgency (used for sort key)
+_FOLLOW_UP_PRIORITY: dict[str, tuple[float, str, int]] = {
+    "client":               (2.0,  "urgent",  0),
+    "builder":              (3.0,  "high",    1),
+    "trade_partner":        (4.0,  "medium",  2),
+    "vendor":               (6.0,  "medium",  2),
+    "personal_work_related":(12.0, "low",     3),
+    "unknown":              (8.0,  "review",  4),
+    "internal_team":        (None, "ignore",  9),  # ignored by default
+}
+_DEFAULT_PRIORITY = (8.0, "review", 4)  # fallback for unrecognised types
+
+
+def _rel_priority(rel_type: str) -> tuple[float, str, int]:
+    """Return (threshold_hours, priority_label, priority_rank) for a relationship type."""
+    return _FOLLOW_UP_PRIORITY.get(rel_type, _DEFAULT_PRIORITY)
+
+
 @app.get("/api/x-intake/follow-ups", tags=["x-intake"])
 async def x_intake_follow_ups(
-    threshold_hours: float = 2.0,
+    threshold_hours: float = -1.0,
+    include_internal: bool = False,
     limit: int = 20,
 ) -> dict[str, Any]:
-    """Return inbound messages that need a follow-up reply.
+    """Return inbound messages that need a follow-up reply, prioritised by relationship.
 
-    Logic (derived, no new storage):
-      - Reads x_intake_queue rows that have sender_guid + enriched context_json.
-      - Groups by contact (one entry per contact, most-recent message wins).
-      - An item is a follow-up when:
-          elapsed > threshold_hours  AND
-          no approved reply after the message timestamp.
-      - Sorted oldest-first (most overdue at top).
+    Priority thresholds (relationship-aware defaults):
+      client          → urgent  after 2 h
+      builder         → high    after 3 h
+      trade_partner   → medium  after 4 h
+      vendor          → medium  after 6 h
+      personal_work   → low     after 12 h
+      unknown         → review  after 8 h
+      internal_team   → ignored (unless include_internal=true, uses 24 h)
+
+    Sorted: priority rank first (urgent → low), then oldest overdue first.
+
+    threshold_hours  — override per-type defaults when >= 0 (useful for testing)
+    include_internal — surface internal_team follow-ups (default false)
+    limit            — max items returned (default 20)
 
     Returns only internal Cortex data — no messages are sent.
-
-    threshold_hours — how old a message must be before surfacing (default 2.0)
-    limit           — max items returned (default 20)
     """
-    threshold_seconds = threshold_hours * 3600
     now = _time.time()
+    override = threshold_hours if threshold_hours >= 0 else None
 
     rows = _queue_rows_with_context(limit=500)
     if not rows:
         return {
             "status": "ok", "count": 0, "follow_ups": [],
-            "threshold_hours": threshold_hours,
+            "threshold_hours_override": override,
         }
 
     # Parse context JSON; skip rows without a valid contact
@@ -2046,16 +2071,19 @@ async def x_intake_follow_ups(
         contact_masked = ctx.get("contact_masked", "")
         if not contact_masked or ctx.get("status") == "no_handle":
             continue
+        profile = ctx.get("profile") or {}
+        rel_type = profile.get("relationship_type", "unknown") or "unknown"
         enriched.append({
             "queue_item_id":         row["id"],
             "contact_masked":        contact_masked,
             "created_at":            row["created_at"],
+            "relationship_type":     rel_type,
             "has_context_card":      ctx.get("status") in ("ok", "no_profile"),
             "has_draft_reply":       bool((ctx.get("draft_reply") or "").strip()),
             "draft_reply":           ctx.get("draft_reply", ""),
             "confidence":            ctx.get("confidence", 0.0),
             "draft_quality_status":  ctx.get("draft_quality_status", ""),
-            "profile":               ctx.get("profile") or {},
+            "profile":               profile,
             "suggested_next_action": ctx.get("suggested_next_action", ""),
         })
 
@@ -2066,35 +2094,55 @@ async def x_intake_follow_ups(
         if c not in by_contact or item["created_at"] > by_contact[c]["created_at"]:
             by_contact[c] = item
 
-    # Build approval index: contact → latest approved_at unix ts
     approvals = _approvals_index()
 
-    # Filter and annotate
     follow_ups: list[dict] = []
     for item in by_contact.values():
+        rel = item["relationship_type"]
+        default_threshold_h, priority_label, priority_rank = _rel_priority(rel)
+
+        # Skip internal_team unless explicitly requested
+        if priority_label == "ignore" and not include_internal:
+            continue
+
+        # Apply per-type threshold (or test override)
+        threshold_h = override if override is not None else (
+            default_threshold_h if default_threshold_h is not None else 24.0
+        )
+        threshold_s = threshold_h * 3600
+
         elapsed = now - item["created_at"]
-        if elapsed < threshold_seconds:
-            continue                                # Too recent — not overdue yet
+        if elapsed < threshold_s:
+            continue                                # Not yet overdue
 
         latest_approved_at = approvals.get(item["contact_masked"], 0.0)
         has_approved = latest_approved_at > item["created_at"]
-        item["has_approved_reply"] = has_approved
-
         if has_approved:
             continue                                # Already replied
 
-        item["elapsed_seconds"] = round(elapsed)
-        item["elapsed_hours"]   = round(elapsed / 3600, 1)
+        overdue_s = elapsed - threshold_s
+        item["has_approved_reply"]   = False
+        item["elapsed_seconds"]      = round(elapsed)
+        item["elapsed_hours"]        = round(elapsed / 3600, 1)
+        item["threshold_hours_used"] = threshold_h
+        item["overdue_by_hours"]     = round(overdue_s / 3600, 1)
+        item["priority"]             = priority_label
+        item["priority_rank"]        = priority_rank
         follow_ups.append(item)
 
-    follow_ups.sort(key=lambda x: x["created_at"])  # oldest first
+    # Sort: priority rank (urgent first), then oldest overdue first
+    follow_ups.sort(key=lambda x: (x["priority_rank"], -x["overdue_by_hours"]))
     follow_ups = follow_ups[:limit]
 
+    # Strip internal sort key before returning
+    for f in follow_ups:
+        f.pop("priority_rank", None)
+
     return {
-        "status":          "ok",
-        "count":           len(follow_ups),
-        "threshold_hours": threshold_hours,
-        "follow_ups":      follow_ups,
+        "status":                  "ok",
+        "count":                   len(follow_ups),
+        "threshold_hours_override": override,
+        "follow_ups":              follow_ups,
     }
 
 

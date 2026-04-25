@@ -1625,17 +1625,25 @@
   // ── Follow-up engine ──────────────────────────────────────────────────────
 
   window.loadFollowUps = async function loadFollowUps() {
-    const el    = $('xi-follow-ups');
-    const badge = $('xi-fu-count');
+    const el = $('xi-follow-ups');
     if (el) el.innerHTML = '<div class="unavailable">loading…</div>';
-    const data = await fetchJson('/api/x-intake/follow-ups?threshold_hours=2&limit=20');
+    // Use relationship-aware thresholds (no threshold_hours override in production)
+    const data = await fetchJson('/api/x-intake/follow-ups?limit=20');
     renderFollowUps(data);
-    // Update the Cortex nav badge if available
     const navBadge = document.getElementById('nav-fu-count');
     if (navBadge && data && data.count > 0) {
       navBadge.textContent = data.count;
       navBadge.classList.remove('hidden');
     }
+  };
+
+  const _FU_PRIORITY_COLOR = {
+    urgent: 'var(--red)',
+    high:   '#f97316',   // orange
+    medium: 'var(--yellow)',
+    low:    'var(--muted)',
+    review: '#94a3b8',   // slate
+    ignore: 'var(--muted)',
   };
 
   function renderFollowUps(data) {
@@ -1657,12 +1665,21 @@
     }
 
     el.innerHTML = items.map((item) => {
-      const p       = item.profile || {};
-      const rtLabel = (p.relationship_type || 'unknown').replace(/_/g, ' ').toUpperCase();
-      const rtColor = (_XI_RT_COLORS[p.relationship_type] || 'var(--muted)');
-      const elapsed = item.elapsed_hours >= 24
+      const p         = item.profile || {};
+      const rt        = item.relationship_type || p.relationship_type || 'unknown';
+      const rtLabel   = rt.replace(/_/g, ' ').toUpperCase();
+      const rtColor   = (_XI_RT_COLORS[rt] || 'var(--muted)');
+      const priority  = item.priority || 'review';
+      const priColor  = _FU_PRIORITY_COLOR[priority] || 'var(--muted)';
+      const isUrgHigh = priority === 'urgent' || priority === 'high';
+
+      const elapsed   = item.elapsed_hours >= 24
         ? `${(item.elapsed_hours / 24).toFixed(1)}d`
         : `${item.elapsed_hours}h`;
+      const overdue   = item.overdue_by_hours >= 24
+        ? `${(item.overdue_by_hours / 24).toFixed(1)}d overdue`
+        : `${item.overdue_by_hours}h overdue`;
+
       const systems   = (p.systems_or_topics || []).slice(0, 3).join(', ');
       const draftConf = item.confidence ? ` · ${(item.confidence * 100).toFixed(0)}%` : '';
       const qBadge    = item.draft_quality_status === 'pass'
@@ -1671,11 +1688,20 @@
         ? '<span style="color:var(--yellow);font-size:8px;">~ fallback</span>'
         : '';
 
-      return `<div style="border:1px solid var(--border);border-radius:5px;padding:7px 10px;margin-bottom:7px;">
-  <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;">
+      // Urgent/high items get a stronger left border and background tint
+      const cardStyle = isUrgHigh
+        ? `border:1px solid ${priColor};border-left:3px solid ${priColor};border-radius:5px;padding:7px 10px;margin-bottom:7px;background:rgba(255,255,255,.02);`
+        : `border:1px solid var(--border);border-radius:5px;padding:7px 10px;margin-bottom:7px;`;
+
+      return `<div style="${cardStyle}">
+  <div style="display:flex;align-items:center;gap:7px;margin-bottom:3px;flex-wrap:wrap;">
+    <span style="font-size:9px;font-weight:700;color:${priColor};text-transform:uppercase;letter-spacing:.4px;">${esc(priority)}</span>
     <span style="font-size:9px;font-weight:700;color:${rtColor};">${esc(rtLabel)}</span>
     <span class="mono" style="font-size:9px;color:var(--muted);">${esc(item.contact_masked || '')}</span>
-    <span style="font-size:9px;color:var(--red);font-weight:700;margin-left:auto;">${esc(elapsed)} ago</span>
+    <span style="font-size:9px;color:var(--muted);margin-left:auto;">${esc(elapsed)} ago</span>
+  </div>
+  <div style="font-size:9px;color:${priColor};font-weight:600;margin-bottom:3px;">⏱ ${esc(overdue)}
+    <span style="font-weight:400;color:var(--muted);">(threshold: ${item.threshold_hours_used}h)</span>
   </div>
   ${systems ? `<div style="font-size:9px;color:var(--muted);margin-bottom:2px;">systems: ${esc(systems)}</div>` : ''}
   ${item.suggested_next_action ? `<div style="font-size:10px;color:var(--blue);border-left:2px solid var(--blue);padding-left:5px;margin-bottom:4px;">${esc(item.suggested_next_action.slice(0, 90))}</div>` : ''}

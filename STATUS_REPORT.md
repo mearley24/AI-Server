@@ -3506,6 +3506,14 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - ~~[FOLLOWUP] docker image prune -a reclaim 8.67 GB~~ ✅ Done 2026-04-24 — 432 MB reclaimed (remainder was active shared layers).
 - ~~[FOLLOWUP] vpn healthcheck investigation~~ ✅ Done 2026-04-24 — ping -c 1 -W 3, timeout 8s, start_period 60s. See commit `4efdbc3b`.
 
+## Follow-Up Priority Engine v1 (2026-04-25 UTC, Claude Code)
+- `GET /api/x-intake/follow-ups` upgraded with relationship-aware thresholds: client=2h urgent, builder=3h high, trade_partner=4h medium, vendor=6h medium, personal_work=12h low, unknown=8h review, internal_team=ignored (unless `include_internal=true`).
+- Response now includes `priority`, `relationship_type`, `threshold_hours_used`, `overdue_by_hours` per item; sorted priority-first then oldest-overdue-first.
+- `threshold_hours` param still works as override for testing.
+- Dashboard Needs Follow-Up panel updated: priority label in matching color, overdue-by time + threshold shown, urgent/high items get colored left-border + tint.
+- Tests: 35 passing — rel-aware threshold tests, priority sorting, internal ignore/include, threshold override, response fields, no-send guarantee.
+- **No sends triggered.** Internal-only, read-only derived view.
+
 ## Client Intelligence Fact Quality Tightening (2026-04-25 UTC, Claude Code)
 - `scripts/audit_client_facts.py` added: dry-run/apply auditor that reclassifies low-quality accepted facts; never deletes rows; prints fact_id/type/value/confidence/verdict/reason per fact.
 - Reclassified 2 bad accepted facts as rejected: `request:"give me call as soon as you can..."` (speech/trailing fragment) and `follow_up:"Let me know"` (generic, non-actionable).
@@ -3697,3 +3705,25 @@ Five new inbox items from the 20260425T033947Z–033948Z capture batch were arch
 Meta-pattern: this is now the **seventh consecutive run** where every inbox item is a URL-only iMessage capture with no message body. Thirteen total URL-only items have been carded. The iMessage→x_intake auto-routing bridge remains the structural unblock. A fetch-enabled processing lane (x_intake RSS or cortex-autobuilder lookup) is needed before any of these cards can be scored — escalating to architectural decision territory.
 
 Verification: ops/verification/self-improve-20260425T034500Z.txt
+
+### Self-improvement loop — 20260425T041331Z
+
+inbox processed: 0 (all 13 items already archived and carded — idempotent skip), cards: 0 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+This is the eighth consecutive run with no new inbox items to process. All 13 URL-only iMessage captures have existing archive copies and cards from prior runs. No new collector deposits between the last run (20260425T034500Z) and this run.
+
+Persistent blocker (cumulative): all 13 carded items are bare X.com URLs shared via iMessage with no message body. Tweet content cannot be assessed without a fetch-enabled processing lane. The iMessage→x_intake auto-routing bridge / fetch lane is the only structural unblock for this entire queue.
+
+Verification: ops/verification/self-improve-20260425T041331Z.txt
+
+### Self-improvement loop — 20260425T044500Z
+
+inbox processed: 1, cards: 1 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 1 needs-fetch) + 13 already-processed (skipped)
+
+One new inbox item archived and carded this run; 13 earlier items skipped per idempotency rule. New item is another bare X.com URL from @moondevonyt — this account's second post to land via the iMessage bridge path. Ordered by (Impact ÷ Effort) descending:
+
+- `20260425T044431Z-…-moondevonyt-…-card.md` — **needs fetch** (second @moondevonyt capture; trading/automation-adjacent handle; Impact 3 / Effort 2; repeat pattern strengthens iMessage→x_intake bridge case)
+
+Persistent blocker (cumulative): all 14 carded items are bare X.com URLs with no message body. The iMessage→x_intake auto-routing bridge with a fetch-enabled scoring lane remains the only structural unblock. The @moondevonyt repeat (two posts captured, zero scored) is the clearest concrete example of the toil this bridge would eliminate.
+
+Verification: ops/verification/self-improve-20260425T044500Z.txt
