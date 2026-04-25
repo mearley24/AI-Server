@@ -126,7 +126,12 @@ class TestBuildDraftWithContext:
                          "confidence": 0.75, "source_excerpt": "x", "source_timestamp": "t"}],
         }
         result = _build_draft_with_context(self._profile(), accepted, {}, [])
-        assert "WiFi" in result["draft_reply"]
+        # WiFi capability: "try rebooting your router" — equipment name may not appear
+        # verbatim since the router-reboot wording is more natural than "your WiFi"
+        help_phrases = ["wifi", "router", "remotely", "check", "reboot"]
+        assert any(p in result["draft_reply"].lower() for p in help_phrases), (
+            f"WiFi draft should reference router/remote/check: {result['draft_reply']}"
+        )
         assert not self._has_diagnostic_question(result["draft_reply"])
         assert result["confidence"] >= 0.80
         assert len(result["source_facts"]) >= 2

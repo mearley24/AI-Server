@@ -1220,6 +1220,15 @@ def _system_cap(eq_name: str) -> dict:
     return {"self_fix": None, "remote": False, "on_site": True}
 
 
+def _personalise_fix(fix: str, eq: str) -> str:
+    """Replace the first 'it' in a self-fix phrase with 'your {eq}'.
+
+    'try unplugging it for 10 seconds' → 'try unplugging your Sonos for 10 seconds'
+    Phrases that don't contain standalone 'it' are returned unchanged.
+    """
+    return re.sub(r"\bit\b", f"your {eq}", fix, count=1)
+
+
 def _build_draft_with_context(
     profile: dict,
     accepted_by_type: dict[str, list[dict]],
@@ -1292,16 +1301,10 @@ def _build_draft_with_context(
         fix   = cap["self_fix"]
         can_remote = cap["remote"]
 
-        # Personalize the self_fix phrase: replace first "it" with "your {eq}"
-        # e.g. "try unplugging it" → "try unplugging your Sonos"
-        def _personalise(f: str) -> str:
-            return re.sub(r"\bit\b", f"your {eq}", f, count=1)
-
         if repeat_issue:
             if fix:
-                _p = _personalise(fix)
-                # Capitalise only the first letter; preserve equipment name casing mid-string
-                _p = _p[0].upper() + _p[1:]
+                _p = _personalise_fix(fix, eq)
+                _p = _p[0].upper() + _p[1:]   # capitalise first letter only
                 draft = (
                     f"I see this has come up a couple times now with your {eq}. "
                     f"{_p} — if that doesn't do it this time, I'll swing by."
@@ -1314,14 +1317,13 @@ def _build_draft_with_context(
         else:
             # First reported issue — suggest the simplest fix first, then next step.
             if fix and can_remote:
-                # Don't append extra phrasing — the self_fix string is already natural
                 draft = (
-                    f"Got it — {_personalise(fix)}. "
+                    f"Got it — {_personalise_fix(fix, eq)}. "
                     f"If that doesn't sort it, I'll check remotely and let you know."
                 )
             elif fix:
                 draft = (
-                    f"Got it — {_personalise(fix)}. "
+                    f"Got it — {_personalise_fix(fix, eq)}. "
                     f"If it's still acting up after that, I can swing by and take a look."
                 )
             elif can_remote:
@@ -1350,19 +1352,36 @@ def _build_draft_with_context(
     elif accepted_requests and accepted_equip:
         # Raw request text may be a speech fragment — never inject directly.
         # Equipment name is clean; request context goes to reasoning only.
+        # Even with a messy request, apply the capability map so equipment-specific
+        # wording (self-fix, remote) is used rather than a generic fallback.
         req = accepted_requests[0][:70]
         eq  = accepted_equip[0]
         cap = _system_cap(eq)
+        fix = cap["self_fix"]
+        can_remote = cap["remote"]
         if not _is_clean_for_injection(req):
             quality_downgraded = True
             reasoning_parts.append(f"Request (messy, not injected): '{req}'")
         else:
             reasoning_parts.append(f"Request: '{req}'")
         reasoning_parts.append(f"Equipment: '{eq}'")
-        if cap["remote"]:
-            draft = f"I'll take a look at your {eq} remotely and get back to you."
+        # Pick wording based on capability, not on whether the request was clean.
+        # Mirror the issue-branch logic: self-fix + remote → try then remote;
+        # self-fix only → try then on-site; remote only → remote; neutral fallback.
+        if fix and can_remote:
+            draft = (
+                f"Got it — {_personalise_fix(fix, eq)}. "
+                f"If that doesn't sort it, I'll check remotely and let you know."
+            )
+        elif fix:
+            draft = (
+                f"Got it — {_personalise_fix(fix, eq)}. "
+                f"If it's still acting up after that, I can swing by and take a look."
+            )
+        elif can_remote:
+            draft = f"Got it — I'll take a look at your {eq} remotely and let you know what I find."
         else:
-            draft = f"I'll take a look at your {eq} and let you know what I find."
+            draft = f"On it — I'll check your {eq} and let you know what I find."
         confidence = 0.85 if not quality_downgraded else 0.65
 
     elif open_reqs:

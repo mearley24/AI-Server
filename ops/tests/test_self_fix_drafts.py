@@ -284,18 +284,69 @@ class TestQualityGateStillEnforced:
             assert "draft_quality_reasons" in result, f"Missing quality_reasons for {profile}"
             assert result["draft_quality_status"] in ("pass", "fallback", "blocked")
 
-    def test_messy_fact_still_uses_fallback(self):
-        """Quality guardrail still fires even when equipment has a self-fix."""
+    def test_messy_request_sonos_equipment_aware_fallback(self):
+        """Regression: messy request + Sonos must use Sonos self-fix, not generic fallback.
+
+        Real case: accepted request 'give me call as soon as you can as am trying to
+        setup the WiFi network and need' + accepted equipment 'Sonos'
+        Previously produced: 'I'll take a look at your Sonos and let you know what I find.'
+        Expected: Sonos power-cycle suggestion + on-site offer.
+        """
         accepted = {
             "equipment": [_fact("equipment", "Sonos")],
             "request":   [_fact("request",
-                                "give me call as soon as you can as am trying to setup")],
+                                "give me call as soon as you can as am trying to setup the WiFi network and need")],
         }
         result = _build_draft_with_context(_profile(), accepted, {}, [])
-        # Messy request should downgrade quality and confidence
+        draft = result["draft_reply"]
+        # Must suggest unplugging (Sonos self-fix), NOT the generic fallback
+        assert "unplug" in draft.lower() or "10 seconds" in draft.lower(), (
+            f"Sonos fallback must suggest power cycle, got: {draft}"
+        )
+        # Must offer on-site follow-up (Sonos cannot be handled remotely)
+        assert "swing by" in draft.lower() or "take a look" in draft.lower(), (
+            f"Sonos fallback must offer on-site visit, got: {draft}"
+        )
+        # Must NOT say 'remotely' for Sonos
+        assert "remotely" not in draft.lower(), (
+            f"Sonos draft must not mention remote access, got: {draft}"
+        )
+        # Quality status is fallback (messy request blocked), confidence downgraded
+        assert result["draft_quality_status"] == "fallback"
         assert result["confidence"] <= 0.65
-        q, _ = _check_draft_quality(result["draft_reply"])
-        assert q == "pass", f"Even downgraded draft must pass post-gen check: {result['draft_reply']}"
+        # Post-gen quality check still passes
+        q, reasons = _check_draft_quality(draft)
+        assert q == "pass", f"Draft must pass post-gen check: {reasons} — {draft}"
+
+    def test_messy_request_wifi_equipment_aware_fallback(self):
+        """Messy request + WiFi must suggest router reboot then remote check."""
+        accepted = {
+            "system":  [_fact("system", "WiFi")],
+            "request": [_fact("request", "give me call as soon as you can")],
+        }
+        result = _build_draft_with_context(_profile(), accepted, {}, [])
+        draft = result["draft_reply"]
+        assert "router" in draft.lower() or "remotely" in draft.lower(), (
+            f"WiFi fallback must mention router reboot or remote check: {draft}"
+        )
+        assert result["draft_quality_status"] == "fallback"
+        q, _ = _check_draft_quality(draft)
+        assert q == "pass"
+
+    def test_messy_fact_confidence_downgraded(self):
+        """Messy request should downgrade confidence regardless of equipment type."""
+        for eq in ("Sonos", "WiFi", "Control4", "SomeBox"):
+            ftype = "system" if eq == "WiFi" else "equipment"
+            accepted = {
+                ftype:     [_fact(ftype, eq)],
+                "request": [_fact("request", "give me call as soon as you can as am trying to setup")],
+            }
+            result = _build_draft_with_context(_profile(), accepted, {}, [])
+            assert result["confidence"] <= 0.65, (
+                f"Confidence must be downgraded for messy facts ({eq}): {result['confidence']}"
+            )
+            q, _ = _check_draft_quality(result["draft_reply"])
+            assert q == "pass", f"Draft must pass post-gen check ({eq}): {result['draft_reply']}"
 
     def test_self_fix_drafts_are_short(self):
         """Drafts must not overwhelm — single instruction + follow-up only."""
