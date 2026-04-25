@@ -639,6 +639,58 @@
     _updateNavBadge(s.pending || 0);
   }
 
+  // ── Contact context section for xi-items ───────────────────────────────────
+  const _XI_RT_COLORS = {client:'#60a5fa',vendor:'#a78bfa',builder:'#34d399',
+    trade_partner:'#fbbf24',internal_team:'#94a3b8',personal_work_related:'#f472b6'};
+
+  function renderXiContextSection(item) {
+    if (!item.context_json) return '';
+    let ctx;
+    try { ctx = JSON.parse(item.context_json); } catch(e) { return ''; }
+    if (!ctx || !ctx.status) return '';
+
+    if (ctx.status === 'no_profile' || ctx.status === 'no_handle') {
+      return `<div class="xi-ctx-card xi-ctx-no-profile">
+        <span style="font-size:10px;color:var(--muted);">📭 No approved profile — review thread for Client Intelligence.</span>
+      </div>`;
+    }
+    if (ctx.status !== 'ok') return '';
+
+    const p = ctx.profile || {};
+    const rtColor  = _XI_RT_COLORS[p.relationship_type] || 'var(--muted)';
+    const rtLabel  = (p.relationship_type || '').replace(/_/g,' ').toUpperCase();
+    const systems  = (p.systems_or_topics || []).slice(0,4).join(', ');
+    const openReqs = (p.open_requests || []).slice(0,2);
+    const conf     = ((ctx.confidence || 0) * 100).toFixed(0);
+    const unverifiedCount = Object.values(ctx.unverified_facts || {}).reduce((s,a) => s + a.length, 0);
+
+    let h = `<div class="xi-ctx-card">`;
+    h += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">`;
+    h += `<span style="font-size:9px;font-weight:700;color:${rtColor};">${esc(rtLabel)}</span>`;
+    h += `<span class="mono" style="font-size:9px;color:var(--muted);">${esc(ctx.contact_masked||'')}</span>`;
+    h += `<span style="font-size:9px;color:var(--muted);margin-left:auto;">${conf}%</span>`;
+    h += `</div>`;
+    if (p.summary) h += `<div style="font-size:10px;color:var(--text);margin-bottom:2px;">${esc(p.summary.slice(0,120))}</div>`;
+    if (systems)   h += `<div style="font-size:9px;color:var(--muted);">systems: ${esc(systems)}</div>`;
+    if (openReqs.length) {
+      h += `<div style="font-size:9px;color:var(--yellow);margin-top:2px;">open: ${esc(openReqs.join(' · ').slice(0,100))}</div>`;
+    }
+    if (unverifiedCount) {
+      h += `<div style="font-size:9px;color:var(--muted);font-style:italic;margin-top:2px;">${unverifiedCount} unverified fact(s)</div>`;
+    }
+    if (ctx.suggested_next_action) {
+      h += `<div style="font-size:10px;color:var(--blue);margin-top:4px;border-left:2px solid var(--blue);padding-left:5px;">${esc(ctx.suggested_next_action.slice(0,100))}</div>`;
+    }
+    if (ctx.draft_reply) {
+      h += `<details style="margin-top:4px;"><summary style="font-size:9px;color:var(--muted);cursor:pointer;">draft reply ▸</summary>`;
+      h += `<div style="font-size:10px;color:var(--text);margin-top:3px;padding:5px 8px;background:var(--surface-2);border-radius:3px;white-space:pre-wrap;">${esc(ctx.draft_reply.slice(0,200))}</div>`;
+      h += `<button disabled title="Auto-send disabled" style="margin-top:4px;font-size:9px;padding:1px 8px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:not-allowed;">✉ Send (disabled)</button>`;
+      h += `</details>`;
+    }
+    h += `</div>`;
+    return h;
+  }
+
   function renderXiItems(items) {
     const host = $('xi-items');
     if (!items.length) { host.innerHTML = '<div class="xi-empty">No items match the current filter.</div>'; return; }
@@ -649,6 +701,7 @@
       const hasTr     = item.has_transcript ? '🎬 ' : '';
       const canAction = item.status === 'pending';
       const sumDisp   = extractSummary(item.summary);
+      const ctxHtml   = renderXiContextSection(item);
       return `<div class="xi-item status-${esc(item.status||'unknown')}" id="xi-item-${item.id}">
   <div class="xi-item-header">
     <span class="xi-item-author">${hasTr}@${esc(item.author||'?')}</span>
@@ -661,6 +714,7 @@
   </div>
   ${sumDisp ? `<div class="xi-item-summary">${esc(sumDisp)}</div>` : ''}
   ${item.review_note ? `<div class="small" style="color:var(--muted);margin-top:3px;font-style:italic">Note: ${esc((item.review_note||'').slice(0,140))}</div>` : ''}
+  ${ctxHtml}
   <div class="xi-item-actions">
     ${canAction
       ? `<button class="btn approve" onclick="xiAction(${item.id},'approve')">&#10003; Approve</button>

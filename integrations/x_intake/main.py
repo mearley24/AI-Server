@@ -32,10 +32,12 @@ try:
         update_status as _db_update_status,
         get_stats as _db_get_stats,
         set_analyzed as _db_set_analyzed,
+        update_context as _db_update_context,
     )
 except ImportError:
     _db_enqueue = _db_get_queue = _db_update_status = _db_get_stats = None  # type: ignore[assignment]
     _db_set_analyzed = None  # type: ignore[assignment]
+    _db_update_context = None  # type: ignore[assignment]
 
 try:
     import action_queue
@@ -743,8 +745,17 @@ async def _deep_research(topic: str, url: str) -> str:
         return ""
 
 
-async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
-    """Analyze a tweet URL, queue for review, publish signals, send iMessage reply."""
+async def _process_url_and_reply(
+    url: str,
+    source: str = "imessage",
+    sender_guid: str = "",
+    sender_handle: str = "",
+) -> None:
+    """Analyze a tweet URL, queue for review, publish signals, send iMessage reply.
+
+    sender_guid / sender_handle are captured from the Redis event and stored
+    alongside the queue item so the dashboard can enrich cards with client context.
+    """
     if not await _claim_url(url):
         logger.info("duplicate_url_suppressed", url=_canonical_tweet_url(url), source=source)
         return
@@ -788,11 +799,16 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
                         poly_signals=poly_signals,
                         has_transcript=_has_transcript,
                         transcript_path=transcript_path,
+                        sender_guid=sender_guid,
                     )
                     # For text-only posts (no transcript), mark analyzed=1 immediately
                     # since transcript_analyst won't be called for them.
                     if _db_set_analyzed is not None and _queue_row_id and not _has_transcript:
                         _db_set_analyzed(_queue_row_id, 1)
+                    # Enrich with client context (fire-and-forget, never blocks)
+                    _enrich_guid = sender_guid or sender_handle
+                    if _queue_row_id and _enrich_guid:
+                        asyncio.create_task(_enrich_context_async(_queue_row_id, _enrich_guid))
                 except Exception as _qexc:
                     logger.exception("queue_enqueue_failed", error=str(_qexc)[:100])
 
@@ -877,6 +893,28 @@ async def _process_url_and_reply(url: str, source: str = "imessage") -> None:
         logger.exception("url_analysis_failed", url=url, error=str(exc)[:200])
 
 
+async def _enrich_context_async(row_id: int, sender_guid: str) -> None:
+    """Fire-and-forget: fetch context card from Cortex and store on queue row.
+
+    Called after a queue item is created; never blocks the main analysis path.
+    Stores the full context-card JSON so the dashboard can render it without
+    extra API calls.  Never raises — queue must not crash on enrichment failure.
+    """
+    if not row_id or not sender_guid or _db_update_context is None:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(
+                f"{CORTEX_URL}/api/x-intake/context-card",
+                params={"thread_guid": sender_guid},
+            )
+            if r.status_code == 200:
+                _db_update_context(row_id, sender_guid, r.text)
+                logger.info("context_enriched", row_id=row_id, status=r.json().get("status"))
+    except Exception as exc:
+        logger.debug("context_enrich_failed", row_id=row_id, err=str(exc)[:100])
+
+
 async def _redis_listener() -> None:
     """Subscribe to Redis events:imessage for incoming X/Twitter links."""
     try:
@@ -897,13 +935,25 @@ async def _redis_listener() -> None:
                     continue
                 try:
                     data = json.loads(message["data"]) if isinstance(message["data"], str) else message["data"]
-                    text = data.get("text", "") if isinstance(data, dict) else str(data)
+                    if isinstance(data, dict):
+                        text = data.get("text", "")
+                        # Capture sender identity for context enrichment; never logged raw
+                        sender_guid = data.get("chat_guid", "") or data.get("chat_id", "")
+                        sender_handle = data.get("from", "") or data.get("sender_id", "")
+                    else:
+                        text = str(data)
+                        sender_guid = ""
+                        sender_handle = ""
                     urls = _TWEET_RE.findall(text)
                     for url in urls:
                         logger.info("tweet_detected_from_redis", url=url)
                         # Spawn as background task so the event loop stays responsive
                         # to health checks during long transcriptions (Bug 1 fix)
-                        asyncio.create_task(_process_url_and_reply(url))
+                        asyncio.create_task(_process_url_and_reply(
+                            url,
+                            sender_guid=sender_guid,
+                            sender_handle=sender_handle,
+                        ))
                 except Exception as exc:
                     logger.warning("message_process_error", error=str(exc)[:200])
         except Exception as exc:

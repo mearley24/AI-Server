@@ -51,6 +51,9 @@ _MIGRATE_COLUMNS = [
     "ALTER TABLE x_intake_queue ADD COLUMN transcript_path TEXT DEFAULT ''",
     "ALTER TABLE x_intake_queue ADD COLUMN analyzed INTEGER DEFAULT 0",
     "ALTER TABLE x_intake_queue ADD COLUMN error_msg TEXT DEFAULT ''",
+    # v2: inbound sender identity (guid masked at API layer) + enriched context
+    "ALTER TABLE x_intake_queue ADD COLUMN sender_guid TEXT DEFAULT ''",
+    "ALTER TABLE x_intake_queue ADD COLUMN context_json TEXT DEFAULT '{}'",
 ]
 
 _PRUNE_DAYS = 30
@@ -112,10 +115,12 @@ def enqueue(
     poly_signals: Optional[dict] = None,
     has_transcript: bool = False,
     transcript_path: str = "",
+    sender_guid: str = "",
 ) -> int:
     """Insert a new analyzed item and return its row id.
 
     Returns 0 on failure (never raises — queue failures must not crash intake).
+    sender_guid is stored for deferred context enrichment; never shown raw in UI.
     """
     try:
         status = _infer_status(relevance)
@@ -126,8 +131,8 @@ def enqueue(
             """INSERT INTO x_intake_queue
                (url, author, post_type, relevance, summary, action,
                 suggested_dest, status, source, poly_signals,
-                has_transcript, transcript_path, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                has_transcript, transcript_path, sender_guid, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 url,
                 author,
@@ -141,6 +146,7 @@ def enqueue(
                 json.dumps(poly_signals or {}),
                 int(bool(has_transcript)),
                 (transcript_path or "")[:500],
+                (sender_guid or "")[:200],
                 time.time(),
             ),
         )
@@ -204,6 +210,27 @@ def set_analyzed(row_id: int, value: int, error_msg: str = "") -> None:
         conn.execute(
             "UPDATE x_intake_queue SET analyzed = ?, error_msg = ? WHERE id = ?",
             (value, (error_msg or "")[:500], row_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def update_context(row_id: int, sender_guid: str, context_json: str) -> None:
+    """Store the enriched context-card JSON on a queue row.
+
+    Called asynchronously after enqueue — never raises, queue must not crash.
+    context_json is the full JSON string from /api/x-intake/context-card.
+    sender_guid is stored for auditability; masked at the API/UI layer.
+    """
+    if not row_id:
+        return
+    try:
+        conn = _conn()
+        conn.execute(
+            "UPDATE x_intake_queue SET sender_guid=?, context_json=? WHERE id=?",
+            ((sender_guid or "")[:200], (context_json or "{}")[:8000], row_id),
         )
         conn.commit()
         conn.close()
