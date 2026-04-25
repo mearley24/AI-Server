@@ -1158,6 +1158,68 @@ def _check_draft_quality(draft: str) -> tuple[str, list[str]]:
     return ("blocked" if reasons else "pass"), reasons
 
 
+# ── System capability map ──────────────────────────────────────────────────────
+# Maps normalised equipment/system names to what kind of help is appropriate.
+#   self_fix : str | None  — one safe client-side step (power cycle, reboot)
+#   remote   : bool        — can Bob check/fix this without being on-site?
+#   on_site  : bool        — does this typically require a visit?
+#
+# Rules for self_fix entries:
+#   - Must be safe for any client to do (no wiring, no admin passwords required)
+#   - One step only — no lists
+#   - Plain English, no jargon
+_SYSTEM_CAPABILITY: dict[str, dict] = {
+    "sonos":       {"self_fix": "try unplugging it for about 10 seconds and plugging it back in",
+                    "remote": False, "on_site": True},
+    "audio":       {"self_fix": "try unplugging it for about 10 seconds and plugging it back in",
+                    "remote": False, "on_site": True},
+    "wifi":        {"self_fix": "try rebooting your router real quick",
+                    "remote": True,  "on_site": True},
+    "wif":         {"self_fix": "try rebooting your router real quick",     # "wi-fi" normalised
+                    "remote": True,  "on_site": True},
+    "network":     {"self_fix": "try rebooting your router real quick",
+                    "remote": True,  "on_site": True},
+    "araknis":     {"self_fix": "try rebooting the router",
+                    "remote": True,  "on_site": True},
+    "pakedge":     {"self_fix": "try rebooting the router",
+                    "remote": True,  "on_site": True},
+    "wattbox":     {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "control4":    {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "lutron":      {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "vantage":     {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "snapav":      {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "camera":      {"self_fix": "try power cycling the camera",
+                    "remote": True,  "on_site": True},
+    "alarm":       {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "theater":     {"self_fix": "try turning everything off and back on",
+                    "remote": False, "on_site": True},
+    "lighting":    {"self_fix": None,
+                    "remote": True,  "on_site": True},
+    "shade":       {"self_fix": None,
+                    "remote": True,  "on_site": True},
+}
+
+
+def _system_cap(eq_name: str) -> dict:
+    """Return capability entry for an equipment/system name.
+
+    Matches by substring: 'Sonos Arc' → 'sonos' entry, 'Wi-Fi' → 'wifi' entry.
+    Returns a neutral no-assumption entry when nothing matches.
+    """
+    key = re.sub(r"[\s\-_]", "", eq_name.lower())   # "wi-fi" → "wifi"
+    for name, cap in _SYSTEM_CAPABILITY.items():
+        if name in key or key.startswith(name):
+            return cap
+    # Unknown system — neutral defaults
+    return {"self_fix": None, "remote": False, "on_site": True}
+
+
 def _build_draft_with_context(
     profile: dict,
     accepted_by_type: dict[str, list[dict]],
@@ -1226,20 +1288,57 @@ def _build_draft_with_context(
         # Equipment name is always safe. Issue text goes to reasoning only.
         eq    = accepted_equip[0]
         issue = accepted_issues[0][:80]
+        cap   = _system_cap(eq)
+        fix   = cap["self_fix"]
+        can_remote = cap["remote"]
+
+        # Personalize the self_fix phrase: replace first "it" with "your {eq}"
+        # e.g. "try unplugging it" → "try unplugging your Sonos"
+        def _personalise(f: str) -> str:
+            return re.sub(r"\bit\b", f"your {eq}", f, count=1)
+
         if repeat_issue:
-            draft = (
-                f"I see this has come up before with your {eq}. "
-                f"I'll take a look and get to the bottom of it — "
-                f"I'll let you know what I find."
-            )
+            if fix:
+                _p = _personalise(fix)
+                # Capitalise only the first letter; preserve equipment name casing mid-string
+                _p = _p[0].upper() + _p[1:]
+                draft = (
+                    f"I see this has come up a couple times now with your {eq}. "
+                    f"{_p} — if that doesn't do it this time, I'll swing by."
+                )
+            else:
+                draft = (
+                    f"I see this has happened before with your {eq}. "
+                    f"I'll dig in and get to the bottom of it — I'll let you know what I find."
+                )
         else:
-            draft = (
-                f"On it — I'll check your {eq} and see what's going on. "
-                f"I'll let you know what I find."
-            )
+            # First reported issue — suggest the simplest fix first, then next step.
+            if fix and can_remote:
+                # Don't append extra phrasing — the self_fix string is already natural
+                draft = (
+                    f"Got it — {_personalise(fix)}. "
+                    f"If that doesn't sort it, I'll check remotely and let you know."
+                )
+            elif fix:
+                draft = (
+                    f"Got it — {_personalise(fix)}. "
+                    f"If it's still acting up after that, I can swing by and take a look."
+                )
+            elif can_remote:
+                draft = (
+                    f"Got it — I'll check on your {eq} remotely. "
+                    f"Give me a few minutes and I'll let you know what I find."
+                )
+            else:
+                draft = (
+                    f"On it — I'll check your {eq} and see what's going on. "
+                    f"I'll let you know what I find."
+                )
         reasoning_parts += [
             f"{'Recurring' if repeat_issue else 'Active'} issue: '{issue}'",
             f"Equipment on file: '{eq}'",
+            f"Self-fix available: {bool(fix)}",
+            f"Remote access: {can_remote}",
         ]
         confidence = 0.90
 
@@ -1253,13 +1352,17 @@ def _build_draft_with_context(
         # Equipment name is clean; request context goes to reasoning only.
         req = accepted_requests[0][:70]
         eq  = accepted_equip[0]
+        cap = _system_cap(eq)
         if not _is_clean_for_injection(req):
             quality_downgraded = True
             reasoning_parts.append(f"Request (messy, not injected): '{req}'")
         else:
             reasoning_parts.append(f"Request: '{req}'")
         reasoning_parts.append(f"Equipment: '{eq}'")
-        draft = f"I'll take a look at your {eq} and get back to you."
+        if cap["remote"]:
+            draft = f"I'll take a look at your {eq} remotely and get back to you."
+        else:
+            draft = f"I'll take a look at your {eq} and let you know what I find."
         confidence = 0.85 if not quality_downgraded else 0.65
 
     elif open_reqs:
@@ -1280,8 +1383,12 @@ def _build_draft_with_context(
 
     elif accepted_equip:
         # Equipment name only — always safe to use.
-        eq = accepted_equip[0]
-        draft = f"Checking in on your {eq} — everything holding up okay?"
+        eq  = accepted_equip[0]
+        cap = _system_cap(eq)
+        if cap["remote"]:
+            draft = f"Checking in on your {eq} — everything holding up? I can take a quick look remotely if not."
+        else:
+            draft = f"Checking in on your {eq} — everything holding up okay?"
         reasoning_parts.append(f"Equipment on file: '{eq}'")
         confidence = 0.70
 
