@@ -1,0 +1,57 @@
+Self-improvement loop verification
+Prompt: scripts/self-improve.sh process (process-inbox phase)
+UTC timestamp: 20260425T023610Z
+
+--- Collector ---
+Collector step precedes this prompt (scripts/self-improvement-collect.sh daemon-once).
+SELF_IMPROVE_SKIP_COLLECT not observed in this context; collector run status not directly observable here.
+
+--- Inbox files evaluated ---
+1. 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+   → archive: EXISTS (already processed)
+   → card:    EXISTS (already processed)
+   → action:  SKIPPED — idempotent
+
+2. 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+   → archive: EXISTS (already processed)
+   → card:    EXISTS (already processed)
+   → action:  SKIPPED — idempotent
+
+3. 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+   → archive: EXISTS (already processed)
+   → card:    EXISTS (already processed)
+   → action:  SKIPPED — idempotent
+
+4. 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+   → archive: EXISTS (already processed)
+   → card:    EXISTS (already processed)
+   → action:  SKIPPED — idempotent
+
+Oversize files skipped: none
+Files processed (new this run): 0
+Files already processed (skipped): 4
+
+--- Cards produced this run ---
+None — all 4 inbox items were already archived and carded in earlier runs.
+
+--- Prompts drafted this run ---
+None.
+
+--- Card status summary (all pre-existing) ---
+- 20260422T111725Z-…-ihtesham2005-…-card.md       : needs fetch
+- 20260424T163001Z-…-jameszmsun-…-card.md          : needs fetch
+- 20260424T163001Z-…-nousresearch-…-card.md        : needs fetch
+- 20260424T163001Z-…-openswarm-…-card.md           : needs fetch
+
+All 4 items are raw X URLs forwarded via iMessage with no message body.
+Tweet content must be fetched before relevance can be scored.
+Web access is not available in this prompt scope; cards remain needs-fetch.
+
+Pattern note: four cards in this batch share the same iMessage→X URL
+pattern and the same bridge proposal (auto-route X links to x_intake).
+This pattern has now appeared across 3 separate run timestamps
+(20260424T165000Z, 20260424T191000Z, 20260425T023610Z+). If the pattern
+persists, the bridge proposal should be escalated from needs-fetch to
+needs-Matt for a scoping decision even without tweet content.
+
+STATUS: OK
