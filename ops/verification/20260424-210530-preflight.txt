@@ -1,0 +1,47 @@
+=== task-runner preflight ===
+started_at: 2026-04-24T21:05:29-06:00
+finished_at: 2026-04-24T21:05:30-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-25.md
+
+unsafe conflicts: 0
+
+commit: 247fac35fddb4934e9032957d4c5b0b705722e3c pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M STATUS_REPORT.md
+ M data/task_runner/bob-watchdog-state/docker
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+?? data/cortex/reply_approvals.ndjson
+?? data/cortex/reply_receipts_dry_run.ndjson
+?? ops/verification/20260424-210130-preflight.txt
+?? ops/verification/20260424-210251-preflight.txt
+?? ops/verification/20260424-210323-preflight.txt
+?? ops/verification/20260424-210427-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "247fac35fddb4934e9032957d4c5b0b705722e3c",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-25.md"
+  ],
+  "finished_at": "2026-04-24T21:05:30-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-24T21:05:29-06:00",
+  "unsafe_conflicts": []
+}
