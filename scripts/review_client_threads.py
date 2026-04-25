@@ -139,6 +139,22 @@ _SCHEDULING_TERMS = (
     "meeting", "come by", "stop by",
 )
 
+# Eagle County / Vail Valley location names for project hint extraction
+_EAGLE_COUNTY_LOCATIONS = (
+    "beaver creek", "vail", "avon", "edwards", "eagle", "minturn",
+    "cordillera", "arrowhead", "bachelor gulch", "lionshead", "eaglevail",
+    "eagle-vail", "wolcott", "gypsum", "red cliff",
+)
+
+# Generic project/property reference phrases
+_PROJECT_REFERENCE_PHRASES = (
+    "the house", "the project", "the job", "the install", "the build",
+    "the theater", "the media room", "the home", "that house", "your place",
+    "your home", "the property", "our project",
+)
+
+# Address-like patterns handled via regex in _extract_project_hints()
+
 ASSIST_DOMAINS = frozenset({
     "smart_home_work", "restaurant_work", "vendor_supply",
     "builder_coordination", "personal_work_related",
@@ -150,6 +166,38 @@ ASSIST_PRIORITIES = frozenset({"high", "medium", "low"})
 def _has_gc_suffix(name: str) -> bool:
     """True if name ends with ' GC' — Eagle County 'GC' = Game Creek, not General Contractor."""
     return name.strip().endswith(" GC")
+
+
+def _extract_project_hints(texts: list[str]) -> tuple[str, float]:
+    """Extract a project/location hint from message texts.
+
+    Returns (hint_string, confidence) where confidence is 0.0–1.0.
+    hint_string is empty if no project signal is found.
+
+    Pure function — no I/O, no DB access.
+    """
+    all_text = " ".join(texts).lower()
+
+    # Strong: specific Eagle County location name
+    for loc in _EAGLE_COUNTY_LOCATIONS:
+        if loc in all_text:
+            return (loc.title(), 0.80)
+
+    # Medium: address-like pattern (digits + street word)
+    addr_match = re.search(
+        r"\b(\d{3,5})\s+([a-z][a-z ]{2,20}(?:rd|st|ave|dr|ln|blvd|ct|way|pl|trail|creek|ridge|pass|loop))\b",
+        all_text,
+    )
+    if addr_match:
+        hint = addr_match.group(0).title()
+        return (hint, 0.70)
+
+    # Weak: generic property/project reference
+    for phrase in _PROJECT_REFERENCE_PHRASES:
+        if phrase in all_text:
+            return (phrase.replace("the ", "").replace("your ", "").title(), 0.35)
+
+    return ("", 0.0)
 
 
 # ── Masking ───────────────────────────────────────────────────────────────────

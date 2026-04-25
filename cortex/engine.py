@@ -852,6 +852,8 @@ async def client_intel_review_queue(
             "work_confidence, triage_bucket, triage_reason, triage_confidence, "
             "review_value_score, "
             "review_reason_summary, review_next_action, evidence_categories, matched_terms, "
+            "project_hint, project_confidence, repeat_contact, "
+            "previous_thread_count, last_interaction_date, known_relationship, "
             "triage_suggested_relationship, triage_inferred_domain, "
             "triage_risk_flags, triage_contact_display, triaged_at "
             f"FROM threads WHERE {' AND '.join(where_parts)} "
@@ -876,6 +878,12 @@ async def client_intel_review_queue(
                 "review_next_action":     r["review_next_action"],
                 "evidence_categories":    json.loads(r["evidence_categories"] or "[]"),
                 "matched_terms":          json.loads(r["matched_terms"] or "[]"),
+                "project_hint":           r["project_hint"] or "",
+                "project_confidence":     r["project_confidence"] or 0.0,
+                "repeat_contact":         bool(r["repeat_contact"]),
+                "previous_thread_count":  r["previous_thread_count"] or 0,
+                "last_interaction_date":  r["last_interaction_date"] or "",
+                "known_relationship":     r["known_relationship"] or "",
                 "suggested_relationship": r["triage_suggested_relationship"],
                 "inferred_domain":        r["triage_inferred_domain"],
                 "risk_flags":             json.loads(r["triage_risk_flags"] or "[]"),

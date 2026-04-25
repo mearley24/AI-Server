@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
 
+### Self-improvement loop — 20260425T170519Z
+
+inbox processed: 19, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+All 19 iMessage X.com URL items were already processed in prior runs - both archived and have corresponding improvement cards.
+
 ### Client Intel Triage Bucket Scoring Improvement — 2026-04-25T16:45Z (Claude Code)
 
 high_value: 3 → 31 (10× improvement). ambiguous: 168 → 141. low_priority: 96 → 95. 749 tests pass.
@@ -64,6 +69,12 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+### Self-improvement loop — 2026-04-25T15:43:23Z
+
+inbox processed: 18, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 18 inbox items already processed (idempotency check). Each item has corresponding archive and card files.
 
 ### Self-improvement loop — 2026-04-25T15:29:13Z
 

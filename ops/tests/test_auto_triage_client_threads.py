@@ -649,3 +649,160 @@ class TestReviewIntelligence:
         assert isinstance(cats, list)
         assert "saved_contact" in cats
         assert "smart_home_terms" in cats or "service_terms" in cats
+
+
+# ── Project context linking ───────────────────────────────────────────────────
+
+def _make_thread_conn(tmp_path, handle="+15550001234", message_count=10,
+                      is_reviewed=-1, relationship_type="unknown"):
+    """Create a minimal in-memory threads table for project context tests."""
+    db = tmp_path / "threads.sqlite"
+    conn = sqlite3.connect(str(db))
+    conn.row_factory = sqlite3.Row
+    conn.execute("""
+        CREATE TABLE threads (
+            thread_id TEXT PRIMARY KEY, chat_guid TEXT NOT NULL DEFAULT '',
+            contact_handle TEXT NOT NULL, message_count INTEGER DEFAULT 10,
+            date_first TEXT DEFAULT '2026-01-01', date_last TEXT DEFAULT '2026-04-01',
+            category TEXT DEFAULT 'work', work_confidence REAL DEFAULT 0.8,
+            reason_codes TEXT DEFAULT '[]', is_reviewed INTEGER DEFAULT -1,
+            relationship_type TEXT DEFAULT 'unknown', created_at TEXT DEFAULT '2026-01-01'
+        )
+    """)
+    conn.execute(
+        "INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("t1", f"iMessage;-;{handle}", handle, message_count,
+         "2026-01-01", "2026-04-01", "work", 0.8, "[]", is_reviewed,
+         relationship_type, "2026-01-01"),
+    )
+    conn.commit()
+    return conn
+
+
+class TestProjectContextLinking:
+
+    def test_eagle_county_location_in_texts_gives_project_hint(self, tmp_path):
+        conn = _make_thread_conn(tmp_path)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "Jane Client", 10, "2026-04-01",
+            ["let's meet at the beaver creek property Tuesday"],
+        )
+        conn.close()
+        assert ctx["project_hint"].lower() == "beaver creek"
+        assert ctx["project_confidence"] == pytest.approx(0.80)
+
+    def test_vail_location_in_texts_gives_project_hint(self, tmp_path):
+        conn = _make_thread_conn(tmp_path)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "", 5, "2026-04-01",
+            ["the vail house needs a network upgrade"],
+        )
+        conn.close()
+        assert ctx["project_hint"].lower() == "vail"
+        assert ctx["project_confidence"] == pytest.approx(0.80)
+
+    def test_generic_phrase_gives_low_confidence_project_hint(self, tmp_path):
+        conn = _make_thread_conn(tmp_path)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "", 5, "2026-04-01",
+            ["sounds good, I'll come by the house"],
+        )
+        conn.close()
+        assert ctx["project_hint"] != ""
+        assert ctx["project_confidence"] == pytest.approx(0.35)
+
+    def test_no_location_signals_gives_empty_project_hint(self, tmp_path):
+        conn = _make_thread_conn(tmp_path)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "", 5, "2026-04-01",
+            ["ok thanks", "see you then"],
+        )
+        conn.close()
+        assert ctx["project_hint"] == ""
+        assert ctx["project_confidence"] == pytest.approx(0.0)
+
+    def test_named_contact_with_20_msgs_is_repeat_contact(self, tmp_path):
+        conn = _make_thread_conn(tmp_path, message_count=20)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "Dave Builder", 20, "2026-04-01", [],
+        )
+        conn.close()
+        assert ctx["repeat_contact"] == 1
+
+    def test_named_contact_with_fewer_than_20_msgs_not_repeat(self, tmp_path):
+        conn = _make_thread_conn(tmp_path, message_count=15)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "Dave Builder", 15, "2026-04-01", [],
+        )
+        conn.close()
+        assert ctx["repeat_contact"] == 0
+
+    def test_unnamed_contact_not_repeat_regardless_of_msgs(self, tmp_path):
+        conn = _make_thread_conn(tmp_path, message_count=50)
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "", 50, "2026-04-01", [],
+        )
+        conn.close()
+        assert ctx["repeat_contact"] == 0
+
+    def test_approved_profile_match_sets_known_relationship(self, tmp_path):
+        """If the same normalized phone exists in an approved (is_reviewed=1) row, known_relationship is populated."""
+        conn = _make_thread_conn(tmp_path, handle="+15550001234", message_count=5)
+        # Insert an approved row with the same number
+        conn.execute(
+            "INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("approved1", "iMessage;-;+15550001234", "+15550001234", 30,
+             "2025-06-01", "2025-12-01", "work", 0.9, "[]", 1, "client", "2025-06-01"),
+        )
+        conn.commit()
+        ctx = mod._build_project_context(
+            conn, "+15550001234", "", 5, "2026-04-01", [],
+        )
+        conn.close()
+        assert ctx["known_relationship"] == "client"
+        assert ctx["repeat_contact"] == 1
+        assert ctx["previous_thread_count"] >= 1
+
+    def test_review_value_score_boosted_for_repeat_contact(self, tmp_path):
+        """repeat_contact should increase review_value_score vs identical thread without it."""
+        (tmp_path / "base").mkdir()
+        (tmp_path / "repeat").mkdir()
+        conn_base = _make_thread_conn(tmp_path / "base", handle="+15550001111", message_count=5)
+        conn_repeat = _make_thread_conn(tmp_path / "repeat", handle="+15550002222", message_count=20)
+
+        with patch.object(rct_mod, "_lookup_contact_name", side_effect=lambda h, *a, **kw: "Test Client"), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=["sonos install network rack"]):
+            result_base   = mod.run_triage(conn_base,   dry_run=True)
+            result_repeat = mod.run_triage(conn_repeat, dry_run=True)
+        conn_base.close()
+        conn_repeat.close()
+
+        rvs_base   = result_base["results"][0]["review_value_score"]
+        rvs_repeat = result_repeat["results"][0]["review_value_score"]
+        assert rvs_repeat >= rvs_base, (
+            f"repeat contact (val={rvs_repeat:.3f}) should score >= base (val={rvs_base:.3f})"
+        )
+
+    def test_project_hint_fields_present_in_all_results(self, tmp_path):
+        """Every triage result must include the 6 project context fields."""
+        conn = _make_thread_conn(tmp_path, message_count=8)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=["ok", "thanks"]):
+            result = mod.run_triage(conn, dry_run=True)
+        conn.close()
+        entry = result["results"][0]
+        for field in ("project_hint", "project_confidence", "repeat_contact",
+                      "previous_thread_count", "last_interaction_date", "known_relationship"):
+            assert field in entry, f"Missing field: {field}"
+
+    def test_extract_project_hints_direct_eagle_county(self):
+        """Unit test _extract_project_hints directly for Eagle County location."""
+        hint, conf = rct_mod._extract_project_hints(["I'm at the edwards house this week"])
+        assert hint.lower() == "edwards"
+        assert conf == pytest.approx(0.80)
+
+    def test_extract_project_hints_direct_no_signal(self):
+        """Unit test _extract_project_hints when no signals present."""
+        hint, conf = rct_mod._extract_project_hints(["sounds good", "see you at noon"])
+        assert hint == ""
+        assert conf == pytest.approx(0.0)

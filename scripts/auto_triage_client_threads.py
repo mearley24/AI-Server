@@ -60,6 +60,13 @@ _TRIAGE_COLS = [
     ("review_next_action",           "TEXT"),
     ("evidence_categories",          "TEXT DEFAULT '[]'"),
     ("matched_terms",                "TEXT DEFAULT '[]'"),
+    # Project context linking (v1)
+    ("project_hint",                 "TEXT DEFAULT ''"),
+    ("project_confidence",           "REAL DEFAULT 0.0"),
+    ("repeat_contact",               "INTEGER DEFAULT 0"),
+    ("previous_thread_count",        "INTEGER DEFAULT 0"),
+    ("last_interaction_date",        "TEXT DEFAULT ''"),
+    ("known_relationship",           "TEXT DEFAULT ''"),
     ("triage_suggested_relationship","TEXT"),
     ("triage_inferred_domain",       "TEXT"),
     ("triage_risk_flags",            "TEXT DEFAULT '[]'"),
@@ -155,11 +162,14 @@ def _compute_review_value_score(
     work_confidence: float,
     message_count: int,
     assist: dict[str, Any],
+    project_ctx: "dict[str, Any] | None" = None,
 ) -> float:
     """Estimate how valuable it is for Matt to review this thread (0.0–1.0).
 
     Distinct from triage_confidence (certainty of bucket assignment).
     Higher = worth Matt's time sooner.
+    project_ctx — optional dict from _build_project_context(); boosts score
+    for repeat contacts, known relationships, and project-linked threads.
     """
     scores      = assist.get("_scores", {})
     tech_s      = scores.get("tech", 0)
@@ -183,6 +193,17 @@ def _compute_review_value_score(
     score += work_confidence * 0.08
     if tech_s >= 1:
         score += min(assist_conf * 0.10, 0.08)
+
+    # Project context bonuses
+    if project_ctx:
+        if project_ctx.get("known_relationship"):
+            score += 0.15   # approved profile match — highest signal
+        elif project_ctx.get("repeat_contact"):
+            score += 0.08   # named + active history
+        if project_ctx.get("project_confidence", 0.0) >= 0.70:
+            score += 0.06   # strong location/address match
+        elif project_ctx.get("project_confidence", 0.0) >= 0.35:
+            score += 0.03   # weak project reference
     return round(min(score, 1.0), 3)
 
 
@@ -191,6 +212,7 @@ def _categorize_evidence(
     scores: dict[str, int],
     message_count: int,
     date_last: str,
+    project_ctx: "dict[str, Any] | None" = None,
 ) -> list[str]:
     """Return list of evidence category tags for this thread."""
     from datetime import datetime as _dt
@@ -229,6 +251,14 @@ def _categorize_evidence(
             cats.append("recent_activity")
     except Exception:
         pass
+    # Project context categories
+    if project_ctx:
+        if project_ctx.get("known_relationship"):
+            cats.append("known_client")
+        elif project_ctx.get("repeat_contact"):
+            cats.append("repeat_contact")
+        if project_ctx.get("project_hint"):
+            cats.append("project_location_hint")
     return cats
 
 
@@ -239,6 +269,7 @@ def _build_review_reason_summary(
     message_count: int,
     evidence_categories: list[str],
     assist: dict[str, Any],
+    project_ctx: "dict[str, Any] | None" = None,
 ) -> str:
     """One human-readable sentence explaining why this thread landed in this bucket."""
     risk_flags = assist.get("risk_flags", [])
@@ -294,9 +325,24 @@ def _build_review_reason_summary(
     else:
         body = f"{who} with {msg_str} and no strong work signals"
 
+    # Project context prefix
+    if project_ctx:
+        known_rel = project_ctx.get("known_relationship", "")
+        hint = project_ctx.get("project_hint", "")
+        repeat = project_ctx.get("repeat_contact", False)
+        if known_rel:
+            body = f"[existing {known_rel}] {body}"
+        elif repeat:
+            body = f"[active contact] {body}"
+        if hint:
+            body += f" (project: {hint})"
+
     # Tail
     if bucket == "high_value":
-        if "symphony_intro" in evidence_categories:
+        if "known_client" in evidence_categories:
+            rel = (project_ctx or {}).get("known_relationship", "contact")
+            tail = f"— known {rel}, likely repeat work."
+        elif "symphony_intro" in evidence_categories:
             tail = "— Symphony client context."
         elif "quote_proposal_terms" in evidence_categories:
             tail = "— proposal/project context, likely smart-home work."
@@ -338,6 +384,7 @@ def _build_review_next_action(
     scores: dict[str, int],
     evidence_categories: list[str],
     assist: dict[str, Any],
+    project_ctx: "dict[str, Any] | None" = None,
 ) -> str:
     """Suggested next action for Matt when reviewing this thread."""
     risk_flags = assist.get("risk_flags", [])
@@ -345,6 +392,13 @@ def _build_review_next_action(
     rel = assist.get("suggested_relationship_type", "unknown")
 
     if bucket == "high_value":
+        if "known_client" in evidence_categories and project_ctx:
+            known_rel = project_ctx.get("known_relationship", "contact")
+            hint = project_ctx.get("project_hint", "")
+            suffix = f" ({hint})" if hint else ""
+            return f"Review as existing {known_rel}{suffix} — likely repeat work, approve relationship type."
+        if "repeat_contact" in evidence_categories:
+            return "Review as active contact — saved + substantial history, likely ongoing work relationship."
         if "symphony_intro" in evidence_categories:
             return "Review and approve as client — Symphony intro language detected."
         if scores.get("smart_home", 0) >= 2 or scores.get("tech", 0) >= 3:
@@ -374,6 +428,66 @@ def _build_review_next_action(
         if "stale_thread" in evidence_categories:
             return "Defer — stale thread with no recent activity."
         return "Defer unless you recognize the number."
+
+
+# ── Project context linking ───────────────────────────────────────────────────
+
+def _build_project_context(
+    conn: sqlite3.Connection,
+    handle: str,
+    name: str,
+    message_count: int,
+    date_last: str,
+    texts: list[str],
+) -> dict[str, Any]:
+    """Build project context and repeat-contact signals for one thread.
+
+    Looks up:
+    - Whether any approved profile shares the same normalized phone
+    - Whether the contact is named (in AddressBook)
+    - Project/location hints in message texts
+    - Message-count-based activity classification
+
+    Returns dict: project_hint, project_confidence, repeat_contact,
+                  previous_thread_count, last_interaction_date, known_relationship.
+
+    Pure from a triage safety POV — never modifies is_reviewed or creates profiles.
+    """
+    norm_handle = _rct._norm_phone(handle) if handle else ""
+
+    # Check approved profiles for the same normalized phone
+    known_relationship = ""
+    previous_thread_count = 0
+    if norm_handle:
+        try:
+            approved_rows = conn.execute(
+                "SELECT contact_handle, relationship_type FROM threads WHERE is_reviewed = 1"
+            ).fetchall()
+            for ar in approved_rows:
+                if _rct._norm_phone(ar["contact_handle"] or "") == norm_handle:
+                    known_relationship = ar["relationship_type"] or ""
+                    previous_thread_count += 1
+        except Exception:
+            pass
+
+    # repeat_contact: approved match OR named + substantial history
+    is_named = bool(name)
+    repeat_contact = (
+        bool(known_relationship)
+        or (is_named and message_count >= 20)
+    )
+
+    # Project/location hint from message texts
+    project_hint, project_confidence = _rct._extract_project_hints(texts)
+
+    return {
+        "project_hint":         project_hint,
+        "project_confidence":   project_confidence,
+        "repeat_contact":       int(repeat_contact),
+        "previous_thread_count": previous_thread_count,
+        "last_interaction_date": (date_last or "")[:10],
+        "known_relationship":   known_relationship,
+    }
 
 
 # ── Bucket determination (pure, no I/O) ──────────────────────────────────────
@@ -682,17 +796,30 @@ def run_triage(
 
             counts[bucket] += 1
             contact_display = name if name else _rct._mask(handle)
+
+            # Project context: repeat contact detection + location/project hint
+            proj_ctx = _build_project_context(
+                conn          = conn,
+                handle        = handle,
+                name          = name,
+                message_count = r["message_count"],
+                date_last     = r["date_last"] or "",
+                texts         = texts,
+            )
+
             review_value = _compute_review_value_score(
                 name            = name,
                 work_confidence = r["work_confidence"],
                 message_count   = r["message_count"],
                 assist          = assist,
+                project_ctx     = proj_ctx,
             )
             ev_cats = _categorize_evidence(
                 name=name,
                 scores=assist.get("_scores", {}),
                 message_count=r["message_count"],
                 date_last=r["date_last"] or "",
+                project_ctx=proj_ctx,
             )
             reason_summary = _build_review_reason_summary(
                 name=name,
@@ -701,6 +828,7 @@ def run_triage(
                 message_count=r["message_count"],
                 evidence_categories=ev_cats,
                 assist=assist,
+                project_ctx=proj_ctx,
             )
             next_action = _build_review_next_action(
                 bucket=bucket,
@@ -708,6 +836,7 @@ def run_triage(
                 scores=assist.get("_scores", {}),
                 evidence_categories=ev_cats,
                 assist=assist,
+                project_ctx=proj_ctx,
             )
             # Build flat matched_terms list
             all_ev = assist.get("evidence", [])
@@ -730,6 +859,10 @@ def run_triage(
                 "review_reason_summary": reason_summary,
                 "review_next_action":    next_action,
                 "matched_terms":         matched_terms,
+                "project_hint":          proj_ctx["project_hint"],
+                "project_confidence":    proj_ctx["project_confidence"],
+                "repeat_contact":        proj_ctx["repeat_contact"],
+                "known_relationship":    proj_ctx["known_relationship"],
             })
             entry: dict[str, Any] = {
                 "thread_id":                     r["thread_id"],
@@ -742,6 +875,12 @@ def run_triage(
                 "review_next_action":            next_action,
                 "evidence_categories":           json.dumps(ev_cats),
                 "matched_terms":                 json.dumps(matched_terms),
+                "project_hint":                  proj_ctx["project_hint"],
+                "project_confidence":            proj_ctx["project_confidence"],
+                "repeat_contact":                proj_ctx["repeat_contact"],
+                "previous_thread_count":         proj_ctx["previous_thread_count"],
+                "last_interaction_date":         proj_ctx["last_interaction_date"],
+                "known_relationship":            proj_ctx["known_relationship"],
                 "triage_suggested_relationship": assist["suggested_relationship_type"],
                 "triage_inferred_domain":        assist["inferred_domain"],
                 "triage_risk_flags":             json.dumps(assist["risk_flags"]),
@@ -758,6 +897,8 @@ def run_triage(
                     "review_value_score=?, "
                     "review_reason_summary=?, review_next_action=?, "
                     "evidence_categories=?, matched_terms=?, "
+                    "project_hint=?, project_confidence=?, repeat_contact=?, "
+                    "previous_thread_count=?, last_interaction_date=?, known_relationship=?, "
                     "triage_suggested_relationship=?, triage_inferred_domain=?, "
                     "triage_risk_flags=?, triage_contact_display=?, "
                     "triage_debug=?, triaged_at=? "
@@ -771,6 +912,12 @@ def run_triage(
                         entry["review_next_action"],
                         entry["evidence_categories"],
                         entry["matched_terms"],
+                        entry["project_hint"],
+                        entry["project_confidence"],
+                        entry["repeat_contact"],
+                        entry["previous_thread_count"],
+                        entry["last_interaction_date"],
+                        entry["known_relationship"],
                         entry["triage_suggested_relationship"],
                         entry["triage_inferred_domain"],
                         entry["triage_risk_flags"],
@@ -982,6 +1129,19 @@ def _print_explain(info: dict[str, Any]) -> None:
         print(f"  Next action  : {info['review_next_action']}")
     if info.get("evidence_categories"):
         print(f"  Ev. categories: {', '.join(json.loads(info['evidence_categories'] or '[]'))}")
+    ph = info.get("project_hint", "")
+    pc = info.get("project_confidence", 0.0)
+    rc = info.get("repeat_contact", 0)
+    kr = info.get("known_relationship", "")
+    if ph or rc or kr:
+        parts = []
+        if ph:
+            parts.append(f"project: {ph} (conf={pc:.2f})")
+        if kr:
+            parts.append(f"known: {kr}")
+        elif rc:
+            parts.append("repeat contact")
+        print(f"  Context      : {' | '.join(parts)}")
     if info.get("triaged_at"):
         print(f"  Triaged at   : {info['triaged_at'][:19]}")
 
@@ -989,17 +1149,20 @@ def _print_explain(info: dict[str, Any]) -> None:
 def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
     """Print a human-readable per-bucket summary with diagnostic scores."""
     existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
-    has_rvs = "review_value_score" in existing_cols
-    has_summary = "review_reason_summary" in existing_cols
-    has_next_action = "review_next_action" in existing_cols
+    has_rvs       = "review_value_score"  in existing_cols
+    has_summary   = "review_reason_summary" in existing_cols
+    has_next_act  = "review_next_action"  in existing_cols
+    has_proj      = "project_hint"        in existing_cols
     for bucket in ("high_value", "ambiguous", "low_priority", "hidden_personal"):
         extra_cols = ""
         if has_rvs:
             extra_cols += ", review_value_score"
         if has_summary:
             extra_cols += ", review_reason_summary"
-        if has_next_action:
+        if has_next_act:
             extra_cols += ", review_next_action"
+        if has_proj:
+            extra_cols += ", project_hint, project_confidence, repeat_contact, known_relationship"
         rows = conn.execute(
             f"SELECT thread_id, triage_contact_display, contact_handle, "
             f"message_count, triage_reason, triage_confidence{extra_cols}, triage_debug "
@@ -1042,12 +1205,26 @@ def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
                 print(f"    flags: {', '.join(flags)}")
             if evidence:
                 print(f"    evidence: {'; '.join(evidence[:3])}")
-            summary = dbg.get("review_reason_summary", "")
+            summary  = dbg.get("review_reason_summary", "")
             next_act = dbg.get("review_next_action", "")
             if summary:
                 print(f"    summary: {summary}")
             if next_act:
                 print(f"    action:  {next_act}")
+            if has_proj:
+                ph = r["project_hint"] or ""
+                pc = r["project_confidence"] or 0.0
+                rc = r["repeat_contact"] or 0
+                kr = r["known_relationship"] or ""
+                ctx_parts = []
+                if ph:
+                    ctx_parts.append(f"project: {ph} (conf={pc:.2f})")
+                if kr:
+                    ctx_parts.append(f"known: {kr}")
+                elif rc:
+                    ctx_parts.append("repeat contact")
+                if ctx_parts:
+                    print(f"    context: {' | '.join(ctx_parts)}")
 
 
 def _print_run_summary(result: dict[str, Any], verbose: bool = False) -> None:
