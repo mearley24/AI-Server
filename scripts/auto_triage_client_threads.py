@@ -44,6 +44,18 @@ if str(REPO_ROOT) not in sys.path:
 
 import scripts.review_client_threads as _rct
 
+# Self-improvement rule engine — optional; graceful fallback if unavailable
+try:
+    from cortex.self_improvement_engine import get_active_rules as _get_active_rules
+    from cortex.self_improvement_engine import apply_triage_boost as _apply_triage_boost
+    _SI_ENGINE_AVAILABLE = True
+except Exception:
+    _SI_ENGINE_AVAILABLE = False
+    def _get_active_rules():  # type: ignore[misc]
+        return []
+    def _apply_triage_boost(rules, score):  # type: ignore[misc]
+        return score
+
 DB_PATH          = REPO_ROOT / "data" / "client_intel" / "message_thread_index.sqlite"
 _SNAPSHOT_DIR    = REPO_ROOT / "data" / "client_intel" / "chatdb_snapshot"
 _LIVE_CHAT_DB    = Path.home() / "Library" / "Messages" / "chat.db"
@@ -754,6 +766,12 @@ def run_triage(
     """
     _ensure_triage_columns(conn)
 
+    # Load approved self-improvement rules once per run (safe fallback to [])
+    try:
+        _active_si_rules = _get_active_rules()
+    except Exception:
+        _active_si_rules = []
+
     # Temporarily redirect _fetch_sample_texts to the snapshot if provided.
     _orig_chat_db = _rct.CHAT_DB
     if chat_db_path is not None:
@@ -814,6 +832,11 @@ def run_triage(
                 assist          = assist,
                 project_ctx     = proj_ctx,
             )
+            # Apply approved self-improvement rules (graceful fallback if engine unavailable)
+            try:
+                review_value = _apply_triage_boost(_active_si_rules, review_value)
+            except Exception:
+                pass
             ev_cats = _categorize_evidence(
                 name=name,
                 scores=assist.get("_scores", {}),

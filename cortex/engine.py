@@ -35,6 +35,7 @@ from cortex.improvement import ImprovementLoop
 from cortex.memory import MemoryStore
 from cortex.migrate import run_migration
 from cortex.opportunity import OpportunityScanner
+from cortex import self_improvement_engine as _si_engine
 
 structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(
@@ -1441,6 +1442,7 @@ def _build_draft_with_context(
     unverified_by_type: dict[str, list[dict]],
     recent_replies: list[dict],
     last_message: str = "",
+    behavior_hints: "dict | None" = None,
 ) -> dict[str, Any]:
     """Build a draft reply with reasoning, confidence, source_facts, and quality status.
 
@@ -1456,7 +1458,10 @@ def _build_draft_with_context(
       - _is_clean_for_injection() applied before any fact value enters draft text
       - _check_draft_quality() run on final draft; blocked drafts replaced with SAFE_FALLBACK_REPLY
       - confidence downgraded when source facts are messy
+    behavior_hints — optional dict from _si_engine.apply_reply_hints(); influences
+      draft selection. Silently ignored if missing or malformed.
     """
+    _hints = behavior_hints or {}
     rel_type = profile.get("relationship_type", "unknown")
     open_reqs = profile.get("open_requests", [])
     systems   = profile.get("systems_or_topics", [])
@@ -1704,6 +1709,10 @@ def _build_draft_with_context(
     if quality_downgraded:
         confidence = round(min(confidence, 0.60), 2)
 
+    # Log applied rules if any behavior hints came from the rule engine
+    if _hints.get("_rule_id"):
+        _si_engine.log_applied_rules([_hints["_rule_id"]], context="reply_draft")
+
     return {
         "draft_reply":           draft,
         "reasoning":             "; ".join(reasoning_parts) or "No facts available.",
@@ -1711,6 +1720,7 @@ def _build_draft_with_context(
         "source_facts":          source_facts[:8],
         "draft_quality_status":  quality_status,
         "draft_quality_reasons": quality_reasons,
+        "active_rule_hints":     {k: v for k, v in _hints.items() if not k.startswith("_")},
     }
 
 
@@ -1839,11 +1849,16 @@ async def x_intake_context_card(
     import secrets as _secrets
     receipts = _receipts_for_handle(handle)
     action   = _suggest_action(accepted_by_type, profile["relationship_type"])
+    try:
+        _reply_hints = _si_engine.apply_reply_hints(_si_engine.get_active_rules())
+    except Exception:
+        _reply_hints = {}
     built    = _build_draft_with_context(
         profile=profile,
         accepted_by_type=accepted_by_type,
         unverified_by_type=unverified_by_type,
         recent_replies=receipts,
+        behavior_hints=_reply_hints,
     )
     # Apply Matt's reply style — falls back silently if style engine unavailable
     try:
@@ -2131,12 +2146,17 @@ async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
 
     receipts = _receipts_for_handle(handle)
     action   = _suggest_action(accepted_by_type, profile["relationship_type"])
+    try:
+        _reply_hints2 = _si_engine.apply_reply_hints(_si_engine.get_active_rules())
+    except Exception:
+        _reply_hints2 = {}
     built    = _build_draft_with_context(
         profile=profile,
         accepted_by_type=accepted_by_type,
         unverified_by_type=unverified_by_type,
         recent_replies=receipts,
         last_message=last_message,
+        behavior_hints=_reply_hints2,
     )
     try:
         from cortex.style_engine import apply_style as _apply_style
@@ -2306,6 +2326,12 @@ def _compute_follow_ups(
 
     approvals = _approvals_index()
 
+    # Load follow-up adjustments from approved self-improvement rules (safe fallback)
+    try:
+        _fu_adjustments = _si_engine.apply_followup_adjustments(_si_engine.get_active_rules())
+    except Exception:
+        _fu_adjustments = {}
+
     follow_ups: list[dict] = []
     for item in by_contact.values():
         rel = item["relationship_type"]
@@ -2319,6 +2345,9 @@ def _compute_follow_ups(
         threshold_h = override if override is not None else (
             default_threshold_h if default_threshold_h is not None else 24.0
         )
+        # Apply rule-engine multiplier if present (e.g. lower threshold for urgency)
+        if _fu_adjustments.get("urgent_threshold_hours_multiplier") and priority_label == "urgent":
+            threshold_h *= _fu_adjustments["urgent_threshold_hours_multiplier"]
         elapsed = now - item["created_at"]
         if elapsed < threshold_h * 3600:
             continue                                # Not yet overdue
@@ -2404,7 +2433,7 @@ _PROMOTED_RULES_PATH = _CORTEX_DATA_DIR / "promoted_rules.json"
 
 @app.get("/api/self-improvement/promoted-rules", tags=["self-improvement"])
 async def self_improvement_promoted_rules(status: str = "all") -> dict[str, Any]:
-    """Read-only view of promoted self-improvement rules from the cards pipeline."""
+    """Promoted self-improvement rules, optionally filtered by status."""
     if not _PROMOTED_RULES_PATH.exists():
         return {
             "status": "ok",
@@ -2426,6 +2455,41 @@ async def self_improvement_promoted_rules(status: str = "all") -> dict[str, Any]
     except Exception as exc:
         logger.warning("promoted_rules_read_error err=%s", exc)
         return {"status": "error", "error": str(exc)[:200], "rules": [], "count": 0}
+
+
+@app.post("/api/self-improvement/promoted-rules/{rule_id}/approve", tags=["self-improvement"])
+async def self_improvement_approve_rule(
+    rule_id: str,
+    body: dict[str, Any] = None,
+) -> dict[str, Any]:
+    """Approve a promoted rule. Approved rules actively influence system behavior.
+
+    Body (optional): {"approved_by": "matt"}
+    All status changes are permanent until explicitly rejected.
+    """
+    approved_by = (body or {}).get("approved_by", "matt")
+    result = _si_engine.approve_rule(rule_id, approved_by=approved_by)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    logger.info("rule_approved rule_id=%s by=%s", rule_id, approved_by)
+    return {"status": "ok", "rule": result}
+
+
+@app.post("/api/self-improvement/promoted-rules/{rule_id}/reject", tags=["self-improvement"])
+async def self_improvement_reject_rule(
+    rule_id: str,
+    body: dict[str, Any] = None,
+) -> dict[str, Any]:
+    """Reject a promoted rule. Rejected rules are excluded from active behavior.
+
+    Body (optional): {"reason": "not relevant"}
+    """
+    reason = (body or {}).get("reason", "")
+    result = _si_engine.reject_rule(rule_id, reason=reason)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    logger.info("rule_rejected rule_id=%s reason=%s", rule_id, reason[:80])
+    return {"status": "ok", "rule": result}
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────

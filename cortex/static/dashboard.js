@@ -1805,11 +1805,33 @@
     }
 
     const RISK_COLORS = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
+    const STATUS_STYLES = {
+      approved: 'background:#22c55e22;border:1px solid #22c55e44;color:#22c55e;',
+      rejected: 'background:#ef444422;border:1px solid #ef444444;color:#ef4444;',
+      proposed: 'background:var(--surface-2);border:1px solid var(--border-2);color:var(--muted);',
+    };
 
     rulesEl.innerHTML = rules.map(function(r) {
-      const riskColor = RISK_COLORS[r.risk_level] || '#94a3b8';
-      const riskBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:' + riskColor + '22;color:' + riskColor + ';border:1px solid ' + riskColor + '44;">' + (r.risk_level || 'unknown').toUpperCase() + '</span>';
-      const statusBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:var(--surface-2);border:1px solid var(--border-2);color:var(--muted);">' + (r.status || '') + '</span>';
+      const riskColor  = RISK_COLORS[r.risk_level] || '#94a3b8';
+      const statusSty  = STATUS_STYLES[r.status] || STATUS_STYLES.proposed;
+      const riskBadge  = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:' + riskColor + '22;color:' + riskColor + ';border:1px solid ' + riskColor + '44;">' + (r.risk_level || 'unknown').toUpperCase() + '</span>';
+      const statusLabel = r.status === 'approved' ? 'Active rule' : r.status === 'rejected' ? 'Rejected' : r.status || 'proposed';
+      const statusBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;' + statusSty + '">' + statusLabel + '</span>';
+
+      let actionHtml = '';
+      if (r.status === 'proposed') {
+        actionHtml = '<div style="display:flex;gap:8px;margin-top:8px;">'
+          + '<button onclick="window._siApprove(' + JSON.stringify(r.rule_id) + ')" style="padding:4px 12px;font-size:11px;background:#22c55e22;border:1px solid #22c55e44;color:#22c55e;border-radius:4px;cursor:pointer;">Approve</button>'
+          + '<button onclick="window._siReject(' + JSON.stringify(r.rule_id) + ')" style="padding:4px 12px;font-size:11px;background:#ef444422;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;">Reject</button>'
+          + '</div>';
+      } else if (r.status === 'rejected' && r.rejected_reason) {
+        actionHtml = '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Reason: ' + _esc(r.rejected_reason) + '</div>';
+      } else if (r.status === 'approved') {
+        const approvedBy = r.approved_by ? (' by ' + _esc(r.approved_by)) : '';
+        const approvedAt = r.approved_at ? (' · ' + r.approved_at.slice(0, 10)) : '';
+        actionHtml = '<div style="font-size:11px;color:#22c55e;margin-top:4px;">Approved' + approvedBy + approvedAt + '</div>';
+      }
+
       return '<div style="border-bottom:1px solid var(--border);padding:12px 0;">'
         + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">'
         + '<span style="font-size:11px;font-family:monospace;color:var(--muted);">' + _esc(r.rule_id || '') + '</span>'
@@ -1817,11 +1839,49 @@
         + '<span style="font-size:10px;color:var(--muted);margin-left:auto;">' + (r.card_count || 0) + ' card' + (r.card_count !== 1 ? 's' : '') + '</span>'
         + '</div>'
         + '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + _esc(r.summary || '') + '</div>'
-        + '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">'
-        + '<strong>Source:</strong> ' + _esc(r.source_card || '')
-        + '</div>'
+        + '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;"><strong>Source:</strong> ' + _esc(r.source_card || '') + '</div>'
+        + '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">' + _esc(r.proposed_behavior || '') + '</div>'
+        + actionHtml
         + '</div>';
     }).join('');
+  };
+
+  window._siApprove = async function(ruleId) {
+    if (!confirm('Approve rule ' + ruleId + '?\n\nApproved rules influence system behavior immediately.')) return;
+    try {
+      const resp = await fetch('/api/self-improvement/promoted-rules/' + encodeURIComponent(ruleId) + '/approve', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({approved_by: 'matt'}),
+      });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        window.loadSelfImprovement();
+      } else {
+        alert('Approve failed: ' + (data.detail || JSON.stringify(data)));
+      }
+    } catch (err) {
+      alert('Approve error: ' + err);
+    }
+  };
+
+  window._siReject = async function(ruleId) {
+    const reason = prompt('Reason for rejecting ' + ruleId + ' (optional):') || '';
+    try {
+      const resp = await fetch('/api/self-improvement/promoted-rules/' + encodeURIComponent(ruleId) + '/reject', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason: reason}),
+      });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        window.loadSelfImprovement();
+      } else {
+        alert('Reject failed: ' + (data.detail || JSON.stringify(data)));
+      }
+    } catch (err) {
+      alert('Reject error: ' + err);
+    }
   };
 
 })();

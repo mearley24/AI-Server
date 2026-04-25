@@ -2,6 +2,24 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
 
+### Self-Improvement Rule Approval + Activation v1 — 2026-04-25T18:41Z (Claude Code)
+
+Rule engine live. 3 rules (1 approved, 1 rejected, 1 still proposed).
+- `cortex/self_improvement_engine.py`: load/save (atomic), approve, reject, behavior hints
+- Hooks: `_build_draft_with_context` (reply_phrasing rules), `_compute_review_value_score` (triage_scoring rules), `_compute_follow_ups` (follow_up_threshold rules)
+- API: `POST /api/self-improvement/promoted-rules/{id}/approve|reject`
+- Dashboard: Approve/Reject buttons per proposed rule in Self Improvement tab
+- 817 tests pass (+30 new)
+- Approved: RULE-20260425-036df2 (iMessage→x_intake bridge, pipeline, low risk)
+- Rejected: RULE-20260425-f8c13b (unclassified, general, too vague)
+- Pending: RULE-20260425-5ee7f5 (batch consolidation, high risk — requires Matt)
+
+### Self-improvement loop — 20260425T184100Z
+
+inbox processed: 19, cards: 1 (1 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+- x-com-imessage-automation-card.md — Status: auto-safe — Automate X.com URL processing from Symphony iMessage line
+
 ### Self-improvement loop — 20260425T170519Z
 
 inbox processed: 19, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
