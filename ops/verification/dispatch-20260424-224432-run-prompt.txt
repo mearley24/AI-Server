@@ -1,0 +1,13 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260424-224432
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
+
+=== claude output ===
+All artifacts written. Run complete:
+
+- **Inbox processed:** 14 total — 13 skipped (already archived + carded), **1 new**
+- **New card:** `20260425T044431Z-…-moondevonyt-…-card.md` — **needs fetch** (second @moondevonyt post via iMessage; bare URL, no body; trading-adjacent handle; Impact 3 / Effort 2)
+- **Auto-run cards drafted:** 0
+- **Verification artifact:** `ops/verification/self-improve-20260425T044500Z.txt`
+
+The cumulative pattern now spans **14 items across 9 runs** — all bare X.com URLs, zero scored. The @moondevonyt repeat (two posts captured, zero assessed) is the sharpest illustration of the iMessage→x_intake bridge gap. Want me to draft a `needs Matt` escalation card or a concrete `auto-run` prompt for the bridge itself?
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-224432-run-prompt.txt
