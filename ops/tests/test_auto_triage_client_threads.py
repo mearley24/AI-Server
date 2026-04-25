@@ -345,3 +345,104 @@ class TestNamedModerateMsgsHighValue:
         assert entry["triage_bucket"] == "low_priority", (
             f"expected low_priority, got {entry['triage_bucket']}: {entry['triage_reason']}"
         )
+
+    def test_review_value_score_present_in_result(self, tmp_path):
+        """review_value_score should be present in every triage result entry."""
+        result = self._run(
+            tmp_path,
+            texts=["sonos installed", "network rack done"],
+            name="Jane Client",
+            message_count=20,
+        )
+        entry = result["results"][0]
+        assert "review_value_score" in entry, "review_value_score missing from result"
+        assert 0.0 <= entry["review_value_score"] <= 1.0
+
+    def test_named_high_tech_has_higher_review_value_than_unnamed_no_tech(self, tmp_path):
+        """Named contact with tech signals should score higher than unnamed with no signals."""
+        result_named = self._run(
+            tmp_path,
+            texts=["control4 programming done", "sonos multi-room"],
+            name="Rich Client",
+            message_count=30,
+        )
+        tmp_path2 = tmp_path / "sub"
+        tmp_path2.mkdir()
+        result_unnamed = self._run(
+            tmp_path2,
+            texts=["ok", "sounds good"],
+            name="",
+            message_count=3,
+            work_confidence=0.40,
+        )
+        val_named   = result_named["results"][0]["review_value_score"]
+        val_unnamed = result_unnamed["results"][0]["review_value_score"]
+        assert val_named > val_unnamed, (
+            f"named+tech ({val_named}) should outscore unnamed+no-signals ({val_unnamed})"
+        )
+
+
+# ── Restaurant signal hardening ────────────────────────────────────────────────
+
+class TestRestaurantSignalHardening:
+
+    def test_table_alone_gives_zero_restaurant_score(self):
+        """'table' alone (a weak term) must NOT trigger restaurant_work."""
+        texts = ["let me know about the table", "see you at the table"]
+        scores = rct_mod._score_domain_signals(texts, [])
+        assert scores["restaurant"] == 0, (
+            f"'table' alone should give restaurant=0, got {scores['restaurant']}"
+        )
+
+    def test_table_with_strong_term_counts(self):
+        """'table' + 'chef' (strong) should count as restaurant=2."""
+        texts = ["the chef set up the table for the event"]
+        scores = rct_mod._score_domain_signals(texts, [])
+        assert scores["restaurant"] >= 2, (
+            f"table+chef should give restaurant>=2, got {scores['restaurant']}"
+        )
+
+    def test_strong_term_alone_scores_as_restaurant(self):
+        """A strong term like 'reservation' alone should score restaurant>=1."""
+        texts = ["reservation confirmed for 8pm"]
+        scores = rct_mod._score_domain_signals(texts, [])
+        assert scores["restaurant"] >= 1, (
+            f"'reservation' should score restaurant>=1, got {scores['restaurant']}"
+        )
+
+    def test_game_creek_is_strong_restaurant_term(self):
+        """'game creek' is a known Eagle County venue — strong restaurant signal."""
+        texts = ["dinner at game creek was great"]
+        scores = rct_mod._score_domain_signals(texts, [])
+        assert scores["restaurant"] >= 1, (
+            f"'game creek' should score restaurant>=1, got {scores['restaurant']}"
+        )
+        assert scores.get("restaurant_strong", 0) >= 1
+
+    def test_unnamed_table_only_thread_is_low_priority(self):
+        """Unnamed thread with only 'table' (weak term) → low_priority, not ambiguous."""
+        texts = ["ok the table looks good", "see you then"]
+        bucket, reason, _ = _bucket(texts, "", message_count=5)
+        assert bucket == "low_priority", (
+            f"'table'-only unnamed should be low_priority, got {bucket}: {reason}"
+        )
+
+    def test_unnamed_table_only_large_thread_is_low_priority(self):
+        """Even a larger unnamed thread with only weak restaurant terms → low_priority."""
+        texts = ["dinner plans set", "lunch at noon", "breakfast meeting"]
+        bucket, reason, _ = _bucket(texts, "", message_count=15, work_confidence=0.65)
+        assert bucket == "low_priority", (
+            f"weak-only restaurant unnamed should be low_priority, got {bucket}: {reason}"
+        )
+
+    def test_gc_with_strong_restaurant_term_is_ambiguous(self):
+        """GC contact with a strong restaurant term (chef) → ambiguous."""
+        texts = ["the chef came by", "kitchen is ready"]
+        bucket, reason, _ = _bucket(texts, "Eagle GC")
+        assert bucket == "ambiguous", f"GC+strong-restaurant should be ambiguous, got {bucket}"
+
+    def test_restaurant_strong_key_in_scores(self):
+        """_score_domain_signals should return 'restaurant_strong' key."""
+        texts = ["restaurant reservation confirmed"]
+        scores = rct_mod._score_domain_signals(texts, [])
+        assert "restaurant_strong" in scores, f"'restaurant_strong' key missing: {scores}"

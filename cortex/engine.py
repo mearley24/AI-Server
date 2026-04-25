@@ -850,10 +850,11 @@ async def client_intel_review_queue(
         rows = conn.execute(
             "SELECT thread_id, contact_handle, message_count, date_last, category, "
             "work_confidence, triage_bucket, triage_reason, triage_confidence, "
+            "review_value_score, "
             "triage_suggested_relationship, triage_inferred_domain, "
             "triage_risk_flags, triage_contact_display, triaged_at "
             f"FROM threads WHERE {' AND '.join(where_parts)} "
-            "ORDER BY triage_confidence DESC, work_confidence DESC LIMIT ?",
+            "ORDER BY review_value_score DESC, triage_confidence DESC LIMIT ?",
             params,
         ).fetchall()
         threads = []
@@ -869,6 +870,7 @@ async def client_intel_review_queue(
                 "triage_bucket":          r["triage_bucket"],
                 "triage_reason":          r["triage_reason"],
                 "triage_confidence":      r["triage_confidence"],
+                "review_value_score":     r["review_value_score"],
                 "suggested_relationship": r["triage_suggested_relationship"],
                 "inferred_domain":        r["triage_inferred_domain"],
                 "risk_flags":             json.loads(r["triage_risk_flags"] or "[]"),

@@ -73,11 +73,17 @@ RELATIONSHIP_MENU = (
 
 # ── Review assist signal libraries ────────────────────────────────────────────
 
-_RESTAURANT_TERMS = (
+# Strong terms alone classify a thread as restaurant_work.
+_RESTAURANT_TERMS_STRONG = (
     "game creek", "restaurant", "kitchen", "dining", "menu", "reservation",
-    "manager", "staff", "server", "bar", "shift", "table", "chef", "food",
-    "wine", "lodge", "club", "dinner", "lunch", "breakfast", "catering",
-    "venue", "event",
+    "bar", "shift", "chef", "food", "wine", "catering",
+)
+
+# Weak terms only count when at least one strong term is present.
+# "table" alone in an AV/construction context is a false positive.
+_RESTAURANT_TERMS_WEAK = (
+    "table", "dinner", "lunch", "breakfast", "manager", "staff", "server",
+    "event", "club", "venue", "lodge",
 )
 
 _TECH_TERMS = (
@@ -211,7 +217,10 @@ def _score_domain_signals(
 ) -> dict[str, int]:
     """Score domain signal strength from message texts and reason_codes."""
     all_text = " ".join(texts).lower()
-    restaurant = sum(1 for t in _RESTAURANT_TERMS if t in all_text)
+    strong_count = sum(1 for t in _RESTAURANT_TERMS_STRONG if t in all_text)
+    weak_count   = sum(1 for t in _RESTAURANT_TERMS_WEAK   if t in all_text)
+    # Weak terms only count when at least one strong restaurant term is present.
+    restaurant   = strong_count + (weak_count if strong_count >= 1 else 0)
     tech       = sum(1 for t in _TECH_TERMS       if t in all_text)
     builder    = sum(1 for t in _BUILDER_TERMS     if t in all_text)
     vendor     = sum(1 for t in _VENDOR_TERMS      if t in all_text)
@@ -224,7 +233,13 @@ def _score_domain_signals(
     # Intro-phrase boost: direct Symphony mention = very strong client signal
     if "symphony" in all_text:
         tech += 3
-    return {"restaurant": restaurant, "tech": tech, "builder": builder, "vendor": vendor}
+    return {
+        "restaurant": restaurant,
+        "restaurant_strong": strong_count,
+        "tech": tech,
+        "builder": builder,
+        "vendor": vendor,
+    }
 
 
 def analyze_thread_assist(
@@ -258,9 +273,11 @@ def analyze_thread_assist(
         )
 
     all_text = " ".join(texts).lower()
-    matched_tech  = [t for t in _TECH_TERMS       if t in all_text][:3]
-    matched_rest  = [t for t in _RESTAURANT_TERMS  if t in all_text][:3]
-    matched_build = [t for t in _BUILDER_TERMS     if t in all_text][:2]
+    matched_tech  = [t for t in _TECH_TERMS                if t in all_text][:3]
+    matched_rest  = [t for t in _RESTAURANT_TERMS_STRONG   if t in all_text][:3]
+    matched_rest += [t for t in _RESTAURANT_TERMS_WEAK     if t in all_text and t not in matched_rest][:2]
+    matched_rest  = matched_rest[:3]
+    matched_build = [t for t in _BUILDER_TERMS             if t in all_text][:2]
 
     if matched_tech:
         evidence.append(f"tech signals: {', '.join(matched_tech)}")

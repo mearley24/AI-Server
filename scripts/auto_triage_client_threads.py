@@ -55,6 +55,7 @@ _TRIAGE_COLS = [
     ("triage_bucket",                "TEXT"),
     ("triage_reason",                "TEXT"),
     ("triage_confidence",            "REAL"),
+    ("review_value_score",           "REAL"),
     ("triage_suggested_relationship","TEXT"),
     ("triage_inferred_domain",       "TEXT"),
     ("triage_risk_flags",            "TEXT DEFAULT '[]'"),
@@ -141,6 +142,35 @@ def _snapshot_diagnostics(chat_db_path: Path) -> dict[str, Any]:
         return diag
     except Exception as exc:
         return {"error": str(exc)[:200]}
+
+
+# ── Review value scoring (separate from bucket confidence) ───────────────────
+
+def _compute_review_value_score(
+    name: str,
+    work_confidence: float,
+    message_count: int,
+    assist: dict[str, Any],
+) -> float:
+    """Estimate how valuable it is for Matt to review this thread (0.0–1.0).
+
+    Distinct from triage_confidence (certainty of bucket assignment).
+    Higher = worth Matt's time sooner.
+    """
+    scores     = assist.get("_scores", {})
+    tech_s     = scores.get("tech", 0)
+    assist_conf = assist.get("confidence", 0.0)
+
+    score = 0.0
+    if name:
+        score += 0.35                             # named contact = high review value
+    score += min(tech_s * 0.06, 0.25)            # tech signals, capped at 0.25
+    score += min(message_count / 100.0, 0.20)    # thread activity, capped at 0.20
+    score += work_confidence * 0.10              # classifier confidence contribution
+    if tech_s >= 1:
+        score += min(assist_conf * 0.12, 0.10)   # assist confidence when tech present
+
+    return round(min(score, 1.0), 3)
 
 
 # ── Bucket determination (pure, no I/O) ──────────────────────────────────────
@@ -423,6 +453,12 @@ def run_triage(
 
             counts[bucket] += 1
             contact_display = name if name else _rct._mask(handle)
+            review_value = _compute_review_value_score(
+                name            = name,
+                work_confidence = r["work_confidence"],
+                message_count   = r["message_count"],
+                assist          = assist,
+            )
             triage_debug = json.dumps({
                 "scores":                assist.get("_scores", {}),
                 "evidence":              assist.get("evidence", []),
@@ -431,6 +467,7 @@ def run_triage(
                 "inferred_domain":       assist["inferred_domain"],
                 "risk_flags":            assist["risk_flags"],
                 "review_reason":         assist.get("review_reason", ""),
+                "review_value_score":    review_value,
             })
             entry: dict[str, Any] = {
                 "thread_id":                     r["thread_id"],
@@ -438,6 +475,7 @@ def run_triage(
                 "triage_bucket":                 bucket,
                 "triage_reason":                 reason,
                 "triage_confidence":             round(triage_conf, 3),
+                "review_value_score":            review_value,
                 "triage_suggested_relationship": assist["suggested_relationship_type"],
                 "triage_inferred_domain":        assist["inferred_domain"],
                 "triage_risk_flags":             json.dumps(assist["risk_flags"]),
@@ -451,6 +489,7 @@ def run_triage(
                 conn.execute(
                     "UPDATE threads SET "
                     "triage_bucket=?, triage_reason=?, triage_confidence=?, "
+                    "review_value_score=?, "
                     "triage_suggested_relationship=?, triage_inferred_domain=?, "
                     "triage_risk_flags=?, triage_contact_display=?, "
                     "triage_debug=?, triaged_at=? "
@@ -459,6 +498,7 @@ def run_triage(
                         entry["triage_bucket"],
                         entry["triage_reason"],
                         entry["triage_confidence"],
+                        entry["review_value_score"],
                         entry["triage_suggested_relationship"],
                         entry["triage_inferred_domain"],
                         entry["triage_risk_flags"],
@@ -666,12 +706,15 @@ def _print_explain(info: dict[str, Any]) -> None:
 
 def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
     """Print a human-readable per-bucket summary with diagnostic scores."""
+    existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
+    has_rvs = "review_value_score" in existing_cols
     for bucket in ("high_value", "ambiguous", "low_priority", "hidden_personal"):
+        rvs_col = ", review_value_score" if has_rvs else ""
         rows = conn.execute(
-            "SELECT thread_id, triage_contact_display, contact_handle, "
-            "message_count, triage_reason, triage_confidence, triage_debug "
-            "FROM threads WHERE is_reviewed=-1 AND triage_bucket=? "
-            "ORDER BY triage_confidence DESC LIMIT ?",
+            f"SELECT thread_id, triage_contact_display, contact_handle, "
+            f"message_count, triage_reason, triage_confidence{rvs_col}, triage_debug "
+            f"FROM threads WHERE is_reviewed=-1 AND triage_bucket=? "
+            f"ORDER BY {'review_value_score' if has_rvs else 'triage_confidence'} DESC LIMIT ?",
             (bucket, top),
         ).fetchall()
         total = conn.execute(
@@ -683,10 +726,10 @@ def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
             print("  (none)")
             continue
         for r in rows:
-            display = r[1] or _rct._mask(r[2])
+            display  = r["triage_contact_display"] or _rct._mask(r["contact_handle"])
             dbg: dict[str, Any] = {}
             try:
-                dbg = json.loads(r[6] or "{}")
+                dbg = json.loads(r["triage_debug"] or "{}")
             except Exception:
                 pass
             scores   = dbg.get("scores", {})
@@ -697,11 +740,14 @@ def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
             tech     = scores.get("tech", "?")
             rest     = scores.get("restaurant", "?")
             build    = scores.get("builder", "?")
+            bkt_conf = r["triage_confidence"]
+            rvs      = r["review_value_score"] if has_rvs else None
+            val_str  = f"  val={rvs:.2f}" if rvs is not None else ""
             print(
-                f"  {display:28s}  conf={r[5]:.2f}  msgs={r[3]:4d}  "
+                f"  {display:28s}  bkt={bkt_conf:.2f}{val_str}  msgs={r['message_count']:4d}  "
                 f"name={named}  tech={tech}  rest={rest}  build={build}  readable={readable}"
             )
-            print(f"    → {r[4][:75]}")
+            print(f"    → {r['triage_reason'][:75]}")
             if flags:
                 print(f"    flags: {', '.join(flags)}")
             if evidence:
@@ -724,11 +770,13 @@ def _print_run_summary(result: dict[str, Any], verbose: bool = False) -> None:
                 continue
             seen[b] = seen.get(b, 0) + 1
             flags = json.loads(r.get("triage_risk_flags", "[]"))
+            rvs = r.get("review_value_score")
+            rvs_str = f"  val={rvs:.2f}" if rvs is not None else ""
             print(
                 f"  [{b}] {r['contact_masked']}  "
                 f"domain={r['triage_inferred_domain']}  "
                 f"suggested={r['triage_suggested_relationship']}  "
-                f"conf={r['triage_confidence']:.2f}"
+                f"bkt={r['triage_confidence']:.2f}{rvs_str}"
             )
             print(f"         {r['triage_reason']}")
             if flags:
@@ -814,6 +862,7 @@ examples:
             return
 
         if args.bucket_summary:
+            _ensure_triage_columns(conn)
             _print_bucket_summary(conn, top=args.top)
             return
 
