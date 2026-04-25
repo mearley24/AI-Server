@@ -23,7 +23,11 @@ from fastapi.responses import JSONResponse
 from cortex.autonomy import register_autonomy_routes
 from cortex.bluebubbles import register_bluebubbles_routes
 from cortex.config import CORTEX_LOG_LEVEL, CORTEX_PORT, REDIS_URL
-from cortex.dashboard import register_dashboard_routes, register_intel_briefing_routes
+from cortex.dashboard import (
+    register_dashboard_routes,
+    register_intel_briefing_routes,
+    register_process_routes,
+)
 from cortex.digest import DigestBuilder
 from cortex.goals import GoalTracker
 from cortex.improvement import ImprovementLoop
@@ -255,6 +259,7 @@ app = FastAPI(title="Bob's Cortex", version="1.0.0")
 # Pass a callable so routes see the live engine after startup.
 register_dashboard_routes(app, lambda: engine)
 register_intel_briefing_routes(app)
+register_process_routes(app)
 register_bluebubbles_routes(app)
 register_autonomy_routes(app)
 

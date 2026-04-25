@@ -1470,3 +1470,186 @@ def register_intel_briefing_routes(app: FastAPI) -> None:
             resp = await client.post(f"{OPENCLAW_INTERNAL_URL}/api/intel-briefing/send")
             resp.raise_for_status()
             return resp.json()
+
+
+# ── Process backlog (read-only, repo-native) ─────────────────────────────────
+#
+# Surfaces ops/BACKLOG.md (engineering process backlog) on Cortex so the
+# operator can see the engineering workstreams alongside the Symphony tab.
+# Strictly read-only: mutations happen by editing the markdown and committing.
+# See ops/PROCESS_POLICY.md for the policy this endpoint supports.
+
+# Candidate paths so this works in-container (/app) and in tests (repo-root).
+BACKLOG_PATH_CANDIDATES = [
+    Path("/app/ops/BACKLOG.md"),
+    Path("ops/BACKLOG.md"),
+    Path(__file__).resolve().parent.parent / "ops" / "BACKLOG.md",
+]
+HANDOFF_PATH_CANDIDATES = [
+    Path("/app/HANDOFF.md"),
+    Path("HANDOFF.md"),
+    Path(__file__).resolve().parent.parent / "HANDOFF.md",
+]
+PROCESS_POLICY_PATH_CANDIDATES = [
+    Path("/app/ops/PROCESS_POLICY.md"),
+    Path("ops/PROCESS_POLICY.md"),
+    Path(__file__).resolve().parent.parent / "ops" / "PROCESS_POLICY.md",
+]
+
+
+def _resolve_first(paths: list[Path]) -> Path | None:
+    for p in paths:
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def _parse_backlog(text: str) -> dict[str, Any]:
+    """Parse ops/BACKLOG.md into a JSON-friendly structure.
+
+    Returns a dict with:
+      - items: list of {id, title, status, owner, lane, risk, anchor}
+      - counts: {by_status: {...}, total: int, active: int, done: int, skip: int}
+
+    Best-effort parser: walks ``### N. Title`` blocks under any heading.
+    Items are extracted from the immediately following bullet lines that
+    start with a recognized **Field:** prefix. Anything we can't parse is
+    skipped silently — the markdown remains the source of truth.
+    """
+    items: list[dict[str, Any]] = []
+    lines = text.splitlines()
+    i = 0
+    n = len(lines)
+    heading_re = None  # avoid importing re at module top; build locally
+    import re as _re
+    heading_re = _re.compile(r"^###\s+(\d+)\.\s+(.+?)\s*$")
+    field_re = _re.compile(
+        r"^-\s+\*\*(Status|Owner|Lane|Risk):\*\*\s*(.+?)\s*$",
+        _re.IGNORECASE,
+    )
+    while i < n:
+        m = heading_re.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        item: dict[str, Any] = {
+            "id": int(m.group(1)),
+            "title": m.group(2).strip(),
+            "status": "unknown",
+            "owner": "unassigned",
+            "lane": "",
+            "risk": "low",
+            "anchor": _slugify(m.group(2)),
+        }
+        i += 1
+        # Walk forward until the next heading or blank-blank gap; pick up fields.
+        while i < n and not heading_re.match(lines[i]) and not lines[i].startswith("## "):
+            fm = field_re.match(lines[i])
+            if fm:
+                key = fm.group(1).lower()
+                value = fm.group(2).strip()
+                # Strip any trailing parenthetical metadata for status/owner.
+                if key == "status":
+                    # Take the first token: 'todo', 'done', 'in-progress', etc.
+                    value = value.split()[0].rstrip("|").lower() if value else "unknown"
+                item[key] = value
+            i += 1
+        items.append(item)
+
+    by_status: dict[str, int] = {}
+    for it in items:
+        by_status[it["status"]] = by_status.get(it["status"], 0) + 1
+    counts = {
+        "total": len(items),
+        "by_status": by_status,
+        "active": sum(
+            v for k, v in by_status.items()
+            if k in {"todo", "in-progress", "blocked"}
+        ),
+        "done": by_status.get("done", 0),
+        "skip": by_status.get("skip", 0),
+    }
+    return {"items": items, "counts": counts}
+
+
+def _slugify(text: str) -> str:
+    import re as _re
+    s = text.lower().strip()
+    s = _re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-")
+
+
+def register_process_routes(app: FastAPI) -> None:
+    """Register /api/process/* read-only routes onto the Cortex FastAPI app.
+
+    Surfaces the engineering process backlog (ops/BACKLOG.md) and
+    pointers to HANDOFF.md / PROCESS_POLICY.md. No mutations — the
+    repo files are the canonical source of truth. See
+    ops/PROCESS_POLICY.md.
+    """
+
+    @app.get("/api/process/backlog", tags=["process"])
+    async def process_backlog():
+        path = _resolve_first(BACKLOG_PATH_CANDIDATES)
+        if path is None:
+            return {
+                "ok": False,
+                "error": "ops/BACKLOG.md not found in any candidate path",
+                "candidates": [str(p) for p in BACKLOG_PATH_CANDIDATES],
+                "items": [],
+                "counts": {"total": 0, "by_status": {}, "active": 0, "done": 0, "skip": 0},
+            }
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return {"ok": False, "error": str(exc), "items": [], "counts": {}}
+        parsed = _parse_backlog(text)
+        return {
+            "ok": True,
+            "source": str(path),
+            "source_label": "ops/BACKLOG.md",
+            "checked_at": datetime.now().isoformat(),
+            **parsed,
+        }
+
+    @app.get("/api/process/handoff", tags=["process"])
+    async def process_handoff():
+        """Return pointers to the canonical handoff docs.
+
+        We do not return the full body — operators should open the
+        markdown directly. This endpoint exists so the dashboard can
+        link to the right files without hardcoding paths in JS.
+        """
+        backlog = _resolve_first(BACKLOG_PATH_CANDIDATES)
+        handoff = _resolve_first(HANDOFF_PATH_CANDIDATES)
+        policy = _resolve_first(PROCESS_POLICY_PATH_CANDIDATES)
+        return {
+            "ok": True,
+            "checked_at": datetime.now().isoformat(),
+            "documents": {
+                "handoff": {
+                    "label": "HANDOFF.md",
+                    "exists": handoff is not None,
+                    "path": str(handoff) if handoff else None,
+                },
+                "backlog": {
+                    "label": "ops/BACKLOG.md",
+                    "exists": backlog is not None,
+                    "path": str(backlog) if backlog else None,
+                },
+                "policy": {
+                    "label": "ops/PROCESS_POLICY.md",
+                    "exists": policy is not None,
+                    "path": str(policy) if policy else None,
+                },
+            },
+            "policy_summary": (
+                "Linear = live client/business ops only. "
+                "Repo = engineering/process source of truth. "
+                "Cortex = operator action surface (this endpoint). "
+                "See ops/PROCESS_POLICY.md."
+            ),
+        }

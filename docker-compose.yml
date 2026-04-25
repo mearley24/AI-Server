@@ -465,6 +465,9 @@ services:
       - ./ops/work_queue:/app/ops/work_queue:ro
       - ./.cursor/prompts:/app/.cursor/prompts:ro
       - ./STATUS_REPORT.md:/app/STATUS_REPORT.md:ro
+      - ./HANDOFF.md:/app/HANDOFF.md:ro
+      - ./ops/BACKLOG.md:/app/ops/BACKLOG.md:ro
+      - ./ops/PROCESS_POLICY.md:/app/ops/PROCESS_POLICY.md:ro
       - ./data/task_runner:/data/task_runner:ro
     environment:
       - REDIS_URL=${REDIS_URL}
