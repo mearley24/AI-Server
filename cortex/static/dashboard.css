@@ -306,3 +306,51 @@ footer .stats strong { color: var(--text); font-variant-numeric: tabular-nums; m
 @media (max-width: 900px) {
   #panel-symphony > div { grid-template-columns: 1fr; }
 }
+
+/* ── T-Shirt Production tab ──────────────────────────────────────────────── */
+.shirt-grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.shirt-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+@media (max-width: 1040px) { .shirt-grid-2col { grid-template-columns: 1fr; } }
+
+.shirt-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; }
+@media (max-width: 800px) { .shirt-status-grid { grid-template-columns: repeat(2, 1fr); } }
+.shirt-stat .stat-big { font-size: clamp(20px, 1.5vw + 12px, 28px); }
+.shirt-stat .stat-label { margin-top: 2px; }
+
+.shirt-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--gold-dim); font-weight: 600; margin: 10px 0 4px; }
+.shirt-section-title:first-child { margin-top: 0; }
+
+.shirt-check-list { list-style: none; margin: 0; padding: 0; }
+.shirt-check-list li { display: flex; align-items: flex-start; gap: 8px;
+  padding: 5px 0; border-bottom: 1px solid var(--border);
+  font-size: clamp(11px, 0.3vw + 9px, 13px); line-height: 1.45; color: var(--text); }
+.shirt-check-list li:last-child { border-bottom: none; }
+.shirt-check-list li strong { color: var(--gold); }
+.shirt-box { display: inline-block; flex-shrink: 0; width: 12px; height: 12px;
+  border: 1px solid var(--border-2); border-radius: 2px; background: var(--surface-2);
+  margin-top: 3px; }
+.muted-tag { color: var(--muted); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-left: 6px; padding: 1px 6px;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px; }
+
+.shirt-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.shirt-table th, .shirt-table td { text-align: left; vertical-align: top;
+  padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.shirt-table th { color: var(--gold-dim); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.06em; font-weight: 600; }
+.shirt-table td { color: var(--text); line-height: 1.5; }
+.shirt-table tr:last-child td { border-bottom: none; }
+
+.shirt-sop { list-style: none; margin: 0; padding: 0; counter-reset: shirt-sop; }
+.shirt-sop > li { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.shirt-sop > li:last-child { border-bottom: none; }
+.shirt-sop-title { color: var(--gold); font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.shirt-substeps { margin: 0 0 8px 18px; padding: 0; color: var(--text);
+  font-size: clamp(11px, 0.3vw + 9px, 13px); line-height: 1.55; }
+.shirt-substeps li { padding: 2px 0; border: none; }
+.shirt-accept { font-size: 11px; color: var(--green); background: rgba(74,222,128,0.06);
+  border-left: 2px solid var(--green); padding: 6px 10px; border-radius: 0 4px 4px 0;
+  margin-top: 4px; }
+.shirt-accept strong { color: var(--green); margin-right: 4px; }
+

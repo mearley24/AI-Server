@@ -46,6 +46,7 @@
     Self Improvement
     <span class="tab-count hidden" id="nav-si-count">0</span>
   </button>
+  <button class="tab-btn" data-tab="shirts" role="tab">T-Shirts</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -499,6 +500,309 @@
   <div class="card">
     <h2>Proposed Rules <span id="si-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>
     <div id="si-rules"><div class="unavailable">loading</div></div>
+  </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB — T-SHIRT PRODUCTION (Symphony Smart Homes work shirts)
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-shirts" class="tab-panel">
+<div id="panel-shirts" style="padding:16px 22px 80px;max-width:1200px;">
+
+  <!-- Header strip -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <h2 style="margin:0;padding:0;border:0;">Symphony Shirt Production</h2>
+    <span class="badge-status s-approved">DTF ordered</span>
+    <span class="badge-status s-approved">Press ordered</span>
+    <span class="badge-status s-pending">Awaiting hardware</span>
+    <span class="small" style="color:var(--muted);margin-left:auto;">Last updated 2026-04-25</span>
+  </div>
+
+  <!-- Production status summary -->
+  <div class="card" style="margin-bottom:14px;">
+    <h2>Production Status</h2>
+    <div class="shirt-status-grid">
+      <div class="shirt-stat">
+        <div class="stat-big">156</div>
+        <div class="stat-label">Shirt sets on sheet</div>
+      </div>
+      <div class="shirt-stat">
+        <div class="stat-big">22 × 200<span class="small" style="color:var(--muted);font-weight:400;"> in</span></div>
+        <div class="stat-label">DTF gang sheet</div>
+      </div>
+      <div class="shirt-stat">
+        <div class="stat-big">3<span class="small" style="color:var(--muted);font-weight:400;"> placements</span></div>
+        <div class="stat-label">Front · Back · Sleeve QR</div>
+      </div>
+      <div class="shirt-stat">
+        <div class="stat-big">9</div>
+        <div class="stat-label">SOP phases</div>
+      </div>
+    </div>
+    <div class="small" style="color:var(--muted);margin-top:10px;">
+      Current upload file: <code style="color:var(--gold);">gang-sheet-SPLIT-COLOR-156sets-22x200-upload.png</code>
+      &middot; 6600 × 60000 px &middot; 300 DPI &middot; transparent PNG &middot; normal/readable orientation &middot;
+      <strong style="color:var(--red);">do not mirror, resize, or crop</strong>.
+    </div>
+  </div>
+
+  <!-- Two-column layout -->
+  <div class="shirt-grid-2col">
+
+    <!-- Left column -->
+    <div class="shirt-col">
+
+      <!-- Materials & Equipment -->
+      <div class="card">
+        <h2>Materials &amp; Equipment Checklist</h2>
+        <div class="shirt-checklist">
+          <div class="shirt-section-title">Substrates</div>
+          <ul class="shirt-check-list">
+            <li><span class="shirt-box"></span> Symphony Smart Homes shirt blanks (light + dark colors)</li>
+            <li><span class="shirt-box"></span> DTF gang sheet 22×200, split-color, 156 sets <span class="muted-tag">ordered</span></li>
+          </ul>
+
+          <div class="shirt-section-title">Heat-press hardware</div>
+          <ul class="shirt-check-list">
+            <li><span class="shirt-box"></span> HTVRONT Auto Heat Press 2 (auto press, body) <span class="muted-tag">ordered</span></li>
+            <li><span class="shirt-box"></span> Hat / sleeve press <span class="muted-tag">ordered</span></li>
+            <li><span class="shirt-box"></span> Pressing pillow / pad (sleeve seam clearance)</li>
+          </ul>
+
+          <div class="shirt-section-title">Accessories</div>
+          <ul class="shirt-check-list">
+            <li><span class="shirt-box"></span> Teflon / parchment cover sheets</li>
+            <li><span class="shirt-box"></span> Heat-resistant tape</li>
+            <li><span class="shirt-box"></span> Fabric ruler &amp; T-square (for placement)</li>
+            <li><span class="shirt-box"></span> Lint roller</li>
+            <li><span class="shirt-box"></span> Sharp scissors (cut transfers apart)</li>
+            <li><span class="shirt-box"></span> Flat work surface, well lit</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Placement Specs -->
+      <div class="card">
+        <h2>Placement Specs</h2>
+        <table class="shirt-table">
+          <thead>
+            <tr><th>Placement</th><th>Position</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Front circular logo</strong></td>
+              <td>Centered, ~3 in below collar seam</td>
+              <td>Use white art on dark shirts, black art on light shirts</td>
+            </tr>
+            <tr>
+              <td><strong>Back slogan</strong></td>
+              <td>Centered, ~4 in below collar seam</td>
+              <td>"We Build Smart Homes That Just Work"<br/><span class="small muted">website line: symphonysh.com</span></td>
+            </tr>
+            <tr>
+              <td><strong>Sleeve QR</strong></td>
+              <td>Centered on sleeve face, ~2 in above sleeve hem</td>
+              <td>QR resolves to <a href="https://symphonysh.com" target="_blank" rel="noopener">https://symphonysh.com</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="small" style="color:var(--muted);margin-top:8px;">
+          Always measure from the collar seam (not the neckband edge) and from the hem seam (not the cuff fold).
+          Verify centering with a fabric ruler / T-square — eyeballing fails on patterned or curved necklines.
+        </div>
+      </div>
+
+      <!-- Troubleshooting / Failure Modes -->
+      <div class="card">
+        <h2>Troubleshooting &amp; Failure Modes</h2>
+        <table class="shirt-table">
+          <thead>
+            <tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Transfer lifts at edges after peel</td>
+              <td>Under-pressed (time/temp/pressure)</td>
+              <td>Re-press 5–10 s with Teflon over the design at recipe temp</td>
+            </tr>
+            <tr>
+              <td>Cracked or webbed ink after first wash</td>
+              <td>Over-pressed or peeled too hot</td>
+              <td>Reduce dwell by 2–3 s; respect cold/warm peel per film spec</td>
+            </tr>
+            <tr>
+              <td>Faint / patchy ink coverage</td>
+              <td>Insufficient pressure or uneven platen</td>
+              <td>Use pressing pillow; verify HTVRONT pressure setting; flatten substrate</td>
+            </tr>
+            <tr>
+              <td>Logo off-center on front</td>
+              <td>Skipped ruler/T-square check</td>
+              <td>Re-measure from collar seam, mark with heat-safe tape, re-position</td>
+            </tr>
+            <tr>
+              <td>Sleeve QR scuffed or warped</td>
+              <td>Pressed over sleeve seam without pillow</td>
+              <td>Insert pressing pillow inside sleeve so face is flat; re-press</td>
+            </tr>
+            <tr>
+              <td>Sheet won&apos;t cut cleanly between sets</td>
+              <td>Scissors dull or cut line ignored</td>
+              <td>Sharp scissors; cut on the gutter, not through art; never trim into bleed</td>
+            </tr>
+            <tr>
+              <td>Wrong color art on shirt</td>
+              <td>Picked white art for light shirt or black for dark</td>
+              <td>White art → dark shirts only. Black art → light shirts only. Verify before pressing.</td>
+            </tr>
+            <tr>
+              <td>QR scans to wrong URL or fails</td>
+              <td>Damaged transfer or wrong cut</td>
+              <td>Test scan on a phone before final QA; replace transfer if it fails twice</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- Right column -->
+    <div class="shirt-col">
+
+      <!-- Step-by-step SOP -->
+      <div class="card">
+        <h2>Step-by-Step SOP</h2>
+        <ol class="shirt-sop">
+
+          <li>
+            <div class="shirt-sop-title">1. Intake &amp; preflight</div>
+            <ul class="shirt-substeps">
+              <li>Confirm shirt blank color, size, and count match the order.</li>
+              <li>Confirm DTF sheet is the SPLIT-COLOR 156-set sheet (not a prior version).</li>
+              <li>Lay sheet flat — no curl, no creases. If curled, weight it overnight before cutting.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> blank counts match, sheet is identified, surface is flat, lint roller is ready.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">2. Cut transfers</div>
+            <ul class="shirt-substeps">
+              <li>Cut along the gutters between shirt sets — never into the art bleed.</li>
+              <li>Per shirt: 1 front circular logo, 1 back slogan, 2 sleeve QRs (left + right).</li>
+              <li>Stack cut transfers into kits of (1 front + 1 back + 2 sleeve QRs) per shirt.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> each kit has all 4 pieces, color (white vs black art) matches the target shirt color, no transfer is torn or scuffed.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">3. Prep shirt</div>
+            <ul class="shirt-substeps">
+              <li>Lint-roll the shirt front, back, and both sleeves.</li>
+              <li>Smooth out wrinkles. Pre-press the shirt 3–5 s to remove moisture and creases.</li>
+              <li>Identify collar seam and hem seams — these are your placement references.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> shirt is flat, dry, lint-free, with seams clearly visible.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">4. Align front (circular logo)</div>
+            <ul class="shirt-substeps">
+              <li>Find vertical center between the shoulder seams.</li>
+              <li>Measure ~3 in down from the collar seam — mark top edge of design with heat-safe tape.</li>
+              <li>Place transfer art-side-up (already not mirrored). Tape one or two corners to lock position.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> logo is visually centered, T-square confirms square to shoulder seams, top edge measures within ±¼ in of 3 in below collar.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">5. Press front</div>
+            <ul class="shirt-substeps">
+              <li>Cover with Teflon / parchment.</li>
+              <li>Press at the DTF film&apos;s recommended temp / time / pressure (use HTVRONT Auto Heat Press 2 recipe).</li>
+              <li>Peel per film spec (cold or warm). Never peel hot if film is cold-peel.</li>
+              <li>Re-press 5–10 s with Teflon to set.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> transfer is fully bonded, no lifted edges, surface looks uniform under angled light.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">6. Align &amp; press back (slogan)</div>
+            <ul class="shirt-substeps">
+              <li>Flip shirt; smooth flat on platen, back facing up.</li>
+              <li>Center between back shoulder seams; measure ~4 in down from collar seam.</li>
+              <li>Verify slogan reads "We Build Smart Homes That Just Work" with "symphonysh.com" beneath.</li>
+              <li>Tape, Teflon, press, peel, re-press — same recipe as front.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> slogan is square to shoulders, centered ±¼ in, fully bonded, URL line readable.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">7. Align &amp; press sleeves (QR codes)</div>
+            <ul class="shirt-substeps">
+              <li>Slide sleeve over a pressing pillow / pad so the face is flat and seam is clear.</li>
+              <li>Center QR transfer side-to-side on the sleeve face.</li>
+              <li>Position bottom edge of QR ~2 in above the sleeve hem.</li>
+              <li>Press with Teflon at recipe temp; peel per film spec; re-press.</li>
+              <li>Repeat for the other sleeve.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> QR is flat, square, undamaged, and a phone scans it to https://symphonysh.com on the first try.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">8. Final QA</div>
+            <ul class="shirt-substeps">
+              <li>Inspect all 4 placements under good light and at an angle for lifted edges.</li>
+              <li>Run the QR test scan again after cooling.</li>
+              <li>Tug-test corners gently — nothing should peel.</li>
+              <li>Reject any shirt that fails any item; re-press or replace.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> all checks pass; the shirt is wearable and ready to log.</div>
+          </li>
+
+          <li>
+            <div class="shirt-sop-title">9. Package &amp; log</div>
+            <ul class="shirt-substeps">
+              <li>Fold per packaging standard; place in poly bag if shipping.</li>
+              <li>Log: date, operator, shirt size + color, sheet ID, any issues.</li>
+              <li>Move shirt to fulfillment / inventory bin.</li>
+            </ul>
+            <div class="shirt-accept"><strong>Accept when:</strong> shirt is packaged, the log entry is saved, and the workstation is reset for the next unit.</div>
+          </li>
+
+        </ol>
+      </div>
+
+      <!-- QA Checklist -->
+      <div class="card">
+        <h2>Final QA Checklist</h2>
+        <ul class="shirt-check-list">
+          <li><span class="shirt-box"></span> Front logo centered, ~3 in below collar, square to shoulders</li>
+          <li><span class="shirt-box"></span> Back slogan centered, ~4 in below collar, "symphonysh.com" line legible</li>
+          <li><span class="shirt-box"></span> Both sleeve QRs flat, ~2 in above hem, undamaged</li>
+          <li><span class="shirt-box"></span> Phone scan of each sleeve QR resolves to https://symphonysh.com</li>
+          <li><span class="shirt-box"></span> No lifted edges on any of the 4 placements (angled-light check)</li>
+          <li><span class="shirt-box"></span> White art on dark shirts / black art on light shirts (color rule)</li>
+          <li><span class="shirt-box"></span> Tug test passed on all transfers</li>
+          <li><span class="shirt-box"></span> Shirt is lint-free, no scorch marks, no creases pressed in</li>
+          <li><span class="shirt-box"></span> Production log entry saved (date, size, color, operator, issues)</li>
+        </ul>
+      </div>
+
+      <!-- Future Automation Notes -->
+      <div class="card">
+        <h2>Future Automation Notes</h2>
+        <ul class="shirt-check-list">
+          <li><strong>Recipe store:</strong> persist temp / time / pressure per film + shirt blend so a robot or new operator just looks them up.</li>
+          <li><strong>Vision-assisted alignment:</strong> a camera + reference fiducials on the platen could replace ruler/T-square steps 4, 6, and 7.</li>
+          <li><strong>QR verify station:</strong> add a fixed scanner that auto-logs each sleeve scan instead of phone-checking by hand.</li>
+          <li><strong>Run log:</strong> connect this tab to Cortex memory so per-shirt logs (size, color, issues) post automatically and feed defect-rate metrics.</li>
+          <li><strong>Sheet inventory:</strong> track how many of the 156 sets are consumed; warn when re-order is due.</li>
+          <li><strong>Hand-off:</strong> any human or future robot operator should be able to follow this SOP top-to-bottom without prior context.</li>
+        </ul>
+      </div>
+
+    </div>
   </div>
 </div>
 </div>
