@@ -1,0 +1,15 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260424-190207
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
+
+=== claude output ===
+Done. All 4 inbox items were already processed in the prior run at 19:10Z — this was a fully idempotent re-run.
+
+**Summary:**
+- Inbox items evaluated: 4
+- New cards produced: 0 (all 4 had matching archive + card from run `20260424T191000Z`)
+- All 4 cards remain at **`needs fetch`** — they are bare X.com URLs captured by the iMessage URL heuristic (no tweet body text), and cannot be scored without fetching tweet content
+- Verification artifact: `ops/verification/self-improve-20260424T193000Z.txt`
+- STATUS_REPORT updated under `### Self-improvement loop — 20260424T193000Z`
+
+To advance the 4 stuck `needs fetch` cards, the next run needs web access enabled so the tweet bodies can be retrieved and scored.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-190207-run-prompt.txt
