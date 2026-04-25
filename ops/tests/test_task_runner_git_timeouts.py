@@ -79,7 +79,7 @@ def test_git_env_is_non_interactive() -> None:
     )
 
 
-def test_git_helper_returns_on_timeout(monkey_args: list) -> None:
+def test_git_helper_returns_on_timeout() -> None:
     print("test_git_helper_returns_on_timeout")
     captured: list[dict] = []
     original = subprocess.run
@@ -184,7 +184,7 @@ def test_pull_latest_survives_timeout() -> None:
 if __name__ == "__main__":
     test_git_timeout_constant_exists()
     test_git_env_is_non_interactive()
-    test_git_helper_returns_on_timeout([])
+    test_git_helper_returns_on_timeout()
     test_handle_git_pull_returns_124_on_timeout()
     test_has_changes_returns_false_on_timeout()
     test_pull_latest_survives_timeout()

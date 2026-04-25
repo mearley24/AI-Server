@@ -26,6 +26,20 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+### Full test suite — clean — 2026-04-25T06:26:24Z (Claude Code)
+
+**573 passed · 0 failed · 0 errors** · 4 warnings (FastAPI on_event deprecation, pre-existing).
+
+Three stale/broken tests fixed this pass:
+
+1. `test_profiles_schema` (`ops/tests/test_client_intel_classifier.py:183`) — assertion used threads-table column names; updated to profiles-table names (`relationship_type`, `confidence`).
+2. `test_plist_has_label[com.symphony.self-improvement.plist]` (`setup/launchd/com.symphony.self-improvement.plist:10`) — XML comment contained `--dry-run`; the `--` sequence is forbidden in XML 1.0 comments. Rephrased comment.
+3. `test_git_helper_returns_on_timeout` (`ops/tests/test_task_runner_git_timeouts.py:82`) — undeclared `monkey_args: list` fixture parameter removed.
+
+Commit: see `ops/verification/20260425-062624-full-suite-clean.md` for full details.
+
+---
+
 ### Self-improvement loop — 2026-04-24T16:50:00Z
 
 inbox processed: 4, cards: 0 new (4 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 4 needs-fetch)
@@ -53,6 +67,26 @@ Fully idempotent pass — all 4 inbox items were archived and carded in earlier 
 - `20260424T163001Z-…-openswarm-…-card.md` — needs fetch (X URL, tweet body unknown)
 
 Verification: `ops/verification/self-improve-20260425T023610Z.txt`
+
+---
+
+### Self-improvement loop — 2026-04-25T05:17:53Z
+
+inbox processed: 14, cards: 0 new (14 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 14 inbox items were previously archived and carded in earlier runs — fully idempotent pass. No new cards or prompts drafted. All items are raw X URLs from iMessage with no message body; this represents the complete backlog of collected stream items that have been processed across multiple prior runs. System is caught up.
+
+Verification: `ops/verification/self-improve-20260425T051753Z.txt`
+
+---
+
+### Self-improvement loop — 2026-04-25T15:40:22Z
+
+inbox processed: 0, cards: 0 new (14 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 14 needs-fetch)
+
+Fully idempotent pass — all 14 inbox items were previously archived and carded in earlier runs, confirmed by presence of matching archive and card files. No new processing needed. System remains caught up on stream collection backlog. All existing cards maintain "needs fetch" status pending URL content retrieval.
+
+Verification: `ops/verification/20260425T154022Z-self-improve-inbox-already-processed.txt`
 
 ---
 

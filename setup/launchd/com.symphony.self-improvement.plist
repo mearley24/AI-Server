@@ -7,8 +7,8 @@
 
   IMPORTANT: This file is a TEMPLATE. It is NOT loaded automatically
   and is NOT committed with a pre-baked load step. Install via
-  `bash setup/install_self_improvement_watcher.sh --dry-run` first,
-  then (if Matt approves) run the printed `launchctl bootstrap`
+  bash setup/install_self_improvement_watcher.sh (pass -dry-run flag) first,
+  then (if Matt approves) run the printed launchctl bootstrap
   command manually on Bob.
 
   What it does when loaded:

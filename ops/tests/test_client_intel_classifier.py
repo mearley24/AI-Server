@@ -180,7 +180,7 @@ class TestSchemas:
         conn = sqlite3.connect(db)
         cols = {r[1] for r in conn.execute("PRAGMA table_info(profiles)").fetchall()}
         conn.close()
-        assert {"profile_id", "contact_handle", "category", "work_confidence"}.issubset(cols)
+        assert {"profile_id", "contact_handle", "relationship_type", "confidence"}.issubset(cols)
 
     def test_proposed_facts_schema(self, tmp_path):
         db = tmp_path / "facts.sqlite"
