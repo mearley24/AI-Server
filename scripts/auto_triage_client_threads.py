@@ -56,6 +56,10 @@ _TRIAGE_COLS = [
     ("triage_reason",                "TEXT"),
     ("triage_confidence",            "REAL"),
     ("review_value_score",           "REAL"),
+    ("review_reason_summary",        "TEXT"),
+    ("review_next_action",           "TEXT"),
+    ("evidence_categories",          "TEXT DEFAULT '[]'"),
+    ("matched_terms",                "TEXT DEFAULT '[]'"),
     ("triage_suggested_relationship","TEXT"),
     ("triage_inferred_domain",       "TEXT"),
     ("triage_risk_flags",            "TEXT DEFAULT '[]'"),
@@ -157,20 +161,219 @@ def _compute_review_value_score(
     Distinct from triage_confidence (certainty of bucket assignment).
     Higher = worth Matt's time sooner.
     """
-    scores     = assist.get("_scores", {})
-    tech_s     = scores.get("tech", 0)
+    scores      = assist.get("_scores", {})
+    tech_s      = scores.get("tech", 0)
+    smart_home  = scores.get("smart_home", 0)
+    service     = scores.get("service", 0)
+    project     = scores.get("project", 0)
+    quote       = scores.get("quote", 0)
+    symphony    = scores.get("symphony", 0)
     assist_conf = assist.get("confidence", 0.0)
 
     score = 0.0
     if name:
-        score += 0.35                             # named contact = high review value
-    score += min(tech_s * 0.06, 0.25)            # tech signals, capped at 0.25
-    score += min(message_count / 100.0, 0.20)    # thread activity, capped at 0.20
-    score += work_confidence * 0.10              # classifier confidence contribution
+        score += 0.35
+    if symphony:
+        score += 0.20
+    score += min(smart_home * 0.07, 0.21)
+    score += min(service * 0.04, 0.12)
+    score += min(project * 0.05, 0.10)
+    score += min(quote * 0.08, 0.08)
+    score += min(message_count / 100.0, 0.20)
+    score += work_confidence * 0.08
     if tech_s >= 1:
-        score += min(assist_conf * 0.12, 0.10)   # assist confidence when tech present
-
+        score += min(assist_conf * 0.10, 0.08)
     return round(min(score, 1.0), 3)
+
+
+def _categorize_evidence(
+    name: str,
+    scores: dict[str, int],
+    message_count: int,
+    date_last: str,
+) -> list[str]:
+    """Return list of evidence category tags for this thread."""
+    from datetime import datetime as _dt
+    cats: list[str] = []
+    if name:
+        cats.append("saved_contact")
+    if scores.get("symphony", 0) >= 1:
+        cats.append("symphony_intro")
+    if scores.get("smart_home", 0) >= 1:
+        cats.append("smart_home_terms")
+    if scores.get("service", 0) >= 1:
+        cats.append("service_terms")
+    if scores.get("project", 0) >= 1:
+        cats.append("project_terms")
+    if scores.get("quote", 0) >= 1:
+        cats.append("quote_proposal_terms")
+    if scores.get("scheduling", 0) >= 1:
+        cats.append("scheduling_terms")
+    if scores.get("vendor", 0) >= 1:
+        cats.append("vendor_terms")
+    if scores.get("builder", 0) >= 1:
+        cats.append("builder_terms")
+    if scores.get("restaurant", 0) >= 1:
+        cats.append("restaurant_terms")
+    if message_count >= 50:
+        cats.append("high_message_count")
+    try:
+        year = int((date_last or "")[:4])
+        if year < 2023:
+            cats.append("stale_thread")
+    except (ValueError, TypeError):
+        pass
+    try:
+        last_dt = _dt.fromisoformat(date_last[:10]) if date_last and len(date_last) >= 10 else None
+        if last_dt and (_dt.now() - last_dt).days <= 90:
+            cats.append("recent_activity")
+    except Exception:
+        pass
+    return cats
+
+
+def _build_review_reason_summary(
+    name: str,
+    bucket: str,
+    scores: dict[str, int],
+    message_count: int,
+    evidence_categories: list[str],
+    assist: dict[str, Any],
+) -> str:
+    """One human-readable sentence explaining why this thread landed in this bucket."""
+    risk_flags = assist.get("risk_flags", [])
+    gc = "gc_suffix_ambiguous" in risk_flags
+    ev = assist.get("evidence", [])
+
+    # Extract top matched terms from evidence strings
+    def _ev_terms(prefix: str) -> str:
+        for e in ev:
+            if e.startswith(prefix + ":"):
+                return e.split(":", 1)[1].strip()
+        return ""
+
+    # Who
+    if name:
+        who = f"GC contact {name!r}" if gc else f"Saved contact {name!r}"
+    else:
+        who = "Unnamed contact"
+
+    # Signals
+    signal_parts: list[str] = []
+    if "symphony_intro" in evidence_categories:
+        signal_parts.append("Symphony intro language")
+    sh_terms = _ev_terms("smart_home_terms")
+    svc_terms = _ev_terms("service_terms")
+    proj_terms = _ev_terms("project_terms")
+    quote_terms = _ev_terms("quote_proposal_terms")
+    rest_terms = _ev_terms("restaurant_terms")
+    build_terms = _ev_terms("builder_terms")
+
+    if sh_terms:
+        signal_parts.append(sh_terms)
+    elif svc_terms:
+        signal_parts.append(svc_terms)
+    if proj_terms and "project_terms" in evidence_categories:
+        signal_parts.append(proj_terms)
+    if quote_terms:
+        signal_parts.append("proposal/quote terms")
+    if "scheduling_terms" in evidence_categories:
+        signal_parts.append("scheduling signals")
+    if rest_terms and "restaurant_terms" in evidence_categories:
+        signal_parts.append(f"restaurant signals ({rest_terms})")
+    if build_terms and "builder_terms" in evidence_categories and "restaurant_terms" not in evidence_categories:
+        signal_parts.append("builder signals")
+
+    msg_str = f"{message_count} message{'s' if message_count != 1 else ''}"
+
+    if signal_parts:
+        sig_str = "/".join(signal_parts[:2])
+        if len(signal_parts) > 2:
+            sig_str += f" +{len(signal_parts) - 2} more"
+        body = f"{who} with {sig_str} and {msg_str}"
+    else:
+        body = f"{who} with {msg_str} and no strong work signals"
+
+    # Tail
+    if bucket == "high_value":
+        if "symphony_intro" in evidence_categories:
+            tail = "— Symphony client context."
+        elif "quote_proposal_terms" in evidence_categories:
+            tail = "— proposal/project context, likely smart-home work."
+        elif "smart_home_terms" in evidence_categories or "service_terms" in evidence_categories:
+            tail = "— likely smart-home work."
+        elif name:
+            tail = "— saved contact, worth reviewing."
+        else:
+            tail = "— strong work signals."
+    elif bucket == "ambiguous":
+        if gc and "restaurant_terms" in evidence_categories:
+            tail = "— GC+restaurant, verify Game Creek venue vs contractor."
+        elif gc:
+            tail = "— GC suffix ambiguous, verify Game Creek vs General Contractor."
+        elif "restaurant_terms" in evidence_categories and scores.get("tech", 0) >= 1:
+            tail = "— restaurant+tech mix, verify AV client vs venue contact."
+        elif "builder_terms" in evidence_categories:
+            tail = "— builder/AV role unclear, review manually."
+        elif name:
+            tail = "— saved contact with weak signals, verify work relationship."
+        else:
+            tail = "— review manually."
+    else:  # low_priority
+        if "restaurant_terms" in evidence_categories and scores.get("tech", 0) == 0:
+            tail = "— restaurant-only signals, likely not an AV client."
+        elif not name and message_count < 5:
+            tail = "— unnamed one-off, defer unless recognized."
+        elif "stale_thread" in evidence_categories:
+            tail = "— stale thread, low priority."
+        else:
+            tail = "— low priority, no meaningful work signals."
+
+    return f"{body} {tail}"
+
+
+def _build_review_next_action(
+    bucket: str,
+    name: str,
+    scores: dict[str, int],
+    evidence_categories: list[str],
+    assist: dict[str, Any],
+) -> str:
+    """Suggested next action for Matt when reviewing this thread."""
+    risk_flags = assist.get("risk_flags", [])
+    gc = "gc_suffix_ambiguous" in risk_flags
+    rel = assist.get("suggested_relationship_type", "unknown")
+
+    if bucket == "high_value":
+        if "symphony_intro" in evidence_categories:
+            return "Review and approve as client — Symphony intro language detected."
+        if scores.get("smart_home", 0) >= 2 or scores.get("tech", 0) >= 3:
+            return f"Review and likely approve as {rel} — strong smart-home signals."
+        if "quote_proposal_terms" in evidence_categories:
+            return "Review and likely approve as client — proposal/quote context detected."
+        if name:
+            return f"Review and likely approve as {rel} or trade partner."
+        return "Review and approve if smart-home work context is confirmed."
+
+    elif bucket == "ambiguous":
+        if gc and "restaurant_terms" in evidence_categories:
+            return "Review manually — GC suffix + restaurant signals; confirm if Game Creek (venue) or AV client."
+        if gc:
+            return "Review manually — GC suffix is ambiguous; confirm Game Creek vs General Contractor."
+        if "restaurant_terms" in evidence_categories and scores.get("tech", 0) >= 1:
+            return "Review manually — restaurant and tech signals conflict; verify AV client vs venue contact."
+        if "builder_terms" in evidence_categories:
+            return "Review manually — could be builder coordinating AV work or an AV client in build phase."
+        if name:
+            return "Review manually — saved contact with weak signals; verify work relationship."
+        return "Defer unless you recognize the number."
+
+    else:  # low_priority
+        if "restaurant_terms" in evidence_categories and scores.get("tech", 0) == 0:
+            return "Likely restaurant/personal-work context; do not extract smart-home profile unless confirmed."
+        if "stale_thread" in evidence_categories:
+            return "Defer — stale thread with no recent activity."
+        return "Defer unless you recognize the number."
 
 
 # ── Bucket determination (pure, no I/O) ──────────────────────────────────────
@@ -200,6 +403,11 @@ def _determine_triage_bucket(
     tech_s       = scores.get("tech", 0)
     restaurant_s = scores.get("restaurant", 0)
     builder_s    = scores.get("builder", 0)
+    smart_home_s = scores.get("smart_home", 0)
+    service_s    = scores.get("service", 0)
+    project_s    = scores.get("project", 0)
+    quote_s      = scores.get("quote", 0)
+    symphony_s   = scores.get("symphony", 0)
 
     # 1. Personal threads always hidden
     if category == "personal":
@@ -237,12 +445,12 @@ def _determine_triage_bucket(
 
     # 3. Named contact — always worth Matt's time; signals raise priority further
     if name:
-        # 3a. Any tech signal → high_value (they're in address book AND have work evidence)
-        if tech_s >= 1:
+        # 3a. Any tech/smart-home/service/quote signal → high_value
+        if tech_s >= 1 or smart_home_s >= 1 or service_s >= 1 or quote_s >= 1:
             conf = max(assist_conf, 0.55 + 0.04 * min(tech_s, 5))
             return (
                 "high_value",
-                f"named contact with tech signals (tech={tech_s}, confidence={assist_conf:.0%})",
+                f"named contact with work signals (tech={tech_s}, smart_home={smart_home_s}, confidence={assist_conf:.0%})",
                 min(conf, 0.90),
             )
         # 3b. High classifier + strong assist confidence
@@ -273,28 +481,42 @@ def _determine_triage_bucket(
                 "named contact with weak work signals — may be personal or one-off",
                 0.52,
             )
-        # 3f. Default for named contacts: ambiguous (worth review, but unclear signals)
+        # 3f. Default for named contacts: high_value (worth review, but unclear signals)
         return (
             "high_value",
             f"named contact — potential client or trade partner relationship",
             max(assist_conf, 0.50),
         )
 
-    # 4. Strong AV/smart-home signals regardless of name
-    # Require at least one tech term so restaurant-only contacts don't land here
-    if tech_s >= 3 or (assist_conf >= 0.70 and tech_s >= 1):
+    # 3.5: Symphony intro language anywhere → always high_value
+    if symphony_s >= 1:
         return (
             "high_value",
-            f"strong smart-home signals (tech={tech_s}, confidence={assist_conf:.0%})",
+            "Symphony Smart Homes intro language detected — very strong client signal",
+            0.92,
+        )
+
+    # 4. Strong AV/smart-home signals regardless of name
+    if smart_home_s >= 2 or (tech_s >= 3) or (assist_conf >= 0.70 and tech_s >= 1):
+        return (
+            "high_value",
+            f"strong smart-home signals (tech={tech_s}, smart_home={smart_home_s}, confidence={assist_conf:.0%})",
             max(assist_conf, 0.65),
         )
 
-    # 5. Moderate tech signals + substantial thread (likely important unnamed contact)
-    # tech signals dominate over a single restaurant signal (restaurant=1 is often noise)
-    if tech_s >= 2 and message_count >= 10 and restaurant_s < 2:
+    # 4.5: Proposal/bid/estimate + install/prewire/project terms → high_value
+    if quote_s >= 1 and (service_s >= 1 or project_s >= 1 or tech_s >= 1):
         return (
             "high_value",
-            f"moderate tech signals (tech={tech_s}) in substantial thread ({message_count} msgs)",
+            f"proposal/quote context with work signals — likely active project",
+            0.72,
+        )
+
+    # 5. Moderate tech signals + substantial thread (likely important unnamed contact)
+    if (tech_s >= 2 or smart_home_s >= 1) and message_count >= 10 and restaurant_s < 2:
+        return (
+            "high_value",
+            f"moderate tech/smart-home signals (tech={tech_s}, smart_home={smart_home_s}) in substantial thread ({message_count} msgs)",
             max(assist_conf, 0.60),
         )
 
@@ -353,6 +575,13 @@ def _determine_triage_bucket(
         )
 
     # 12. Low priority: unnamed + weak/no work evidence
+    # Restaurant-only + unnamed → low_priority (not ambiguous)
+    if restaurant_s >= 1 and tech_s == 0 and smart_home_s == 0 and not name:
+        return (
+            "low_priority",
+            f"restaurant signals only (no tech/smart-home terms) — not an AV client",
+            0.78,
+        )
     if work_confidence < 0.45:
         return (
             "low_priority",
@@ -459,15 +688,48 @@ def run_triage(
                 message_count   = r["message_count"],
                 assist          = assist,
             )
+            ev_cats = _categorize_evidence(
+                name=name,
+                scores=assist.get("_scores", {}),
+                message_count=r["message_count"],
+                date_last=r["date_last"] or "",
+            )
+            reason_summary = _build_review_reason_summary(
+                name=name,
+                bucket=bucket,
+                scores=assist.get("_scores", {}),
+                message_count=r["message_count"],
+                evidence_categories=ev_cats,
+                assist=assist,
+            )
+            next_action = _build_review_next_action(
+                bucket=bucket,
+                name=name,
+                scores=assist.get("_scores", {}),
+                evidence_categories=ev_cats,
+                assist=assist,
+            )
+            # Build flat matched_terms list
+            all_ev = assist.get("evidence", [])
+            matched_terms: list[str] = []
+            for e in all_ev:
+                if ":" in e:
+                    matched_terms.extend(t.strip() for t in e.split(":", 1)[1].split(","))
+            matched_terms = matched_terms[:10]
+
             triage_debug = json.dumps({
                 "scores":                assist.get("_scores", {}),
                 "evidence":              assist.get("evidence", []),
+                "evidence_categories":   ev_cats,
                 "contact_name_found":    bool(name),
                 "readable_message_count":readable_count,
                 "inferred_domain":       assist["inferred_domain"],
                 "risk_flags":            assist["risk_flags"],
                 "review_reason":         assist.get("review_reason", ""),
                 "review_value_score":    review_value,
+                "review_reason_summary": reason_summary,
+                "review_next_action":    next_action,
+                "matched_terms":         matched_terms,
             })
             entry: dict[str, Any] = {
                 "thread_id":                     r["thread_id"],
@@ -476,6 +738,10 @@ def run_triage(
                 "triage_reason":                 reason,
                 "triage_confidence":             round(triage_conf, 3),
                 "review_value_score":            review_value,
+                "review_reason_summary":         reason_summary,
+                "review_next_action":            next_action,
+                "evidence_categories":           json.dumps(ev_cats),
+                "matched_terms":                 json.dumps(matched_terms),
                 "triage_suggested_relationship": assist["suggested_relationship_type"],
                 "triage_inferred_domain":        assist["inferred_domain"],
                 "triage_risk_flags":             json.dumps(assist["risk_flags"]),
@@ -490,6 +756,8 @@ def run_triage(
                     "UPDATE threads SET "
                     "triage_bucket=?, triage_reason=?, triage_confidence=?, "
                     "review_value_score=?, "
+                    "review_reason_summary=?, review_next_action=?, "
+                    "evidence_categories=?, matched_terms=?, "
                     "triage_suggested_relationship=?, triage_inferred_domain=?, "
                     "triage_risk_flags=?, triage_contact_display=?, "
                     "triage_debug=?, triaged_at=? "
@@ -499,6 +767,10 @@ def run_triage(
                         entry["triage_reason"],
                         entry["triage_confidence"],
                         entry["review_value_score"],
+                        entry["review_reason_summary"],
+                        entry["review_next_action"],
+                        entry["evidence_categories"],
+                        entry["matched_terms"],
                         entry["triage_suggested_relationship"],
                         entry["triage_inferred_domain"],
                         entry["triage_risk_flags"],
@@ -625,7 +897,8 @@ def get_thread_explain(conn: sqlite3.Connection, thread_id: str) -> dict[str, An
         "category, work_confidence, reason_codes, "
         "triage_bucket, triage_reason, triage_confidence, "
         "triage_suggested_relationship, triage_inferred_domain, "
-        "triage_risk_flags, triage_contact_display, triaged_at, triage_debug "
+        "triage_risk_flags, triage_contact_display, triaged_at, triage_debug, "
+        "review_reason_summary, review_next_action, evidence_categories "
         "FROM threads WHERE thread_id = ?",
         (thread_id,),
     ).fetchone()
@@ -637,21 +910,24 @@ def get_thread_explain(conn: sqlite3.Connection, thread_id: str) -> dict[str, An
     except Exception:
         pass
     return {
-        "thread_id":          r["thread_id"],
-        "contact_display":    r["triage_contact_display"] or _rct._mask(r["contact_handle"]),
-        "contact_masked":     _rct._mask(r["contact_handle"]),
-        "message_count":      r["message_count"],
-        "date_last":          (r["date_last"] or "")[:10],
-        "category":           r["category"],
-        "work_confidence":    r["work_confidence"],
-        "triage_bucket":      r["triage_bucket"],
-        "triage_reason":      r["triage_reason"],
-        "triage_confidence":  r["triage_confidence"],
+        "thread_id":              r["thread_id"],
+        "contact_display":        r["triage_contact_display"] or _rct._mask(r["contact_handle"]),
+        "contact_masked":         _rct._mask(r["contact_handle"]),
+        "message_count":          r["message_count"],
+        "date_last":              (r["date_last"] or "")[:10],
+        "category":               r["category"],
+        "work_confidence":        r["work_confidence"],
+        "triage_bucket":          r["triage_bucket"],
+        "triage_reason":          r["triage_reason"],
+        "triage_confidence":      r["triage_confidence"],
         "suggested_relationship": r["triage_suggested_relationship"],
-        "inferred_domain":    r["triage_inferred_domain"],
-        "risk_flags":         json.loads(r["triage_risk_flags"] or "[]"),
-        "triaged_at":         r["triaged_at"],
-        "debug":              debug,
+        "inferred_domain":        r["triage_inferred_domain"],
+        "risk_flags":             json.loads(r["triage_risk_flags"] or "[]"),
+        "triaged_at":             r["triaged_at"],
+        "debug":                  debug,
+        "review_reason_summary":  r["review_reason_summary"],
+        "review_next_action":     r["review_next_action"],
+        "evidence_categories":    r["evidence_categories"],
     }
 
 
@@ -700,6 +976,12 @@ def _print_explain(info: dict[str, Any]) -> None:
         review_reason = dbg.get("review_reason", "")
         if review_reason:
             print(f"  Review reason: {review_reason}")
+    if info.get("review_reason_summary"):
+        print(f"  Summary      : {info['review_reason_summary']}")
+    if info.get("review_next_action"):
+        print(f"  Next action  : {info['review_next_action']}")
+    if info.get("evidence_categories"):
+        print(f"  Ev. categories: {', '.join(json.loads(info['evidence_categories'] or '[]'))}")
     if info.get("triaged_at"):
         print(f"  Triaged at   : {info['triaged_at'][:19]}")
 
@@ -708,11 +990,19 @@ def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
     """Print a human-readable per-bucket summary with diagnostic scores."""
     existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
     has_rvs = "review_value_score" in existing_cols
+    has_summary = "review_reason_summary" in existing_cols
+    has_next_action = "review_next_action" in existing_cols
     for bucket in ("high_value", "ambiguous", "low_priority", "hidden_personal"):
-        rvs_col = ", review_value_score" if has_rvs else ""
+        extra_cols = ""
+        if has_rvs:
+            extra_cols += ", review_value_score"
+        if has_summary:
+            extra_cols += ", review_reason_summary"
+        if has_next_action:
+            extra_cols += ", review_next_action"
         rows = conn.execute(
             f"SELECT thread_id, triage_contact_display, contact_handle, "
-            f"message_count, triage_reason, triage_confidence{rvs_col}, triage_debug "
+            f"message_count, triage_reason, triage_confidence{extra_cols}, triage_debug "
             f"FROM threads WHERE is_reviewed=-1 AND triage_bucket=? "
             f"ORDER BY {'review_value_score' if has_rvs else 'triage_confidence'} DESC LIMIT ?",
             (bucket, top),
@@ -752,6 +1042,12 @@ def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
                 print(f"    flags: {', '.join(flags)}")
             if evidence:
                 print(f"    evidence: {'; '.join(evidence[:3])}")
+            summary = dbg.get("review_reason_summary", "")
+            next_act = dbg.get("review_next_action", "")
+            if summary:
+                print(f"    summary: {summary}")
+            if next_act:
+                print(f"    action:  {next_act}")
 
 
 def _print_run_summary(result: dict[str, Any], verbose: bool = False) -> None:

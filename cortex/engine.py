@@ -851,6 +851,7 @@ async def client_intel_review_queue(
             "SELECT thread_id, contact_handle, message_count, date_last, category, "
             "work_confidence, triage_bucket, triage_reason, triage_confidence, "
             "review_value_score, "
+            "review_reason_summary, review_next_action, evidence_categories, matched_terms, "
             "triage_suggested_relationship, triage_inferred_domain, "
             "triage_risk_flags, triage_contact_display, triaged_at "
             f"FROM threads WHERE {' AND '.join(where_parts)} "
@@ -871,6 +872,10 @@ async def client_intel_review_queue(
                 "triage_reason":          r["triage_reason"],
                 "triage_confidence":      r["triage_confidence"],
                 "review_value_score":     r["review_value_score"],
+                "review_reason_summary":  r["review_reason_summary"],
+                "review_next_action":     r["review_next_action"],
+                "evidence_categories":    json.loads(r["evidence_categories"] or "[]"),
+                "matched_terms":          json.loads(r["matched_terms"] or "[]"),
                 "suggested_relationship": r["triage_suggested_relationship"],
                 "inferred_domain":        r["triage_inferred_domain"],
                 "risk_flags":             json.loads(r["triage_risk_flags"] or "[]"),

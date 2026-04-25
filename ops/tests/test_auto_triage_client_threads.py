@@ -446,3 +446,206 @@ class TestRestaurantSignalHardening:
         texts = ["restaurant reservation confirmed"]
         scores = rct_mod._score_domain_signals(texts, [])
         assert "restaurant_strong" in scores, f"'restaurant_strong' key missing: {scores}"
+
+
+class TestReviewIntelligence:
+    """Tests for review_reason_summary, review_next_action, evidence_categories."""
+
+    def _run(self, tmp_path, texts, name, message_count=15, work_confidence=0.75):
+        db = tmp_path / "threads.sqlite"
+        chat_guid = "iMessage;-;+15550009999"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE threads (
+                thread_id TEXT PRIMARY KEY, chat_guid TEXT NOT NULL DEFAULT '',
+                contact_handle TEXT NOT NULL, message_count INTEGER DEFAULT 10,
+                date_first TEXT DEFAULT '2026-01-01', date_last TEXT DEFAULT '2026-04-01',
+                category TEXT DEFAULT 'work', work_confidence REAL DEFAULT 0.8,
+                reason_codes TEXT DEFAULT '[]', is_reviewed INTEGER DEFAULT -1,
+                relationship_type TEXT DEFAULT 'unknown', created_at TEXT DEFAULT '2026-01-01'
+            )
+        """)
+        conn.execute(
+            "INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("t1", chat_guid, "+15550009999", message_count,
+             "2026-01-01", "2026-04-01", "work", work_confidence, "[]", -1, "unknown", "2026-01-01"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=name), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=texts):
+            result = mod.run_triage(conn, dry_run=True)
+        conn.close()
+        return result["results"][0]
+
+    def test_saved_contact_with_smart_home_terms_has_reason_summary(self, tmp_path):
+        entry = self._run(
+            tmp_path,
+            texts=["sonos multi-room audio installed", "network rack done"],
+            name="Jane Client",
+            message_count=14,
+        )
+        assert entry["triage_bucket"] == "high_value"
+        summary = entry.get("review_reason_summary", "")
+        assert summary, "review_reason_summary should not be empty"
+        assert "jane client" in summary.lower() or "saved contact" in summary.lower()
+
+    def test_proposal_install_terms_generates_high_value(self, tmp_path):
+        entry = self._run(
+            tmp_path,
+            texts=["the proposal looks great", "when can you start the install?"],
+            name="Client Name",
+            message_count=10,
+        )
+        assert entry["triage_bucket"] == "high_value", (
+            f"proposal+install should be high_value, got {entry['triage_bucket']}: {entry.get('triage_reason')}"
+        )
+
+    def test_gc_restaurant_has_ambiguous_next_action(self, tmp_path):
+        entry = self._run(
+            tmp_path,
+            texts=["dinner service was great", "game creek reservation"],
+            name="Travis GC",
+            message_count=15,
+        )
+        assert entry["triage_bucket"] == "ambiguous"
+        action = entry.get("review_next_action", "")
+        assert action, "review_next_action should not be empty"
+        assert "gc" in action.lower() or "game creek" in action.lower() or "ambiguous" in action.lower()
+
+    def test_unnamed_restaurant_only_gets_defer_action(self, tmp_path):
+        entry = self._run(
+            tmp_path,
+            texts=["dinner reservation confirmed", "kitchen team is ready"],
+            name="",
+            message_count=8,
+        )
+        assert entry["triage_bucket"] in ("low_priority", "ambiguous")
+        action = entry.get("review_next_action", "")
+        assert action, "review_next_action should not be empty"
+        assert "defer" in action.lower() or "restaurant" in action.lower() or "profile" in action.lower()
+
+    def test_stale_unnamed_weak_thread_is_low_priority(self, tmp_path):
+        db = tmp_path / "threads.sqlite"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE threads (
+                thread_id TEXT PRIMARY KEY, chat_guid TEXT NOT NULL DEFAULT '',
+                contact_handle TEXT NOT NULL, message_count INTEGER DEFAULT 10,
+                date_first TEXT DEFAULT '2020-01-01', date_last TEXT DEFAULT '2020-06-01',
+                category TEXT DEFAULT 'work', work_confidence REAL DEFAULT 0.65,
+                reason_codes TEXT DEFAULT '[]', is_reviewed INTEGER DEFAULT -1,
+                relationship_type TEXT DEFAULT 'unknown', created_at TEXT DEFAULT '2020-01-01'
+            )
+        """)
+        conn.execute(
+            "INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("t1", "iMessage;-;+15550001234", "+15550001234", 3,
+             "2020-01-01", "2020-06-01", "work", 0.65, "[]", -1, "unknown", "2020-01-01"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=["ok", "sounds good"]):
+            result = mod.run_triage(conn, dry_run=True)
+        conn.close()
+        entry = result["results"][0]
+        assert entry["triage_bucket"] == "low_priority", (
+            f"stale+weak should be low_priority, got {entry['triage_bucket']}: {entry.get('triage_reason')}"
+        )
+
+    def test_reason_summary_not_empty_for_all_buckets(self, tmp_path):
+        """Every result should have a non-empty review_reason_summary."""
+        db = tmp_path / "threads.sqlite"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE threads (
+                thread_id TEXT PRIMARY KEY, chat_guid TEXT NOT NULL DEFAULT '',
+                contact_handle TEXT NOT NULL, message_count INTEGER DEFAULT 10,
+                date_first TEXT DEFAULT '2026-01-01', date_last TEXT DEFAULT '2026-04-01',
+                category TEXT DEFAULT 'work', work_confidence REAL DEFAULT 0.8,
+                reason_codes TEXT DEFAULT '[]', is_reviewed INTEGER DEFAULT -1,
+                relationship_type TEXT DEFAULT 'unknown', created_at TEXT DEFAULT '2026-01-01'
+            )
+        """)
+        rows = [
+            ("t1", "iMessage;-;+15550001111", "+15550001111", 20, "2026-01-01", "2026-04-01", "work", 0.85, "[]", -1, "unknown", "2026-01-01"),
+            ("t2", "iMessage;-;+15550002222", "+15550002222", 3,  "2026-01-01", "2026-04-01", "work", 0.50, "[]", -1, "unknown", "2026-01-01"),
+        ]
+        conn.executemany("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        def fake_name(handle):
+            return "Rich Client" if "1111" in handle else ""
+        def fake_texts(guid):
+            if "1111" in guid:
+                return ["control4 programming done", "sonos installed"]
+            return ["ok", "thanks"]
+        with patch.object(rct_mod, "_lookup_contact_name", side_effect=fake_name), \
+             patch.object(rct_mod, "_fetch_sample_texts", side_effect=fake_texts):
+            result = mod.run_triage(conn, dry_run=True)
+        conn.close()
+        for entry in result["results"]:
+            assert entry.get("review_reason_summary"), (
+                f"review_reason_summary empty for {entry['triage_bucket']}: {entry}"
+            )
+
+    def test_is_reviewed_never_changed(self, tmp_path):
+        """is_reviewed must remain -1 after triage."""
+        db = tmp_path / "threads.sqlite"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE threads (
+                thread_id TEXT PRIMARY KEY, chat_guid TEXT NOT NULL DEFAULT '',
+                contact_handle TEXT NOT NULL, message_count INTEGER DEFAULT 10,
+                date_first TEXT DEFAULT '2026-01-01', date_last TEXT DEFAULT '2026-04-01',
+                category TEXT DEFAULT 'work', work_confidence REAL DEFAULT 0.8,
+                reason_codes TEXT DEFAULT '[]', is_reviewed INTEGER DEFAULT -1,
+                relationship_type TEXT DEFAULT 'unknown', created_at TEXT DEFAULT '2026-01-01'
+            )
+        """)
+        conn.execute(
+            "INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("t1", "iMessage;-;+15550009999", "+15550009999", 20,
+             "2026-01-01", "2026-04-01", "work", 0.85, "[]", -1, "unknown", "2026-01-01"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        with patch.object(rct_mod, "_lookup_contact_name", return_value="Test Client"), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=["sonos installed"]):
+            mod.run_triage(conn, dry_run=False)
+        is_reviewed = conn.execute("SELECT is_reviewed FROM threads WHERE thread_id='t1'").fetchone()[0]
+        conn.close()
+        assert is_reviewed == -1, f"is_reviewed was modified! got {is_reviewed}"
+
+    def test_evidence_categories_present_in_result(self, tmp_path):
+        """evidence_categories should be a non-None list in every result."""
+        db = tmp_path / "threads.sqlite"
+        conn = sqlite3.connect(str(db))
+        conn.execute("""
+            CREATE TABLE threads (
+                thread_id TEXT PRIMARY KEY, chat_guid TEXT NOT NULL DEFAULT '',
+                contact_handle TEXT NOT NULL, message_count INTEGER DEFAULT 10,
+                date_first TEXT DEFAULT '2026-01-01', date_last TEXT DEFAULT '2026-04-01',
+                category TEXT DEFAULT 'work', work_confidence REAL DEFAULT 0.8,
+                reason_codes TEXT DEFAULT '[]', is_reviewed INTEGER DEFAULT -1,
+                relationship_type TEXT DEFAULT 'unknown', created_at TEXT DEFAULT '2026-01-01'
+            )
+        """)
+        conn.execute(
+            "INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("t1", "iMessage;-;+15550009999", "+15550009999", 15,
+             "2026-01-01", "2026-04-01", "work", 0.80, "[]", -1, "unknown", "2026-01-01"),
+        )
+        conn.commit()
+        conn.row_factory = sqlite3.Row
+        with patch.object(rct_mod, "_lookup_contact_name", return_value="Test Client"), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=["control4 install done"]):
+            result = mod.run_triage(conn, dry_run=True)
+        conn.close()
+        entry = result["results"][0]
+        assert "evidence_categories" in entry
+        cats = json.loads(entry["evidence_categories"])
+        assert isinstance(cats, list)
+        assert "saved_contact" in cats
+        assert "smart_home_terms" in cats or "service_terms" in cats

@@ -111,6 +111,34 @@ _VENDOR_TERMS = (
     "part number", "catalog", "sales rep",
 )
 
+# Subcategory term sets for richer evidence categorization
+_SMART_HOME_TERMS = (
+    "control4", "composer", "keypad", "dimmer", "lighting", "shades",
+    "sonos", "araknis", "wattbox", "lutron", "theater", "projector",
+    "screen", "automation", "surveillance", "camera",
+    "amplifier", "subwoofer", "speaker", "motorized", "audio video", "av system",
+)
+
+_SERVICE_TERMS = (
+    "install", "prewire", "programming", "rack",
+    "structured wiring", "cat6", "ethernet", "hdmi",
+    "low voltage", "low-voltage", "rough in", "rough-in", "trim out",
+    "network", "wifi", "wi-fi",
+)
+
+_PROJECT_TERMS = (
+    "project", "site visit", "job site", "walkthrough", "budget",
+)
+
+_QUOTE_TERMS = (
+    "proposal", "quote", "estimate", "bid",
+)
+
+_SCHEDULING_TERMS = (
+    "when can you", "schedule", "appointment", "next week", "this week",
+    "meeting", "come by", "stop by",
+)
+
 ASSIST_DOMAINS = frozenset({
     "smart_home_work", "restaurant_work", "vendor_supply",
     "builder_coordination", "personal_work_related",
@@ -219,26 +247,38 @@ def _score_domain_signals(
     all_text = " ".join(texts).lower()
     strong_count = sum(1 for t in _RESTAURANT_TERMS_STRONG if t in all_text)
     weak_count   = sum(1 for t in _RESTAURANT_TERMS_WEAK   if t in all_text)
-    # Weak terms only count when at least one strong restaurant term is present.
     restaurant   = strong_count + (weak_count if strong_count >= 1 else 0)
     tech       = sum(1 for t in _TECH_TERMS       if t in all_text)
     builder    = sum(1 for t in _BUILDER_TERMS     if t in all_text)
     vendor     = sum(1 for t in _VENDOR_TERMS      if t in all_text)
+    smart_home = sum(1 for t in _SMART_HOME_TERMS  if t in all_text)
+    service    = sum(1 for t in _SERVICE_TERMS     if t in all_text)
+    project    = sum(1 for t in _PROJECT_TERMS     if t in all_text)
+    quote      = sum(1 for t in _QUOTE_TERMS       if t in all_text)
+    scheduling = sum(1 for t in _SCHEDULING_TERMS  if t in all_text)
     for code in reason_codes:
         c = code.lower()
         if any(s in c for s in ("c4", "control4", "sonos", "lutron", "lighting", "shades")):
             tech += 2
+            smart_home += 2
         if any(s in c for s in ("finish", "trim", "rough")):
             builder += 1
-    # Intro-phrase boost: direct Symphony mention = very strong client signal
-    if "symphony" in all_text:
+    symphony_flag = 1 if "symphony" in all_text else 0
+    if symphony_flag:
         tech += 3
+        smart_home += 3
     return {
-        "restaurant": restaurant,
+        "restaurant":        restaurant,
         "restaurant_strong": strong_count,
-        "tech": tech,
-        "builder": builder,
-        "vendor": vendor,
+        "tech":              tech,
+        "smart_home":        smart_home,
+        "service":           service,
+        "project":           project,
+        "quote":             quote,
+        "scheduling":        scheduling,
+        "builder":           builder,
+        "vendor":            vendor,
+        "symphony":          symphony_flag,
     }
 
 
@@ -273,18 +313,31 @@ def analyze_thread_assist(
         )
 
     all_text = " ".join(texts).lower()
-    matched_tech  = [t for t in _TECH_TERMS                if t in all_text][:3]
-    matched_rest  = [t for t in _RESTAURANT_TERMS_STRONG   if t in all_text][:3]
-    matched_rest += [t for t in _RESTAURANT_TERMS_WEAK     if t in all_text and t not in matched_rest][:2]
-    matched_rest  = matched_rest[:3]
-    matched_build = [t for t in _BUILDER_TERMS             if t in all_text][:2]
+    matched_smart_home = [t for t in _SMART_HOME_TERMS if t in all_text][:3]
+    matched_service    = [t for t in _SERVICE_TERMS    if t in all_text][:3]
+    matched_project    = [t for t in _PROJECT_TERMS    if t in all_text][:2]
+    matched_quote      = [t for t in _QUOTE_TERMS      if t in all_text][:2]
+    matched_rest_strong = [t for t in _RESTAURANT_TERMS_STRONG if t in all_text][:3]
+    matched_rest_weak   = [t for t in _RESTAURANT_TERMS_WEAK   if t in all_text][:2]
+    # Only include weak terms in evidence when strong terms are also present (consistent with scoring)
+    matched_rest = (matched_rest_strong + matched_rest_weak)[:3] if matched_rest_strong else matched_rest_strong
+    matched_build = [t for t in _BUILDER_TERMS if t in all_text][:2]
 
-    if matched_tech:
-        evidence.append(f"tech signals: {', '.join(matched_tech)}")
+    # Build evidence list with subcategory labels
+    if scores.get("symphony", 0):
+        evidence.append("symphony_intro: Symphony Smart Homes mentioned")
+    if matched_smart_home:
+        evidence.append(f"smart_home_terms: {', '.join(matched_smart_home)}")
+    if matched_service:
+        evidence.append(f"service_terms: {', '.join(matched_service)}")
+    if matched_project:
+        evidence.append(f"project_terms: {', '.join(matched_project)}")
+    if matched_quote:
+        evidence.append(f"quote_proposal_terms: {', '.join(matched_quote)}")
     if matched_rest:
-        evidence.append(f"restaurant signals: {', '.join(matched_rest)}")
+        evidence.append(f"restaurant_terms: {', '.join(matched_rest)}")
     if matched_build and not gc_flag:
-        evidence.append(f"builder signals: {', '.join(matched_build)}")
+        evidence.append(f"builder_terms: {', '.join(matched_build)}")
 
     if gc_flag:
         if restaurant_s > 0 and tech_s < 3:
