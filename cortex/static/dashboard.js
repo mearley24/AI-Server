@@ -1756,3 +1756,73 @@
   setInterval(_pollFollowUpAlert, 30_000);
 
 })();
+
+// ── Self-Improvement Rules ──────────────────────────────────────────────────
+
+window.loadSelfImprovement = async function loadSelfImprovement() {
+  'use strict';
+  var esc = function(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  };
+  const rulesEl = document.getElementById('si-rules');
+  const countEl = document.getElementById('si-count');
+  const badgeEl = document.getElementById('si-badge');
+  const navCount = document.getElementById('nav-si-count');
+
+  if (rulesEl) rulesEl.innerHTML = '<div class="unavailable">loading…</div>';
+
+  let data;
+  try {
+    var resp = await fetch('/api/self-improvement/promoted-rules');
+    data = await resp.json();
+  } catch (err) {
+    if (rulesEl) rulesEl.innerHTML = '<div class="unavailable">Failed to load rules.</div>';
+    return;
+  }
+
+  const rules = data.rules || [];
+  const proposed = rules.filter(function(r) { return r.status === 'proposed'; });
+
+  if (badgeEl) {
+    badgeEl.textContent = data.updated_at ? ('updated ' + data.updated_at.slice(0, 16).replace('T', ' ') + ' UTC') : 'unknown';
+  }
+  if (countEl) {
+    countEl.textContent = rules.length + ' rule' + (rules.length !== 1 ? 's' : '');
+  }
+  if (navCount) {
+    if (proposed.length > 0) {
+      navCount.textContent = proposed.length;
+      navCount.classList.remove('hidden');
+    } else {
+      navCount.classList.add('hidden');
+    }
+  }
+
+  if (!rulesEl) return;
+
+  if (rules.length === 0) {
+    rulesEl.innerHTML = '<div class="unavailable">No rules yet. Run: <code>python3 scripts/promote_self_improvement_cards.py --apply</code></div>';
+    return;
+  }
+
+  var RISK_COLORS = { low: '#22c55e', medium: '#f59e0b', high: '#ef4444' };
+
+  rulesEl.innerHTML = rules.map(function(r) {
+    var riskColor = RISK_COLORS[r.risk_level] || '#94a3b8';
+    var riskBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:' + riskColor + '22;color:' + riskColor + ';border:1px solid ' + riskColor + '44;">' + (r.risk_level || 'unknown').toUpperCase() + '</span>';
+    var statusBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:var(--surface-2);border:1px solid var(--border-2);color:var(--muted);">' + (r.status || '') + '</span>';
+    return '<div style="border-bottom:1px solid var(--border);padding:12px 0;">'
+      + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">'
+      + '<span style="font-size:11px;font-family:monospace;color:var(--muted);">' + esc(r.rule_id || '') + '</span>'
+      + riskBadge + statusBadge
+      + '<span style="font-size:10px;color:var(--muted);margin-left:auto;">' + (r.card_count || 0) + ' card' + (r.card_count !== 1 ? 's' : '') + '</span>'
+      + '</div>'
+      + '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + esc(r.summary || '') + '</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">'
+      + '<strong>Source:</strong> ' + esc(r.source_card || '')
+      + '</div>'
+      + '</div>';
+  }).join('');
+};

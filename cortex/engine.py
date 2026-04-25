@@ -2397,6 +2397,37 @@ async def x_intake_follow_up_count(
     return {"total": len(items), "urgent": urgent, "high": high}
 
 
+# ── Self-Improvement Card Promotion ────────────────────────────────────────────
+
+_PROMOTED_RULES_PATH = _CORTEX_DATA_DIR / "promoted_rules.json"
+
+
+@app.get("/api/self-improvement/promoted-rules", tags=["self-improvement"])
+async def self_improvement_promoted_rules(status: str = "all") -> dict[str, Any]:
+    """Read-only view of promoted self-improvement rules from the cards pipeline."""
+    if not _PROMOTED_RULES_PATH.exists():
+        return {
+            "status": "ok",
+            "message": "No promoted rules yet. Run: python3 scripts/promote_self_improvement_cards.py --apply",
+            "rules": [],
+            "count": 0,
+        }
+    try:
+        data = json.loads(_PROMOTED_RULES_PATH.read_text())
+        rules = data.get("rules", [])
+        if status != "all":
+            rules = [r for r in rules if r.get("status") == status]
+        return {
+            "status": "ok",
+            "count": len(rules),
+            "updated_at": data.get("updated_at", ""),
+            "rules": rules,
+        }
+    except Exception as exc:
+        logger.warning("promoted_rules_read_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200], "rules": [], "count": 0}
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 
