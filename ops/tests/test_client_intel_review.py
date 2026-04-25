@@ -262,7 +262,7 @@ from scripts.review_client_threads import (
     VALID_RELATIONSHIP_TYPES,
 )
 # VALID_RELATIONSHIP_TYPES may live in backfill or review script; define locally if needed
-_VALID = {"client","vendor","builder","trade_partner","internal_team","personal_work_related","unknown"}
+_VALID = {"client","vendor","builder","trade_partner","internal_team","personal_work_related","restaurant_work","unknown"}
 
 
 class TestRelationshipType:

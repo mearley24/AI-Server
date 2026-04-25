@@ -378,6 +378,112 @@ class TestDisplayFormat:
         assert "contact_match=none" in out
 
 
+# ── Review assist intelligence ────────────────────────────────────────────────
+
+class TestAnalyzeThreadAssist:
+
+    def test_required_keys(self):
+        intel = mod.analyze_thread_assist("Test Person", ["hello world about Control4 systems"], [])
+        required = {
+            "suggested_relationship_type", "inferred_domain", "review_priority",
+            "review_reason", "confidence", "risk_flags", "evidence",
+        }
+        assert required.issubset(set(intel.keys()))
+
+    def test_gc_suffix_does_not_infer_builder(self):
+        intel = mod.analyze_thread_assist("Travis GC", [], [])
+        assert intel["suggested_relationship_type"] != "builder"
+        assert "gc_suffix_ambiguous" in intel["risk_flags"]
+
+    def test_gc_suffix_with_restaurant_signals_infers_restaurant_work(self):
+        texts = ["The reservation is set for Friday dinner", "game creek has a new menu this season"]
+        intel = mod.analyze_thread_assist("Travis GC", texts, [])
+        assert intel["suggested_relationship_type"] == "restaurant_work"
+        assert intel["inferred_domain"] == "restaurant_work"
+        assert "gc_suffix_ambiguous" in intel["risk_flags"]
+
+    def test_gc_suffix_with_tech_signals_infers_trade_partner_not_builder(self):
+        texts = ["Control4 proposal for the rack", "keypad programming is done"]
+        intel = mod.analyze_thread_assist("Travis GC", texts, ["strong:c4", "strong:finish"])
+        assert intel["suggested_relationship_type"] == "trade_partner"
+        assert intel["suggested_relationship_type"] != "builder"
+        assert intel["inferred_domain"] == "smart_home_work"
+        assert "gc_suffix_ambiguous" in intel["risk_flags"]
+
+    def test_no_gc_suffix_with_builder_signals_infers_builder(self):
+        texts = [
+            "The jobsite framing is complete",
+            "need permit inspection tomorrow",
+            "hvac rough-in done and ready",
+        ]
+        intel = mod.analyze_thread_assist("John Contractor", texts, [])
+        assert intel["suggested_relationship_type"] == "builder"
+        assert "gc_suffix_ambiguous" not in intel["risk_flags"]
+
+    def test_strong_tech_signals_infers_client(self):
+        texts = [
+            "Control4 system is working great",
+            "Can you update the lighting scenes?",
+            "The Sonos is having trouble with the theater zone",
+        ]
+        intel = mod.analyze_thread_assist("Jane Smith", texts, ["strong:c4"])
+        assert intel["suggested_relationship_type"] == "client"
+        assert intel["inferred_domain"] == "smart_home_work"
+
+    def test_confidence_in_range(self):
+        cases = [
+            ("Unknown", []),
+            ("Travis GC", ["game creek restaurant kitchen"]),
+            ("Bob Smith", ["Control4 keypad dimmer lighting sonos theater composer"]),
+        ]
+        for name, texts in cases:
+            intel = mod.analyze_thread_assist(name, texts, [])
+            assert 0.0 <= intel["confidence"] <= 1.0, f"confidence out of range for {name}"
+
+    def test_priority_is_valid(self):
+        intel = mod.analyze_thread_assist("Test", [], [])
+        assert intel["review_priority"] in ("high", "medium", "low")
+
+    def test_no_auto_approve_keys(self):
+        """analyze_thread_assist must never include is_reviewed or approval fields."""
+        intel = mod.analyze_thread_assist(
+            "John Smith",
+            ["Control4 proposal Sonos install keypad programming lighting shades"],
+            ["strong:c4"],
+        )
+        assert "is_reviewed" not in intel
+        assert "approved" not in intel
+
+    def test_has_gc_suffix_detection(self):
+        assert mod._has_gc_suffix("Travis GC") is True
+        assert mod._has_gc_suffix("Eagle GC") is True
+        assert mod._has_gc_suffix("John Smith") is False
+        assert mod._has_gc_suffix("GC Construction") is False
+        assert mod._has_gc_suffix("") is False
+        assert mod._has_gc_suffix("AGC") is False
+
+    def test_gc_suffix_and_tech_signals_yields_high_priority(self):
+        texts = ["Control4 programming done", "keypad installed at rack location"]
+        intel = mod.analyze_thread_assist("Travis GC", texts, ["strong:c4", "strong:finish"])
+        assert intel["review_priority"] == "high"
+
+    def test_reason_codes_boost_tech_score(self):
+        """reason_codes with c4/control4 should push classification toward tech domain."""
+        intel_no_codes = mod.analyze_thread_assist("Unknown", [], [])
+        intel_with_codes = mod.analyze_thread_assist("Unknown", [], ["strong:c4", "strong:control4"])
+        assert intel_with_codes["inferred_domain"] == "smart_home_work"
+        assert intel_with_codes["confidence"] >= intel_no_codes["confidence"]
+
+    def test_vendor_signals_infer_vendor(self):
+        texts = [
+            "shipment from distributor arrived today",
+            "purchase order is attached for the catalog items",
+        ]
+        intel = mod.analyze_thread_assist("Supply Co", texts, [])
+        assert intel["suggested_relationship_type"] == "vendor"
+        assert intel["inferred_domain"] == "vendor_supply"
+
+
 # ── Count helper ──────────────────────────────────────────────────────────────
 
 class TestCountNamedUnnamed:

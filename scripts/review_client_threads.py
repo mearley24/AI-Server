@@ -12,6 +12,10 @@ Usage:
     python3 scripts/review_client_threads.py --snippets 3       # show 3 message snippets
     python3 scripts/review_client_threads.py --no-snippets      # hide snippets
     python3 scripts/review_client_threads.py --summary
+    python3 scripts/review_client_threads.py --full --review-assist         # ML-assisted classification
+    python3 scripts/review_client_threads.py --full --review-assist --domain smart_home_work
+    python3 scripts/review_client_threads.py --full --review-assist --priority high
+    python3 scripts/review_client_threads.py --full --review-assist --risk-flag gc_suffix_ambiguous
 
 Modes:
     --safe (default)   Contacts masked; safe for screen sharing.
@@ -53,19 +57,58 @@ STATUS_LABEL = {PENDING: "pending", REJECTED: "rejected", APPROVED: "approved"}
 
 VALID_RELATIONSHIP_TYPES = frozenset({
     "client", "vendor", "builder", "trade_partner",
-    "internal_team", "personal_work_related", "unknown",
+    "internal_team", "personal_work_related", "restaurant_work", "unknown",
 })
 
 RELATIONSHIP_CHOICES = {
     "c": "client", "v": "vendor", "b": "builder",
     "t": "trade_partner", "i": "internal_team",
-    "p": "personal_work_related", "u": "unknown",
+    "p": "personal_work_related", "r": "restaurant_work", "u": "unknown",
 }
 RELATIONSHIP_MENU = (
     "  [c] client          [v] vendor       [b] builder\n"
     "  [t] trade_partner   [i] internal     [p] personal_work_related\n"
-    "  [u] unknown (default)"
+    "  [r] restaurant_work [u] unknown (default)"
 )
+
+# ── Review assist signal libraries ────────────────────────────────────────────
+
+_RESTAURANT_TERMS = (
+    "game creek", "restaurant", "kitchen", "dining", "menu", "reservation",
+    "manager", "staff", "server", "bar", "shift", "table", "chef", "food",
+    "wine", "lodge", "club", "dinner", "lunch", "breakfast", "catering",
+    "venue", "event",
+)
+
+_TECH_TERMS = (
+    "control4", "composer", "keypad", "dimmer", "lighting", "shades",
+    "rack", "network", "wifi", "wi-fi", "sonos", "theater", "prewire",
+    "araknis", "wattbox", "lutron", "surveillance", "camera", "projector",
+    "screen", "automation", "programming", "install",
+)
+
+_BUILDER_TERMS = (
+    "general contractor", "subcontractor", "framing", "drywall", "concrete",
+    "plumbing", "electrical", "hvac", "roofing", "superintendent", "foreman",
+    "job site", "jobsite", "permit", "inspection", "blueprint",
+)
+
+_VENDOR_TERMS = (
+    "purchase order", "distributor", "warehouse", "shipment",
+    "part number", "catalog", "sales rep",
+)
+
+ASSIST_DOMAINS = frozenset({
+    "smart_home_work", "restaurant_work", "vendor_supply",
+    "builder_coordination", "personal_work_related",
+})
+
+ASSIST_PRIORITIES = frozenset({"high", "medium", "low"})
+
+
+def _has_gc_suffix(name: str) -> bool:
+    """True if name ends with ' GC' — Eagle County 'GC' = Game Creek, not General Contractor."""
+    return name.strip().endswith(" GC")
 
 
 # ── Masking ───────────────────────────────────────────────────────────────────
@@ -153,6 +196,142 @@ def _apply_contact_filter(
     return list(resolved)
 
 
+# ── Review assist intelligence ────────────────────────────────────────────────
+
+def _score_domain_signals(
+    texts: list[str],
+    reason_codes: list[str],
+) -> dict[str, int]:
+    """Score domain signal strength from message texts and reason_codes."""
+    all_text = " ".join(texts).lower()
+    restaurant = sum(1 for t in _RESTAURANT_TERMS if t in all_text)
+    tech       = sum(1 for t in _TECH_TERMS       if t in all_text)
+    builder    = sum(1 for t in _BUILDER_TERMS     if t in all_text)
+    vendor     = sum(1 for t in _VENDOR_TERMS      if t in all_text)
+    for code in reason_codes:
+        c = code.lower()
+        if any(s in c for s in ("c4", "control4", "sonos", "lutron", "lighting", "shades")):
+            tech += 2
+        if any(s in c for s in ("finish", "trim", "rough")):
+            builder += 1
+    return {"restaurant": restaurant, "tech": tech, "builder": builder, "vendor": vendor}
+
+
+def analyze_thread_assist(
+    name: str,
+    texts: list[str],
+    reason_codes: list[str],
+) -> dict[str, Any]:
+    """Return review intelligence for a thread.
+
+    Pure function — never touches the database or sets is_reviewed.
+    All suggestions require manual approval.
+
+    Returns dict with keys:
+      suggested_relationship_type, inferred_domain, review_priority,
+      review_reason, confidence, risk_flags, evidence
+    """
+    risk_flags: list[str] = []
+    evidence: list[str] = []
+
+    scores = _score_domain_signals(texts, reason_codes)
+    tech_s       = scores["tech"]
+    restaurant_s = scores["restaurant"]
+    builder_s    = scores["builder"]
+    vendor_s     = scores["vendor"]
+
+    gc_flag = _has_gc_suffix(name)
+    if gc_flag:
+        risk_flags.append("gc_suffix_ambiguous")
+        evidence.append(
+            "name ends in 'GC' — Eagle County context: may be Game Creek (venue), not General Contractor"
+        )
+
+    all_text = " ".join(texts).lower()
+    matched_tech  = [t for t in _TECH_TERMS       if t in all_text][:3]
+    matched_rest  = [t for t in _RESTAURANT_TERMS  if t in all_text][:3]
+    matched_build = [t for t in _BUILDER_TERMS     if t in all_text][:2]
+
+    if matched_tech:
+        evidence.append(f"tech signals: {', '.join(matched_tech)}")
+    if matched_rest:
+        evidence.append(f"restaurant signals: {', '.join(matched_rest)}")
+    if matched_build and not gc_flag:
+        evidence.append(f"builder signals: {', '.join(matched_build)}")
+
+    if gc_flag:
+        if restaurant_s > 0:
+            domain = "restaurant_work"
+            rel    = "restaurant_work"
+            conf   = min(0.50 + 0.08 * restaurant_s, 0.85)
+            reason = "GC suffix + restaurant signals → Game Creek / venue contact"
+        elif tech_s >= 2:
+            domain = "smart_home_work"
+            rel    = "trade_partner"
+            conf   = min(0.40 + 0.06 * tech_s, 0.75)
+            reason = "GC suffix + tech signals → trade partner (not builder — verify GC meaning)"
+        else:
+            domain = "smart_home_work"
+            rel    = "unknown"
+            conf   = 0.25
+            reason = "GC suffix with no clear signals — manual review required"
+    elif tech_s >= 3:
+        domain = "smart_home_work"
+        rel    = "client"
+        conf   = min(0.50 + 0.05 * tech_s, 0.90)
+        reason = f"Strong tech signals ({tech_s}) → likely client"
+    elif tech_s >= 1 and builder_s >= 1:
+        domain = "builder_coordination"
+        rel    = "builder"
+        conf   = min(0.45 + 0.05 * (tech_s + builder_s), 0.80)
+        reason = "Tech + builder signals → builder coordinating on AV work"
+    elif builder_s >= 2:
+        domain = "builder_coordination"
+        rel    = "builder"
+        conf   = min(0.40 + 0.08 * builder_s, 0.80)
+        reason = f"Builder signals ({builder_s}) → likely general contractor or builder"
+    elif vendor_s >= 2:
+        domain = "vendor_supply"
+        rel    = "vendor"
+        conf   = min(0.40 + 0.08 * vendor_s, 0.80)
+        reason = f"Vendor/supply signals ({vendor_s}) → likely vendor or distributor"
+    elif restaurant_s >= 2:
+        domain = "restaurant_work"
+        rel    = "restaurant_work"
+        conf   = min(0.40 + 0.08 * restaurant_s, 0.80)
+        reason = f"Restaurant signals ({restaurant_s}) → venue or restaurant contact"
+    elif tech_s == 1:
+        domain = "smart_home_work"
+        rel    = "trade_partner"
+        conf   = 0.35
+        reason = "Single tech signal → possible trade partner, needs verification"
+    else:
+        domain = "smart_home_work"
+        rel    = "unknown"
+        conf   = 0.25
+        reason = "Insufficient signals for automatic classification"
+
+    if conf >= 0.70:
+        priority = "high"
+    elif conf >= 0.45:
+        priority = "medium"
+    else:
+        priority = "low"
+
+    if gc_flag and tech_s >= 2:
+        priority = "high"
+
+    return {
+        "suggested_relationship_type": rel,
+        "inferred_domain": domain,
+        "review_priority": priority,
+        "review_reason": reason,
+        "confidence": round(conf, 2),
+        "risk_flags": risk_flags,
+        "evidence": evidence,
+    }
+
+
 # ── Snippet cleaning ──────────────────────────────────────────────────────────
 
 _NS_NOISE_RE = re.compile(
@@ -237,6 +416,26 @@ def _fetch_snippets(
     except Exception:
         pass
     return snippets
+
+
+def _fetch_sample_texts(chat_guid: str, n: int = 20) -> list[str]:
+    """Fetch raw message texts from chat.db for domain signal analysis."""
+    if not CHAT_DB.is_file():
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro&immutable=1", uri=True)
+        rows = conn.execute(
+            "SELECT m.text FROM message m "
+            "JOIN chat_message_join cmj ON cmj.message_id = m.ROWID "
+            "JOIN chat c ON c.ROWID = cmj.chat_id "
+            "WHERE c.guid = ? AND m.text IS NOT NULL AND m.date > 0 "
+            "ORDER BY m.date DESC LIMIT ?",
+            (chat_guid, n),
+        ).fetchall()
+        conn.close()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -349,6 +548,7 @@ def _print_thread_full(
     match_type: str = "none",
     snippets: int = SNIPPET_DEFAULT,
     show_snippets: bool = True,
+    assist_data: "dict[str, Any] | None" = None,
 ) -> None:
     handle    = r["contact_handle"]
     codes     = json.loads(r["reason_codes"] or "[]")
@@ -359,6 +559,21 @@ def _print_thread_full(
     print(f"[{i}/{total}] {header}  contact_match={match_type}")
     print(f"       msgs={r['message_count']}  conf={r['work_confidence']:.2f}  {date_rng}")
     print(f"       signals: {codes_str}")
+
+    if assist_data:
+        flags_str = ", ".join(assist_data["risk_flags"]) if assist_data["risk_flags"] else "none"
+        print(
+            f"       assist: suggested={assist_data['suggested_relationship_type']}"
+            f"  domain={assist_data['inferred_domain']}"
+            f"  priority={assist_data['review_priority']}"
+            f"  confidence={assist_data['confidence']:.2f}"
+        )
+        if assist_data["risk_flags"]:
+            print(f"               risk_flags: {flags_str}")
+        print(f"               reason: {assist_data['review_reason']}")
+        ev = "; ".join(assist_data["evidence"])
+        if ev:
+            print(f"               evidence: {ev}")
 
     if show_snippets:
         snips = _fetch_snippets(r["chat_guid"], n=snippets)
@@ -389,6 +604,10 @@ def run_review(
     names_first: bool = True,
     snippets: int = SNIPPET_DEFAULT,
     show_snippets: bool = True,
+    review_assist: bool = False,
+    domain_filter: "str | None" = None,
+    priority_filter: "str | None" = None,
+    risk_flag_filter: "str | None" = None,
 ) -> None:
     rows = conn.execute(
         "SELECT thread_id, chat_guid, contact_handle, message_count, date_first, date_last, "
@@ -405,19 +624,39 @@ def run_review(
     ]
     resolved = _apply_contact_filter(resolved, named_only, unnamed_only, names_first)
 
+    # Build review assist data and apply assist-based filters
+    assist_map: dict[str, dict[str, Any]] = {}
+    if review_assist:
+        filtered: list[tuple[Any, str, str]] = []
+        for row, name, match_type in resolved:
+            codes = json.loads(row["reason_codes"] or "[]")
+            texts = _fetch_sample_texts(row["chat_guid"])
+            intel = analyze_thread_assist(name, texts, codes)
+            if domain_filter and intel["inferred_domain"] != domain_filter:
+                continue
+            if priority_filter and intel["review_priority"] != priority_filter:
+                continue
+            if risk_flag_filter and risk_flag_filter not in intel["risk_flags"]:
+                continue
+            assist_map[row["thread_id"]] = intel
+            filtered.append((row, name, match_type))
+        resolved = filtered
+
     if not resolved:
         print(f"\n✓ No pending {category} threads matching current filter (confidence ≥ {min_confidence}).")
         return
 
     mode_label = "FULL CONTEXT" if full else "SAFE (masked)"
-    print(f"\n=== Review {len(resolved)} pending {category} threads  [{mode_label}] ===")
+    assist_label = " + REVIEW ASSIST" if review_assist else ""
+    print(f"\n=== Review {len(resolved)} pending {category} threads  [{mode_label}{assist_label}] ===")
     print("  [y] approve  [n] reject  [s] skip  [q] quit\n")
 
     approved_count = rejected_count = skipped_count = 0
 
     for i, (r, name, match_type) in enumerate(resolved, 1):
+        intel = assist_map.get(r["thread_id"]) if review_assist else None
         if full:
-            _print_thread_full(i, len(resolved), r, name, match_type, snippets, show_snippets)
+            _print_thread_full(i, len(resolved), r, name, match_type, snippets, show_snippets, intel)
         else:
             _print_thread_safe(i, len(resolved), r, name, match_type)
 
@@ -572,11 +811,22 @@ examples:
     parser.add_argument("--no-snippets", action="store_true",
                         help="Hide message snippets entirely")
 
+    parser.add_argument("--review-assist", action="store_true",
+                        help="Enrich each thread with suggested relationship, domain, priority, risk flags")
+    parser.add_argument("--domain", metavar="DOMAIN",
+                        choices=sorted(ASSIST_DOMAINS),
+                        help="Filter by inferred domain (requires --review-assist)")
+    parser.add_argument("--priority", metavar="LEVEL",
+                        choices=sorted(ASSIST_PRIORITIES),
+                        help="Filter by review priority: high, medium, low (requires --review-assist)")
+    parser.add_argument("--risk-flag", metavar="FLAG",
+                        help="Filter to threads with a specific risk flag, e.g. gc_suffix_ambiguous")
+
     args = parser.parse_args()
 
-    named_only   = args.named_only
-    unnamed_only = args.unnamed_only
-    names_first  = not (named_only or unnamed_only)
+    named_only    = args.named_only
+    unnamed_only  = args.unnamed_only
+    names_first   = not (named_only or unnamed_only)
     show_snippets = not args.no_snippets
 
     conn = _open_db()
@@ -597,6 +847,10 @@ examples:
                     named_only=named_only, unnamed_only=unnamed_only,
                     names_first=names_first, snippets=args.snippets,
                     show_snippets=show_snippets,
+                    review_assist=args.review_assist,
+                    domain_filter=args.domain,
+                    priority_filter=args.priority,
+                    risk_flag_filter=args.risk_flag,
                 )
     finally:
         conn.close()
