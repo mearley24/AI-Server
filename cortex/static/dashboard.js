@@ -1810,13 +1810,61 @@
       rejected: 'background:#ef444422;border:1px solid #ef444444;color:#ef4444;',
       proposed: 'background:var(--surface-2);border:1px solid var(--border-2);color:var(--muted);',
     };
+    const REC_STYLES = {
+      approve: 'background:#22c55e22;border:1px solid #22c55e66;color:#22c55e;',
+      review:  'background:#f59e0b22;border:1px solid #f59e0b66;color:#f59e0b;',
+      ignore:  'background:#94a3b822;border:1px solid #94a3b844;color:#94a3b8;',
+    };
 
-    rulesEl.innerHTML = rules.map(function(r) {
+    // Sort by impact_score descending (highest impact first), proposed before others
+    const sorted = rules.slice().sort(function(a, b) {
+      const statusOrder = { proposed: 0, approved: 1, rejected: 2 };
+      const sa = statusOrder[a.status] ?? 1;
+      const sb = statusOrder[b.status] ?? 1;
+      if (sa !== sb) return sa - sb;
+      return (b.impact_score || 0) - (a.impact_score || 0);
+    });
+
+    rulesEl.innerHTML = sorted.map(function(r) {
       const riskColor  = RISK_COLORS[r.risk_level] || '#94a3b8';
       const statusSty  = STATUS_STYLES[r.status] || STATUS_STYLES.proposed;
       const riskBadge  = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;background:' + riskColor + '22;color:' + riskColor + ';border:1px solid ' + riskColor + '44;">' + (r.risk_level || 'unknown').toUpperCase() + '</span>';
       const statusLabel = r.status === 'approved' ? 'Active rule' : r.status === 'rejected' ? 'Rejected' : r.status || 'proposed';
       const statusBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;' + statusSty + '">' + statusLabel + '</span>';
+
+      // Impact + recommendation section
+      var impactHtml = '';
+      if (r.impact_score != null) {
+        const impactPct  = Math.round((r.impact_score || 0) * 100);
+        const confPct    = Math.round((r.confidence_score || 0) * 100);
+        const rec        = r.recommendation || '';
+        const recSty     = REC_STYLES[rec] || REC_STYLES.review;
+        const recLabel   = rec ? rec.toUpperCase() : '';
+        const recBadge   = rec ? ('<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:700;' + recSty + '">&#x1F4A1; ' + recLabel + '</span>') : '';
+        const eventsLabel = r.impact_events != null ? ('would have touched ' + r.impact_events + ' event' + (r.impact_events !== 1 ? 's' : '')) : '';
+        const barColor   = impactPct >= 70 ? '#22c55e' : impactPct >= 40 ? '#f59e0b' : '#94a3b8';
+        impactHtml = '<div style="margin-top:8px;padding:8px;background:var(--surface-2);border-radius:6px;border:1px solid var(--border);">'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">'
+          + recBadge
+          + (eventsLabel ? '<span style="font-size:10px;color:var(--muted);">' + _esc(eventsLabel) + '</span>' : '')
+          + '</div>'
+          + '<div style="display:flex;gap:16px;align-items:center;margin-bottom:4px;">'
+          + '<div style="flex:1;">'
+          + '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">Impact</div>'
+          + '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'
+          + '<div style="height:100%;width:' + impactPct + '%;background:' + barColor + ';border-radius:3px;"></div></div>'
+          + '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' + impactPct + '%</div>'
+          + '</div>'
+          + '<div style="flex:1;">'
+          + '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">Confidence</div>'
+          + '<div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">'
+          + '<div style="height:100%;width:' + confPct + '%;background:#818cf8;border-radius:3px;"></div></div>'
+          + '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' + confPct + '%</div>'
+          + '</div>'
+          + '</div>'
+          + (r.recommendation_reason ? '<div style="font-size:10px;color:var(--muted);font-style:italic;">' + _esc(r.recommendation_reason) + '</div>' : '')
+          + '</div>';
+      }
 
       let actionHtml = '';
       if (r.status === 'proposed') {
@@ -1840,7 +1888,8 @@
         + '</div>'
         + '<div style="font-size:13px;font-weight:600;margin-bottom:4px;">' + _esc(r.summary || '') + '</div>'
         + '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;"><strong>Source:</strong> ' + _esc(r.source_card || '') + '</div>'
-        + '<div style="font-size:11px;color:var(--muted);margin-bottom:2px;">' + _esc(r.proposed_behavior || '') + '</div>'
+        + '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">' + _esc(r.proposed_behavior || '') + '</div>'
+        + impactHtml
         + actionHtml
         + '</div>';
     }).join('');
