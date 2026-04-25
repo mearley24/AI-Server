@@ -664,6 +664,7 @@ async def client_intel_summary() -> dict[str, Any]:
 
 _PROFILES_DB     = _CLIENT_INTEL_DB.parent / "client_profiles.sqlite"
 _FACTS_DB        = _CLIENT_INTEL_DB.parent / "proposed_facts.sqlite"
+_BACKFILL_LOG    = _CLIENT_INTEL_DB.parent / "backfill_runs.ndjson"
 
 
 def _profiles_db_ro() -> sqlite3.Connection | None:
@@ -688,6 +689,79 @@ def _facts_db_ro() -> sqlite3.Connection | None:
     conn = sqlite3.connect(f"file:{_FACTS_DB}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+@app.get("/api/client-intel/backfill-status", tags=["client-intel"])
+async def client_intel_backfill_status() -> dict[str, Any]:
+    """Backfill pipeline status — thread counts, review progress, proposed facts."""
+    result: dict[str, Any] = {
+        "status": "ok",
+        "total_indexed": 0,
+        "work": 0,
+        "mixed": 0,
+        "personal": 0,
+        "unknown": 0,
+        "reviewed": 0,
+        "approved_profiles": 0,
+        "proposed_facts": 0,
+        "last_run": None,
+    }
+
+    # Thread index counts
+    t_conn = _client_intel_db_ro()
+    if t_conn is not None:
+        try:
+            for row in t_conn.execute(
+                "SELECT category, COUNT(*) FROM threads GROUP BY category"
+            ).fetchall():
+                cat = row[0] or "unknown"
+                if cat in result:
+                    result[cat] = int(result[cat]) + int(row[1])
+                result["total_indexed"] = int(result["total_indexed"]) + int(row[1])
+            result["reviewed"] = t_conn.execute(
+                "SELECT COUNT(*) FROM threads WHERE is_reviewed=1"
+            ).fetchone()[0]
+        except Exception as exc:
+            result["status"] = "partial"
+            result["thread_error"] = str(exc)[:100]
+        finally:
+            t_conn.close()
+
+    # Approved profiles
+    p_conn = _profiles_db_ro()
+    if p_conn is not None:
+        try:
+            result["approved_profiles"] = p_conn.execute(
+                "SELECT COUNT(*) FROM profiles WHERE status='approved'"
+            ).fetchone()[0]
+        except Exception:
+            pass
+        finally:
+            p_conn.close()
+
+    # Pending proposed facts
+    f_conn = _facts_db_ro()
+    if f_conn is not None:
+        try:
+            result["proposed_facts"] = f_conn.execute(
+                "SELECT COUNT(*) FROM proposed_facts WHERE is_accepted=0 AND is_rejected=0"
+            ).fetchone()[0]
+        except Exception:
+            pass
+        finally:
+            f_conn.close()
+
+    # Last run timestamp from backfill log
+    if _BACKFILL_LOG.is_file():
+        try:
+            lines = _BACKFILL_LOG.read_text(encoding="utf-8").strip().splitlines()
+            if lines:
+                last = json.loads(lines[-1])
+                result["last_run"] = last.get("ts")
+        except Exception:
+            pass
+
+    return result
 
 
 @app.get("/api/client-intel/profiles", tags=["client-intel"])

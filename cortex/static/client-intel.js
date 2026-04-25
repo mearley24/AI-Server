@@ -189,6 +189,38 @@
     btn.disabled = false;
   };
 
+  // ── Backfill status renderer ──────────────────────────────────────────────
+  window.loadBackfillStatus = async function() {
+    var el = document.getElementById('ci-backfill-status');
+    if (!el) return;
+    el.innerHTML = '<div class="small" style="color:var(--muted)">loading…</div>';
+    var d = await fetchJson('/api/client-intel/backfill-status');
+    if (!d || d.total_indexed === undefined) {
+      el.innerHTML = '<div class="unavailable">unavailable — run: python3 scripts/client_intel_backfill.py --apply --limit 1000</div>';
+      return;
+    }
+    var cells = [
+      ['Total Indexed', d.total_indexed, 'var(--text)'],
+      ['Work', d.work, 'var(--green)'],
+      ['Mixed', d.mixed, 'var(--yellow)'],
+      ['Personal', d.personal, 'var(--muted)'],
+      ['Unknown', d.unknown, 'var(--muted)'],
+      ['Reviewed', d.reviewed, 'var(--blue)'],
+      ['Approved Profiles', d.approved_profiles, 'var(--cyan)'],
+      ['Pending Facts', d.proposed_facts, 'var(--gold)'],
+    ];
+    var grid = cells.map(function(c) {
+      return '<div style="text-align:center;padding:6px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;">'
+        + '<div style="font-size:18px;font-weight:700;color:' + c[2] + ';font-family:var(--mono);">' + c[1] + '</div>'
+        + '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' + c[0] + '</div>'
+        + '</div>';
+    }).join('');
+    var lastRun = d.last_run
+      ? '<div class="small" style="margin-top:8px;color:var(--muted)">Last run: ' + new Date(d.last_run).toLocaleString() + '</div>'
+      : '<div class="small" style="margin-top:8px;color:var(--muted)">No runs yet — run: python3 scripts/client_intel_backfill.py --dry-run --limit 1000</div>';
+    el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">' + grid + '</div>' + lastRun;
+  };
+
   // ── Load ──────────────────────────────────────────────────────────────────
   window._ciLoaded = false;
   window.loadClientIntel = async function() {
@@ -200,6 +232,7 @@
     ]);
     renderProfiles(pd);
     renderFacts(fd);
+    loadBackfillStatus();
     badge.textContent = pd ? (pd.count + ' profiles') : 'unavailable';
     window._ciLoaded = true;
   };

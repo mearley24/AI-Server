@@ -454,6 +454,13 @@
     <button onclick="loadClientIntel()" style="margin-left:auto;font-size:11px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;">Refresh</button>
   </div>
 
+  <div class="card" id="ci-backfill-card" style="margin-bottom:16px;">
+    <h2>Backfill Status
+      <button onclick="loadBackfillStatus()" style="margin-left:10px;font-size:10px;padding:2px 8px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0;">Refresh</button>
+    </h2>
+    <div id="ci-backfill-status"><div class="unavailable">loading</div></div>
+  </div>
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
     <div class="card">
       <h2>Profiles <span id="ci-profiles-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>

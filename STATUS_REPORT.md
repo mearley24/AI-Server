@@ -26,6 +26,24 @@ preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 
 ---
 
+### Client Intelligence Backfill Expansion v2 — 2026-04-25T07:57:18Z (Claude Code)
+
+**591 passed · 0 failed · 0 errors** · 18 new tests added.
+
+Expanded the backfill pipeline from dry-run-only into a full two-phase system:
+
+- `--dry-run --limit 1000` — classifies threads, indexes with `is_reviewed=-1` (no facts extracted).
+- `--apply --limit 1000` — upgrades dry-run proposals; extracts proposed facts for work/mixed threads.
+- Checkpoint/resume: already-indexed threads skipped; dry-run proposals re-processed by apply.
+- Personal threads: indexed only, no facts extracted, no profiles created.
+- Work/mixed threads: proposes `relationship_type` + `system` facts (all `is_accepted=0` until Matt approves).
+- New API: `GET /api/client-intel/backfill-status` returns total indexed, category counts, reviewed, approved profiles, pending facts, last run timestamp.
+- Dashboard: Backfill Status card added to Clients tab.
+
+Verification: `ops/verification/20260425-075718-client-intel-backfill-v2.md`
+
+---
+
 ### Full test suite — clean — 2026-04-25T06:26:24Z (Claude Code)
 
 **573 passed · 0 failed · 0 errors** · 4 warnings (FastAPI on_event deprecation, pre-existing).
@@ -87,6 +105,26 @@ inbox processed: 0, cards: 0 new (14 already-processed / 0 auto-run / 0 needs-Ma
 Fully idempotent pass — all 14 inbox items were previously archived and carded in earlier runs, confirmed by presence of matching archive and card files. No new processing needed. System remains caught up on stream collection backlog. All existing cards maintain "needs fetch" status pending URL content retrieval.
 
 Verification: `ops/verification/20260425T154022Z-self-improve-inbox-already-processed.txt`
+
+---
+
+### Self-improvement loop — 2026-04-25T06:54:05Z
+
+inbox processed: 0, cards: 0 new (14 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 14 needs-fetch)
+
+Fully idempotent pass — all 14 inbox items were previously archived and carded in earlier runs, confirmed by presence of matching archive and card files. No new processing needed. System remains caught up on stream collection backlog. All existing cards maintain "needs fetch" status pending URL content retrieval.
+
+Verification: `ops/verification/self-improve-20260425-065405.txt`
+
+---
+
+### Self-improvement loop — 2026-04-25T07:25:57Z
+
+inbox processed: 14, cards: 0 new (14 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 14 needs-fetch)
+
+Fully idempotent pass — all 14 inbox items were previously archived and carded in earlier runs, confirmed by presence of matching archive and card files. No new processing needed. System remains caught up on stream collection backlog. All existing cards maintain "needs fetch" status pending URL content retrieval.
+
+Verification: `ops/verification/self-improve-20260425T072557Z.txt`
 
 ---
 
