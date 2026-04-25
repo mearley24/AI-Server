@@ -2,3 +2,15 @@
 [ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-6[1m] bytes=    7880
 
 === claude output ===
+All 11 artifacts confirmed. Here's the run summary:
+
+**Self-improvement loop — 20260425T034500Z**
+
+- **Inbox scanned:** 13 items (8 already-processed, skipped; 5 new)
+- **New cards:** 5, all `needs fetch`
+- **Auto-run prompts drafted:** 0
+- **STATUS_REPORT:** appended `### Self-improvement loop — 20260425T034500Z`
+- **Verification:** `ops/verification/self-improve-20260425T034500Z.txt` — `STATUS: OK`
+
+All 5 new items are bare X.com URLs from the 033947Z/033948Z capture batch — no tweet body, so no scoring is possible without a fetch pass. This is now the 7th consecutive run with the same pattern across 13 total items. The iMessage→x_intake fetch lane remains the structural unblock before any of these cards graduate beyond `needs fetch`.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260424-213948-run-prompt.txt
