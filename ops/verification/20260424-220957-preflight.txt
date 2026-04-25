@@ -1,0 +1,79 @@
+=== task-runner preflight ===
+started_at: 2026-04-24T22:09:55-06:00
+finished_at: 2026-04-24T22:09:57-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-25.md
+
+unsafe conflicts: 0
+
+commit: 32d2550da313569e9c5bc0b8a65bb0e63a97bc41 pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M data/task_runner/bob-watchdog-state/docker
+ M data/task_runner/bob-watchdog-state/uh_openclaw
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+?? data/client_intel/proposed_facts.pre-audit.sqlite
+?? data/cortex/reply_approvals.ndjson
+?? data/cortex/reply_receipts_dry_run.ndjson
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451.md
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033.md
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034.md
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536.md
+?? ops/self_improvement/archive/20260425T033947Z-imessage-x-com-divyansht91162-status-2047610118423126494.md
+?? ops/self_improvement/archive/20260425T033947Z-imessage-x-com-shanerobinett-status-2047692184518787185.md
+?? ops/self_improvement/archive/20260425T033947Z-imessage-x-com-sharbel-status-2047672262963171774.md
+?? ops/self_improvement/archive/20260425T033948Z-imessage-x-com-eng-khairallah1-status-2047693100118880488.md
+?? ops/self_improvement/archive/20260425T033948Z-imessage-x-com-sprytixl-status-2047558635933348035.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536-card.md
+?? ops/self_improvement/cards/20260425T033947Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md
+?? ops/self_improvement/cards/20260425T033947Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md
+?? ops/self_improvement/cards/20260425T033947Z-imessage-x-com-sharbel-status-2047672262963171774-card.md
+?? ops/self_improvement/cards/20260425T033948Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md
+?? ops/self_improvement/cards/20260425T033948Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536.md
+?? ops/self_improvement/inbox/20260425T033947Z-imessage-x-com-divyansht91162-status-2047610118423126494.md
+?? ops/self_improvement/inbox/20260425T033947Z-imessage-x-com-shanerobinett-status-2047692184518787185.md
+?? ops/self_improvement/inbox/20260425T033947Z-imessage-x-com-sharbel-status-2047672262963171774.md
+?? ops/self_improvement/inbox/20260425T033948Z-imessage-x-com-eng-khairallah1-status-2047693100118880488.md
+?? ops/self_improvement/inbox/20260425T033948Z-imessage-x-com-sprytixl-status-2047558635933348035.md
+?? ops/verification/20260424-220231-preflight.txt
+?? ops/verification/20260424-220303-preflight.txt
+?? ops/verification/20260424-220405-preflight.txt
+?? ops/verification/20260424-220507-preflight.txt
+?? ops/verification/20260424-220609-preflight.txt
+?? ops/verification/20260424-220702-preflight.txt
+?? ops/verification/20260424-220855-preflight.txt
+?? ops/verification/20260424-220925-preflight.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "32d2550da313569e9c5bc0b8a65bb0e63a97bc41",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-25.md"
+  ],
+  "finished_at": "2026-04-24T22:09:57-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-24T22:09:55-06:00",
+  "unsafe_conflicts": []
+}
