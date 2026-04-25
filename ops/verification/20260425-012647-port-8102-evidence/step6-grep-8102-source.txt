@@ -1,0 +1,5 @@
+/Users/bob/AI-Server/services/file-watcher/Dockerfile:20:EXPOSE 8102
+/Users/bob/AI-Server/services/file-watcher/Dockerfile:23:    CMD curl -sf http://127.0.0.1:8102/health || exit 1
+/Users/bob/AI-Server/services/file-watcher/README.md:47:curl http://127.0.0.1:8102/health
+/Users/bob/AI-Server/services/file-watcher/README.md:146:curl -X POST http://127.0.0.1:8102/process \
+/Users/bob/AI-Server/services/file-watcher/README.md:211:curl http://127.0.0.1:8102/health | python3 -m json.tool

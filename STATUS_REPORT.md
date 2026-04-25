@@ -86,7 +86,7 @@ Backdoor / exposure verdict (repo evidence only):
 Lanes that remain genuinely open after this pass (each with exactly
 one prompt+runbook; no duplicates):
 
-1. `:8102` UNKNOWN second listener — read-only evidence prompt+runbook ARMED.
+1. ~~`:8102` UNKNOWN second listener — read-only evidence prompt+runbook ARMED.~~ ✅ **RESOLVED 2026-04-25** — PID_COLLISION. PID 962 no longer exists; file-watcher is PID 749 and binds 127.0.0.1:8103 (loopback). No `*:8102` binding. Receipt: `ops/verification/20260425-012647-port-8102-evidence/`
 2. PORTS.md registry refresh — partial fix on disk; the
    "Localhost-Locked" section still under-states LAN exposure for
    1234/8199/8421/11434 vs the audit classification.
@@ -140,6 +140,9 @@ Artifacts armed this pass:
 - Receipt: `ops/verification/20260424-port-api-surface-audit-prompt-armed.txt`.
 
 - ~~[FOLLOWUP] Run the armed prompt on Bob (ACT MODE) to emit port audit artifacts~~ ✅ Done 2026-04-24 — receipt `ops/verification/20260424-182340-port-api-surface-audit/` (29 listeners, 15 REQUIRED, 9 OPTIONAL, 1 UNKNOWN, 0 STALE).
+- [FOLLOWUP] :8102 UNKNOWN second listener evidence captured
+  Receipt: `ops/verification/20260425-012647-port-8102-evidence/`
+  Verdict: PID_COLLISION — PID 962 no longer exists; file-watcher is now PID 749 on 127.0.0.1:8103. No `*:8102` binding found. Close as documentation-only.
 - [FOLLOWUP: bluebubbles-disable-gate] Any proposal to disable
   BlueBubbles must ship with a rollback plan, a verification that the
   AppleScript bridge (`:8199`) is healthy as a fallback outbound path,
@@ -3594,3 +3597,16 @@ Verification: ops/verification/self-improve-20260424T191000Z.txt
 ### Remaining gap
 - `[FOLLOWUP: bluebubbles-send-method]` BlueBubbles apple-script hangs on macOS 26; private-api helper not connecting. Bridge fallback closes the outbound gap for now.
 - x-intake image rebuild needed (keychain) to bake reply_listener permanently
+
+### Self-improvement loop — 20260424T193000Z
+
+inbox processed: 4 (all skipped — idempotent re-run), cards: 0 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 4 inbox items were previously processed in run 20260424T191000Z. No new cards or prompts drafted. All items remain at `needs fetch` — bare X.com URLs captured via iMessage heuristic; tweet content required before scoring is possible.
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed**; Status: needs fetch
+
+Verification: ops/verification/self-improve-20260424T193000Z.txt

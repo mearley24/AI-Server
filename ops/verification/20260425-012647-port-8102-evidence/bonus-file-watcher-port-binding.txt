@@ -1,0 +1,3 @@
+57:import uvicorn
+109:PORT = int(os.getenv("PORT", "8103"))
+901:        uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")

@@ -1,0 +1,1 @@
+SKIPPED: SUDO_UNAVAILABLE per prompt hard-do-not list
