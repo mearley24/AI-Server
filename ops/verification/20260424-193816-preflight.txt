@@ -1,0 +1,55 @@
+=== task-runner preflight ===
+started_at: 2026-04-24T19:38:15-06:00
+finished_at: 2026-04-24T19:38:16-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-25.md
+
+unsafe conflicts: 0
+
+commit: b97b3f4feaffb0d02a89f4bf2bd6eaa6d7b2a79c pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M STATUS_REPORT.md
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+?? ops/verification/20260424-193116-preflight.txt
+?? ops/verification/20260424-193133-autonomy-sweep-realized-change.txt
+?? ops/verification/20260424-193134-task-runner-health.txt
+?? ops/verification/20260424-193159-preflight.txt
+?? ops/verification/20260424-193302-preflight.txt
+?? ops/verification/20260424-193400-preflight.txt
+?? ops/verification/20260424-193438-autonomy-sweep-realized-change.txt
+?? ops/verification/20260424-193438-task-runner-health.txt
+?? ops/verification/20260424-193503-preflight.txt
+?? ops/verification/20260424-193620-autonomy-sweep-realized-change.txt
+?? ops/verification/20260424-193621-task-runner-health.txt
+?? ops/verification/20260424-193646-preflight.txt
+?? ops/verification/20260424-193656-preflight.txt
+?? ops/verification/dispatch-20260424-193319-run-prompt.txt
+?? ops/verification/self-improve-20260425T013408Z.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "b97b3f4feaffb0d02a89f4bf2bd6eaa6d7b2a79c",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-25.md"
+  ],
+  "finished_at": "2026-04-24T19:38:16-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-24T19:38:15-06:00",
+  "unsafe_conflicts": []
+}

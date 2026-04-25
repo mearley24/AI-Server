@@ -1,0 +1,49 @@
+Prompt path: (inline — invoked via "Process self-improvement inbox" system prompt)
+UTC timestamp: 20260425T013408Z
+
+## Collector
+SELF_IMPROVE_SKIP_COLLECT not set; collector presumed to have run before this prompt was invoked.
+
+## Inbox files found (excluding .gitkeep)
+1. 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+2. 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+3. 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+4. 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+
+## Skipped (oversize): none
+
+## Processing results
+
+All 4 inbox items were already fully processed in prior run 20260424T193000Z.
+Both archive copies and cards exist for every item. Per idempotency rule, no
+new archives, cards, or prompt files were written this run.
+
+Already-processed items:
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+    Archive: ops/self_improvement/archive/...same name... (exists)
+    Card:    ops/self_improvement/cards/...same name...-card.md  Status: needs fetch
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+    Archive: exists
+    Card:    Status: needs fetch
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+    Archive: exists
+    Card:    Status: needs fetch
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+    Archive: exists
+    Card:    Status: needs fetch
+
+## Cards produced this run: 0
+
+## Prompt files drafted this run: none
+
+## STATUS_REPORT entry appended: yes (section "Self-improvement loop — 20260425T013408Z")
+
+## Note on pending needs-fetch items
+All 4 open cards are bare X.com URLs captured via the iMessage heuristic. The
+tweet bodies are unknown. A fetch pass (web-enabled run or manual review) is
+required before any card can be re-scored and promoted. The recurring pattern
+(3 of 4 items captured on the same day, same source phone number) strengthens
+the earlier hypothesis that an iMessage→x_intake auto-routing bridge would
+reduce repeated needs-fetch cards accumulating here.
+
+STATUS: OK
