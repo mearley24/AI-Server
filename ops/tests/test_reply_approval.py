@@ -44,7 +44,23 @@ class TestBuildDraftWithContext:
         base.update(overrides)
         return base
 
-    def test_known_client_with_issue_and_equipment(self):
+    # ── behavior: no basic diagnostic questions when history exists ──────────
+
+    _DIAGNOSTIC_QUESTIONS = [
+        "when did it start",
+        "have you tried",
+        "what times work",
+        "let me know your availability",
+        "can you describe",
+        "what error",
+        "please let me know",
+    ]
+
+    def _has_diagnostic_question(self, draft: str) -> bool:
+        low = draft.lower()
+        return any(q in low for q in self._DIAGNOSTIC_QUESTIONS)
+
+    def test_issue_and_equipment_no_diagnostic_questions(self):
         accepted = {
             "issue":     [{"fact_type": "issue", "fact_value": "Sonos offline", "confidence": 0.8,
                            "source_excerpt": "x", "source_timestamp": "t"}],
@@ -52,21 +68,59 @@ class TestBuildDraftWithContext:
                            "source_excerpt": "x", "source_timestamp": "t"}],
         }
         result = _build_draft_with_context(self._profile(), accepted, {}, [])
-        assert "Sonos" in result["draft_reply"]
-        assert "service call" in result["draft_reply"].lower() or "schedule" in result["draft_reply"].lower()
+        assert "Sonos" in result["draft_reply"], "equipment must be referenced"
+        assert not self._has_diagnostic_question(result["draft_reply"]), (
+            f"Should not ask diagnostic questions when history exists. Got: {result['draft_reply']}"
+        )
         assert result["confidence"] >= 0.85
         assert any(sf["verified"] for sf in result["source_facts"])
         assert result["reasoning"]
 
-    def test_known_client_with_request_and_equipment(self):
+    def test_issue_and_equipment_proactive_action(self):
+        """Draft must imply proactive action, not passive wait-and-see."""
         accepted = {
-            "request":   [{"fact_type": "request", "fact_value": "fix the WiFi network",
-                           "confidence": 0.7, "source_excerpt": "x", "source_timestamp": "t"}],
-            "system":    [{"fact_type": "system", "fact_value": "WiFi",
-                           "confidence": 0.75, "source_excerpt": "x", "source_timestamp": "t"}],
+            "issue":     [{"fact_type": "issue", "fact_value": "network offline", "confidence": 0.8,
+                           "source_excerpt": "x", "source_timestamp": "t"}],
+            "equipment": [{"fact_type": "equipment", "fact_value": "Araknis", "confidence": 0.75,
+                           "source_excerpt": "x", "source_timestamp": "t"}],
         }
         result = _build_draft_with_context(self._profile(), accepted, {}, [])
-        assert "WiFi" in result["draft_reply"] or "fix the WiFi" in result["draft_reply"]
+        proactive_phrases = ["i'll", "i will", "on it", "taking a look", "check", "look into"]
+        low = result["draft_reply"].lower()
+        assert any(p in low for p in proactive_phrases), (
+            f"Draft should contain proactive action. Got: {result['draft_reply']}"
+        )
+
+    def test_repeat_issue_acknowledges_history(self):
+        """When ≥2 issues on file, draft should acknowledge the recurring pattern."""
+        accepted = {
+            "issue": [
+                {"fact_type": "issue", "fact_value": "Sonos offline", "confidence": 0.8,
+                 "source_excerpt": "x", "source_timestamp": "t1"},
+                {"fact_type": "issue", "fact_value": "Sonos cutting out again", "confidence": 0.75,
+                 "source_excerpt": "x", "source_timestamp": "t2"},
+            ],
+            "equipment": [{"fact_type": "equipment", "fact_value": "Sonos", "confidence": 0.75,
+                           "source_excerpt": "x", "source_timestamp": "t"}],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        history_phrases = ["come up before", "happened before", "again", "recurring"]
+        low = result["draft_reply"].lower()
+        assert any(p in low for p in history_phrases), (
+            f"Repeat issues should acknowledge history. Got: {result['draft_reply']}"
+        )
+        assert "Recurring" in result["reasoning"] or "repeat" in result["reasoning"].lower()
+
+    def test_known_client_with_request_and_equipment(self):
+        accepted = {
+            "request": [{"fact_type": "request", "fact_value": "fix the WiFi network",
+                         "confidence": 0.7, "source_excerpt": "x", "source_timestamp": "t"}],
+            "system":  [{"fact_type": "system", "fact_value": "WiFi",
+                         "confidence": 0.75, "source_excerpt": "x", "source_timestamp": "t"}],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        assert "WiFi" in result["draft_reply"]
+        assert not self._has_diagnostic_question(result["draft_reply"])
         assert result["confidence"] >= 0.80
         assert len(result["source_facts"]) >= 2
 
@@ -76,7 +130,8 @@ class TestBuildDraftWithContext:
         assert "check the Sonos at Beaver Creek" in result["draft_reply"]
         assert result["confidence"] >= 0.70
 
-    def test_equipment_only_no_requests(self):
+    def test_equipment_only_short_personal_checkin(self):
+        """Equipment with no issues → short personal check-in, not a support-desk question."""
         accepted = {
             "equipment": [{"fact_type": "equipment", "fact_value": "Lutron",
                            "confidence": 0.75, "source_excerpt": "x", "source_timestamp": "t"}],
@@ -84,6 +139,9 @@ class TestBuildDraftWithContext:
         result = _build_draft_with_context(self._profile(), accepted, {}, [])
         assert "Lutron" in result["draft_reply"]
         assert result["confidence"] >= 0.65
+        # Should NOT say "is there anything I can help with" — that's generic support language
+        assert "is there anything i can help with" not in result["draft_reply"].lower()
+        assert "let me know if you need any assistance" not in result["draft_reply"].lower()
 
     def test_systems_from_profile_summary(self):
         profile = self._profile(systems_or_topics=["Sonos", "Lutron"])
@@ -98,6 +156,13 @@ class TestBuildDraftWithContext:
         result = _build_draft_with_context(self._profile(), {}, unverified, [])
         assert result["confidence"] <= 0.55
         assert any(not sf["verified"] for sf in result["source_facts"])
+
+    def test_client_no_history_diagnostic_question_is_ok(self):
+        """Only when there's NO history at all is a clarifying question appropriate."""
+        result = _build_draft_with_context(self._profile("client"), {}, {}, [])
+        # Should be a short open question, not a form-letter response
+        assert len(result["draft_reply"]) < 120, "Should be short when no context"
+        assert result["confidence"] <= 0.35
 
     def test_vendor_fallback(self):
         result = _build_draft_with_context(self._profile("vendor"), {}, {}, [])

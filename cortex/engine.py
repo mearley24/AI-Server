@@ -1098,88 +1098,102 @@ def _build_draft_with_context(
         _record(f["fact_type"], f["fact_value"], False)
 
     # ── Draft selection ───────────────────────────────────────────────────────
+    # Rules:
+    #   - With prior issue history → acknowledge it, propose proactive action.
+    #     Do NOT ask "when did it start" or "let me know your availability."
+    #   - Diagnostic questions only when no history exists and cause is ambiguous.
+    #   - Tone: confident, personal, direct — sounds like someone who knows the system.
     draft: str
     confidence: float
 
+    repeat_issue = len(accepted_issues) > 1   # recurring pattern
+
     if accepted_issues and accepted_equip:
-        issue = accepted_issues[0][:100]
+        issue = accepted_issues[0][:80]
         eq    = accepted_equip[0]
-        draft = (
-            f"Hi, I saw your message about an issue with your {eq}. "
-            f"I'd like to schedule a service call to address: {issue}. "
-            f"What times work for you?"
-        )
-        reasoning_parts += [f"Active issue: '{issue}'", f"Equipment on file: '{eq}'"]
+        if repeat_issue:
+            # History shows this has happened before — acknowledge it directly.
+            draft = (
+                f"I see this has come up before with your {eq}. "
+                f"I'll take a look and get to the bottom of it — "
+                f"I'll let you know what I find."
+            )
+        else:
+            # First reported issue — proactive, no diagnostic questions.
+            draft = (
+                f"On it — I'll check your {eq} and see what's going on. "
+                f"I'll let you know what I find."
+            )
+        reasoning_parts += [
+            f"{'Recurring' if repeat_issue else 'Active'} issue: '{issue}'",
+            f"Equipment on file: '{eq}'",
+        ]
         confidence = 0.90
 
     elif accepted_issues:
-        issue = accepted_issues[0][:100]
-        draft = (
-            f"Hi, I wanted to follow up on the issue you reported: {issue}. "
-            f"Let me know your availability so we can get this resolved."
-        )
-        reasoning_parts.append(f"Active issue: '{issue}'")
+        # Issue known, equipment not yet identified — still proactive.
+        draft = "Got it — I'll look into this and get back to you with what I find."
+        reasoning_parts.append(f"Active issue: '{accepted_issues[0][:80]}'")
         confidence = 0.85
 
     elif accepted_requests and accepted_equip:
-        req = accepted_requests[0][:100]
+        req = accepted_requests[0][:70]
         eq  = accepted_equip[0]
         draft = (
-            f"Hi, following up on your request — {req}. "
-            f"I'll review your {eq} setup and get back to you with next steps."
+            f"I'll take a look at your {eq} — "
+            f"sounds like {req}. I'll reach out once I have an update."
         )
         reasoning_parts += [f"Request: '{req}'", f"Equipment: '{eq}'"]
         confidence = 0.85
 
     elif open_reqs:
-        req = open_reqs[0][:100]
-        draft = (
-            f"Hi, I wanted to follow up on your request — {req}. "
-            f"Let me look into this and get back to you shortly."
-        )
+        req = open_reqs[0][:80]
+        draft = f"On it — I'll look into {req} and get back to you."
         reasoning_parts.append(f"Open request from profile: '{req}'")
         confidence = 0.75
 
     elif accepted_equip:
+        # No current issues — short personal check-in, not a support-desk question.
         eq = accepted_equip[0]
-        draft = (
-            f"Hi, reaching out about your {eq} system. "
-            f"Everything still working well, or is there anything I can help with?"
-        )
+        draft = f"Checking in on your {eq} — everything holding up okay?"
         reasoning_parts.append(f"Equipment on file: '{eq}'")
         confidence = 0.70
 
     elif systems:
         sys_name = systems[0]
-        draft = (
-            f"Hi, reaching out about your {sys_name} setup. "
-            f"Let me know if you need any assistance or if anything has changed."
-        )
+        draft = f"Hey, checking in on your {sys_name} — anything I can help with?"
         reasoning_parts.append(f"System from profile: '{sys_name}'")
         confidence = 0.65
 
     elif unverified_issues:
-        issue = unverified_issues[0][:100]
+        # Pending facts only — cautious tone, open-ended.
+        issue = unverified_issues[0][:80]
         draft = (
-            f"Hi, I wanted to follow up — it looks like there may have been an issue "
-            f"({issue}). Let me know if you still need help."
+            f"Hey, just checking in — still having trouble with {issue}? "
+            f"Happy to take a look."
         )
         reasoning_parts.append(f"Unverified issue (pending approval): '{issue}'")
         confidence = 0.50
 
+    elif rel_type == "client" and not (open_reqs or systems):
+        # No history at all — only situation where a clarifying question is appropriate.
+        draft = "Hi, thanks for reaching out — what's going on?"
+        reasoning_parts.append("No prior facts — open question appropriate")
+        confidence = 0.30
+
     elif rel_type == "vendor":
-        draft = "Hi, following up on our recent conversation. Please let me know the latest on availability and lead time."
-        reasoning_parts.append("Vendor relationship — standard follow-up")
+        draft = "Hey, following up — what's the latest on availability and lead time?"
+        reasoning_parts.append("Vendor relationship — follow-up")
         confidence = 0.45
 
     elif rel_type in ("builder", "trade_partner"):
-        draft = "Hi, just checking in on scheduling. Let me know when you're ready to coordinate the next phase."
+        draft = "Just checking in on scheduling — where are things at on your end?"
         reasoning_parts.append(f"Relationship type: {rel_type}")
         confidence = 0.45
 
     else:
-        draft = "Hi, thanks for reaching out. I'll look into that and get back to you shortly."
-        reasoning_parts.append("No specific facts — generic acknowledgement")
+        draft = "Hi, thanks for reaching out — what can I help you with?"
+        reasoning_parts.append("No specific facts — open question")
         confidence = 0.30
 
     # Last-message context as reasoning annotation only (never injected into draft)
