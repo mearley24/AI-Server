@@ -1,0 +1,38 @@
+Self-improvement processing run
+Prompt: scripts/self-improve.sh process
+UTC timestamp: 20260425T041331Z
+
+Inbox files found (excluding .gitkeep): 12
+Items processed this run: 0 (all already processed — idempotent skip)
+Items skipped (oversize): 0
+
+Already-processed inbox items (archive + card exist for each):
+  - 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850.md
+  - 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378.md
+  - 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885.md
+  - 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493.md
+  - 20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451.md
+  - 20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033.md
+  - 20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034.md
+  - 20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536.md
+  - 20260425T033947Z-imessage-x-com-sharbel-status-2047672262963171774.md
+  - 20260425T033947Z-imessage-x-com-shanerobinett-status-2047692184518787185.md
+  - 20260425T033947Z-imessage-x-com-divyansht91162-status-2047610118423126494.md
+  - 20260425T033948Z-imessage-x-com-eng-khairallah1-status-2047693100118880488.md
+  - 20260425T033948Z-imessage-x-com-sprytixl-status-2047558635933348035.md
+
+Cards produced this run: 0
+New prompt files drafted: 0
+
+Collector ran this turn: yes (scripts/self-improvement-collect.sh daemon-once called by self-improve.sh)
+No new inbox items were deposited between last run (20260425T034500Z) and this run.
+
+Cumulative cards to date: 12 (all status: needs fetch)
+Persistent blocker: all 12 items are bare X.com URLs shared via iMessage with no message body.
+  Tweet content cannot be assessed without a fetch-enabled processing lane.
+  The iMessage→x_intake auto-routing bridge hypothesis has now been reinforced
+  across 12 items from 5 capture batches and 8 consecutive runs.
+  An architectural decision (fetch lane or structured iMessage enrichment) is
+  the only structural unblock for this class of inbox item.
+
+STATUS: OK
