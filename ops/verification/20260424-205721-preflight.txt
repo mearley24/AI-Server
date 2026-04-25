@@ -1,0 +1,54 @@
+=== task-runner preflight ===
+started_at: 2026-04-24T20:57:20-06:00
+finished_at: 2026-04-24T20:57:21-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-25.md
+
+unsafe conflicts: 0
+
+commit: 4ac84a024af94a177e5486af71f25445db938d68 pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M STATUS_REPORT.md
+ M cortex/engine.py
+ M data/task_runner/bob-watchdog-state/docker
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+ M ops/tests/test_reply_approval.py
+?? data/cortex/reply_approvals.ndjson
+?? data/cortex/reply_receipts_dry_run.ndjson
+?? ops/verification/20260424-205041-preflight.txt
+?? ops/verification/20260424-205213-preflight.txt
+?? ops/verification/20260424-205223-preflight.txt
+?? ops/verification/20260424-205417-preflight.txt
+?? ops/verification/20260424-205428-preflight.txt
+?? ops/verification/20260424-205521-preflight.txt
+?? ops/verification/20260424-205640-preflight.txt
+?? ops/verification/20260424-205641-autonomy-sweep-realized-change.txt
+?? ops/verification/20260424-205641-task-runner-health.txt
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "4ac84a024af94a177e5486af71f25445db938d68",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-25.md"
+  ],
+  "finished_at": "2026-04-24T20:57:21-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-24T20:57:20-06:00",
+  "unsafe_conflicts": []
+}
