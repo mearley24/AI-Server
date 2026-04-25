@@ -48,6 +48,7 @@ Verified against `PORTS.md` and the 2026-04-24 port audit
 | BlueBubbles         | `http://127.0.0.1:1234/`         | `http://100.89.1.51:1234/`                               | Host-bound, LAN/Tailscale reachable. |
 | Markup Tool         | `http://127.0.0.1:8088/`         | *(not reachable by default)*                             | Bound `127.0.0.1:8088` only. |
 | iMessage Bridge     | `http://127.0.0.1:8199/`         | *(not reachable by default)*                             | Bound `127.0.0.1:8199` only. |
+| Voice Receptionist  | `http://127.0.0.1:8093/health`   | *(not reachable by default)*                             | Bob the Conductor (Twilio + OpenAI Realtime). Container 3000 → host 127.0.0.1:8093. |
 | Mobile Gateway      | *(not yet documented)*           | *(not yet documented)*                                   | Port TBD — add to `TOOL_REGISTRY` once confirmed. |
 
 The dashboard's `/api/tools` payload keeps a `tailscale_url` field for each

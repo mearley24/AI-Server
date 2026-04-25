@@ -33,6 +33,9 @@ EMAIL_MONITOR_URL = os.environ.get("EMAIL_MONITOR_URL", "http://email-monitor:80
 CALENDAR_AGENT_URL = os.environ.get("CALENDAR_AGENT_URL", "http://calendar-agent:8094")
 OPENCLAW_URL = os.environ.get("OPENCLAW_URL", "http://openclaw:3000")
 X_INTAKE_URL = os.environ.get("X_INTAKE_URL", "http://x-intake:8101")
+VOICE_RECEPTIONIST_URL = os.environ.get(
+    "VOICE_RECEPTIONIST_URL", "http://voice-receptionist:3000"
+)
 
 # Data paths (mounted read-only by docker-compose into /app/data/openclaw)
 FOLLOW_UPS_DB_CANDIDATES = [
@@ -198,6 +201,16 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
     _tool("iMessage Bridge", 8199, "symphony", "Communication",
           health_path="/health",
           notes="Two-way message bridge health/API. Bound 127.0.0.1.",
+          status="lan_only"),
+    _tool("Voice Receptionist", 8093, "symphony", "Communication",
+          health_path="/health",
+          notes="Bob the Conductor — Twilio + OpenAI Realtime voice "
+                "receptionist. Container 3000 → host 127.0.0.1:8093. "
+                "Inbound call flow: Twilio → /incoming-call → WebSocket. "
+                "Already publishes ops:voice_followup → Linear (see "
+                "operations/linear_ops.py). Cortex call/transcript "
+                "ingestion not yet wired — see docs/TAILSCALE_ACCESS.md "
+                "and voice_receptionist/README.md.",
           status="lan_only"),
 
     # Autonomy tab — control plane / ops adjacent
@@ -1272,6 +1285,73 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             return {"status": "offline", "http_status": r.status_code}
         except Exception as exc:
             return {"status": "offline", "error": str(exc)}
+
+    @app.get("/api/symphony/voice-receptionist")
+    async def symphony_voice_receptionist():
+        """Read-only status + planned-fields contract for the call dashboard.
+
+        Probes the voice-receptionist /health endpoint and returns a stable
+        shape the frontend can render even when the upstream is offline.
+        Recent-calls/transcripts are intentionally NOT pulled live yet —
+        the receptionist's SQLite call log is in-container and Cortex
+        ingestion is a planned increment. The ``planned`` block describes
+        the future contract so the UI can render an honest empty state.
+        """
+        status_payload: dict[str, Any] = {
+            "status": "unknown",
+            "url": VOICE_RECEPTIONIST_URL,
+            "checked_at": datetime.now().isoformat(),
+        }
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                r = await client.get(f"{VOICE_RECEPTIONIST_URL}/health")
+            if r.status_code == 200:
+                status_payload["status"] = "online"
+                try:
+                    status_payload["details"] = r.json()
+                except Exception:
+                    status_payload["details"] = {}
+            else:
+                status_payload["status"] = "degraded"
+                status_payload["http_status"] = r.status_code
+        except Exception as exc:
+            status_payload["status"] = "offline"
+            status_payload["error"] = str(exc)[:200]
+
+        return {
+            "service": status_payload,
+            "recent_calls": [],
+            "missed_calls": [],
+            "voicemails": [],
+            "planned": {
+                "ingestion": (
+                    "Twilio call events + OpenAI Realtime transcripts will "
+                    "be persisted to Cortex via the existing voice_receptionist "
+                    "SQLite call log; a Cortex sync worker will mirror them "
+                    "into the dashboard."
+                ),
+                "redis_channel": "ops:voice_followup",
+                "fields": [
+                    "caller_name",
+                    "phone",
+                    "started_at",
+                    "duration_s",
+                    "status",
+                    "transcript_excerpt",
+                    "voicemail_url",
+                    "matched_client",
+                    "matched_project",
+                    "suggested_followup",
+                ],
+                "actions": [
+                    "send_text",
+                    "send_email",
+                    "create_intake",
+                    "escalate_to_matt",
+                    "schedule_callback",
+                ],
+            },
+        }
 
     @app.get("/api/symphony/proposals/templates")
     async def symphony_proposals_templates():

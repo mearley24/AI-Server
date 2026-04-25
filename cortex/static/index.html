@@ -68,6 +68,10 @@
       <h2>Follow-ups</h2>
       <div id="followups"><div class="unavailable">loading</div></div>
     </div>
+    <div class="card" id="calls-card">
+      <h2>Calls <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">voice receptionist</span></h2>
+      <div id="calls"><div class="unavailable">loading</div></div>
+    </div>
   </section>
 
   <!-- Column 2: Trading -->
@@ -245,6 +249,14 @@
           <p style="color:var(--muted);">Markup server offline</p>
           <p class="small">Start it on Bob: <code style="color:var(--gold);">python3 ~/AI-Server/tools/markup_app/server.py --port 8088</code></p>
         </div>
+      </div>
+    </div>
+
+    <!-- Full-width: Voice Receptionist / Calls -->
+    <div style="grid-column:1 / -1;">
+      <div class="card" id="calls-symphony-card">
+        <h2>Voice Receptionist <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">calls · transcripts · follow-ups</span></h2>
+        <div id="calls-symphony"><div class="unavailable">loading</div></div>
       </div>
     </div>
 

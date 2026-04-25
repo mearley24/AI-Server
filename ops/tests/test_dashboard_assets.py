@@ -211,3 +211,99 @@ def test_dashboard_js_wires_tool_access():
     js = (STATIC_DIR / "dashboard.js").read_text()
     assert "loadToolAccess" in js
     assert "/api/tools" in js
+
+
+# ── Voice Receptionist registry + UI contract ────────────────────────────────
+#
+# Cortex surfaces Bob the Conductor (voice_receptionist/) on the Symphony tab
+# and on the Overview "Calls" card. The UI renders the empty state from a
+# stable shape returned by /api/symphony/voice-receptionist; protect that
+# contract so future edits cannot silently break the calls dashboard.
+
+
+def test_api_tools_has_voice_receptionist_entry():
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/tools?tab=symphony").json()
+    voice = next(
+        (t for t in data["tools"] if t["name"] == "Voice Receptionist"),
+        None,
+    )
+    assert voice is not None, "Voice Receptionist must be in the registry"
+    # Per PORTS.md: container 3000 → host 127.0.0.1:8093
+    assert voice["port"] == 8093
+    assert voice["category"] == "Communication"
+    assert voice["tab"] == "symphony"
+    assert voice["status"] == "lan_only"
+    assert voice["local_url"] == "http://127.0.0.1:8093/"
+    assert voice["health_url"] == "http://127.0.0.1:8093/health"
+    # Notes must reference the planned Twilio/OpenAI ingestion path so
+    # future readers know where to wire Cortex ingestion.
+    assert "Twilio" in voice["notes"]
+    assert "ops:voice_followup" in voice["notes"]
+
+
+def test_index_html_has_calls_cards():
+    """The overview Calls card and the Symphony voice-receptionist card
+    are both rendered by dashboard.js — guard their target ids."""
+    html = (STATIC_DIR / "index.html").read_text()
+    assert 'id="calls-card"' in html, "missing overview Calls card"
+    assert 'id="calls"' in html, "missing #calls render target"
+    assert 'id="calls-symphony-card"' in html, (
+        "missing symphony Voice Receptionist card"
+    )
+    assert 'id="calls-symphony"' in html, (
+        "missing #calls-symphony render target"
+    )
+
+
+def test_dashboard_js_wires_voice_receptionist():
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "renderCalls" in js
+    assert "renderCallsSymphony" in js
+    assert "/api/symphony/voice-receptionist" in js
+    assert "loadVoiceReceptionist" in js
+
+
+def test_api_voice_receptionist_returns_planned_contract():
+    """When the upstream service is offline (it is, in tests), the route
+    still returns the stable shape the frontend renders — status block
+    plus the `planned` fields/actions contract."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/api/symphony/voice-receptionist")
+    assert r.status_code == 200
+    data = r.json()
+    # Service block — status + url always present
+    assert "service" in data
+    svc = data["service"]
+    assert svc["status"] in {"online", "degraded", "offline", "unknown"}
+    assert "url" in svc and svc["url"]
+    assert "checked_at" in svc
+    # Empty arrays for the call/voicemail lists — no fake data
+    assert data["recent_calls"] == []
+    assert data["missed_calls"] == []
+    assert data["voicemails"] == []
+    # Planned contract — fields + actions + redis channel
+    planned = data.get("planned") or {}
+    assert planned.get("redis_channel") == "ops:voice_followup"
+    fields = set(planned.get("fields") or [])
+    # Fields the receptionist integration plan promises the UI
+    assert {
+        "caller_name", "phone", "started_at", "transcript_excerpt",
+        "matched_client", "suggested_followup",
+    }.issubset(fields)
+    actions = set(planned.get("actions") or [])
+    assert {
+        "send_text", "send_email", "create_intake", "escalate_to_matt",
+    }.issubset(actions)

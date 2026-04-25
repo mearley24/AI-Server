@@ -89,7 +89,11 @@
       checkBlueBubblesHealth();
       if (!_markupCheckInterval) {
         _markupCheckInterval = setInterval(() => {
-          if ($('tab-symphony') && $('tab-symphony').classList.contains('active')) { checkMarkupHealth(); checkBlueBubblesHealth(); }
+          if ($('tab-symphony') && $('tab-symphony').classList.contains('active')) {
+            checkMarkupHealth();
+            checkBlueBubblesHealth();
+            loadVoiceReceptionist();
+          }
         }, 30000);
       }
     }
@@ -238,6 +242,88 @@
       </div>
       <div class="small" style="margin-top:8px">next: ${nextLbl.slice(0,80)}</div>
       ${ageStr ? `<div class="small" style="margin-top:4px">${esc(ageStr)}</div>` : ''}`;
+  }
+
+  // Render the Calls / Voice Receptionist card. The upstream service
+  // (/api/symphony/voice-receptionist) returns a stable shape even when
+  // offline, plus a `planned` block describing the future contract so we
+  // render an honest empty state instead of fake activity.
+  function renderCalls(data) {
+    const host = $('calls');
+    if (!host) return;
+    if (!data) { host.innerHTML = unavail(); return; }
+    const svc = data.service || {};
+    const dot = svc.status === 'online' ? 'healthy'
+              : svc.status === 'degraded' ? 'degraded'
+              : svc.status === 'offline' ? 'down' : 'down';
+    const recent = Array.isArray(data.recent_calls) ? data.recent_calls : [];
+    const missed = Array.isArray(data.missed_calls) ? data.missed_calls : [];
+    const vm     = Array.isArray(data.voicemails) ? data.voicemails : [];
+    const planned = data.planned || {};
+    const fields  = (planned.fields || []).slice(0, 6).join(', ');
+    const actions = (planned.actions || []).slice(0, 5).join(' · ');
+    const empty = !recent.length && !missed.length && !vm.length;
+    host.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span class="dot ${dot}"></span>
+        <span class="small">${esc(svc.status || 'unknown')}</span>
+        <span class="small" style="color:var(--muted);margin-left:auto">:8093</span>
+      </div>
+      <div class="stat-row">
+        <div><div class="stat-big">${esc(recent.length)}</div><div class="stat-label">recent (24h)</div></div>
+        <div><div class="stat-big" style="color:${missed.length>0?'var(--red)':'var(--muted)'}">${esc(missed.length)}</div><div class="stat-label">missed</div></div>
+        <div><div class="stat-big">${esc(vm.length)}</div><div class="stat-label">voicemail</div></div>
+      </div>
+      ${empty ? `<div class="small" style="margin-top:8px;color:var(--muted)">
+        Cortex call ingestion not yet wired. Planned: ${esc(fields || 'caller, transcript, matched client/project, suggested follow-up')}.
+        Actions: ${esc(actions || 'text · email · create intake · escalate')}.
+      </div>` : ''}
+    `;
+  }
+
+  function renderCallsSymphony(data) {
+    const host = $('calls-symphony');
+    if (!host) return;
+    if (!data) { host.innerHTML = unavail(); return; }
+    const svc = data.service || {};
+    const dot = svc.status === 'online' ? 'healthy'
+              : svc.status === 'degraded' ? 'degraded'
+              : svc.status === 'offline' ? 'down' : 'down';
+    const planned = data.planned || {};
+    const fields  = planned.fields || [];
+    const actions = planned.actions || [];
+    const channel = planned.redis_channel || '';
+    const ingestion = planned.ingestion || '';
+    host.innerHTML = `
+      <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <div><div class="small muted">STATUS</div><div><span class="dot ${dot}"></span> ${esc(svc.status || 'unknown')}</div></div>
+        <div><div class="small muted">URL</div><div class="mono small">${esc(svc.url || '')}</div></div>
+        <div><div class="small muted">CHECKED</div><div class="small">${esc(timeAgo(svc.checked_at) || '—')}</div></div>
+        ${channel ? `<div><div class="small muted">REDIS CHANNEL</div><div class="mono small">${esc(channel)}</div></div>` : ''}
+      </div>
+      <div class="small" style="color:var(--muted);margin-bottom:8px">
+        ${esc(ingestion)}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div class="small muted" style="margin-bottom:4px">PLANNED FIELDS</div>
+          <ul class="small" style="margin:0;padding-left:16px;color:var(--muted)">
+            ${fields.map((f) => `<li>${esc(f)}</li>`).join('')}
+          </ul>
+        </div>
+        <div>
+          <div class="small muted" style="margin-bottom:4px">PLANNED ACTIONS</div>
+          <ul class="small" style="margin:0;padding-left:16px;color:var(--muted)">
+            ${actions.map((a) => `<li>${esc(a)}</li>`).join('')}
+          </ul>
+        </div>
+      </div>
+      <div class="small" style="margin-top:10px;color:var(--muted)">
+        No live recent-calls feed yet — the receptionist's SQLite call log + OpenAI transcripts
+        will be mirrored into Cortex by a follow-up worker. Existing follow-up signals already flow
+        through Redis <code>ops:voice_followup</code> → Linear (<code>operations/linear_ops.py</code>).
+      </div>
+    `;
   }
 
   function renderWallet(data) {
@@ -789,7 +875,7 @@
       services, wallet, positions, pnlSummary, activity,
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
-      xiStats, xiQueue, meetings,
+      xiStats, xiQueue, meetings, calls,
     ] = await Promise.all([
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
@@ -809,12 +895,14 @@
       fetchJson('/api/x-intake/stats'),
       fetchJson('/api/x-intake/queue?status=pending&limit=5'),
       fetchJson('/api/meetings/recent?limit=20'),
+      fetchJson('/api/symphony/voice-receptionist'),
     ]);
 
     renderServices(services);
     renderEmails(emails);
     renderCalendar(calendar);
     renderFollowups(followups);
+    renderCalls(calls);
     renderWallet(wallet);
     renderPositions(positions);
     renderPnl(wallet, pnlSummary);
@@ -844,6 +932,12 @@
     loadProposalTemplates();
     loadCortexStats();
     checkPortalHealth();
+    loadVoiceReceptionist();
+  }
+
+  async function loadVoiceReceptionist() {
+    const data = await fetchJson('/api/symphony/voice-receptionist');
+    renderCallsSymphony(data);
   }
 
   async function checkMarkupHealth() {
