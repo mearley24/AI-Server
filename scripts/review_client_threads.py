@@ -3,21 +3,26 @@
 Interactive CLI for reviewing detected work threads from the client intel backfill.
 
 Usage:
-    python3 scripts/review_client_threads.py                    # safe mode (masked)
+    python3 scripts/review_client_threads.py                    # names-first (default)
     python3 scripts/review_client_threads.py --full             # full context for operator
-    python3 scripts/review_client_threads.py --approved-only    # assign relationship to approved threads
-    python3 scripts/review_client_threads.py --full --approved-only
-    python3 scripts/review_client_threads.py --limit 10
-    python3 scripts/review_client_threads.py --min-confidence 0.7
+    python3 scripts/review_client_threads.py --named-only       # only resolved-name threads
+    python3 scripts/review_client_threads.py --unnamed-only     # only raw-number threads
+    python3 scripts/review_client_threads.py --names-first      # named contacts first (default)
+    python3 scripts/review_client_threads.py --approved-only    # assign relationship type
+    python3 scripts/review_client_threads.py --snippets 3       # show 3 message snippets
+    python3 scripts/review_client_threads.py --no-snippets      # hide snippets
     python3 scripts/review_client_threads.py --summary
 
 Modes:
-    --safe (default)   Contacts masked, no message text shown. Safe for screen sharing.
-    --full             Full phone, contact name if known, last 3–5 message snippets.
-                       Intended for Matt only. Does not store unmasked data.
-    --approved-only    Shows already-approved threads with relationship_type='unknown'.
-                       Prompts only for relationship_type — does NOT change is_reviewed.
-                       Supports [s]=skip and [q]=quit.
+    --safe (default)   Contacts masked; safe for screen sharing.
+    --full             Full phone + contact name + message snippets (operator only).
+    --approved-only    Shows approved threads with relationship_type='unknown'.
+                       Only prompts for relationship_type — does NOT change is_reviewed.
+
+Contact filters (mutually exclusive; default: --names-first):
+    --named-only       Show only threads with a resolved contact name.
+    --unnamed-only     Show only threads without a resolved contact name.
+    --names-first      Sort named contacts first, then unnamed (default).
 
 All approvals are explicit — nothing is auto-approved.
 """
@@ -29,17 +34,17 @@ import re
 import sqlite3
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH   = REPO_ROOT / "data" / "client_intel" / "message_thread_index.sqlite"
 
-CHAT_DB   = Path.home() / "Library" / "Messages" / "chat.db"
-ABOOK_DB  = Path.home() / "Library" / "Application Support" / "AddressBook" / "AddressBook-v22.abcddb"
+CHAT_DB  = Path.home() / "Library" / "Messages" / "chat.db"
+ABOOK_DB = Path.home() / "Library" / "Application Support" / "AddressBook" / "AddressBook-v22.abcddb"
 
-SNIPPET_LIMIT = 5
-SNIPPET_WIDTH = 120
+SNIPPET_DEFAULT = 2
+SNIPPET_WIDTH   = 100
 
-# Review state values
 PENDING  = -1
 REJECTED =  0
 APPROVED =  1
@@ -52,13 +57,9 @@ VALID_RELATIONSHIP_TYPES = frozenset({
 })
 
 RELATIONSHIP_CHOICES = {
-    "c": "client",
-    "v": "vendor",
-    "b": "builder",
-    "t": "trade_partner",
-    "i": "internal_team",
-    "p": "personal_work_related",
-    "u": "unknown",
+    "c": "client", "v": "vendor", "b": "builder",
+    "t": "trade_partner", "i": "internal_team",
+    "p": "personal_work_related", "u": "unknown",
 }
 RELATIONSHIP_MENU = (
     "  [c] client          [v] vendor       [b] builder\n"
@@ -70,12 +71,10 @@ RELATIONSHIP_MENU = (
 # ── Masking ───────────────────────────────────────────────────────────────────
 
 def _mask(handle: str) -> str:
-    """Mask all but first 3 and last 2 chars: '+18609171850' → '+18***50'."""
     return handle[:3] + "***" + handle[-2:] if len(handle) > 6 else "***"
 
 
 def _norm_phone(phone: str) -> str:
-    """Strip non-digits except leading +."""
     digits = re.sub(r"[^\d]", "", phone)
     return digits[-10:] if len(digits) >= 10 else digits
 
@@ -114,38 +113,98 @@ def _lookup_contact_name(handle: str) -> str:
     return ""
 
 
-# ── Message snippets (chat.db) ────────────────────────────────────────────────
+_contact_cache: dict[str, tuple[str, str]] = {}
+
+
+def _lookup_contact_cached(handle: str) -> tuple[str, str]:
+    """Return (name, match_type). Cached per session. match_type='exact'|'none'."""
+    if handle not in _contact_cache:
+        name = _lookup_contact_name(handle)
+        _contact_cache[handle] = (name, "exact" if name else "none")
+    return _contact_cache[handle]
+
+
+def _clear_contact_cache() -> None:
+    """Clear the contact cache. Exposed for tests."""
+    _contact_cache.clear()
+
+
+# ── Contact filter / sort ─────────────────────────────────────────────────────
+
+def _apply_contact_filter(
+    resolved: list[tuple[Any, str, str]],
+    named_only: bool = False,
+    unnamed_only: bool = False,
+    names_first: bool = True,
+) -> list[tuple[Any, str, str]]:
+    """Filter and sort a list of (row, name, match_type) tuples.
+
+    named_only   — keep only rows where name is non-empty.
+    unnamed_only — keep only rows where name is empty.
+    names_first  — sort named contacts first, both groups by work_confidence desc.
+    When named_only or unnamed_only is active, names_first ordering is not applied.
+    """
+    if named_only:
+        return [(r, n, m) for r, n, m in resolved if n]
+    if unnamed_only:
+        return [(r, n, m) for r, n, m in resolved if not n]
+    if names_first:
+        return sorted(resolved, key=lambda x: (0 if x[1] else 1, -x[0]["work_confidence"]))
+    return list(resolved)
+
+
+# ── Snippet cleaning ──────────────────────────────────────────────────────────
+
+_NS_NOISE_RE = re.compile(
+    r"streamtyped|bplist\d*|NSAttributedString|NSMutableAttributedString|"
+    r"NSMutableString|NSMutableDictionary|NSDictionary|NSObject|NSString|"
+    r"NSArray|NSFont|NSColor|NSParagraphStyle|NSValue|NSNumber|NSURL|"
+    r"CTFont|CTParagraph|__NSCFString|__NSCFConstantString|"
+    r"__kIMMessagePartAttributeName|kIMMessagePartAttributeName",
+    re.IGNORECASE,
+)
+_JUNK_FRAG_RE = re.compile(r"\b(__\w+|iI)\b|[+&]{2,}")
+
+
+def _clean_snippet(text: str, width: int = SNIPPET_WIDTH) -> str:
+    """Strip decoder garbage and truncate to width characters."""
+    if not text:
+        return ""
+    text = text.replace("ï¿¼", "").replace("ï»¿", "").replace("�", "")
+    text = _NS_NOISE_RE.sub(" ", text)
+    text = _JUNK_FRAG_RE.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:width]
+
+
+def _is_junk_snippet(text: str) -> bool:
+    """Return True if the snippet is too short or mostly non-alphanumeric noise."""
+    if len(text) < 5:
+        return True
+    return sum(1 for c in text if c.isalnum()) < 3
+
 
 def _decode_attr_body(blob: bytes) -> str:
-    """Extract human-readable text from an NSAttributedString binary blob.
-
-    Messages.app uses NSArchiver streamtyped format. Strategy: decode as latin-1,
-    strip ObjC class-name tokens and binary noise, keep printable runs.
-    """
+    """Extract human-readable text from an NSAttributedString binary blob."""
     if not blob:
         return ""
     try:
         raw = blob.decode("latin-1", errors="replace")
-        # Strip known ObjC/NSArchiver class names and binary prefix tokens
-        raw = re.sub(
-            r"streamtyped|bplist\d*|NSAttributedString|NSMutableAttributedString|"
-            r"NSMutableString|NSMutableDictionary|NSDictionary|NSObject|NSString|"
-            r"NSArray|NSFont|NSColor|NSParagraphStyle|NSValue|NSNumber|NSURL|"
-            r"CTFont|CTParagraph|__NSCFString|__kIMMessagePartAttributeName|kIMMessagePartAttributeName",
-            " ", raw
-        )
-        # Keep printable ASCII + Latin-1 supplement
+        raw = _NS_NOISE_RE.sub(" ", raw)
         cleaned = re.sub(r"[^\x20-\x7e\xa0-\xff]+", " ", raw)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        # Discard short noise fragments between spaces
         words = [w for w in cleaned.split() if len(w) >= 2]
-        result = " ".join(words).strip()
-        return result[:SNIPPET_WIDTH] if len(result) > 4 else ""
+        return _clean_snippet(" ".join(words).strip())
     except Exception:
         return ""
 
-def _fetch_snippets(chat_guid: str, n: int = SNIPPET_LIMIT) -> list[dict]:
-    """Return last n messages from a thread as {direction, text}."""
+
+def _fetch_snippets(
+    chat_guid: str,
+    n: int = SNIPPET_DEFAULT,
+    width: int = SNIPPET_WIDTH,
+) -> list[dict]:
+    """Return last n clean messages from a thread as {direction, text}."""
     if not CHAT_DB.is_file():
         return []
     snippets: list[dict] = []
@@ -161,17 +220,19 @@ def _fetch_snippets(chat_guid: str, n: int = SNIPPET_LIMIT) -> list[dict]:
             "  AND m.date > 0 "
             "ORDER BY m.date DESC "
             "LIMIT ?",
-            (chat_guid, n),
+            (chat_guid, n * 3),
         ).fetchall()
         conn.close()
         for text, attr_body, is_from_me in reversed(rows):
-            body = (text or "").strip()
+            if len(snippets) >= n:
+                break
+            body = _clean_snippet((text or "").strip(), width)
             if not body and attr_body:
                 body = _decode_attr_body(attr_body)
-            if body:
+            if body and not _is_junk_snippet(body):
                 snippets.append({
                     "direction": "sent" if is_from_me else "received",
-                    "text": body[:SNIPPET_WIDTH],
+                    "text": body,
                 })
     except Exception:
         pass
@@ -201,7 +262,6 @@ def set_relationship(conn: sqlite3.Connection, thread_id: str, rel_type: str) ->
 
 
 def prompt_relationship(conn: sqlite3.Connection, thread_id: str) -> str:
-    """Prompt operator to select a relationship type after approving. Returns chosen type."""
     print(f"\n       Select relationship type:")
     print(RELATIONSHIP_MENU)
     while True:
@@ -222,6 +282,11 @@ def prompt_relationship(conn: sqlite3.Connection, thread_id: str) -> str:
 
 # ── Display ───────────────────────────────────────────────────────────────────
 
+def _count_named_unnamed(handles: list[str]) -> tuple[int, int]:
+    named = sum(1 for h in handles if _lookup_contact_cached(h)[0])
+    return named, len(handles) - named
+
+
 def print_summary(conn: sqlite3.Connection) -> None:
     rows = conn.execute(
         "SELECT category, is_reviewed, COUNT(*) as n FROM threads GROUP BY category, is_reviewed"
@@ -234,55 +299,76 @@ def print_summary(conn: sqlite3.Connection) -> None:
         total = sum(statuses.values())
         parts = "  ".join(f"{k}={v}" for k, v in sorted(statuses.items()))
         print(f"  {cat:10s}  total={total:3d}  {parts}")
-    pending = conn.execute(
-        "SELECT COUNT(*) FROM threads WHERE category='work' AND is_reviewed=-1"
-    ).fetchone()[0]
-    approved = conn.execute(
-        "SELECT COUNT(*) FROM threads WHERE is_reviewed=1"
-    ).fetchone()[0]
+
+    pending_handles = [r[0] for r in conn.execute(
+        "SELECT contact_handle FROM threads WHERE category='work' AND is_reviewed=-1"
+    ).fetchall()]
+    pending_named, pending_unnamed = _count_named_unnamed(pending_handles)
+
+    approved_handles = [r[0] for r in conn.execute(
+        "SELECT contact_handle FROM threads WHERE is_reviewed=1"
+    ).fetchall()]
+    approved_named, approved_unnamed = _count_named_unnamed(approved_handles)
+
+    pending_total = len(pending_handles)
+    approved_total = len(approved_handles)
     unclassified = conn.execute(
         "SELECT COUNT(*) FROM threads WHERE is_reviewed=1 AND "
         "coalesce(relationship_type,'unknown')='unknown'"
     ).fetchone()[0]
-    print(f"\n  Pending work review : {pending}")
-    print(f"  Approved total      : {approved}")
+
+    print(f"\n  Pending work review : {pending_total}  (named={pending_named}  unnamed={pending_unnamed})")
+    print(f"  Approved total      : {approved_total}  (named={approved_named}  unnamed={approved_unnamed})")
     if unclassified:
         print(f"  Needs relationship  : {unclassified}  (run --approved-only to assign)")
     print()
 
 
-def _print_thread_safe(i: int, total: int, r: sqlite3.Row) -> None:
-    """Minimal masked display."""
+def _print_thread_safe(
+    i: int,
+    total: int,
+    r: Any,
+    name: str = "",
+    match_type: str = "none",
+) -> None:
     masked    = _mask(r["contact_handle"])
     codes     = json.loads(r["reason_codes"] or "[]")
     codes_str = ", ".join(codes[:3]) if codes else "(none)"
     date_rng  = f"{(r['date_first'] or '')[:10]} → {(r['date_last'] or '')[:10]}"
-    print(f"[{i}/{total}] {masked}")
+    is_named  = "yes" if name else "no"
+    print(f"[{i}/{total}] {masked}  named={is_named}  contact_match={match_type}")
     print(f"       msgs={r['message_count']}  conf={r['work_confidence']:.2f}  {date_rng}")
     print(f"       signals: {codes_str}")
 
 
-def _print_thread_full(i: int, total: int, r: sqlite3.Row) -> None:
-    """Expanded display with full phone, name, and message snippets."""
+def _print_thread_full(
+    i: int,
+    total: int,
+    r: Any,
+    name: str = "",
+    match_type: str = "none",
+    snippets: int = SNIPPET_DEFAULT,
+    show_snippets: bool = True,
+) -> None:
     handle    = r["contact_handle"]
-    name      = _lookup_contact_name(handle)
     codes     = json.loads(r["reason_codes"] or "[]")
     codes_str = ", ".join(codes[:4]) if codes else "(none)"
     date_rng  = f"{(r['date_first'] or '')[:10]} → {(r['date_last'] or '')[:10]}"
 
     header = f"{name} ({handle})" if name else handle
-    print(f"[{i}/{total}] {header}")
+    print(f"[{i}/{total}] {header}  contact_match={match_type}")
     print(f"       msgs={r['message_count']}  conf={r['work_confidence']:.2f}  {date_rng}")
     print(f"       signals: {codes_str}")
 
-    snippets = _fetch_snippets(r["chat_guid"])
-    if snippets:
-        print("       recent:")
-        for s in snippets:
-            arrow = "→" if s["direction"] == "sent" else "←"
-            print(f"         {arrow} \"{s['text']}\"")
-    else:
-        print("       recent: (no text snippets available)")
+    if show_snippets:
+        snips = _fetch_snippets(r["chat_guid"], n=snippets)
+        if snips:
+            print("       recent:")
+            for s in snips:
+                arrow = "→" if s["direction"] == "sent" else "←"
+                print(f"         {arrow} \"{s['text']}\"")
+        else:
+            print("       recent: (no text snippets available)")
 
 
 def _print_session_summary(approved: int, rejected: int, skipped: int) -> None:
@@ -298,6 +384,11 @@ def run_review(
     min_confidence: float = 0.5,
     category: str = "work",
     full: bool = False,
+    named_only: bool = False,
+    unnamed_only: bool = False,
+    names_first: bool = True,
+    snippets: int = SNIPPET_DEFAULT,
+    show_snippets: bool = True,
 ) -> None:
     rows = conn.execute(
         "SELECT thread_id, chat_guid, contact_handle, message_count, date_first, date_last, "
@@ -309,21 +400,26 @@ def run_review(
         (PENDING, category, min_confidence, limit),
     ).fetchall()
 
-    if not rows:
-        print(f"\n✓ No pending {category} threads to review (confidence ≥ {min_confidence}).")
+    resolved: list[tuple[Any, str, str]] = [
+        (r, *_lookup_contact_cached(r["contact_handle"])) for r in rows
+    ]
+    resolved = _apply_contact_filter(resolved, named_only, unnamed_only, names_first)
+
+    if not resolved:
+        print(f"\n✓ No pending {category} threads matching current filter (confidence ≥ {min_confidence}).")
         return
 
     mode_label = "FULL CONTEXT" if full else "SAFE (masked)"
-    print(f"\n=== Review {len(rows)} pending {category} threads  [{mode_label}] ===")
+    print(f"\n=== Review {len(resolved)} pending {category} threads  [{mode_label}] ===")
     print("  [y] approve  [n] reject  [s] skip  [q] quit\n")
 
     approved_count = rejected_count = skipped_count = 0
 
-    for i, r in enumerate(rows, 1):
+    for i, (r, name, match_type) in enumerate(resolved, 1):
         if full:
-            _print_thread_full(i, len(rows), r)
+            _print_thread_full(i, len(resolved), r, name, match_type, snippets, show_snippets)
         else:
-            _print_thread_safe(i, len(rows), r)
+            _print_thread_safe(i, len(resolved), r, name, match_type)
 
         while True:
             try:
@@ -357,18 +453,19 @@ def run_review(
     _print_session_summary(approved_count, rejected_count, skipped_count)
 
 
-# ── Relationship-only review (for already-approved threads) ──────────────────
+# ── Relationship-only review ──────────────────────────────────────────────────
 
 def run_relationship_review(
     conn: sqlite3.Connection,
     limit: int = 50,
     full: bool = False,
+    named_only: bool = False,
+    unnamed_only: bool = False,
+    names_first: bool = True,
+    snippets: int = SNIPPET_DEFAULT,
+    show_snippets: bool = True,
 ) -> None:
-    """Review approved threads that have no relationship_type set yet.
-
-    Does NOT change is_reviewed. Only prompts for relationship_type.
-    Supports [s]=skip and [q]=quit in addition to the type choices.
-    """
+    """Review approved threads with no relationship_type set. Does NOT change is_reviewed."""
     rows = conn.execute(
         "SELECT thread_id, chat_guid, contact_handle, message_count, date_first, date_last, "
         "category, work_confidence, reason_codes, is_reviewed, "
@@ -380,23 +477,28 @@ def run_relationship_review(
         (limit,),
     ).fetchall()
 
-    if not rows:
-        print("\n✓ No approved threads with unset relationship_type.")
+    resolved: list[tuple[Any, str, str]] = [
+        (r, *_lookup_contact_cached(r["contact_handle"])) for r in rows
+    ]
+    resolved = _apply_contact_filter(resolved, named_only, unnamed_only, names_first)
+
+    if not resolved:
+        print("\n✓ No approved threads with unset relationship_type matching current filter.")
         return
 
     mode_label = "FULL CONTEXT" if full else "SAFE (masked)"
-    print(f"\n=== Assign relationship type: {len(rows)} approved thread(s)  [{mode_label}] ===")
+    print(f"\n=== Assign relationship type: {len(resolved)} approved thread(s)  [{mode_label}] ===")
     print("  Approved threads only — is_reviewed will NOT change.")
     print(f"  {RELATIONSHIP_MENU}")
     print("  [s] skip  [q] quit\n")
 
     classified_count = skipped_count = 0
 
-    for i, r in enumerate(rows, 1):
+    for i, (r, name, match_type) in enumerate(resolved, 1):
         if full:
-            _print_thread_full(i, len(rows), r)
+            _print_thread_full(i, len(resolved), r, name, match_type, snippets, show_snippets)
         else:
-            _print_thread_safe(i, len(rows), r)
+            _print_thread_safe(i, len(resolved), r, name, match_type)
 
         while True:
             try:
@@ -435,6 +537,10 @@ def main() -> None:
 examples:
   python3 scripts/review_client_threads.py --summary
   python3 scripts/review_client_threads.py --full --limit 10
+  python3 scripts/review_client_threads.py --full --named-only
+  python3 scripts/review_client_threads.py --full --unnamed-only
+  python3 scripts/review_client_threads.py --full --snippets 5
+  python3 scripts/review_client_threads.py --full --no-snippets
   python3 scripts/review_client_threads.py --safe --min-confidence 0.7
   python3 scripts/review_client_threads.py --full --approved-only
 """,
@@ -445,15 +551,33 @@ examples:
     parser.add_argument("--summary", action="store_true",
                         help="Show counts only, skip review loop")
     parser.add_argument("--approved-only", action="store_true",
-                        help="Assign relationship_type to already-approved threads "
-                             "that have relationship_type='unknown'. "
-                             "Does not change approval status.")
+                        help="Assign relationship_type to approved threads with type='unknown'")
+
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--safe", dest="full", action="store_false", default=False,
                       help="Masked display — safe for screen sharing (default)")
     mode.add_argument("--full", dest="full", action="store_true",
-                      help="Full phone + contact name + message snippets (operator only)")
+                      help="Full phone + contact name + snippets (operator only)")
+
+    contact_filter = parser.add_mutually_exclusive_group()
+    contact_filter.add_argument("--named-only", action="store_true",
+                                help="Show only threads with a resolved contact name")
+    contact_filter.add_argument("--unnamed-only", action="store_true",
+                                help="Show only threads without a resolved contact name")
+    contact_filter.add_argument("--names-first", action="store_true",
+                                help="Sort named contacts first (default behavior)")
+
+    parser.add_argument("--snippets", type=int, default=SNIPPET_DEFAULT, metavar="N",
+                        help=f"Number of message snippets to show (default {SNIPPET_DEFAULT})")
+    parser.add_argument("--no-snippets", action="store_true",
+                        help="Hide message snippets entirely")
+
     args = parser.parse_args()
+
+    named_only   = args.named_only
+    unnamed_only = args.unnamed_only
+    names_first  = not (named_only or unnamed_only)
+    show_snippets = not args.no_snippets
 
     conn = _open_db()
     try:
@@ -461,17 +585,18 @@ examples:
         if not args.summary:
             if args.approved_only:
                 run_relationship_review(
-                    conn,
-                    limit=args.limit,
-                    full=args.full,
+                    conn, limit=args.limit, full=args.full,
+                    named_only=named_only, unnamed_only=unnamed_only,
+                    names_first=names_first, snippets=args.snippets,
+                    show_snippets=show_snippets,
                 )
             else:
                 run_review(
-                    conn,
-                    limit=args.limit,
-                    min_confidence=args.min_confidence,
-                    category=args.category,
-                    full=args.full,
+                    conn, limit=args.limit, min_confidence=args.min_confidence,
+                    category=args.category, full=args.full,
+                    named_only=named_only, unnamed_only=unnamed_only,
+                    names_first=names_first, snippets=args.snippets,
+                    show_snippets=show_snippets,
                 )
     finally:
         conn.close()
