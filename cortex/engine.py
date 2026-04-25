@@ -2049,40 +2049,21 @@ def _rel_priority(rel_type: str) -> tuple[float, str, int]:
     return _FOLLOW_UP_PRIORITY.get(rel_type, _DEFAULT_PRIORITY)
 
 
-@app.get("/api/x-intake/follow-ups", tags=["x-intake"])
-async def x_intake_follow_ups(
+def _compute_follow_ups(
     threshold_hours: float = -1.0,
     include_internal: bool = False,
-    limit: int = 20,
-) -> dict[str, Any]:
-    """Return inbound messages that need a follow-up reply, prioritised by relationship.
+) -> list[dict]:
+    """Return all overdue follow-up items, sorted by priority then overdue age.
 
-    Priority thresholds (relationship-aware defaults):
-      client          → urgent  after 2 h
-      builder         → high    after 3 h
-      trade_partner   → medium  after 4 h
-      vendor          → medium  after 6 h
-      personal_work   → low     after 12 h
-      unknown         → review  after 8 h
-      internal_team   → ignored (unless include_internal=true, uses 24 h)
-
-    Sorted: priority rank first (urgent → low), then oldest overdue first.
-
-    threshold_hours  — override per-type defaults when >= 0 (useful for testing)
-    include_internal — surface internal_team follow-ups (default false)
-    limit            — max items returned (default 20)
-
-    Returns only internal Cortex data — no messages are sent.
+    Includes the internal ``priority_rank`` field so callers can slice/sort.
+    Callers that return to the API must pop ``priority_rank`` before responding.
     """
     now = _time.time()
     override = threshold_hours if threshold_hours >= 0 else None
 
     rows = _queue_rows_with_context(limit=500)
     if not rows:
-        return {
-            "status": "ok", "count": 0, "follow_ups": [],
-            "threshold_hours_override": override,
-        }
+        return []
 
     # Parse context JSON; skip rows without a valid contact
     enriched: list[dict] = []
@@ -2132,18 +2113,15 @@ async def x_intake_follow_ups(
         threshold_h = override if override is not None else (
             default_threshold_h if default_threshold_h is not None else 24.0
         )
-        threshold_s = threshold_h * 3600
-
         elapsed = now - item["created_at"]
-        if elapsed < threshold_s:
+        if elapsed < threshold_h * 3600:
             continue                                # Not yet overdue
 
         latest_approved_at = approvals.get(item["contact_masked"], 0.0)
-        has_approved = latest_approved_at > item["created_at"]
-        if has_approved:
+        if latest_approved_at > item["created_at"]:
             continue                                # Already replied
 
-        overdue_s = elapsed - threshold_s
+        overdue_s = elapsed - threshold_h * 3600
         item["has_approved_reply"]   = False
         item["elapsed_seconds"]      = round(elapsed)
         item["elapsed_hours"]        = round(elapsed / 3600, 1)
@@ -2155,18 +2133,62 @@ async def x_intake_follow_ups(
 
     # Sort: priority rank (urgent first), then oldest overdue first
     follow_ups.sort(key=lambda x: (x["priority_rank"], -x["overdue_by_hours"]))
-    follow_ups = follow_ups[:limit]
+    return follow_ups
 
-    # Strip internal sort key before returning
+
+@app.get("/api/x-intake/follow-ups", tags=["x-intake"])
+async def x_intake_follow_ups(
+    threshold_hours: float = -1.0,
+    include_internal: bool = False,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return inbound messages that need a follow-up reply, prioritised by relationship.
+
+    Priority thresholds (relationship-aware defaults):
+      client          → urgent  after 2 h
+      builder         → high    after 3 h
+      trade_partner   → medium  after 4 h
+      vendor          → medium  after 6 h
+      personal_work   → low     after 12 h
+      unknown         → review  after 8 h
+      internal_team   → ignored (unless include_internal=true, uses 24 h)
+
+    Sorted: priority rank first (urgent → low), then oldest overdue first.
+
+    threshold_hours  — override per-type defaults when >= 0 (useful for testing)
+    include_internal — surface internal_team follow-ups (default false)
+    limit            — max items returned (default 20)
+
+    Returns only internal Cortex data — no messages are sent.
+    """
+    override = threshold_hours if threshold_hours >= 0 else None
+    follow_ups = _compute_follow_ups(threshold_hours=threshold_hours,
+                                     include_internal=include_internal)
+    follow_ups = follow_ups[:limit]
     for f in follow_ups:
         f.pop("priority_rank", None)
-
     return {
-        "status":                  "ok",
-        "count":                   len(follow_ups),
+        "status":                   "ok",
+        "count":                    len(follow_ups),
         "threshold_hours_override": override,
-        "follow_ups":              follow_ups,
+        "follow_ups":               follow_ups,
     }
+
+
+@app.get("/api/x-intake/follow-up-count", tags=["x-intake"])
+async def x_intake_follow_up_count(
+    threshold_hours: float = -1.0,
+    include_internal: bool = False,
+) -> dict[str, Any]:
+    """Return prioritized follow-up counts for the header alert badge.
+
+    Returns only internal Cortex data — no messages are sent.
+    """
+    items = _compute_follow_ups(threshold_hours=threshold_hours,
+                                include_internal=include_internal)
+    urgent = sum(1 for i in items if i["priority"] == "urgent")
+    high   = sum(1 for i in items if i["priority"] == "high")
+    return {"total": len(items), "urgent": urgent, "high": high}
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────

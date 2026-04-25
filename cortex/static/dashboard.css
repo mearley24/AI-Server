@@ -70,6 +70,18 @@ nav.tabs {
 }
 .tab-count.hidden { display: none; }
 
+/* ── Follow-up header alert ───────────────────────────────────────────────── */
+.fu-alert {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 11px; border-radius: 100px;
+  background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.35);
+  color: var(--red); font-size: 11px; font-weight: 600;
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+  transition: background 0.15s;
+}
+.fu-alert:hover { background: rgba(248,113,113,0.22); }
+.fu-alert.hidden { display: none; }
+
 /* ── Tab panels ──────────────────────────────────────────────────────────── */
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }

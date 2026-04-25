@@ -1716,4 +1716,43 @@
     }).join('');
   }
 
+  // ── Follow-up header alert ──────────────────────────────────────────────────
+
+  function _updateFollowUpAlert(data) {
+    const el = $('fu-header-alert');
+    const tx = $('fu-alert-text');
+    if (!el || !tx) return;
+    if (!data || !data.total) {
+      el.classList.add('hidden');
+      return;
+    }
+    const n = data.total;
+    let html = `⚠️ ${n} follow-up${n !== 1 ? 's' : ''} needed`;
+    if (data.urgent > 0) {
+      html += ` · <span style="color:var(--red);font-weight:700;">${data.urgent} urgent</span>`;
+    } else if (data.high > 0) {
+      html += ` · <span style="color:#f97316;">${data.high} high</span>`;
+    }
+    tx.innerHTML = html;
+    el.classList.remove('hidden');
+  }
+
+  window.goToFollowUps = function goToFollowUps() {
+    switchTab('xintake');
+    setTimeout(() => {
+      const card = $('xi-fu-card');
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+  };
+
+  async function _pollFollowUpAlert() {
+    try {
+      const data = await fetchJson('/api/x-intake/follow-up-count');
+      _updateFollowUpAlert(data);
+    } catch (_) { /* silent — never break the dashboard */ }
+  }
+
+  _pollFollowUpAlert();
+  setInterval(_pollFollowUpAlert, 30_000);
+
 })();
