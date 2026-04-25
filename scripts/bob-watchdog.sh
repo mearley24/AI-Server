@@ -261,25 +261,52 @@ check_docker() {
     docker_healthy && return
 
     log_alert "Docker Desktop is down or in zombie state"
-    in_cooldown "docker" 180 && { log "  cooldown, skip"; return; }
+    # 5-minute cooldown: never restart Docker Desktop more than once per 5 min.
+    in_cooldown "docker" 300 && { log "  cooldown, skip"; return; }
 
     if [[ "$MODE" == "dry-run" ]]; then
         log "  [dry-run] would restart Docker Desktop"
         return
     fi
 
-    # Kill lingering helpers so the new Docker Desktop has a clean backend.
-    pkill -9 -x docker 2>/dev/null || true
-    pkill -9 -f 'com.docker.backend' 2>/dev/null || true
-    pkill -9 -f 'Docker Desktop Helper' 2>/dev/null || true
-    sleep 3
+    # Prefer the standalone recovery script (has its own cooldown + wait logic).
+    local recover_script="$REPO_DIR/scripts/docker-recover.sh"
+    if [[ -x "$recover_script" ]]; then
+        log "  Delegating to docker-recover.sh"
+        if "$recover_script"; then
+            log "  docker-recover.sh succeeded"
+        else
+            log_alert "  docker-recover.sh failed — escalating"
+            mkdir -p "$REPO_DIR/ops/alerts" 2>/dev/null
+            echo "$(date '+%Y-%m-%dT%H:%M:%S%z') docker_recover_failed" \
+                >> "$REPO_DIR/ops/alerts/bob_watchdog.alerts"
+        fi
+        mark_action "docker"
+        return
+    fi
 
-    # Reopen Docker Desktop. open(1) will relaunch Docker.app if not running.
+    # Inline fallback when docker-recover.sh is not available:
+    # Graceful quit → wait for com.docker.backend to exit → reopen.
+    log "  Gracefully quitting Docker Desktop..."
+    osascript -e 'quit app "Docker"' 2>/dev/null || true
+
+    local exit_waited=0
+    while pgrep -f "com.docker.backend" >/dev/null 2>&1; do
+        if (( exit_waited >= 20 )); then
+            log "  com.docker.backend still alive after ${exit_waited}s — force-killing"
+            pkill -KILL -f "com.docker.backend" 2>/dev/null || true
+            pkill -KILL -f "Docker Desktop Helper" 2>/dev/null || true
+            sleep 3; break
+        fi
+        sleep 2; exit_waited=$(( exit_waited + 2 ))
+    done
+    log "  com.docker.backend gone after ${exit_waited}s — reopening Docker"
+
     open -a Docker 2>/dev/null
 
     local waited=0
     while (( waited < 120 )); do
-        sleep 5; waited=$((waited + 5))
+        sleep 5; waited=$(( waited + 5 ))
         docker_healthy && {
             log "  Docker ready after ${waited}s"
             mark_action "docker"
@@ -288,7 +315,6 @@ check_docker() {
         }
     done
     log_alert "Docker failed to recover in 120s — escalating"
-    # Escalate: touch a breadcrumb the notification-hub / task-runner picks up
     mkdir -p "$REPO_DIR/ops/alerts" 2>/dev/null
     echo "$(date '+%Y-%m-%dT%H:%M:%S%z') docker_recover_failed" \
         >> "$REPO_DIR/ops/alerts/bob_watchdog.alerts"
@@ -499,12 +525,17 @@ check_unhealthy() {
 
     for c in $uhc; do
         in_cooldown "uh_${c}" 300 && continue
-        log_alert "Unhealthy: $c — restarting"
+        log_alert "Unhealthy: $c — restarting via compose"
         if [[ "$MODE" == "dry-run" ]]; then
-            log "  [dry-run] would restart $c"
+            log "  [dry-run] would docker compose restart $c"
             continue
         fi
-        docker restart "$c" 2>>"$LOG"
+        # Prefer compose restart (respects compose config) over direct docker restart.
+        if [[ -n "$REPO_DIR" && -f "$REPO_DIR/docker-compose.yml" ]]; then
+            ( cd "$REPO_DIR" && "${COMPOSE[@]}" restart "$c" ) 2>>"$LOG"
+        else
+            docker restart "$c" 2>>"$LOG"
+        fi
         mark_action "uh_${c}"
     done
 }
@@ -518,7 +549,11 @@ check_email_dns() {
     in_cooldown "email_dns" 120 && return
     log_alert "Email monitor stale DNS — restarting"
     [[ "$MODE" == "dry-run" ]] && { log "  [dry-run] would restart email-monitor"; return; }
-    docker restart email-monitor 2>>"$LOG"
+    if [[ -n "$REPO_DIR" && -f "$REPO_DIR/docker-compose.yml" ]]; then
+        ( cd "$REPO_DIR" && "${COMPOSE[@]}" restart email-monitor ) 2>>"$LOG"
+    else
+        docker restart email-monitor 2>>"$LOG"
+    fi
     mark_action "email_dns"
 }
 
@@ -545,7 +580,11 @@ check_x_intake() {
 
     log_alert "Restarting x-intake container"
     [[ "$MODE" == "dry-run" ]] && { log "  [dry-run] would restart x-intake"; return; }
-    docker restart x-intake 2>>"$LOG"
+    if [[ -n "$REPO_DIR" && -f "$REPO_DIR/docker-compose.yml" ]]; then
+        ( cd "$REPO_DIR" && "${COMPOSE[@]}" restart x-intake ) 2>>"$LOG"
+    else
+        docker restart x-intake 2>>"$LOG"
+    fi
     mark_action "x_intake"
     rm -f "$strike_file" 2>/dev/null
 

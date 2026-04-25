@@ -3491,6 +3491,13 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - ~~[FOLLOWUP] docker image prune -a reclaim 8.67 GB~~ ✅ Done 2026-04-24 — 432 MB reclaimed (remainder was active shared layers).
 - ~~[FOLLOWUP] vpn healthcheck investigation~~ ✅ Done 2026-04-24 — ping -c 1 -W 3, timeout 8s, start_period 60s. See commit `4efdbc3b`.
 
+## Docker Restart Safety Policy (2026-04-25 UTC, Claude Code)
+- `scripts/docker-recover.sh` rewritten: 30s probe before declaring unhealthy, graceful quit before kill, waits for `com.docker.backend` to exit before reopening, 5-min cooldown file (`/tmp/docker-recover-cooldown`), `--force` flag for operator override.
+- `scripts/safe-service-restart.sh <service>` added: checks docker once (10s), uses `docker compose restart`, calls `docker-recover.sh` only if engine is down — never restarts Docker Desktop for one unhealthy container.
+- `scripts/docker-diagnose.sh` added: read-only snapshot of `docker ps`, Docker PIDs, launchctl entries, socket/vmnetd status, last 50 Docker Desktop log lines.
+- `bob-watchdog.sh` updated: `check_docker()` cooldown 180s → 300s, graceful-quit + wait-for-exit replaces immediate `pkill -9`; delegates to `docker-recover.sh` when available. `check_unhealthy()`, `check_email_dns()`, `check_x_intake()` all switched from `docker restart` to `docker compose restart`.
+- Runbook: `ops/runbooks/2026-04-25-docker-restart-safety-policy.md`
+
 ## Docker Memory + VPN Fixes Applied (2026-04-24 UTC, Claude Code)
 - rsshub mem_limit 256m → 512m (was 87% of limit, now 41%)
 - dtools-bridge mem_limit 256m → 512m (was 78% of limit)
