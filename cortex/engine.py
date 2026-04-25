@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -1064,6 +1065,99 @@ def _receipts_for_handle(handle: str, limit: int = 5) -> list[dict]:
     return results
 
 
+# ── Reply quality helpers ──────────────────────────────────────────────────────
+
+# Safe fallback used whenever source facts are too messy to produce clean text.
+SAFE_FALLBACK_REPLY = "Thanks for the heads up — I'll take a look and get back to you shortly."
+
+# Speech-fragment patterns that disqualify a fact value from direct injection.
+# These indicate the value is a raw client transcript, not a clean descriptor.
+_SPEECH_FRAGMENT_RE = re.compile(
+    r"""
+    \bgive\s+me\b   |   # "give me call"
+    \bcall\s+me\b   |   # "call me back"
+    \bas\s+am\b     |   # "as am trying"
+    \bam\s+trying\b |   # "I am trying to"
+    \bas\s+soon\s+as\b |
+    \bneed\s+to\s+reach\b |
+    \btrying\s+to\s+setup\b |
+    \btrying\s+to\s+get\b |
+    \bI\s+am\b      |   # first-person client fragment
+    \bI'll\b        |   # client writing "I'll ..."
+    \bI\s+need\b    |   # "I need..."
+    \bI\s+want\b    |   # "I want..."
+    \bwe\s+need\b
+    """,
+    re.I | re.VERBOSE,
+)
+
+# Post-generation quality checks: patterns that should never appear in a
+# client-facing draft reply.
+_DRAFT_QUALITY_CHECKS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"sounds\s+like\s+give\b", re.I),          "fragment: 'sounds like give...'"),
+    (re.compile(r"sounds\s+like\s+call\b", re.I),          "fragment: 'sounds like call...'"),
+    (re.compile(r"sounds\s+like\s+get\b", re.I),           "fragment: 'sounds like get...'"),
+    (re.compile(r"sounds\s+like\s+\w+\s+me\b", re.I),      "fragment: 'sounds like {verb} me'"),
+    (re.compile(r"\bgive\s+me\s+call\b", re.I),            "speech fragment: 'give me call'"),
+    (re.compile(r"\bas\s+am\s+trying\b", re.I),            "speech fragment: 'as am trying'"),
+    (re.compile(r"\bam\s+trying\s+to\b", re.I),            "speech fragment: 'am trying to'"),
+    (re.compile(r"\bas\s+soon\s+as\s+you\s+can\b", re.I),  "speech fragment: 'as soon as you can'"),
+    (re.compile(r"\bneed\s+to\s+reach\b", re.I),           "speech fragment: 'need to reach'"),
+    (re.compile(r"\bI'll\s+take\s+a\s+look.*sounds\s+like\s+[a-z]", re.I),
+                                                            "stitched: verb fragment after 'sounds like'"),
+]
+
+
+def _is_clean_for_injection(text: str) -> bool:
+    """Return True if a fact value is safe to use verbatim in a client-facing reply.
+
+    Fact values extracted from iMessage content are often raw speech fragments
+    ("give me call as soon as you can...") rather than clean descriptors.
+    Equipment and system names (Sonos, WiFi, Lutron) are always safe.
+    Short action phrases under 8 words with no speech-fragment markers are safe.
+    """
+    t = text.strip()
+    if not t:
+        return False
+    # Equipment/brand names are always clean even when short
+    if re.match(
+        r"^(sonos|lutron|control4|araknis|wattbox|episode|triad|pakedge|snapav|vantage|"
+        r"wifi|wi-fi|network|theater|alarm|camera|shade|keypad|dimmer|lighting|audio|rack)$",
+        t, re.I,
+    ):
+        return True
+    # Too many words → likely a speech transcript
+    if len(t.split()) > 8:
+        return False
+    # Known speech-fragment patterns
+    if _SPEECH_FRAGMENT_RE.search(t):
+        return False
+    # OCR/decoder artifacts
+    if re.search(r"\b(iI|lI|Il|Ii|oO|O0|0O)\b", t):
+        return False
+    return True
+
+
+def _check_draft_quality(draft: str) -> tuple[str, list[str]]:
+    """Post-generation quality check.
+
+    Returns (status, reasons):
+      status  — 'pass' | 'blocked'
+      reasons — list of quality issues found
+    """
+    reasons: list[str] = []
+    for pattern, reason in _DRAFT_QUALITY_CHECKS:
+        if pattern.search(draft):
+            reasons.append(reason)
+    # Repeated consecutive words (decoder artifact)
+    words = re.findall(r"\b\w{4,}\b", draft.lower())
+    for i in range(len(words) - 1):
+        if words[i] == words[i + 1]:
+            reasons.append(f"repeated word: '{words[i]}'")
+            break
+    return ("blocked" if reasons else "pass"), reasons
+
+
 def _build_draft_with_context(
     profile: dict,
     accepted_by_type: dict[str, list[dict]],
@@ -1071,18 +1165,20 @@ def _build_draft_with_context(
     recent_replies: list[dict],
     last_message: str = "",
 ) -> dict[str, Any]:
-    """Build a draft reply with reasoning, confidence, and source_facts.
+    """Build a draft reply with reasoning, confidence, source_facts, and quality status.
 
     Priority order:
-      1. Accepted issue + equipment facts  → service-call draft
-      2. Accepted request + equipment      → follow-up on request
-      3. Open requests from profile        → generic follow-up
-      4. Accepted equipment / system       → system check-in
-      5. Unverified issue / request        → cautious follow-up
-      6. Relationship-type fallback
-    Never hallucinates: only references facts that are explicitly present.
-    Rejected facts are already excluded upstream (is_rejected=0 SQL filter).
-    Pending facts used only as secondary signal; confidence capped at 0.75.
+      1. Accepted issue + equipment facts  → proactive service draft
+      2. Accepted issue only               → generic proactive draft
+      3. Accepted request + equipment      → equipment check-in (req goes to reasoning only)
+      4. Open requests from profile        → safe draft using system name if clean
+      5. Accepted equipment / system       → personal check-in
+      6. Unverified issue / request        → cautious draft
+      7. Relationship-type fallback
+    Quality gates:
+      - _is_clean_for_injection() applied before any fact value enters draft text
+      - _check_draft_quality() run on final draft; blocked drafts replaced with SAFE_FALLBACK_REPLY
+      - confidence downgraded when source facts are messy
     """
     rel_type = profile.get("relationship_type", "unknown")
     open_reqs = profile.get("open_requests", [])
@@ -1116,25 +1212,27 @@ def _build_draft_with_context(
     # Rules:
     #   - With prior issue history → acknowledge it, propose proactive action.
     #     Do NOT ask "when did it start" or "let me know your availability."
+    #   - Fact values are NEVER injected verbatim unless _is_clean_for_injection()
+    #     returns True. Messy fragments go into reasoning only.
     #   - Diagnostic questions only when no history exists and cause is ambiguous.
     #   - Tone: confident, personal, direct — sounds like someone who knows the system.
     draft: str
     confidence: float
+    quality_downgraded = False  # set True when source facts are too messy to use
 
     repeat_issue = len(accepted_issues) > 1   # recurring pattern
 
     if accepted_issues and accepted_equip:
-        issue = accepted_issues[0][:80]
+        # Equipment name is always safe. Issue text goes to reasoning only.
         eq    = accepted_equip[0]
+        issue = accepted_issues[0][:80]
         if repeat_issue:
-            # History shows this has happened before — acknowledge it directly.
             draft = (
                 f"I see this has come up before with your {eq}. "
                 f"I'll take a look and get to the bottom of it — "
                 f"I'll let you know what I find."
             )
         else:
-            # First reported issue — proactive, no diagnostic questions.
             draft = (
                 f"On it — I'll check your {eq} and see what's going on. "
                 f"I'll let you know what I find."
@@ -1146,29 +1244,42 @@ def _build_draft_with_context(
         confidence = 0.90
 
     elif accepted_issues:
-        # Issue known, equipment not yet identified — still proactive.
         draft = "Got it — I'll look into this and get back to you with what I find."
         reasoning_parts.append(f"Active issue: '{accepted_issues[0][:80]}'")
         confidence = 0.85
 
     elif accepted_requests and accepted_equip:
+        # Raw request text may be a speech fragment — never inject directly.
+        # Equipment name is clean; request context goes to reasoning only.
         req = accepted_requests[0][:70]
         eq  = accepted_equip[0]
-        draft = (
-            f"I'll take a look at your {eq} — "
-            f"sounds like {req}. I'll reach out once I have an update."
-        )
-        reasoning_parts += [f"Request: '{req}'", f"Equipment: '{eq}'"]
-        confidence = 0.85
+        if not _is_clean_for_injection(req):
+            quality_downgraded = True
+            reasoning_parts.append(f"Request (messy, not injected): '{req}'")
+        else:
+            reasoning_parts.append(f"Request: '{req}'")
+        reasoning_parts.append(f"Equipment: '{eq}'")
+        draft = f"I'll take a look at your {eq} and get back to you."
+        confidence = 0.85 if not quality_downgraded else 0.65
 
     elif open_reqs:
+        # open_reqs values are accepted request facts — check before injecting.
         req = open_reqs[0][:80]
-        draft = f"On it — I'll look into {req} and get back to you."
-        reasoning_parts.append(f"Open request from profile: '{req}'")
-        confidence = 0.75
+        if _is_clean_for_injection(req):
+            # Use system name if available rather than injecting the req text.
+            if systems:
+                draft = f"I'm on it — I'll check on your {systems[0]} and sort this out."
+            else:
+                draft = "I'm on it — I'll sort this out and get back to you."
+            reasoning_parts.append(f"Open request: '{req}'")
+        else:
+            draft = SAFE_FALLBACK_REPLY
+            quality_downgraded = True
+            reasoning_parts.append(f"Open request (messy, not injected): '{req}'")
+        confidence = 0.75 if not quality_downgraded else 0.55
 
     elif accepted_equip:
-        # No current issues — short personal check-in, not a support-desk question.
+        # Equipment name only — always safe to use.
         eq = accepted_equip[0]
         draft = f"Checking in on your {eq} — everything holding up okay?"
         reasoning_parts.append(f"Equipment on file: '{eq}'")
@@ -1181,17 +1292,23 @@ def _build_draft_with_context(
         confidence = 0.65
 
     elif unverified_issues:
-        # Pending facts only — cautious tone, open-ended.
+        # Unverified facts — cautious, check before injecting issue text.
         issue = unverified_issues[0][:80]
-        draft = (
-            f"Hey, just checking in — still having trouble with {issue}? "
-            f"Happy to take a look."
-        )
-        reasoning_parts.append(f"Unverified issue (pending approval): '{issue}'")
+        if _is_clean_for_injection(issue):
+            draft = (
+                f"Hey, just checking in — still having trouble with {issue}? "
+                f"Happy to take a look."
+            )
+        else:
+            draft = "Hey, checking in — everything going okay with your system?"
+            quality_downgraded = True
+            reasoning_parts.append(f"Unverified issue (messy, not injected): '{issue}'")
+        if not quality_downgraded:
+            reasoning_parts.append(f"Unverified issue (pending approval): '{issue}'")
         confidence = 0.50
 
     elif rel_type == "client" and not (open_reqs or systems):
-        # No history at all — only situation where a clarifying question is appropriate.
+        # No history — only situation where a clarifying question is appropriate.
         draft = "Hi, thanks for reaching out — what's going on?"
         reasoning_parts.append("No prior facts — open question appropriate")
         confidence = 0.30
@@ -1224,11 +1341,27 @@ def _build_draft_with_context(
     if unverified_by_type and not accepted_by_type and confidence > 0.55:
         confidence = 0.55
 
+    # ── Post-generation quality gate ──────────────────────────────────────────
+    quality_status, quality_reasons = _check_draft_quality(draft)
+    if quality_status == "blocked":
+        # Something slipped through the injection guards — use safe fallback.
+        quality_reasons.append("post-generation check caught fragment; replaced with safe fallback")
+        draft = SAFE_FALLBACK_REPLY
+        quality_status = "fallback"
+        quality_downgraded = True
+    elif quality_downgraded:
+        quality_status = "fallback"
+
+    if quality_downgraded:
+        confidence = round(min(confidence, 0.60), 2)
+
     return {
-        "draft_reply":  draft,
-        "reasoning":    "; ".join(reasoning_parts) or "No facts available.",
-        "confidence":   round(confidence, 2),
-        "source_facts": source_facts[:8],
+        "draft_reply":           draft,
+        "reasoning":             "; ".join(reasoning_parts) or "No facts available.",
+        "confidence":            round(confidence, 2),
+        "source_facts":          source_facts[:8],
+        "draft_quality_status":  quality_status,
+        "draft_quality_reasons": quality_reasons,
     }
 
 
@@ -1365,6 +1498,8 @@ async def x_intake_context_card(
         "reasoning":             built["reasoning"],
         "confidence":            built["confidence"],
         "source_facts":          built["source_facts"],
+        "draft_quality_status":  built["draft_quality_status"],
+        "draft_quality_reasons": built["draft_quality_reasons"],
     }
 
 
@@ -1458,19 +1593,38 @@ async def x_intake_approve_reply(body: dict[str, Any]) -> dict[str, Any]:
     if not body.get("approved"):
         return {"status": "not_approved", "message": "approved must be true to store an approval."}
 
-    action_id     = str(body.get("action_id", "")).strip()
-    draft_reply   = str(body.get("draft_reply", "")).strip()
-    edited_reply  = str(body.get("edited_reply", "")).strip()
-    contact_masked = str(body.get("contact_masked", "")).strip()
-    reasoning     = str(body.get("reasoning", "")).strip()
-    confidence    = float(body.get("confidence", 0.0))
+    action_id            = str(body.get("action_id", "")).strip()
+    draft_reply          = str(body.get("draft_reply", "")).strip()
+    edited_reply         = str(body.get("edited_reply", "")).strip()
+    contact_masked       = str(body.get("contact_masked", "")).strip()
+    reasoning            = str(body.get("reasoning", "")).strip()
+    confidence           = float(body.get("confidence", 0.0))
+    draft_quality_status = str(body.get("draft_quality_status", "pass")).strip()
+    draft_quality_reasons = list(body.get("draft_quality_reasons") or [])
 
     if not action_id:
         return {"status": "error", "error": "action_id required"}
 
+    # Refuse approvals for drafts flagged as blocked — operator must edit first.
+    if draft_quality_status == "blocked":
+        return {
+            "status": "blocked",
+            "error": "Draft has quality issues and cannot be approved without editing.",
+            "draft_quality_reasons": draft_quality_reasons,
+        }
+
     final_reply = edited_reply if edited_reply else draft_reply
     if not final_reply:
         return {"status": "error", "error": "draft_reply or edited_reply required"}
+
+    # Post-approve quality check on the final reply (catches edits that reintroduce fragments).
+    final_quality, final_quality_reasons = _check_draft_quality(final_reply)
+    if final_quality == "blocked" and not edited_reply:
+        return {
+            "status": "blocked",
+            "error": "Draft failed quality check — edit the reply before approving.",
+            "draft_quality_reasons": final_quality_reasons,
+        }
 
     # Sanity-check: contact_masked must not contain raw digits run > 6 chars
     # (a belt-and-suspenders guard; the UI already masks before sending).
@@ -1615,6 +1769,8 @@ async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
         "reasoning":             built["reasoning"],
         "confidence":            built["confidence"],
         "source_facts":          built["source_facts"],
+        "draft_quality_status":  built["draft_quality_status"],
+        "draft_quality_reasons": built["draft_quality_reasons"],
         "simulated":             True,
         "last_message":          last_message or None,
     }

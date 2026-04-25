@@ -263,6 +263,7 @@ class TestApprovalFlowUnit:
             "accepted_facts", "unverified_facts", "recent_replies",
             "suggested_next_action", "draft_reply", "reasoning",
             "confidence", "source_facts", "simulated",
+            "draft_quality_status", "draft_quality_reasons",
         }
         with patch("cortex.engine._profile_by_handle", return_value=self._make_profile()), \
              patch("cortex.engine._facts_for_profile", return_value=self._make_facts()), \

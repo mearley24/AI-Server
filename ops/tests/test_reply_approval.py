@@ -23,6 +23,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from cortex.engine import (
     _build_draft_with_context,
+    _is_clean_for_injection,
+    _check_draft_quality,
+    SAFE_FALLBACK_REPLY,
     _suggest_action,
     _mask_handle,
 )
@@ -125,10 +128,17 @@ class TestBuildDraftWithContext:
         assert len(result["source_facts"]) >= 2
 
     def test_open_request_from_profile_no_facts(self):
+        # Clean open_req — should produce a clean draft (req text goes to reasoning, not draft).
         profile = self._profile(open_requests=["check the Sonos at Beaver Creek"])
         result = _build_draft_with_context(profile, {}, {}, [])
-        assert "check the Sonos at Beaver Creek" in result["draft_reply"]
-        assert result["confidence"] >= 0.70
+        draft = result["draft_reply"]
+        # Req text must NOT be injected verbatim (it sounds like a transcript fragment in context)
+        # Draft must be clean and pass quality check
+        q_status, _ = _check_draft_quality(draft)
+        assert q_status == "pass", f"Draft failed quality: {draft}"
+        assert result["confidence"] >= 0.55
+        # The req context should appear in reasoning for auditability
+        assert "Beaver Creek" in result["reasoning"] or "check the Sonos" in result["reasoning"]
 
     def test_equipment_only_short_personal_checkin(self):
         """Equipment with no issues → short personal check-in, not a support-desk question."""
@@ -218,6 +228,238 @@ class TestBuildDraftWithContext:
         assert "Sonos" in verified_vals
         assert "offline" in unverified_vals
         # No "rejected" label should appear — rejected facts are excluded at DB layer
+
+
+# ── Quality gate unit tests ───────────────────────────────────────────────────
+
+class TestIsCleanForInjection:
+
+    def test_equipment_name_always_clean(self):
+        assert _is_clean_for_injection("Sonos") is True
+        assert _is_clean_for_injection("Lutron") is True
+        assert _is_clean_for_injection("WiFi") is True
+
+    def test_short_clean_phrase_ok(self):
+        assert _is_clean_for_injection("fix the network issue") is True
+        assert _is_clean_for_injection("schedule a service visit") is True
+
+    def test_speech_fragment_give_me_call(self):
+        assert _is_clean_for_injection(
+            "give me call as soon as you can as am trying to setup the WiFi"
+        ) is False
+
+    def test_speech_fragment_as_am(self):
+        assert _is_clean_for_injection("as am trying to reach you") is False
+
+    def test_speech_fragment_i_am(self):
+        assert _is_clean_for_injection("I am trying to get the network working") is False
+
+    def test_too_many_words(self):
+        assert _is_clean_for_injection(
+            "please check on the system when you can because it has been offline"
+        ) is False
+
+    def test_ocr_artifact(self):
+        assert _is_clean_for_injection("the Sonos iI offline") is False
+
+    def test_empty_string(self):
+        assert _is_clean_for_injection("") is False
+
+
+class TestCheckDraftQuality:
+
+    def test_broken_fragment_sounds_like_give(self):
+        status, reasons = _check_draft_quality(
+            "I'll take a look at your Sonos — sounds like give me call as soon as you can."
+        )
+        assert status == "blocked"
+        assert any("sounds like give" in r or "fragment" in r for r in reasons)
+
+    def test_clean_draft_passes(self):
+        status, reasons = _check_draft_quality(
+            "On it — I'll check your Sonos and see what's going on. I'll let you know."
+        )
+        assert status == "pass"
+        assert reasons == []
+
+    def test_safe_fallback_passes(self):
+        status, reasons = _check_draft_quality(SAFE_FALLBACK_REPLY)
+        assert status == "pass"
+
+    def test_repeated_word_detected(self):
+        status, reasons = _check_draft_quality(
+            "I'll check check your system and get back to you."
+        )
+        assert status == "blocked"
+        assert any("repeated" in r for r in reasons)
+
+    def test_speech_fragment_as_am_trying(self):
+        status, reasons = _check_draft_quality(
+            "On it — sounds like as am trying to setup your network."
+        )
+        assert status == "blocked"
+
+
+class TestDraftQualityIntegration:
+    """Verify messy fact values never appear in generated drafts."""
+
+    def _profile(self, **kw):
+        base = {"relationship_type": "client", "open_requests": [], "systems_or_topics": [],
+                "follow_ups": [], "summary": "", "confidence": 0.75}
+        base.update(kw)
+        return base
+
+    def _fact(self, ftype, val, accepted=True):
+        return {"fact_type": ftype, "fact_value": val, "confidence": 0.7,
+                "source_excerpt": "x", "source_timestamp": "t",
+                "is_accepted": 1 if accepted else 0, "is_rejected": 0}
+
+    def test_broken_fragment_not_in_draft(self):
+        """The classic bad case: request fact is a raw iMessage transcript."""
+        messy_request = "give me call as soon as you can as am trying to setup the WiFi network and need"
+        accepted = {
+            "request":   [self._fact("request", messy_request)],
+            "equipment": [self._fact("equipment", "Sonos")],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        draft = result["draft_reply"]
+        assert "give me call" not in draft,      f"Fragment appeared in draft: {draft}"
+        assert "as am trying" not in draft,       f"Fragment appeared in draft: {draft}"
+        assert "as soon as you can" not in draft, f"Fragment appeared in draft: {draft}"
+        assert result["draft_quality_status"] in ("pass", "fallback")
+
+    def test_broken_fragment_goes_to_reasoning_not_draft(self):
+        """Messy req must appear in reasoning (for audit) but not in draft text."""
+        messy = "give me call as soon as you can as am trying to setup"
+        accepted = {
+            "request":   [self._fact("request", messy)],
+            "equipment": [self._fact("equipment", "Sonos")],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        assert messy[:20] in result["reasoning"], "Messy fact should appear in reasoning"
+        assert messy[:20] not in result["draft_reply"], "Messy fact must not appear in draft"
+
+    def test_sonos_context_produces_clean_draft(self):
+        """Sonos equipment fact → clean, human-readable draft."""
+        accepted = {
+            "equipment": [self._fact("equipment", "Sonos")],
+            "issue":     [self._fact("issue", "offline")],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        draft = result["draft_reply"]
+        assert "Sonos" in draft
+        _q_status, _q_reasons = _check_draft_quality(draft)
+        assert _q_status == "pass", f"Clean draft failed quality check: {_q_reasons} — {draft}"
+
+    def test_network_context_produces_clean_draft(self):
+        accepted = {
+            "system":  [self._fact("system", "network")],
+            "issue":   [self._fact("issue", "not working")],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        draft = result["draft_reply"]
+        _q_status, _ = _check_draft_quality(draft)
+        assert _q_status == "pass", f"Draft failed quality: {draft}"
+
+    def test_fallback_used_when_open_req_is_messy(self):
+        """Messy open_requests → safe fallback, quality_status=fallback."""
+        profile = self._profile(
+            open_requests=["give me call as soon as you can as am trying to setup the WiFi network and need"]
+        )
+        result = _build_draft_with_context(profile, {}, {}, [])
+        assert result["draft_reply"] == SAFE_FALLBACK_REPLY
+        assert result["draft_quality_status"] == "fallback"
+        assert result["confidence"] <= 0.60
+
+    def test_clean_open_req_not_overridden(self):
+        """Clean open_request → stays in draft via system name."""
+        profile = self._profile(
+            open_requests=["schedule a service visit"],
+            systems_or_topics=["Sonos"],
+        )
+        result = _build_draft_with_context(profile, {}, {}, [])
+        assert result["draft_quality_status"] == "pass"
+        assert result["draft_reply"] != SAFE_FALLBACK_REPLY
+
+    def test_quality_status_and_reasons_always_present(self):
+        """Both fields must be in every response."""
+        result = _build_draft_with_context(self._profile(), {}, {}, [])
+        assert "draft_quality_status" in result
+        assert "draft_quality_reasons" in result
+        assert isinstance(result["draft_quality_reasons"], list)
+
+    def test_confidence_downgraded_for_messy_facts(self):
+        messy_request = "give me call as soon as you can as am trying to setup WiFi"
+        accepted = {
+            "request":   [self._fact("request", messy_request)],
+            "equipment": [self._fact("equipment", "Sonos")],
+        }
+        result = _build_draft_with_context(self._profile(), accepted, {}, [])
+        assert result["confidence"] <= 0.65, (
+            f"Confidence should be downgraded for messy facts, got {result['confidence']}"
+        )
+
+
+class TestApprovalBlockedDraft:
+
+    @pytest.fixture
+    def client(self):
+        from fastapi.testclient import TestClient
+        from cortex.engine import app
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_blocked_draft_refused(self, client):
+        """approve-reply must refuse when draft_quality_status=blocked."""
+        r = client.post("/api/x-intake/approve-reply", json={
+            "action_id":            "blocked_test_01",
+            "approved":             True,
+            "draft_reply":          "sounds like give me call as soon as you can.",
+            "contact_masked":       "+13***32",
+            "draft_quality_status": "blocked",
+            "draft_quality_reasons": ["fragment: 'sounds like give...'"],
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert d["status"] == "blocked", f"Expected blocked, got: {d}"
+        assert d.get("draft_quality_reasons")
+
+    def test_clean_draft_approved(self, client, tmp_path):
+        import cortex.engine as eng
+        orig_a, orig_r = eng._APPROVAL_LOG, eng._DRY_RUN_RECEIPT_LOG
+        eng._APPROVAL_LOG        = tmp_path / "a.ndjson"
+        eng._DRY_RUN_RECEIPT_LOG = tmp_path / "r.ndjson"
+        try:
+            r = client.post("/api/x-intake/approve-reply", json={
+                "action_id":            "clean_test_01",
+                "approved":             True,
+                "draft_reply":          "On it — I'll check your Sonos and get back to you.",
+                "contact_masked":       "+13***32",
+                "draft_quality_status": "pass",
+            })
+        finally:
+            eng._APPROVAL_LOG        = orig_a
+            eng._DRY_RUN_RECEIPT_LOG = orig_r
+        d = r.json()
+        assert d["status"] == "ok"
+
+    def test_fallback_draft_can_be_approved(self, client, tmp_path):
+        """Fallback drafts (status='fallback') must be approvable."""
+        import cortex.engine as eng
+        orig_a, orig_r = eng._APPROVAL_LOG, eng._DRY_RUN_RECEIPT_LOG
+        eng._APPROVAL_LOG        = tmp_path / "a.ndjson"
+        eng._DRY_RUN_RECEIPT_LOG = tmp_path / "r.ndjson"
+        try:
+            r = client.post("/api/x-intake/approve-reply", json={
+                "action_id":            "fallback_test_01",
+                "approved":             True,
+                "draft_reply":          SAFE_FALLBACK_REPLY,
+                "contact_masked":       "+13***32",
+                "draft_quality_status": "fallback",
+            })
+        finally:
+            eng._APPROVAL_LOG        = orig_a
+            eng._DRY_RUN_RECEIPT_LOG = orig_r
+        assert r.json()["status"] == "ok"
 
 
 # ── HTTP endpoint tests ───────────────────────────────────────────────────────

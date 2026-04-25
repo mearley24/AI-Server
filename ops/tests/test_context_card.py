@@ -87,11 +87,15 @@ def _profile(rel_type: str = "client", open_requests: list | None = None,
 class TestDraftReply:
 
     def test_draft_uses_open_request_first(self):
+        # Clean open_req produces a clean draft; req text goes to reasoning not draft.
+        from cortex.engine import _check_draft_quality
         result = _build_draft_with_context(
             _profile(open_requests=["fix the Sonos offline issue"]),
             {}, {}, [],
         )
-        assert "fix the Sonos offline issue" in result["draft_reply"]
+        q, _ = _check_draft_quality(result["draft_reply"])
+        assert q == "pass", f"Draft should pass quality: {result['draft_reply']}"
+        assert len(result["draft_reply"]) > 5
 
     def test_draft_uses_system_when_no_request(self):
         result = _build_draft_with_context(_profile(systems=["Lutron"]), {}, {}, [])
@@ -182,6 +186,7 @@ class TestContextCardIntegration:
         ]
 
     def test_known_client_returns_profile_context(self):
+        from cortex.engine import _check_draft_quality
         profile = self._make_profile()
         import json as _json
         open_reqs = _json.loads(profile["open_requests"])
@@ -191,7 +196,10 @@ class TestContextCardIntegration:
              "systems_or_topics": systems, "follow_ups": [], "summary": "", "confidence": 0.75},
             {}, {}, [],
         )
-        assert "check the Sonos system" in result["draft_reply"]
+        # Raw open_req text is no longer injected; draft uses system name (Sonos)
+        q, _ = _check_draft_quality(result["draft_reply"])
+        assert q == "pass", f"Draft should pass quality: {result['draft_reply']}"
+        assert "Sonos" in result["draft_reply"], "System name should appear in draft"
         assert profile["profile_id"] == "testprof001"
 
     def test_unknown_number_returns_no_profile(self):
@@ -297,7 +305,9 @@ class TestContextCardEndpoint:
             assert "equipment" in d["accepted_facts"]
             assert d["accepted_facts"]["equipment"][0]["fact_value"] == "Sonos"
             assert d["unverified_facts"] == {}
-            assert "check Sonos" in d["draft_reply"]
+            # Draft must be clean — Sonos equipment name should appear
+            assert "Sonos" in d["draft_reply"]
+            assert d["draft_quality_status"] == "pass"
             assert len(d["suggested_next_action"]) > 0
 
     def test_rejected_facts_absent_from_response(self, client):
