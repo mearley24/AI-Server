@@ -1639,6 +1639,16 @@ async def x_intake_context_card(
         unverified_by_type=unverified_by_type,
         recent_replies=receipts,
     )
+    # Apply Matt's reply style — falls back silently if style engine unavailable
+    try:
+        from cortex.style_engine import apply_style as _apply_style
+        styled_draft, style_applied, style_confidence = _apply_style(
+            built["draft_reply"],
+            context={"relationship_type": profile.get("relationship_type", "")},
+        )
+    except Exception:
+        styled_draft, style_applied, style_confidence = built["draft_reply"], False, 0.0
+
     action_id = _secrets.token_hex(6)  # fresh per request; used by approve-reply
 
     return {
@@ -1650,12 +1660,14 @@ async def x_intake_context_card(
         "unverified_facts":      unverified_by_type,
         "recent_replies":        receipts,
         "suggested_next_action": action,
-        "draft_reply":           built["draft_reply"],
+        "draft_reply":           styled_draft,
         "reasoning":             built["reasoning"],
         "confidence":            built["confidence"],
         "source_facts":          built["source_facts"],
         "draft_quality_status":  built["draft_quality_status"],
         "draft_quality_reasons": built["draft_quality_reasons"],
+        "style_applied":         style_applied,
+        "style_confidence":      style_confidence,
     }
 
 
@@ -1920,6 +1932,15 @@ async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
         recent_replies=receipts,
         last_message=last_message,
     )
+    try:
+        from cortex.style_engine import apply_style as _apply_style
+        styled_draft, style_applied, style_confidence = _apply_style(
+            built["draft_reply"],
+            context={"relationship_type": profile.get("relationship_type", "")},
+        )
+    except Exception:
+        styled_draft, style_applied, style_confidence = built["draft_reply"], False, 0.0
+
     action_id = _secrets.token_hex(6)
 
     return {
@@ -1931,12 +1952,14 @@ async def x_intake_simulate_incoming(body: dict[str, Any]) -> dict[str, Any]:
         "unverified_facts":      unverified_by_type,
         "recent_replies":        receipts,
         "suggested_next_action": action,
-        "draft_reply":           built["draft_reply"],
+        "draft_reply":           styled_draft,
         "reasoning":             built["reasoning"],
         "confidence":            built["confidence"],
         "source_facts":          built["source_facts"],
         "draft_quality_status":  built["draft_quality_status"],
         "draft_quality_reasons": built["draft_quality_reasons"],
+        "style_applied":         style_applied,
+        "style_confidence":      style_confidence,
         "simulated":             True,
         "last_message":          last_message or None,
     }
