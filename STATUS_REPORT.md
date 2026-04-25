@@ -14,6 +14,24 @@ Rule engine live. 3 rules (1 approved, 1 rejected, 1 still proposed).
 - Rejected: RULE-20260425-f8c13b (unclassified, general, too vague)
 - Pending: RULE-20260425-5ee7f5 (batch consolidation, high risk — requires Matt)
 
+### Self-improvement loop — 20260425T201841Z
+
+inbox processed: 18, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 18 inbox items already processed (idempotency check). All items exist in archive with corresponding cards. Comprehensive automation infrastructure in place: x-com-imessage-automation-card.md (auto-safe) with ready-to-run prompt .cursor/prompts/self-improvement/x-com-imessage-automation.md.
+
+### Self-improvement loop — 20260425T194514Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 19 inbox files previously processed and archived. Existing pattern card 20260422-20260425-imessage-x-urls-pattern-card.md covers iMessage X.com URL ingestion pipeline improvement (Status: needs fetch).
+
+### Self-improvement loop — 20260425T194000Z
+
+inbox processed: 19, cards: 1 (0 auto-run / 0 needs-Matt / 0 deferred / 1 external / 0 needs-fetch)
+
+- 20260425-batch-imessage-x-urls-card.md — Status: external connector follow-up — Batch processing for 15 identical iMessage X.com URL patterns
+
 ### Self-improvement loop — 20260425T184100Z
 
 inbox processed: 19, cards: 1 (1 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
