@@ -1349,4 +1349,116 @@
     renderInvestigations(data);
   };
 
+  // ── Incoming Message Context Cards ────────────────────────────────────────
+
+  function _ctxEsc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _ctxFactGroup(heading, byType, borderColor) {
+    var keys = Object.keys(byType || {}).sort();
+    if (!keys.length) return '';
+    var rows = keys.map(function(ft) {
+      var items = (byType[ft] || []).map(function(f) {
+        var conf = (f.confidence * 100).toFixed(0);
+        var excerpt = f.source_excerpt ? '<div class="small mono" style="color:var(--muted);font-size:9px;margin-top:1px;">' + _ctxEsc(f.source_excerpt.slice(0, 100)) + '</div>' : '';
+        return '<div style="padding:2px 0;border-bottom:1px solid var(--border);">'
+          + '<span style="font-size:11px;color:var(--text);">' + _ctxEsc(f.fact_value) + '</span>'
+          + '<span style="font-size:9px;color:var(--muted);margin-left:6px;">' + conf + '%</span>'
+          + excerpt + '</div>';
+      }).join('');
+      return '<div style="margin-bottom:6px;">'
+        + '<div style="font-size:9px;font-weight:700;color:var(--gold-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">' + _ctxEsc(ft.replace(/_/g,' ')) + '</div>'
+        + items + '</div>';
+    }).join('');
+    return '<div style="border-left:3px solid ' + borderColor + ';padding:6px 10px;margin-bottom:8px;border-radius:0 4px 4px 0;">'
+      + '<div style="font-size:10px;font-weight:700;color:' + borderColor + ';margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px;">' + _ctxEsc(heading) + '</div>'
+      + rows + '</div>';
+  }
+
+  function renderContextCard(data) {
+    var el = document.getElementById('ctx-card-result');
+    if (!data) { el.innerHTML = '<div class="small" style="color:var(--red)">Failed to load context card.</div>'; return; }
+
+    if (data.status === 'no_handle') {
+      el.innerHTML = '<div class="small" style="color:var(--muted)">' + _ctxEsc(data.message) + '</div>';
+      return;
+    }
+
+    var masked = _ctxEsc(data.contact_masked || '');
+
+    if (data.status === 'no_profile') {
+      el.innerHTML = '<div style="padding:10px;border:1px solid var(--border);border-radius:6px;">'
+        + '<div style="font-size:11px;color:var(--muted);margin-bottom:4px;">No profile found for <span class="mono">' + masked + '</span></div>'
+        + '<div style="font-size:11px;color:var(--text);">' + _ctxEsc(data.suggested_next_action) + '</div>'
+        + (data.recent_replies && data.recent_replies.length ? '<div class="small" style="color:var(--muted);margin-top:6px;">' + data.recent_replies.length + ' reply receipt(s) on file.</div>' : '')
+        + '</div>';
+      return;
+    }
+
+    var p = data.profile || {};
+    var rtColor = ({'client':'#60a5fa','vendor':'#a78bfa','builder':'#34d399','trade_partner':'#fbbf24','internal_team':'#94a3b8','personal_work_related':'#f472b6'})[p.relationship_type] || 'var(--muted)';
+    var conf = ((data.confidence || 0) * 100).toFixed(0);
+
+    var systemsHtml = (p.systems_or_topics || []).length
+      ? '<div class="small" style="color:var(--muted);margin-top:3px;">systems: ' + _ctxEsc((p.systems_or_topics || []).slice(0,5).join(', ')) + '</div>' : '';
+    var openReqsHtml = (p.open_requests || []).length
+      ? '<div class="small" style="color:var(--yellow);margin-top:3px;">open: ' + _ctxEsc((p.open_requests || []).slice(0,3).join(' · ')) + '</div>' : '';
+    var projHtml = (p.project_refs || []).length
+      ? '<div class="small" style="color:var(--muted);margin-top:3px;">projects: ' + _ctxEsc((p.project_refs || []).slice(0,3).join(', ')) + '</div>' : '';
+
+    var acceptedHtml = _ctxFactGroup('Verified facts', data.accepted_facts, 'var(--green)');
+    var pendingHtml  = _ctxFactGroup('Unverified (pending)', data.unverified_facts, 'var(--yellow)');
+
+    var repliesHtml = '';
+    if (data.recent_replies && data.recent_replies.length) {
+      repliesHtml = '<div style="margin-bottom:8px;">'
+        + '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Recent replies</div>'
+        + data.recent_replies.map(function(r) {
+            var ts = (r.ts || '').slice(0, 16).replace('T', ' ');
+            return '<div class="small mono" style="color:var(--muted);border-bottom:1px solid var(--border);padding:2px 0;">'
+              + ts + ' · ' + _ctxEsc(r.phone_last4 || '') + ' · ' + (r.dry_run ? 'dry-run' : (r.success ? '✓ sent' : '✗ failed'))
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
+
+    var draftHtml = '<div style="border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--surface-2);margin-bottom:8px;">'
+      + '<div style="font-size:10px;font-weight:700;color:var(--gold-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Draft Reply</div>'
+      + '<div style="font-size:11px;color:var(--text);white-space:pre-wrap;">' + _ctxEsc(data.draft_reply || '') + '</div>'
+      + '<div style="margin-top:6px;">'
+      + '<button disabled style="font-size:9px;padding:2px 10px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:not-allowed;" title="Auto-send disabled">✉ Send (disabled)</button>'
+      + '</div></div>';
+
+    el.innerHTML = '<div style="border:1px solid var(--border);border-radius:6px;padding:12px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
+      + '<span style="font-size:10px;font-weight:700;color:' + rtColor + ';">' + _ctxEsc((p.relationship_type||'').replace(/_/g,' ').toUpperCase()) + '</span>'
+      + '<span class="small mono" style="color:var(--muted);">' + masked + '</span>'
+      + '<span style="font-size:10px;color:var(--muted);margin-left:auto;">' + conf + '%</span>'
+      + '</div>'
+      + (p.summary ? '<div class="small" style="color:var(--text);margin-bottom:6px;">' + _ctxEsc(p.summary) + '</div>' : '')
+      + systemsHtml + openReqsHtml + projHtml
+      + '<div style="font-size:11px;background:var(--surface-2);border-radius:4px;padding:5px 8px;margin:8px 0;border-left:3px solid var(--blue);">'
+      + '<span style="font-size:9px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;">Suggested action</span>'
+      + '<div style="margin-top:2px;color:var(--text);">' + _ctxEsc(data.suggested_next_action) + '</div></div>'
+      + acceptedHtml + pendingHtml
+      + repliesHtml + draftHtml
+      + '</div>';
+  }
+
+  window.loadContextCard = async function() {
+    var input = document.getElementById('ctx-thread-input');
+    var raw = (input ? input.value : '').trim();
+    if (!raw) return;
+    var el = document.getElementById('ctx-card-result');
+    el.innerHTML = '<div class="small" style="color:var(--muted)">loading…</div>';
+
+    var param = raw.includes(';') || raw.includes('iMessage') || raw.startsWith('any;')
+      ? 'thread_guid=' + encodeURIComponent(raw)
+      : 'contact_handle=' + encodeURIComponent(raw);
+
+    var data = await fetchJson('/api/x-intake/context-card?' + param);
+    renderContextCard(data);
+  };
+
 })();

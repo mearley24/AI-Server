@@ -188,6 +188,20 @@
     <button class="btn" onclick="loadMoreXIntake()">Load more</button>
   </div>
 
+  <!-- ── Incoming Message Context Cards ─────────────────────────────── -->
+  <div class="card" id="ctx-card-panel" style="margin-top:18px;">
+    <h2>Incoming Message Context
+      <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">lookup by thread / contact</span>
+    </h2>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+      <input id="ctx-thread-input" type="text" placeholder="thread_guid or +1…phone"
+        style="flex:1;min-width:180px;padding:4px 8px;font-size:11px;border:1px solid var(--border-2);border-radius:4px;background:var(--surface-2);color:var(--text);font-family:monospace;"
+        onkeydown="if(event.key==='Enter')loadContextCard()" />
+      <button onclick="loadContextCard()" style="font-size:11px;padding:3px 12px;border-radius:4px;border:1px solid var(--border-2);background:var(--surface-2);color:var(--text);cursor:pointer;">Look up</button>
+    </div>
+    <div id="ctx-card-result"><div class="small" style="color:var(--muted)">Enter a thread_guid or phone number above to load a contact context card.</div></div>
+  </div>
+
 </div>
 </div>
 

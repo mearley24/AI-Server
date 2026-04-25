@@ -922,6 +922,270 @@ async def client_intel_profile_detail(profile_id: str) -> dict[str, Any]:
             f_conn.close()
 
 
+# ── Context card helpers ───────────────────────────────────────────────────────
+
+_X_INTAKE_DATA_DIR = Path(os.environ.get("X_INTAKE_DATA_DIR", "/data/x_intake"))
+if not _X_INTAKE_DATA_DIR.is_dir():
+    _X_INTAKE_DATA_DIR = Path("/Users/bob/AI-Server/data/x_intake")
+
+_RECEIPT_LOG = _X_INTAKE_DATA_DIR / "reply_receipts.ndjson"
+
+
+def _handle_from_guid(guid: str) -> str:
+    """Extract E.164 phone from 'any;-;+13035257532' or 'iMessage;-;+13035257532'."""
+    import re as _re
+    m = _re.search(r"(\+?1?\d{10,15})$", guid)
+    return m.group(1) if m else ""
+
+
+def _normalize_handle(raw: str) -> str:
+    """Strip whitespace; add leading + if missing from a digit string."""
+    h = raw.strip()
+    if h and h[0].isdigit():
+        h = "+" + h
+    return h
+
+
+def _lookup_contact_handle(thread_guid: str, contact_handle: str) -> str:
+    """Resolve the canonical E.164 contact handle from either input.
+
+    Priority: explicit contact_handle > thread_guid extraction > thread_index lookup.
+    Returns empty string if nothing found.
+    """
+    if contact_handle:
+        return _normalize_handle(contact_handle)
+    if thread_guid:
+        extracted = _handle_from_guid(thread_guid)
+        if extracted:
+            return _normalize_handle(extracted)
+        # Fall back to thread index lookup by chat_guid
+        conn = _client_intel_db_ro()
+        if conn:
+            try:
+                row = conn.execute(
+                    "SELECT contact_handle FROM threads WHERE chat_guid=? LIMIT 1",
+                    (thread_guid,),
+                ).fetchone()
+                if row:
+                    return _normalize_handle(row["contact_handle"])
+            except Exception:
+                pass
+            finally:
+                conn.close()
+    return ""
+
+
+def _profile_by_handle(handle: str) -> dict | None:
+    """Look up the best matching profile for a contact handle. Returns None if not found."""
+    conn = _profiles_db_ro()
+    if not conn:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT profile_id, relationship_type, display_name, contact_handle, "
+            "thread_ids, first_seen, last_seen, summary, open_requests, follow_ups, "
+            "systems_or_topics, project_refs, dtools_project_refs, confidence, status, last_updated "
+            "FROM profiles WHERE contact_handle=? "
+            "ORDER BY confidence DESC LIMIT 1",
+            (handle,),
+        ).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def _facts_for_profile(profile_id: str) -> list[dict]:
+    """Return all (non-rejected) proposed facts for a profile."""
+    conn = _facts_db_ro()
+    if not conn:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT fact_id, thread_id, fact_type, fact_value, confidence, "
+            "source_excerpt, source_timestamp, is_accepted, is_rejected "
+            "FROM proposed_facts WHERE profile_id=? AND is_rejected=0 "
+            "ORDER BY is_accepted DESC, confidence DESC",
+            (profile_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def _receipts_for_handle(handle: str, limit: int = 5) -> list[dict]:
+    """Return recent reply receipts matching this contact (by last-4 digits).
+
+    Receipts are already redacted; we match on phone_last4 only.
+    Never raises — caller must not crash on missing receipt log.
+    """
+    if not _RECEIPT_LOG.is_file():
+        return []
+    last4 = handle[-4:] if len(handle) >= 4 else ""
+    if not last4:
+        return []
+    results: list[dict] = []
+    try:
+        lines = _RECEIPT_LOG.read_text(errors="replace").splitlines()
+        for line in reversed(lines[-200:]):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            if last4 in entry.get("phone_last4", ""):
+                # Re-mask: strip any residual thread_guid that may have been logged
+                entry.pop("thread_guid", None)
+                results.append(entry)
+            if len(results) >= limit:
+                break
+    except Exception:
+        pass
+    return results
+
+
+def _draft_reply(open_requests: list[str], systems: list[str], rel_type: str) -> str:
+    """Generate a rule-based draft reply from profile facts. Never auto-sent."""
+    if open_requests:
+        req = open_requests[0][:100]
+        return f"Hi, I wanted to follow up on your request — {req}. I'll get back to you shortly with an update."
+    if systems:
+        sys_name = systems[0]
+        return f"Hi, reaching out about your {sys_name} system. Let me know if you need any assistance or if anything has changed."
+    if rel_type == "vendor":
+        return "Hi, following up on our recent conversation. Please let me know the latest on availability and lead time."
+    if rel_type in ("builder", "trade_partner"):
+        return "Hi, just checking in on scheduling. Let me know when you're ready to coordinate the next phase."
+    return "Hi, thanks for reaching out. I'll look into that and get back to you shortly."
+
+
+def _suggest_action(facts_by_type: dict[str, list[dict]], rel_type: str) -> str:
+    """Suggest the most relevant next action based on accepted fact types."""
+    if "issue" in facts_by_type:
+        return "Schedule service call — active issue reported"
+    if "request" in facts_by_type:
+        issues = [f["fact_value"] for f in facts_by_type.get("request", [])]
+        if issues:
+            return f"Follow up on open request: {issues[0][:80]}"
+        return "Follow up on open request"
+    if "follow_up" in facts_by_type:
+        return "Send follow-up message — past follow-up noted"
+    if "equipment" in facts_by_type or "system" in facts_by_type:
+        names = [f["fact_value"] for f in facts_by_type.get("equipment", []) + facts_by_type.get("system", [])]
+        label = names[0] if names else "system"
+        return f"Check on {label} status and reply with update"
+    if rel_type in ("vendor", "order"):
+        return "Check order/lead-time status and reply"
+    return "Review profile history and reply to message"
+
+
+# ── Incoming message context card ─────────────────────────────────────────────
+
+@app.get("/api/x-intake/context-card", tags=["x-intake"])
+async def x_intake_context_card(
+    thread_guid: str = "",
+    contact_handle: str = "",
+) -> dict[str, Any]:
+    """Return a context card for an incoming iMessage thread or contact handle.
+
+    Aggregates the relationship profile, accepted facts, pending (unverified)
+    facts, recent reply receipts, a rule-based suggested next action, and a
+    draft reply. Rejected facts are excluded. Contact numbers are always masked.
+    Nothing is sent automatically — draft_reply is display-only.
+
+    Lookup order:
+      1. contact_handle (explicit, normalised to E.164)
+      2. thread_guid  → extract phone suffix → thread_index lookup
+    """
+    handle = _lookup_contact_handle(thread_guid.strip(), contact_handle.strip())
+    if not handle:
+        return {
+            "status": "no_handle",
+            "message": "Provide thread_guid or contact_handle",
+            "profile": None,
+            "accepted_facts": {},
+            "unverified_facts": {},
+            "recent_replies": [],
+            "suggested_next_action": "",
+            "draft_reply": "",
+            "confidence": 0.0,
+        }
+
+    masked = _mask_handle(handle)
+    profile_row = _profile_by_handle(handle)
+
+    if profile_row is None:
+        return {
+            "status": "no_profile",
+            "contact_masked": masked,
+            "message": "No relationship profile found for this contact.",
+            "profile": None,
+            "accepted_facts": {},
+            "unverified_facts": {},
+            "recent_replies": _receipts_for_handle(handle),
+            "suggested_next_action": "No profile — consider reviewing this contact",
+            "draft_reply": "Hi, thanks for reaching out. I'll get back to you shortly.",
+            "confidence": 0.0,
+        }
+
+    # Build profile dict (masked)
+    profile = {
+        "profile_id":        profile_row["profile_id"],
+        "relationship_type": profile_row["relationship_type"],
+        "display_name":      profile_row["display_name"],
+        "contact_masked":    masked,
+        "first_seen":        profile_row["first_seen"],
+        "last_seen":         profile_row["last_seen"],
+        "summary":           profile_row["summary"],
+        "open_requests":     json.loads(profile_row["open_requests"] or "[]"),
+        "follow_ups":        json.loads(profile_row["follow_ups"] or "[]"),
+        "systems_or_topics": json.loads(profile_row["systems_or_topics"] or "[]"),
+        "project_refs":      json.loads(profile_row["project_refs"] or "[]"),
+        "status":            profile_row["status"],
+        "confidence":        profile_row["confidence"],
+    }
+
+    # Split facts: accepted vs pending (unverified); rejected already excluded by query
+    facts = _facts_for_profile(profile_row["profile_id"])
+    accepted_by_type: dict[str, list[dict]] = {}
+    unverified_by_type: dict[str, list[dict]] = {}
+
+    for f in facts:
+        entry = {
+            "fact_id":          f["fact_id"],
+            "fact_type":        f["fact_type"],
+            "fact_value":       f["fact_value"],
+            "confidence":       f["confidence"],
+            "source_excerpt":   f["source_excerpt"],
+            "source_timestamp": f["source_timestamp"],
+        }
+        if f["is_accepted"]:
+            accepted_by_type.setdefault(f["fact_type"], []).append(entry)
+        else:
+            unverified_by_type.setdefault(f["fact_type"], []).append(entry)
+
+    receipts = _receipts_for_handle(handle)
+    draft = _draft_reply(profile["open_requests"], profile["systems_or_topics"], profile["relationship_type"])
+    action = _suggest_action(accepted_by_type, profile["relationship_type"])
+
+    return {
+        "status":               "ok",
+        "contact_masked":       masked,
+        "profile":              profile,
+        "accepted_facts":       accepted_by_type,
+        "unverified_facts":     unverified_by_type,
+        "recent_replies":       receipts,
+        "suggested_next_action": action,
+        "draft_reply":          draft,
+        "confidence":           profile_row["confidence"],
+    }
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 
