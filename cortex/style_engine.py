@@ -41,29 +41,34 @@ _HARDCODED_ROBOTIC: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\bI\s+appreciate\s+your\s+patience\b", re.I), ""),
     (re.compile(r"\bI\s+apologise\s+for\s+any\s+inconvenience\b", re.I), ""),
     (re.compile(r"\bapologize\s+for\s+any\s+inconvenience\b", re.I), ""),
+    # Generic AI-support closing: "let me know if you have any questions" etc.
+    (re.compile(
+        r"\blet\s+me\s+know\s+if\s+you\s+(?:have|need)\s+(?:any\s+)?(?:questions?|concerns?|issues?|anything)\b[.!]?",
+        re.I,
+    ), ""),
 ]
 
 # ── Phrase replacements: formal/wordy → natural/concise ──────────────────────
 _HARDCODED_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
-    # "get back to you shortly" → cleaner
+    # "get back to you shortly" → action-oriented, never "let you know" alone
     (re.compile(r"\bget\s+back\s+to\s+you\s+shortly\b", re.I),
-     "let you know"),
-    # "get back to you with what I find"
+     "check on it"),
+    # "get back to you with what I find" → concise
     (re.compile(r"\bget\s+back\s+to\s+you\s+with\s+what\s+I\s+find\b", re.I),
-     "let you know what I find"),
-    # "reach out once I have an update"
+     "check on it"),
+    # "reach out once I have an update" → direct
     (re.compile(r"\breach\s+out\s+once\s+I\s+have\s+an?\s+update\b", re.I),
-     "let you know"),
+     "check on it"),
     # "Give me a few minutes and" → shorter
     (re.compile(r"\bGive\s+me\s+a\s+few\s+minutes\s+and\b", re.I),
      "Give me a bit and"),
-    # "I'll take a look and let you know what I find" → shorter
+    # "I'll take a look and let you know what I find / get back to you" → shorter
     (re.compile(
         r"\bI'?ll\s+take\s+a\s+look\s+and\s+(?:let\s+you\s+know\s+what\s+I\s+find|"
         r"get\s+back\s+to\s+you)\b",
         re.I,
      ),
-     "I'll check on it and let you know"),
+     "I'll check on it"),
 ]
 
 

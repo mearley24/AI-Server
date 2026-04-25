@@ -177,10 +177,35 @@ _SCHEDULING_RE = re.compile(
     re.I,
 )
 _CLOSE_RE = re.compile(
-    r"\b(let me know|thank you|thanks again|talk soon|take care|"
+    r"\b(thank you|thanks again|talk soon|take care|"
     r"have a good|enjoy your|no worries|appreciate)\b",
     re.I,
 )
+
+# Phrases excluded or downweighted in common_phrases output (0.0 = exclude entirely)
+_GENERIC_PHRASE_PENALTIES: dict[str, float] = {
+    "let me know":       0.0,
+    "me know":           0.0,
+    "know if":           0.0,
+    "let me":            0.0,
+    "me know if":        0.0,
+    "please advise":     0.0,
+    "reach out":         0.0,
+    "keep me posted":    0.0,
+    "i'll let you know": 0.0,
+    "will let you":      0.0,
+    "i will let":        0.0,
+}
+
+# High-signal Matt phrases — score multiplier applied on top of frequency
+_HIGH_SIGNAL_BOOSTS: dict[str, float] = {
+    "got it":            2.5,
+    "sounds good":       2.5,
+    "no worries":        2.5,
+    "i can swing by":    3.0,
+    "i'll check on it":  3.0,
+    "i'll take a look":  2.0,
+}
 
 
 def _extract_ngrams(words: list[str], n: int) -> list[str]:
@@ -242,12 +267,20 @@ def extract_patterns(all_messages: list[str]) -> dict:
     double_excl_rate = round(double_excl_count / n, 2) if n else 0
     contraction_rate = round(contraction_count / n, 2) if n else 0
 
-    # Top bigrams/trigrams that appear ≥2 times and aren't noise
-    top_phrases = [
-        {"phrase": phrase, "frequency": count}
-        for phrase, count in phrase_counts.most_common(30)
-        if count >= 2 and len(phrase.split()) >= 2
-    ]
+    # Weighted scoring: penalize generic phrases, boost Matt-style signals.
+    scored: list[dict] = []
+    for phrase, count in phrase_counts.most_common(60):
+        if count < 2 or len(phrase.split()) < 2:
+            continue
+        penalty = _GENERIC_PHRASE_PENALTIES.get(phrase)
+        if penalty == 0.0:
+            continue  # entirely excluded
+        mult = penalty if penalty is not None else _HIGH_SIGNAL_BOOSTS.get(phrase, 1.0)
+        w = count * mult
+        if w >= 1.0:
+            scored.append({"phrase": phrase, "weighted_score": round(w, 2), "frequency": count})
+    scored.sort(key=lambda x: x["weighted_score"], reverse=True)
+    top_phrases = scored[:15]
 
     return {
         "greeting_patterns": [
@@ -299,20 +332,20 @@ def extract_patterns(all_messages: list[str]) -> dict:
             "I appreciate your patience",
             "I apologize for any inconvenience",
         ],
-        # Direct replacements — robotic → natural
+        # Direct replacements — robotic/generic → action-oriented Matt-style
         "replacements": [
             {"from": "I'll get back to you shortly",
-             "to":   "I'll let you know"},
+             "to":   "I'll check on it"},
             {"from": "get back to you with what I find",
-             "to":   "let you know what I find"},
+             "to":   "check on it"},
             {"from": "I'll reach out once I have an update",
-             "to":   "I'll let you know"},
+             "to":   "I'll check on it"},
             {"from": "Give me a few minutes and I'll let you know what I find",
-             "to":   "Give me a bit and I'll let you know"},
+             "to":   "Give me a bit and I'll check on it"},
             {"from": "let me know what I find",
-             "to":   "let you know"},
+             "to":   "check on it"},
             {"from": "I'll take a look and let you know what I find",
-             "to":   "I'll check on it and let you know"},
+             "to":   "I'll check on it"},
         ],
     }
 
@@ -381,7 +414,7 @@ def run(dry_run: bool = False, sample: bool = False) -> dict:
             from cortex.style_engine import apply_style
             examples = [
                 "Thanks for the heads up — I'll take a look and get back to you shortly.",
-                "I'll take a look at your Sonos and let you know what I find.",
+                "Got it — try unplugging your Sonos for about 10 seconds. If it's still acting up, I can swing by.",
                 "Got it — I'll take a look and get back to you with what I find.",
                 "I'll reach out once I have an update.",
             ]

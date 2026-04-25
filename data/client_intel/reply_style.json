@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "extracted_at": "2026-04-25T05:08:54.705040+00:00",
+  "extracted_at": "2026-04-25T06:02:52.195924+00:00",
   "message_count": 58,
   "thread_count": 4,
   "allowed_relationship_types": [
@@ -89,10 +89,6 @@
       "frequency": 9
     },
     {
-      "phrase": "let me know",
-      "frequency": 2
-    },
-    {
       "phrase": "thanks again",
       "frequency": 1
     },
@@ -104,62 +100,77 @@
   "common_phrases": [
     {
       "phrase": "it was",
+      "weighted_score": 3.0,
       "frequency": 3
     },
     {
       "phrase": "you have",
+      "weighted_score": 3.0,
       "frequency": 3
     },
     {
       "phrase": "will be",
+      "weighted_score": 3.0,
       "frequency": 3
     },
     {
       "phrase": "be there",
-      "frequency": 2
-    },
-    {
-      "phrase": "let me",
-      "frequency": 2
-    },
-    {
-      "phrase": "me know",
-      "frequency": 2
-    },
-    {
-      "phrase": "know if",
-      "frequency": 2
-    },
-    {
-      "phrase": "let me know",
-      "frequency": 2
-    },
-    {
-      "phrase": "me know if",
+      "weighted_score": 2.0,
       "frequency": 2
     },
     {
       "phrase": "sorry to",
+      "weighted_score": 2.0,
       "frequency": 2
     },
     {
       "phrase": "to bother",
+      "weighted_score": 2.0,
       "frequency": 2
     },
     {
       "phrase": "bother you",
+      "weighted_score": 2.0,
       "frequency": 2
     },
     {
       "phrase": "to be",
+      "weighted_score": 2.0,
       "frequency": 2
     },
     {
       "phrase": "sorry to bother",
+      "weighted_score": 2.0,
       "frequency": 2
     },
     {
       "phrase": "to bother you",
+      "weighted_score": 2.0,
+      "frequency": 2
+    },
+    {
+      "phrase": "about it",
+      "weighted_score": 2.0,
+      "frequency": 2
+    },
+    {
+      "phrase": "can do",
+      "weighted_score": 2.0,
+      "frequency": 2
+    },
+    {
+      "phrase": "and was",
+      "weighted_score": 2.0,
+      "frequency": 2
+    },
+    {
+      "phrase": "is the",
+      "weighted_score": 2.0,
+      "frequency": 2
+    },
+    {
+      "phrase": "in that",
+      "weighted_score": 2.0,
       "frequency": 2
     }
   ],
@@ -202,27 +213,27 @@
   "replacements": [
     {
       "from": "I'll get back to you shortly",
-      "to": "I'll let you know"
+      "to": "I'll check on it"
     },
     {
       "from": "get back to you with what I find",
-      "to": "let you know what I find"
+      "to": "check on it"
     },
     {
       "from": "I'll reach out once I have an update",
-      "to": "I'll let you know"
+      "to": "I'll check on it"
     },
     {
       "from": "Give me a few minutes and I'll let you know what I find",
-      "to": "Give me a bit and I'll let you know"
+      "to": "Give me a bit and I'll check on it"
     },
     {
       "from": "let me know what I find",
-      "to": "let you know"
+      "to": "check on it"
     },
     {
       "from": "I'll take a look and let you know what I find",
-      "to": "I'll check on it and let you know"
+      "to": "I'll check on it"
     }
   ]
 }

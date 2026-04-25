@@ -39,7 +39,7 @@ class TestStyleEngine:
         draft = "Thanks for the heads up — I'll take a look and get back to you shortly."
         styled, applied, conf = apply(draft)
         assert "shortly" not in styled, f"'shortly' should be removed: {styled}"
-        assert "let you know" in styled or "let me know" in styled, styled
+        assert applied is True
 
     def test_get_back_to_you_with_what_i_find(self):
         apply = self._engine({})
@@ -123,12 +123,13 @@ class TestStyleEngine:
         apply = self._engine({
             "robotic_phrases": [],
             "replacements": [
-                {"from": "I'll get back to you shortly", "to": "I'll let you know"},
+                {"from": "follow up with you soon", "to": "check in with you"},
             ],
         })
-        draft = "I'll get back to you shortly."
+        draft = "I will follow up with you soon."
         styled, applied, _ = apply(draft)
-        assert "I'll let you know" in styled, styled
+        assert "check in with you" in styled, styled
+        assert applied is True
 
     def test_confidence_higher_for_natural_opener(self):
         """Drafts starting with 'Got it' or 'On it' get higher confidence."""
@@ -339,3 +340,72 @@ class TestStyleIntegration:
         assert d["status"] == "ok"
         assert d["draft_reply"]           # fallback draft must still be present
         assert d["style_applied"] is False  # crash → not applied
+
+
+# ── Generic phrase penalization and high-signal boosting ──────────────────────
+
+class TestGenericPhraseHandling:
+
+    def test_let_me_know_not_in_style_rewrite(self):
+        """'let me know' must not be produced as a default style rewrite output."""
+        import cortex.style_engine as se
+        se._reload_profile()
+        generic_closings = [
+            "I'll get back to you shortly.",
+            "I'll reach out once I have an update.",
+            "Give me a few minutes and I'll let you know what I find.",
+        ]
+        for draft in generic_closings:
+            styled, _, _ = se.apply_style(draft)
+            assert "let me know" not in styled.lower(), (
+                f"'let me know' must not appear in rewrite of: {draft!r} → {styled!r}"
+            )
+
+    def test_generic_phrases_penalized_in_style_output(self):
+        """Generic phrases must be excluded from top common_phrases."""
+        from scripts.extract_reply_style import extract_patterns
+        msgs = [
+            "let me know if anything comes up let me know",
+            "let me know if you need anything know if needed",
+            "got it I can swing by tomorrow",
+            "sounds good I'll check on it",
+            "no worries got it",
+            "got it sounds good",
+        ]
+        profile = extract_patterns(msgs)
+        top = [p["phrase"] for p in profile["common_phrases"]]
+        for phrase in ("let me know", "me know", "know if"):
+            assert phrase not in top, (
+                f"Generic phrase {phrase!r} must be excluded from common_phrases: {top}"
+            )
+
+    def test_high_signal_phrases_boosted(self):
+        """High-signal Matt phrases must appear in common_phrases when present."""
+        from scripts.extract_reply_style import extract_patterns
+        msgs = [
+            "got it sounds good",
+            "sounds good got it",
+            "no worries at all",
+            "got it no worries",
+            "i can swing by this afternoon got it",
+            "sounds good i can swing by",
+        ] * 2  # ensure count >= 2
+        profile = extract_patterns(msgs)
+        top = [p["phrase"] for p in profile["common_phrases"]]
+        high_signal = {"got it", "sounds good", "no worries"}
+        found = high_signal & set(top)
+        assert found, (
+            f"High-signal phrases {high_signal} not found in common_phrases: {top}"
+        )
+
+    def test_sonos_self_fix_wording_preserved(self):
+        """Sonos self-fix and on-site wording must survive styling intact."""
+        import cortex.style_engine as se
+        se._reload_profile()
+        draft = (
+            "Got it — try unplugging your Sonos for about 10 seconds "
+            "and plugging it back in. If it's still acting up, I can swing by."
+        )
+        styled, _, _ = se.apply_style(draft)
+        for term in ("Sonos", "10 seconds", "swing by"):
+            assert term in styled, f"Term {term!r} must survive Sonos styling: {styled}"
