@@ -87,9 +87,7 @@ Lanes that remain genuinely open after this pass (each with exactly
 one prompt+runbook; no duplicates):
 
 1. ~~`:8102` UNKNOWN second listener — read-only evidence prompt+runbook ARMED.~~ ✅ **RESOLVED 2026-04-25** — PID_COLLISION. PID 962 no longer exists; file-watcher is PID 749 and binds 127.0.0.1:8103 (loopback). No `*:8102` binding. Receipt: `ops/verification/20260425-012647-port-8102-evidence/`
-2. PORTS.md registry refresh — partial fix on disk; the
-   "Localhost-Locked" section still under-states LAN exposure for
-   1234/8199/8421/11434 vs the audit classification.
+2. ~~PORTS.md registry refresh — partial fix on disk; the "Localhost-Locked" section still under-states LAN exposure for 1234/8199/8421/11434 vs the audit classification.~~ ✅ **RESOLVED 2026-04-25** — Refreshed from live `lsof` (not stale audit). 21 active rows, Bind column added, Localhost-Locked section removed, Notes corrected. Only BlueBubbles :1234 remains LAN `*`; 11434/8199/8421 confirmed loopback after hardening. Receipt: `ops/verification/20260425-013835-ports-md-refresh/`
 3. `[NEEDS_MATT] sudo setup/install_bob_watchdog.sh --deploy-system`
    (sync 300s cooldown; not repo-closeable).
 4. `[FOLLOWUP: bluebubbles-send-method]` — macOS 26 AppleScript hang;
@@ -3610,3 +3608,18 @@ All 4 inbox items were previously processed in run 20260424T191000Z. No new card
 - `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed**; Status: needs fetch
 
 Verification: ops/verification/self-improve-20260424T193000Z.txt
+
+### Self-improvement loop — 20260425T013408Z
+
+inbox processed: 4 (all skipped — idempotent re-run), cards: 0 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 4 inbox items were already processed in prior run 20260424T193000Z. No new cards or prompts drafted. All items remain at `needs fetch` — bare X.com URLs captured via iMessage heuristic; tweet content required before any card can be re-scored.
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — **already processed**; Status: needs fetch
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — **already processed**; Status: needs fetch
+
+Recurring pattern: 3 of 4 cards share the same capture date and source phone number — strengthens the iMessage→x_intake auto-routing bridge hypothesis (see jameszmsun card). A fetch-enabled pass is the only unblock.
+
+Verification: ops/verification/self-improve-20260425T013408Z.txt
