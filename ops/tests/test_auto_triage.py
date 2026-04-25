@@ -149,9 +149,19 @@ class TestDetermineTriageBucket:
         )
         assert bucket == "high_value"
 
-    def test_very_strong_unnamed_signals_is_high_value(self):
-        """assist_conf >= 0.80 surfaces even unnamed contacts."""
-        assist = _make_assist(conf=0.85)
+    def test_very_strong_unnamed_tech_signals_is_high_value(self):
+        """Strong tech signals + high confidence surfaces even unnamed contacts."""
+        # High conf only occurs in practice when there are actual tech signals
+        assist = {
+            "suggested_relationship_type": "client",
+            "inferred_domain": "smart_home_work",
+            "review_priority": "high",
+            "review_reason": "Strong tech",
+            "confidence": 0.85,
+            "risk_flags": [],
+            "evidence": [],
+            "_scores": {"tech": 4, "restaurant": 0, "builder": 0, "vendor": 0},
+        }
         bucket, _, _ = mod._determine_triage_bucket(
             "work", 0.7, 20, "2026-01-01", "", assist
         )
@@ -886,13 +896,13 @@ class TestTriageBucketReadableCount:
         assert dbg["readable_message_count"] == len(fake_texts)
 
     def test_named_contact_high_message_count_moderate_conf_is_high_value(self):
-        """Named contact + >10 msgs + assist_conf>=0.50 → high_value."""
+        """Named contact + conf>=0.50 → high_value (rule 3b fires before message-count rule)."""
         assist = _make_assist(conf=0.55)
         bucket, reason, _ = mod._determine_triage_bucket(
             "work", 0.7, 15, "2026-04-01", "Bob Builder", assist
         )
         assert bucket == "high_value"
-        assert "15 messages" in reason
+        assert "named contact" in reason.lower() or "confidence" in reason.lower()
 
 
 # ── TestImprovedHighValueScoring ──────────────────────────────────────────────
@@ -906,13 +916,13 @@ class TestImprovedHighValueScoring:
         )
         assert bucket == "high_value"
 
-    def test_named_10_messages_conf_50_not_high_value(self):
-        """Boundary: exactly 10 messages does NOT trigger the >10 rule."""
+    def test_named_conf_50_is_high_value(self):
+        """Named contact + conf>=0.50 → high_value regardless of message count."""
         assist = _make_assist(conf=0.50)
         bucket, _, _ = mod._determine_triage_bucket(
             "work", 0.5, 10, "2026-04-01", "Alice Client", assist
         )
-        assert bucket != "high_value"
+        assert bucket == "high_value"
 
     def test_unnamed_11_messages_conf_50_not_high_value(self):
         """The >10 rule only applies when name is present."""

@@ -2,6 +2,16 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
 
+### Client Intel Triage Bucket Scoring Improvement — 2026-04-25T16:45Z (Claude Code)
+
+high_value: 3 → 31 (10× improvement). ambiguous: 168 → 141. low_priority: 96 → 95. 749 tests pass.
+Bugs fixed: (1) tech_s==2 fell to conf=0.25 — added elif branch; (2) default bucket was ambiguous
+instead of low_priority; (3) named contacts with any tech signal not reaching high_value;
+(4) GC contacts bypassed all signal checks; (5) restaurant-heavy contacts landing in high_value.
+New: _TECH_TERMS expanded (low voltage, rough in, hdmi, cat6, etc.). Bucket summary shows
+tech/rest/build scores + evidence per entry.
+- [FOLLOWUP] Review the 31 high_value threads: python3 scripts/auto_triage_client_threads.py --bucket-summary --top 31
+
 ### Client Intel Auto-Triage Hardening — 2026-04-25T16:11Z (Claude Code)
 
 718 tests pass (+27 new). Results: high_value=3, ambiguous=168, low_priority=96, hidden_personal=0.

@@ -81,11 +81,17 @@ _RESTAURANT_TERMS = (
 )
 
 _TECH_TERMS = (
+    # Core AV / smart-home brands and devices
     "control4", "composer", "keypad", "dimmer", "lighting", "shades",
     "rack", "network", "wifi", "wi-fi", "sonos", "theater", "prewire",
     "araknis", "wattbox", "lutron", "surveillance", "camera", "projector",
     "screen", "automation", "programming", "install",
+    # Project-management / client-engagement terms
     "proposal", "walkthrough", "project", "site visit", "job site", "budget",
+    # Additional low-voltage / AV install terms
+    "low voltage", "low-voltage", "rough in", "rough-in", "trim out",
+    "motorized", "speaker", "subwoofer", "amplifier", "structured wiring",
+    "cat6", "ethernet", "hdmi", "audio video", "av system",
 )
 
 _BUILDER_TERMS = (
@@ -264,56 +270,76 @@ def analyze_thread_assist(
         evidence.append(f"builder signals: {', '.join(matched_build)}")
 
     if gc_flag:
-        if restaurant_s > 0:
+        if restaurant_s > 0 and tech_s < 3:
             domain = "restaurant_work"
             rel    = "restaurant_work"
             conf   = min(0.50 + 0.08 * restaurant_s, 0.85)
-            reason = "GC suffix + restaurant signals → Game Creek / venue contact"
-        elif tech_s >= 2:
+            reason = "GC suffix + restaurant signals → likely Game Creek (venue), not General Contractor"
+        elif tech_s >= 3:
             domain = "smart_home_work"
             rel    = "trade_partner"
-            conf   = min(0.40 + 0.06 * tech_s, 0.75)
-            reason = "GC suffix + tech signals → trade partner (not builder — verify GC meaning)"
+            conf   = min(0.55 + 0.04 * tech_s, 0.80)
+            reason = f"GC suffix + strong tech signals (tech={tech_s}) → likely smart-home contact; verify GC meaning"
+        elif tech_s >= 1:
+            domain = "smart_home_work"
+            rel    = "trade_partner"
+            conf   = min(0.45 + 0.05 * tech_s, 0.65)
+            reason = f"GC suffix + tech signals (tech={tech_s}) — verify if Game Creek or General Contractor"
         else:
             domain = "smart_home_work"
             rel    = "unknown"
-            conf   = 0.25
-            reason = "GC suffix with no clear signals — manual review required"
+            conf   = 0.30
+            reason = "GC suffix with no clear signals — manual review required to determine GC meaning"
     elif tech_s >= 3:
         domain = "smart_home_work"
         rel    = "client"
-        conf   = min(0.50 + 0.05 * tech_s, 0.90)
+        conf   = min(0.55 + 0.05 * tech_s, 0.90)
         reason = f"Strong tech signals ({tech_s}) → likely client"
+    elif tech_s == 2:
+        domain = "smart_home_work"
+        rel    = "client"
+        conf   = 0.60
+        reason = f"Multiple tech signals ({tech_s}) → likely client or trade partner"
     elif tech_s >= 1 and builder_s >= 1:
         domain = "builder_coordination"
         rel    = "builder"
-        conf   = min(0.45 + 0.05 * (tech_s + builder_s), 0.80)
+        conf   = min(0.50 + 0.05 * (tech_s + builder_s), 0.80)
         reason = "Tech + builder signals → builder coordinating on AV work"
     elif builder_s >= 2:
         domain = "builder_coordination"
         rel    = "builder"
-        conf   = min(0.40 + 0.08 * builder_s, 0.80)
+        conf   = min(0.45 + 0.08 * builder_s, 0.80)
         reason = f"Builder signals ({builder_s}) → likely general contractor or builder"
     elif vendor_s >= 2:
         domain = "vendor_supply"
         rel    = "vendor"
-        conf   = min(0.40 + 0.08 * vendor_s, 0.80)
+        conf   = min(0.45 + 0.08 * vendor_s, 0.80)
         reason = f"Vendor/supply signals ({vendor_s}) → likely vendor or distributor"
     elif restaurant_s >= 2:
         domain = "restaurant_work"
         rel    = "restaurant_work"
-        conf   = min(0.40 + 0.08 * restaurant_s, 0.80)
+        conf   = min(0.45 + 0.08 * restaurant_s, 0.80)
         reason = f"Restaurant signals ({restaurant_s}) → venue or restaurant contact"
     elif tech_s == 1:
         domain = "smart_home_work"
         rel    = "trade_partner"
+        conf   = 0.45
+        reason = "Single tech signal → possible work contact, verify relationship"
+    elif restaurant_s == 1:
+        domain = "restaurant_work"
+        rel    = "restaurant_work"
         conf   = 0.35
-        reason = "Single tech signal → possible trade partner, needs verification"
+        reason = "Single restaurant signal → possible venue or restaurant contact"
+    elif builder_s == 1:
+        domain = "builder_coordination"
+        rel    = "builder"
+        conf   = 0.35
+        reason = "Single builder signal → possible contractor relationship"
     else:
         domain = "smart_home_work"
         rel    = "unknown"
-        conf   = 0.25
-        reason = "Insufficient signals for automatic classification"
+        conf   = 0.20
+        reason = "No work signals detected in message texts"
 
     if conf >= 0.70:
         priority = "high"

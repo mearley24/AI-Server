@@ -157,12 +157,19 @@ def _determine_triage_bucket(
     """Return (bucket, reason, triage_confidence).
 
     Priority waterfall:
-      hidden_personal → high_value → ambiguous → low_priority → ambiguous (default).
+      hidden_personal → GC handling → named contact → strong signals
+      → builder/restaurant/mixed conflicts → old/large ambiguous threads
+      → low priority (default for uncategorized threads).
+
     Pure function — never touches the database or makes network calls.
     """
-    risk_flags  = assist.get("risk_flags", [])
-    assist_conf = assist.get("confidence", 0.0)
-    domain      = assist.get("inferred_domain", "smart_home_work")
+    risk_flags   = assist.get("risk_flags", [])
+    assist_conf  = assist.get("confidence", 0.0)
+    domain       = assist.get("inferred_domain", "smart_home_work")
+    scores       = assist.get("_scores", {})
+    tech_s       = scores.get("tech", 0)
+    restaurant_s = scores.get("restaurant", 0)
+    builder_s    = scores.get("builder", 0)
 
     # 1. Personal threads always hidden
     if category == "personal":
@@ -172,128 +179,180 @@ def _determine_triage_bucket(
             0.95,
         )
 
-    # 2. GC suffix always needs human disambiguation
+    # 2. GC suffix — check signals before routing; 'GC' in Eagle County often = Game Creek
     if "gc_suffix_ambiguous" in risk_flags:
+        if tech_s >= 3:
+            return (
+                "high_value",
+                f"GC-suffix contact with strong smart-home signals (tech={tech_s}) — verify GC meaning",
+                min(0.55 + 0.04 * tech_s, 0.78),
+            )
+        if tech_s >= 1 and restaurant_s == 0:
+            return (
+                "ambiguous",
+                f"GC suffix + tech signals (tech={tech_s}) — verify if Game Creek or General Contractor",
+                0.65,
+            )
+        if restaurant_s >= 1:
+            return (
+                "ambiguous",
+                f"GC suffix + restaurant signals (rest={restaurant_s}) — likely Game Creek venue contact",
+                0.70,
+            )
         return (
             "ambiguous",
-            "GC suffix — may be Game Creek (venue) or General Contractor; manual review required",
-            0.80,
+            "GC suffix with no clear signals — manual review required to determine GC meaning",
+            0.75,
         )
 
-    # 3. Named contact with strong signals
+    # 3. Named contact — always worth Matt's time; signals raise priority further
     if name:
-        if assist_conf >= 0.65:
+        # 3a. Any tech signal → high_value (they're in address book AND have work evidence)
+        if tech_s >= 1:
+            conf = max(assist_conf, 0.55 + 0.04 * min(tech_s, 5))
             return (
                 "high_value",
-                f"named contact with strong {domain} signals (confidence={assist_conf:.0%})",
-                assist_conf,
+                f"named contact with tech signals (tech={tech_s}, confidence={assist_conf:.0%})",
+                min(conf, 0.90),
             )
-        if work_confidence >= 0.80:
+        # 3b. High classifier + strong assist confidence
+        if assist_conf >= 0.50:
             return (
                 "high_value",
-                f"named contact with high classifier confidence ({work_confidence:.0%})",
-                work_confidence,
+                f"named contact with strong signals (confidence={assist_conf:.0%})",
+                max(assist_conf, 0.60),
             )
-        if message_count >= 20 and assist_conf >= 0.45:
+        # 3c. High work confidence from classifier + active thread
+        if work_confidence >= 0.75 and message_count >= 5:
             return (
                 "high_value",
-                f"named contact with {message_count} messages and moderate signals",
-                max(assist_conf, 0.55),
+                f"named contact with high work confidence ({work_confidence:.0%}) and {message_count} messages",
+                max(work_confidence, 0.62),
             )
-        if message_count > 10 and assist_conf >= 0.50:
+        # 3d. Active thread — named contact with substantial history
+        if message_count >= 15 and work_confidence >= 0.50:
             return (
                 "high_value",
-                f"named contact with {message_count} messages and meaningful signals (confidence={assist_conf:.0%})",
-                max(assist_conf, 0.52),
+                f"named contact with active thread ({message_count} messages) — worth reviewing",
+                0.58,
             )
-
-    # 4. Very strong signals regardless of name
-    if assist_conf >= 0.80:
+        # 3e. Weak work evidence — route to ambiguous, not low_priority
+        if work_confidence < 0.40 or (message_count < 3 and assist_conf < 0.30):
+            return (
+                "ambiguous",
+                "named contact with weak work signals — may be personal or one-off",
+                0.52,
+            )
+        # 3f. Default for named contacts: ambiguous (worth review, but unclear signals)
         return (
             "high_value",
-            f"strong {domain} signals (confidence={assist_conf:.0%})",
-            assist_conf,
+            f"named contact — potential client or trade partner relationship",
+            max(assist_conf, 0.50),
         )
 
-    # 5. Restaurant domain — ambiguous (AV client or venue?)
-    if domain == "restaurant_work":
+    # 4. Strong AV/smart-home signals regardless of name
+    # Require at least one tech term so restaurant-only contacts don't land here
+    if tech_s >= 3 or (assist_conf >= 0.70 and tech_s >= 1):
         return (
-            "ambiguous",
-            "restaurant_work signals — verify if AV client or venue contact",
-            0.65,
+            "high_value",
+            f"strong smart-home signals (tech={tech_s}, confidence={assist_conf:.0%})",
+            max(assist_conf, 0.65),
         )
 
-    # 6. Builder coordination — ambiguous (builder or client?)
-    if domain == "builder_coordination":
+    # 5. Moderate tech signals + substantial thread (likely important unnamed contact)
+    # tech signals dominate over a single restaurant signal (restaurant=1 is often noise)
+    if tech_s >= 2 and message_count >= 10 and restaurant_s < 2:
+        return (
+            "high_value",
+            f"moderate tech signals (tech={tech_s}) in substantial thread ({message_count} msgs)",
+            max(assist_conf, 0.60),
+        )
+
+    # 6. Large active work thread with any tech signal
+    if message_count >= 100 and category == "work" and tech_s >= 1:
+        return (
+            "high_value",
+            f"large work thread ({message_count} msgs) with tech signals — likely important contact",
+            max(assist_conf, 0.58),
+        )
+
+    # 7. Builder domain or tech+builder mix → ambiguous (verify AV client vs contractor)
+    if domain == "builder_coordination" or (tech_s >= 1 and builder_s >= 1):
         return (
             "ambiguous",
-            "builder coordination signals — verify builder vs client role",
+            f"tech + builder signals — builder coordinating AV work or AV client in build phase",
             0.60,
         )
 
-    # 7. Mixed work/personal category
-    if category == "mixed":
+    # 8. Restaurant domain — verify AV client vs venue contact
+    if domain == "restaurant_work" or restaurant_s >= 2:
         return (
             "ambiguous",
-            "mixed work/personal signals — manual review needed",
-            0.65,
+            f"restaurant signals ({restaurant_s}) — verify if AV client at venue or restaurant contact",
+            0.60,
         )
 
-    # 8. Old thread with any signals — may be stale relationship
+    # 9. Mixed category with any substance → ambiguous
+    if category == "mixed":
+        if work_confidence >= 0.50 or message_count >= 10 or assist_conf >= 0.30:
+            return (
+                "ambiguous",
+                "mixed work/personal signals — manual review needed",
+                0.58,
+            )
+
+    # 10. Old thread with detectable signals → may be stale relationship
     try:
         year = int((date_last or "")[:4])
         if year < 2022 and assist_conf >= 0.30:
             dl = (date_last or "")[:10]
             return (
                 "ambiguous",
-                f"older thread (last: {dl}) with work signals — may be stale relationship",
-                0.55,
+                f"older thread (last active: {dl}) with work signals — may be stale relationship",
+                0.52,
             )
     except (ValueError, TypeError):
         pass
 
-    # 9. Large thread with uncertain classification
-    if message_count >= 50 and assist_conf < 0.50:
+    # 11. Large work thread with no clear signals but high classifier confidence
+    if message_count >= 50 and category == "work" and work_confidence >= 0.70:
         return (
             "ambiguous",
-            f"large thread ({message_count} msgs) with uncertain classification",
-            0.60,
+            f"large active work thread ({message_count} msgs) — worth reviewing despite weak signals",
+            0.52,
         )
 
-    # 10. Unnamed with weak signals
-    if not name:
-        if assist_conf < 0.40:
-            return (
-                "low_priority",
-                f"unnamed contact with low classification confidence ({assist_conf:.0%})",
-                0.80,
-            )
-        if message_count < 5:
-            return (
-                "low_priority",
-                f"unnamed contact with few messages ({message_count}) — likely one-off",
-                0.75,
-            )
-        if work_confidence < 0.55:
-            return (
-                "low_priority",
-                f"unnamed contact below work confidence threshold ({work_confidence:.0%})",
-                0.70,
-            )
-
-    # 11. Unknown category
-    if category == "unknown":
+    # 12. Low priority: unnamed + weak/no work evidence
+    if work_confidence < 0.45:
         return (
             "low_priority",
-            "unknown category — insufficient signals for classification",
+            f"low work confidence ({work_confidence:.0%}) — likely not a client contact",
+            0.80,
+        )
+    if message_count < 5:
+        return (
+            "low_priority",
+            f"unnamed contact with few messages ({message_count}) — likely one-off",
+            0.80,
+        )
+    if tech_s == 0 and restaurant_s == 0 and builder_s == 0:
+        return (
+            "low_priority",
+            "no work signals detected in message texts",
             0.75,
         )
+    if assist_conf < 0.35:
+        return (
+            "low_priority",
+            f"weak classification signals (confidence={assist_conf:.0%}) — insufficient for useful triage",
+            0.72,
+        )
 
-    # 12. Default fallback
+    # 13. Default: low_priority (ambiguous should mean actual conflicts, not uncertainty)
     return (
-        "ambiguous",
-        "signals present but insufficient for automatic classification",
-        0.45,
+        "low_priority",
+        "insufficient signals for reliable classification",
+        0.68,
     )
 
 
@@ -606,11 +665,11 @@ def _print_explain(info: dict[str, Any]) -> None:
 
 
 def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
-    """Print a human-readable per-bucket summary with top examples."""
+    """Print a human-readable per-bucket summary with diagnostic scores."""
     for bucket in ("high_value", "ambiguous", "low_priority", "hidden_personal"):
         rows = conn.execute(
             "SELECT thread_id, triage_contact_display, contact_handle, "
-            "message_count, triage_reason, triage_confidence "
+            "message_count, triage_reason, triage_confidence, triage_debug "
             "FROM threads WHERE is_reviewed=-1 AND triage_bucket=? "
             "ORDER BY triage_confidence DESC LIMIT ?",
             (bucket, top),
@@ -625,7 +684,28 @@ def _print_bucket_summary(conn: sqlite3.Connection, top: int = 3) -> None:
             continue
         for r in rows:
             display = r[1] or _rct._mask(r[2])
-            print(f"  {display:25s}  conf={r[5]:.2f}  msgs={r[3]:3d}  {r[4][:60]}")
+            dbg: dict[str, Any] = {}
+            try:
+                dbg = json.loads(r[6] or "{}")
+            except Exception:
+                pass
+            scores   = dbg.get("scores", {})
+            flags    = dbg.get("risk_flags", [])
+            evidence = dbg.get("evidence", [])
+            readable = dbg.get("readable_message_count", "?")
+            named    = "yes" if dbg.get("contact_name_found") else "no"
+            tech     = scores.get("tech", "?")
+            rest     = scores.get("restaurant", "?")
+            build    = scores.get("builder", "?")
+            print(
+                f"  {display:28s}  conf={r[5]:.2f}  msgs={r[3]:4d}  "
+                f"name={named}  tech={tech}  rest={rest}  build={build}  readable={readable}"
+            )
+            print(f"    → {r[4][:75]}")
+            if flags:
+                print(f"    flags: {', '.join(flags)}")
+            if evidence:
+                print(f"    evidence: {'; '.join(evidence[:3])}")
 
 
 def _print_run_summary(result: dict[str, Any], verbose: bool = False) -> None:
