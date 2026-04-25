@@ -402,6 +402,8 @@ _CLIENT_INTEL_DB = Path(
 if not _CLIENT_INTEL_DB.parent.is_dir():
     _CLIENT_INTEL_DB = Path("/Users/bob/AI-Server/data/client_intel") / "message_thread_index.sqlite"
 
+_TRIAGE_STATS_PATH = _CLIENT_INTEL_DB.parent / "triage_stats.json"
+
 
 def _client_intel_db_rw() -> sqlite3.Connection | None:
     """Open thread index for read-write. Returns None if DB missing."""
@@ -803,6 +805,16 @@ async def client_intel_triage_summary() -> dict[str, Any]:
         result["last_triaged"] = conn.execute(
             "SELECT MAX(triaged_at) FROM threads WHERE triaged_at IS NOT NULL"
         ).fetchone()[0]
+        # Merge snapshot health stats from sidecar file written by auto_triage
+        try:
+            if _TRIAGE_STATS_PATH.is_file():
+                stats = json.loads(_TRIAGE_STATS_PATH.read_text())
+                result["snapshot_used"]          = stats.get("snapshot_used")
+                result["snapshot_message_count"] = stats.get("snapshot_message_count")
+                result["attributed_body_count"]  = stats.get("attributed_body_count")
+                result["readable_sample_count"]  = stats.get("readable_sample_count")
+        except Exception:
+            pass
         return result
     except Exception as exc:
         return {"status": "error", "error": str(exc)[:200]}

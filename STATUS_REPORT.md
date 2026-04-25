@@ -2,6 +2,18 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
 
+### Client Intel Auto-Triage Hardening — 2026-04-25T16:11Z (Claude Code)
+
+718 tests pass (+27 new). Results: high_value=3, ambiguous=168, low_priority=96, hidden_personal=0.
+New: `--snapshot-auto` (auto-copies chat.db without closing Messages.app), `--explain THREAD_ID`,
+`--bucket-summary`, `--top N`, explicit `--dry-run` flag. `triage_debug` JSON stored per thread
+(scores, evidence, readable_message_count). `triage_stats.json` sidecar written after every run.
+Cortex triage-summary endpoint now reports snapshot_message_count, attributed_body_count,
+readable_sample_count. `_TECH_TERMS` expanded with proposal/walkthrough/project/site visit/job site.
+Symphony mention → +3 tech score boost. Named contact + >10 msgs + conf≥0.50 → high_value.
+- [FOLLOWUP] Review the 3 high_value threads via `python3 scripts/auto_triage_client_threads.py --bucket-summary --top 10`
+- [FOLLOWUP] Review the ambiguous GC-suffix threads (Travis GC, Adam GC, Lizzie GC) for manual classification
+
 ### Client Intel Auto-Triage snapshot patch — 2026-04-25T15:27Z (Claude Code)
 
 Before (live locked DB): high_value=1, ambiguous=133, low_priority=133
@@ -42,6 +54,20 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+### Self-improvement loop — 2026-04-25T15:29:13Z
+
+inbox processed: 19, cards: 1 (0 auto-run / 0 needs-Matt / 1 deferred / 0 external / 0 needs-fetch)
+
+- `20260425T152704Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md` → Status: reject/defer → duplicate iMessage URL pattern, covered by existing batch processing proposal
+
+### Self-improvement loop — 2026-04-25T16:01:30Z
+
+inbox processed: 18, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 18 inbox items had already been processed in previous runs. No new cards generated.
+
+18 previous items already processed (idempotency check). Batch processing prompt exists at `.cursor/prompts/self-improvement/batch-similar-imessage-urls.md` for consolidating similar patterns.
 
 ### Self-improvement loop — 2026-04-25T14:24:27Z
 

@@ -85,6 +85,7 @@ _TECH_TERMS = (
     "rack", "network", "wifi", "wi-fi", "sonos", "theater", "prewire",
     "araknis", "wattbox", "lutron", "surveillance", "camera", "projector",
     "screen", "automation", "programming", "install",
+    "proposal", "walkthrough", "project", "site visit", "job site", "budget",
 )
 
 _BUILDER_TERMS = (
@@ -214,6 +215,9 @@ def _score_domain_signals(
             tech += 2
         if any(s in c for s in ("finish", "trim", "rough")):
             builder += 1
+    # Intro-phrase boost: direct Symphony mention = very strong client signal
+    if "symphony" in all_text:
+        tech += 3
     return {"restaurant": restaurant, "tech": tech, "builder": builder, "vendor": vendor}
 
 
@@ -329,6 +333,7 @@ def analyze_thread_assist(
         "confidence": round(conf, 2),
         "risk_flags": risk_flags,
         "evidence": evidence,
+        "_scores": scores,
     }
 
 

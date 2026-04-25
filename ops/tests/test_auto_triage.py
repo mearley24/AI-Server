@@ -777,3 +777,316 @@ class TestCortexEndpoints:
         data = r.json()
         assert data["count"] == 1
         assert data["threads"][0]["triage_bucket"] == "hidden_personal"
+
+
+# ── TestAutoSnapshot ──────────────────────────────────────────────────────────
+
+class TestAutoSnapshot:
+
+    def test_auto_snapshot_returns_path_on_success(self, tmp_path):
+        fake_src = tmp_path / "chat.db"
+        fake_src.write_bytes(b"fakedb")
+        snap_dir = tmp_path / "snap"
+        with patch.object(mod, "_LIVE_CHAT_DB", fake_src), \
+             patch.object(mod, "_SNAPSHOT_DIR", snap_dir):
+            result = mod._auto_snapshot()
+        assert result is not None
+        assert result.name == "chat.db"
+        assert result.is_file()
+
+    def test_auto_snapshot_copies_wal_file(self, tmp_path):
+        fake_src = tmp_path / "chat.db"
+        fake_src.write_bytes(b"fakedb")
+        wal = tmp_path / "chat.db-wal"
+        wal.write_bytes(b"fakewal")
+        snap_dir = tmp_path / "snap"
+        with patch.object(mod, "_LIVE_CHAT_DB", fake_src), \
+             patch.object(mod, "_SNAPSHOT_DIR", snap_dir):
+            mod._auto_snapshot()
+        assert (snap_dir / "chat.db-wal").is_file()
+
+    def test_auto_snapshot_returns_none_on_failure(self, tmp_path):
+        missing = tmp_path / "nonexistent" / "chat.db"
+        snap_dir = tmp_path / "snap"
+        with patch.object(mod, "_LIVE_CHAT_DB", missing), \
+             patch.object(mod, "_SNAPSHOT_DIR", snap_dir):
+            result = mod._auto_snapshot()
+        assert result is None
+
+    def test_auto_snapshot_creates_snapshot_dir(self, tmp_path):
+        fake_src = tmp_path / "chat.db"
+        fake_src.write_bytes(b"fakedb")
+        snap_dir = tmp_path / "deep" / "nested" / "snap"
+        with patch.object(mod, "_LIVE_CHAT_DB", fake_src), \
+             patch.object(mod, "_SNAPSHOT_DIR", snap_dir):
+            mod._auto_snapshot()
+        assert snap_dir.is_dir()
+
+
+# ── TestSnapshotDiagnostics ───────────────────────────────────────────────────
+
+class TestSnapshotDiagnostics:
+
+    def test_diagnostics_required_keys(self, tmp_path):
+        snap = _create_snapshot_chat_db(
+            tmp_path / "chat.db", "iMessage;-;+15550001111", ["hello world"]
+        )
+        diag = mod._snapshot_diagnostics(snap)
+        for key in ("total_messages", "text_messages", "attributed_body_messages",
+                    "readable_sample", "readable_sample_of", "coverage_ok"):
+            assert key in diag, f"missing key: {key}"
+
+    def test_diagnostics_counts_messages(self, tmp_path):
+        snap = _create_snapshot_chat_db(
+            tmp_path / "chat.db",
+            "iMessage;-;+15550001112",
+            ["msg1", "msg2", "msg3"],
+        )
+        diag = mod._snapshot_diagnostics(snap)
+        assert diag["total_messages"] == 3
+        assert diag["text_messages"] == 3
+
+    def test_diagnostics_empty_db(self, tmp_path):
+        snap = _create_snapshot_chat_db(tmp_path / "chat.db", "iMessage;-;+1", [])
+        diag = mod._snapshot_diagnostics(snap)
+        assert diag["total_messages"] == 0
+        assert diag["coverage_ok"] is True
+
+    def test_diagnostics_error_on_bad_path(self, tmp_path):
+        diag = mod._snapshot_diagnostics(tmp_path / "nonexistent.db")
+        assert "error" in diag
+
+
+# ── TestTriageBucketReadableCount ─────────────────────────────────────────────
+
+class TestTriageBucketReadableCount:
+
+    def test_readable_count_param_does_not_break_existing(self):
+        """readable_message_count=0 default must not change bucket logic."""
+        assist = _make_assist(conf=0.25)
+        bucket, _, _ = mod._determine_triage_bucket(
+            "work", 0.6, 10, "2026-01-01", "", assist, readable_message_count=0
+        )
+        assert bucket == "low_priority"
+
+    def test_readable_count_stored_in_triage_debug(self, tmp_path):
+        """readable_message_count must appear in triage_debug JSON after apply."""
+        db = _create_thread_db(tmp_path, [{"thread_id": "t1", "contact_handle": "+15550000001"}])
+        conn = _open_rw(db)
+        fake_texts = ["Control4 proposal ready", "sonos installed"]
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=fake_texts), \
+             patch.object(rct_mod, "analyze_thread_assist",
+                          return_value=_make_assist(conf=0.25)):
+            mod.run_triage(conn, dry_run=False)
+        row = conn.execute("SELECT triage_debug FROM threads WHERE thread_id='t1'").fetchone()
+        conn.close()
+        assert row and row[0], "triage_debug not stored"
+        dbg = json.loads(row[0])
+        assert dbg["readable_message_count"] == len(fake_texts)
+
+    def test_named_contact_high_message_count_moderate_conf_is_high_value(self):
+        """Named contact + >10 msgs + assist_conf>=0.50 → high_value."""
+        assist = _make_assist(conf=0.55)
+        bucket, reason, _ = mod._determine_triage_bucket(
+            "work", 0.7, 15, "2026-04-01", "Bob Builder", assist
+        )
+        assert bucket == "high_value"
+        assert "15 messages" in reason
+
+
+# ── TestImprovedHighValueScoring ──────────────────────────────────────────────
+
+class TestImprovedHighValueScoring:
+
+    def test_named_11_messages_conf_50_is_high_value(self):
+        assist = _make_assist(conf=0.50)
+        bucket, _, _ = mod._determine_triage_bucket(
+            "work", 0.7, 11, "2026-04-01", "Alice Client", assist
+        )
+        assert bucket == "high_value"
+
+    def test_named_10_messages_conf_50_not_high_value(self):
+        """Boundary: exactly 10 messages does NOT trigger the >10 rule."""
+        assist = _make_assist(conf=0.50)
+        bucket, _, _ = mod._determine_triage_bucket(
+            "work", 0.5, 10, "2026-04-01", "Alice Client", assist
+        )
+        assert bucket != "high_value"
+
+    def test_unnamed_11_messages_conf_50_not_high_value(self):
+        """The >10 rule only applies when name is present."""
+        assist = _make_assist(conf=0.50)
+        bucket, _, _ = mod._determine_triage_bucket(
+            "work", 0.6, 15, "2026-04-01", "", assist
+        )
+        assert bucket != "high_value"
+
+    def test_symphony_signal_boost_increases_tech_score(self):
+        """'symphony' in message texts should boost tech score via intro-phrase logic."""
+        import scripts.review_client_threads as rct
+        scores = rct._score_domain_signals(
+            ["symphony smart homes proposal ready for the Beaver Creek project"], []
+        )
+        assert scores["tech"] >= 3, f"expected tech>=3, got {scores}"
+
+    def test_proposal_term_in_tech_terms(self):
+        """'proposal' in _TECH_TERMS contributes to tech score."""
+        import scripts.review_client_threads as rct
+        scores = rct._score_domain_signals(["the proposal looks great"], [])
+        assert scores["tech"] >= 1
+
+    def test_walkthrough_term_in_tech_terms(self):
+        """'walkthrough' in _TECH_TERMS contributes to tech score."""
+        import scripts.review_client_threads as rct
+        scores = rct._score_domain_signals(["let's schedule a walkthrough next week"], [])
+        assert scores["tech"] >= 1
+
+
+# ── TestTriageDebugStored ─────────────────────────────────────────────────────
+
+class TestTriageDebugStored:
+
+    def test_triage_debug_column_exists_after_apply(self, tmp_path):
+        db = _create_thread_db(tmp_path, [{"thread_id": "t1", "contact_handle": "+15550000001"}])
+        conn = _open_rw(db)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=False)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
+        conn.close()
+        assert "triage_debug" in cols
+
+    def test_triage_debug_is_valid_json(self, tmp_path):
+        db = _create_thread_db(tmp_path, [{"thread_id": "t1", "contact_handle": "+15550000001"}])
+        conn = _open_rw(db)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=False)
+        row = conn.execute("SELECT triage_debug FROM threads WHERE thread_id='t1'").fetchone()
+        conn.close()
+        assert row and row[0]
+        dbg = json.loads(row[0])
+        assert "contact_name_found" in dbg
+        assert "readable_message_count" in dbg
+        assert "inferred_domain" in dbg
+
+    def test_triage_debug_dry_run_not_written_to_db(self, tmp_path):
+        db = _create_thread_db(tmp_path, [{"thread_id": "t1", "contact_handle": "+15550000001"}])
+        conn = _open_rw(db)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=True)
+        # triage_debug column may not exist in dry-run; if it does exist value is NULL
+        has_col = any(r[1] == "triage_debug" for r in conn.execute("PRAGMA table_info(threads)").fetchall())
+        conn.close()
+        if has_col:
+            check = sqlite3.connect(str(db))
+            val = check.execute("SELECT triage_debug FROM threads WHERE thread_id='t1'").fetchone()[0]
+            check.close()
+            assert val is None
+
+
+# ── TestGetThreadExplain ──────────────────────────────────────────────────────
+
+class TestGetThreadExplain:
+
+    def _prepare(self, tmp_path, name="John Smith"):
+        db = _create_thread_db(tmp_path, [{
+            "thread_id": "t1", "contact_handle": "+15550000001",
+            "message_count": 20, "work_confidence": 0.85,
+        }])
+        conn = _open_rw(db)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=name), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=["control4 installed"]), \
+             patch.object(rct_mod, "analyze_thread_assist",
+                          return_value=_make_assist(conf=0.75, evidence=["tech signals: control4"])):
+            mod.run_triage(conn, dry_run=False)
+        return db, conn
+
+    def test_explain_returns_required_keys(self, tmp_path):
+        _, conn = self._prepare(tmp_path)
+        info = mod.get_thread_explain(conn, "t1")
+        conn.close()
+        for key in ("thread_id", "triage_bucket", "triage_reason", "triage_confidence",
+                    "suggested_relationship", "inferred_domain", "risk_flags", "debug"):
+            assert key in info, f"missing key: {key}"
+
+    def test_explain_unknown_thread_returns_error(self, tmp_path):
+        db = _create_thread_db(tmp_path, [])
+        conn = _open_rw(db)
+        mod._ensure_triage_columns(conn)
+        info = mod.get_thread_explain(conn, "nonexistent_id")
+        conn.close()
+        assert "error" in info
+
+    def test_explain_debug_contains_scores(self, tmp_path):
+        _, conn = self._prepare(tmp_path)
+        info = mod.get_thread_explain(conn, "t1")
+        conn.close()
+        assert "debug" in info
+        dbg = info["debug"]
+        assert "readable_message_count" in dbg
+        assert "contact_name_found" in dbg
+
+    def test_explain_phone_masked(self, tmp_path):
+        _, conn = self._prepare(tmp_path, name="")
+        info = mod.get_thread_explain(conn, "t1")
+        conn.close()
+        assert "+15550000001" not in info.get("contact_display", "")
+        assert "***" in info.get("contact_masked", "")
+
+
+# ── TestTriageStatsJson ───────────────────────────────────────────────────────
+
+class TestTriageStatsJson:
+
+    def test_stats_json_written_after_run(self, tmp_path):
+        stats_path = tmp_path / "triage_stats.json"
+        db = _create_thread_db(tmp_path, [{"thread_id": "t1", "contact_handle": "+15550000001"}])
+        conn = _open_rw(db)
+        with patch.object(mod, "_TRIAGE_STATS_PATH", stats_path), \
+             patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=True)
+        conn.close()
+        assert stats_path.is_file(), "triage_stats.json not written"
+        data = json.loads(stats_path.read_text())
+        assert "last_run" in data
+        assert "processed" in data
+        assert "counts" in data
+
+    def test_stats_json_includes_snapshot_info(self, tmp_path):
+        stats_path = tmp_path / "triage_stats.json"
+        snap = _create_snapshot_chat_db(
+            tmp_path / "snap" / "chat.db", "iMessage;-;+1", ["hello"]
+        )
+        diag = mod._snapshot_diagnostics(snap)
+        db = _create_thread_db(tmp_path, [{"thread_id": "t1", "contact_handle": "+15550000001"}])
+        conn = _open_rw(db)
+        with patch.object(mod, "_TRIAGE_STATS_PATH", stats_path), \
+             patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=True, chat_db_path=snap, snapshot_diagnostics=diag)
+        conn.close()
+        data = json.loads(stats_path.read_text())
+        assert data.get("snapshot_used") is not None
+        assert "snapshot_message_count" in data
+
+    def test_stats_json_dry_run_flag_recorded(self, tmp_path):
+        stats_path = tmp_path / "triage_stats.json"
+        db = _create_thread_db(tmp_path, [])
+        conn = _open_rw(db)
+        with patch.object(mod, "_TRIAGE_STATS_PATH", stats_path), \
+             patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=True)
+        conn.close()
+        data = json.loads(stats_path.read_text())
+        assert data["dry_run"] is True
