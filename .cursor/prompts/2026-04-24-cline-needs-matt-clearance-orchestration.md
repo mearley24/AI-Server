@@ -10,8 +10,34 @@ run dev). Use bounded commands: timeout, --lines N, --since, head/sed
 Category: ops
 Risk tier: high
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-25 by Claude Code (parent-agent final closure audit).
+All three Bob-runtime gates this prompt orchestrated have committed
+evidence:
+1. Cortex dedup `--apply` — runbook `Status: DONE`; receipts
+   `ops/verification/20260423-173120-cortex-dedup-backfill.json` +
+   `20260423-173840-cortex-dedup-backfill.json` (`rows_deleted=1`,
+   idempotent).
+2. BlueBubbles health plist arm — runbook `Status: DONE`; receipt
+   `ops/verification/20260424-083518-bluebubbles-health-arm.txt`
+   (`run interval=300`, `.err` empty, BlueBubbles 1.9.9 healthy).
+3. X-intake reply-leg live smoke — runbook `Status: PARTIAL-PASS`
+   (2026-04-24 17:42 UTC); receipt
+   `ops/verification/20260424-174246-x-intake-reply-leg-live-smoke.txt`.
+   Chain end-to-end through the BlueBubbles API; final outbound
+   `send_text` blocked by macOS 26 apple-script hang, tracked as
+   `[FOLLOWUP: bluebubbles-send-method]` in STATUS_REPORT.md (NOT a
+   `[NEEDS_MATT]` gate — it is a code/compat issue, not a
+   real-world Matt decision).
+Reconciliation evidence:
+- `ops/verification/20260424-085318-needs-matt-clearance-orchestration.txt`
+- `ops/verification/20260424-150000-needs-matt-clearance-reconciliation.txt`
+- `docs/audits/2026-04-24-loose-ends-reconciliation.md`
+- `docs/audits/2026-04-25-final-closure-and-exposure-audit.md`
+<!-- closure: end -->
 
 **Title:** NEEDS_MATT Clearance Orchestration — reconcile the three
 remaining Bob-runtime gates against committed evidence, arm the

@@ -1,0 +1,150 @@
+Final Closure & Exposure Audit — Verification Receipt
+=====================================================
+Date (UTC): 2026-04-25
+Runner: Claude Code (parent-agent autonomous pass)
+Host: parent-agent environment (no Bob runtime actions performed)
+Audit doc: docs/audits/2026-04-25-final-closure-and-exposure-audit.md
+
+== Scope (per user request) ==
+
+"is this everything? go all the way back and clear up anything started
+in any way so everything is clean with no backdoors."
+
+Evidence-driven repo-only closure pass. Forbidden: Bob runtime actions,
+launchctl, docker, sudo, env mutation, external sends, opened ports,
+secret reads, money/trading actions, watchdog/Docker restarts,
+destructive changes. Dirty harness-owned files (.claude/**, .mcp.json,
+CLAUDE.md) preserved.
+
+== Files modified this pass ==
+
+- .cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md
+    Status: active -> done (closure block + receipt path)
+- .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md
+    Status: active -> done (closure block citing PARTIAL-PASS receipt)
+- .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+    Status: active -> done (closure block; all three orchestrated gates
+    have committed evidence)
+- ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md
+    Status: ARMED -> DONE (applied 2026-04-24 18:39 UTC, Matt APPROVE
+    APPLY; receipt 20260424-183925-x-intake-lab-removal/)
+- ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+    Status header: PRECHECKS_PASSED -> PARTIAL-PASS (with four receipt
+    pointers)
+- STATUS_REPORT.md
+    New top section: "Final Closure & Exposure Audit (2026-04-25 UTC)"
+
+Files created:
+- docs/audits/2026-04-25-final-closure-and-exposure-audit.md
+- ops/verification/20260425-final-closure-and-exposure-audit.txt (this file)
+
+== Bounded verification ==
+
+git status --short:
+  Modified (audit-owned):
+    STATUS_REPORT.md
+    .cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md
+    .cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md
+    .cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md
+    ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md
+    ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md
+  Untracked (audit-owned):
+    docs/audits/2026-04-25-final-closure-and-exposure-audit.md
+    ops/verification/20260425-final-closure-and-exposure-audit.txt
+  Modified (harness-owned, preserved per parent instruction):
+    .claude/agents/data-model-explorer.md
+    .claude/skills/INSTRUCTIONS.md
+    .claude/skills/code-review/SKILL.md
+    .claude/skills/coding-workflow/SKILL.md
+    .claude/skills/data-workflow/SKILL.md
+    .mcp.json
+    CLAUDE.md
+
+git rev-list --left-right --count origin/main...HEAD: 0  0  (in sync at start)
+
+python3 -m py_compile scripts/task_runner.py:
+  clean (no output, exit 0)
+
+grep -RIn "Status: ARMED" ops/runbooks/:
+  ops/runbooks/2026-04-24-port-8102-unknown-listener-evidence.md  (kept open)
+  ops/runbooks/2026-04-24-ports-md-registry-refresh.md            (kept open)
+  Count: 2 (was 3 before this pass; x-intake-lab moved to DONE).
+
+grep -RIn "Status:\s*active" .cursor/prompts/*.md (top-level):
+  2026-04-24-cline-port-8102-unknown-listener-evidence.md   (kept open)
+  2026-04-24-cline-ports-md-registry-refresh.md             (kept open)
+  audit-and-design-network-monitoring-v2.md                 (legacy)
+  diagnose-bob-freezing-and-runtime-hangs.md                (legacy)
+  fix-bob-freezing-phase-1-runner-git-timeouts.md           (legacy)
+  needs-matt-hygiene-check.md                               (legacy)
+  phase-1-reply-actions-foundation.md                       (legacy)
+  cline-prompt-AA-claude-max-setup.md                       (long-running ops)
+  cline-prompt-init-autonomy-sweep-and-prompts.md           (meta)
+  cline-prompt-noop-smoke.md                                (meta diagnostic)
+  Three closures applied this pass:
+    2026-04-24-cline-x-intake-lab-compose-removal.md         -> done
+    2026-04-24-cline-x-intake-reply-leg-evidence-capture.md  -> done
+    2026-04-24-cline-needs-matt-clearance-orchestration.md   -> done
+
+x-intake-lab compose / port presence check:
+  grep -n "x-intake-lab\|8103" docker-compose.yml: zero hits (confirmed removed)
+  PORTS.md row 8103 is in "Removed Services" (2026-04-24).
+
+Audit document path: docs/audits/2026-04-25-final-closure-and-exposure-audit.md
+  Size: ~18.5 KB, 5 sections (TL;DR, exposure assessment, closure matrix,
+  verdict, cleanup, exit state).
+
+== Closure matrix counts ==
+
+CLOSED / verified            : 18 lanes
+CLOSED-partial               : 1 (reply-leg live smoke - PARTIAL-PASS)
+OPEN-gated (legitimate gate) : 4 (:8102 evidence, PORTS.md refresh,
+                                  watchdog system deploy,
+                                  bluebubbles-send-method)
+OPEN-risk (candidate exposure): 1 (:8102 second listener; same row as
+                                   the OPEN-gated evidence prompt)
+HISTORICAL-only              : 6
+UNKNOWN-needs evidence       : 0
+
+Files changed                : 8 (6 modified + 2 created)
+Receipts created             : 2 (this file + the audit doc)
+Receipts referenced          : 7+ (port-API surface audit dir, x-intake-
+                                   lab removal dir, four reply-leg
+                                   smoke receipts, bluebubbles webhook
+                                   receipt, dedup backfill receipts,
+                                   loose-ends reconciliation receipt)
+Active prompts closed        : 3
+Runbooks closed              : 1 (DONE) + 1 (PARTIAL-PASS header bump)
+Active prompts kept open     : 2 exposure-relevant + ~8 legacy/meta
+                               (no exposure)
+ARMED runbooks kept open     : 2 (both bounded: read-only / docs-only)
+
+== Backdoor / exposure verdict (repo evidence only) ==
+
+No backdoor found in Symphony code/config. The only repo-flagged
+exposure anomaly is the unexplained second listener on *:8102 owned by
+com.symphony.file-watcher (PID 962 in the 2026-04-24 audit). The
+bounded read-only evidence-capture prompt + runbook are armed; this
+audit takes no Bob runtime action. Until that evidence run produces a
+PID_COLLISION | INTENTIONAL_SECONDARY | UNINTENTIONAL_SECONDARY
+verdict, treat this as the single open exposure question.
+
+Other LAN-wide bindings (1234 BlueBubbles, 8199 imessage-bridge,
+8421 trading-api, 11434 Ollama) are documented and intentional. The
+audit's hardening-recommendation note for 8421 (consider loopback-only)
+is recorded as a follow-up opportunity, not a backdoor.
+
+== Exact next commands (Bob-only, Matt-gated; not run by this audit) ==
+
+  open .cursor/prompts/2026-04-24-cline-port-8102-unknown-listener-evidence.md
+  open .cursor/prompts/2026-04-24-cline-ports-md-registry-refresh.md
+  sudo setup/install_bob_watchdog.sh --deploy-system
+
+== Attestation ==
+
+No Bob runtime actions performed. No launchctl, docker, sudo, env
+mutation, external send, opened ports, secrets read, money/trading
+actions, watchdog/Docker restart, or destructive change. Harness-owned
+dirty files preserved.
+
+Receipt timestamp: 2026-04-25

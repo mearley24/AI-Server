@@ -1,9 +1,11 @@
 # Runbook — Remove decommissioned x-intake-lab from docker-compose.yml
 
-Status: ARMED (awaiting Bob operator)
+Status: DONE (applied 2026-04-24 18:39 UTC by Matt; receipt `ops/verification/20260424-183925-x-intake-lab-removal/`)
 Created: 2026-04-24 (UTC), Claude Code (parent-agent docs-only pass)
-Paired prompt: `.cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md`
+Closed: 2026-04-25 by Claude Code (parent-agent final closure audit).
+Paired prompt: `.cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md` (Status: done)
 Parent evidence: `ops/verification/20260424-182340-port-api-surface-audit/classification.md`
+Final audit: `docs/audits/2026-04-25-final-closure-and-exposure-audit.md`
 
 ## Why this runbook exists
 

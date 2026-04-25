@@ -1,12 +1,20 @@
 # Cline Prompt — Remove decommissioned x-intake-lab from docker-compose.yml
 
-Status: active
+Status: done
 Owner: Cline (ACT MODE on Bob)
 Created: 2026-04-24 (UTC)
+Closed: 2026-04-25 by Claude Code (parent-agent final closure audit).
+Closure evidence:
+- Receipt: `ops/verification/20260424-183925-x-intake-lab-removal/`
+  (README.md, before.txt, diff.patch, compose-config.txt — APPROVE APPLY by Matt)
+- `docker-compose.yml`: x-intake-lab service block + named volume removed; `docker compose config --services` returns 18 services with no x-intake-lab.
+- `PORTS.md`: row 8103 moved to "Removed Services" (2026-04-24); footnote corrected.
+- STATUS_REPORT.md: closure line appended in same commit window.
+Final audit: `docs/audits/2026-04-25-final-closure-and-exposure-audit.md`.
 Parent prompt: `.cursor/prompts/2026-04-24-cline-full-port-api-surface-audit.md` (Status: done)
 Parent evidence: `ops/verification/20260424-182340-port-api-surface-audit/classification.md`
   — Finding #4: "x-intake-lab (port 8103) still defined in docker-compose.yml but not running"
-Paired runbook: `ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md`
+Paired runbook: `ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md` (Status: DONE)
 
 ## Why this prompt exists
 

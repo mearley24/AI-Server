@@ -1,9 +1,15 @@
 # X-Intake Reply-Leg Live Smoke — Bob Runtime Arm Runbook
 
-**Status:** `PRECHECKS_PASSED` — x-intake rebuilt 2026-04-24 with Phase 2-6 code.
-Handler registry confirmed. DRY=1 posture confirmed. Awaiting Matt's
-iPhone for action seed + live send (steps precheck-6 through arm-7).
-See `ops/verification/20260424-084105-x-intake-reply-leg-live-smoke-precheck.txt`.
+**Status:** `PARTIAL-PASS` (2026-04-24 17:42 UTC) — chain proven end-to-end
+through to the BlueBubbles API (webhook → reply_listener → cortex_remember
+→ Cortex /remember 200 → send_ack); outbound `send_text` blocked by macOS
+26 apple-script hang. Three code-fixes landed during the smoke. Tracked as
+`[FOLLOWUP: bluebubbles-send-method]` in STATUS_REPORT.md.
+Receipts: `ops/verification/20260424-174246-x-intake-reply-leg-live-smoke.txt`
+(final), `20260424-165559-x-intake-reply-leg-live-smoke.txt`,
+`20260424-163523-x-intake-reply-leg-live-smoke-precheck.txt`,
+`20260424-084105-x-intake-reply-leg-live-smoke-precheck.txt` (initial).
+Final closure audit: `docs/audits/2026-04-25-final-closure-and-exposure-audit.md`.
 
 `[NEEDS_MATT]` + `[BOB_CLINE_ONLY]` + **[EXTERNAL_SEND]**
 — **NOT auto-run by Computer / Cline / Claude Code / task-runner /

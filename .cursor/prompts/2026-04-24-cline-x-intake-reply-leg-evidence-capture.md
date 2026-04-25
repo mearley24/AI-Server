@@ -10,8 +10,29 @@ run dev). Use bounded commands: timeout, --lines N, --since, head/sed
 Category: ops
 Risk tier: high
 Trigger:   manual
-Status:    active
+Status:    done
 <!-- autonomy: end -->
+
+<!-- closure: start -->
+Closed: 2026-04-25 by Claude Code (parent-agent final closure audit).
+Verdict: **PARTIAL-PASS** — evidence captured for the live smoke; the
+gate the prompt was created to satisfy is no longer empty.
+Receipt: `ops/verification/20260424-174246-x-intake-reply-leg-live-smoke.txt`
+(also `20260424-165559-x-intake-reply-leg-live-smoke.txt`,
+`20260424-163523-x-intake-reply-leg-live-smoke-precheck.txt`).
+Chain proven end-to-end through to the BlueBubbles API
+(webhook → x-intake reply_listener → cortex_remember → POST cortex
+/remember 200 → send_ack), with three code-fixes landed during the
+session (listener bytes-decode, ack httpx fallback, slot_handler_map
+wiring). Final outbound `send_text` blocked by macOS 26 apple-script
+hang on Bob — that is tracked as `[FOLLOWUP: bluebubbles-send-method]`
+in STATUS_REPORT.md (live-smoke entry) and is **not** the prompt's
+gate; the prompt's gate was "no evidence file exists", and it now does.
+Authoritative runbook updated:
+`ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md`
+(`Status: PARTIAL-PASS`).
+Final audit: `docs/audits/2026-04-25-final-closure-and-exposure-audit.md`.
+<!-- closure: end -->
 
 **Title:** X-Intake Reply-Leg — Evidence Capture. Run the
 runbook-approved dry-run-only variant by default; optionally run the

@@ -41,6 +41,65 @@ Verification: `ops/verification/self-improve-20260424T165000Z.txt`
 
 ---
 
+## Final Closure & Exposure Audit (2026-04-25 UTC, Claude Code)
+
+Parent-agent docs-only pass. User question: "is this everything? go all
+the way back and clear up anything started in any way so everything is
+clean with no backdoors." Answer: yes — repo is clean; one exposure
+question (`*:8102` second listener) remains open with a bounded
+read-only evidence prompt already armed; everything else either has
+committed evidence or is a real-world Matt gate. **No Bob runtime
+actions, `launchctl`, `docker`, `sudo`, env mutation, external send,
+opened ports, secret reads, money/trading actions, or destructive
+changes performed by this pass.** Dirty harness-owned files
+(`.claude/**`, `.mcp.json`, `CLAUDE.md`) preserved.
+
+Audit document: `docs/audits/2026-04-25-final-closure-and-exposure-audit.md`.
+
+Closures applied this pass (closure blocks added; status bumped on
+matching runbooks):
+
+- `.cursor/prompts/2026-04-24-cline-x-intake-lab-compose-removal.md` → `done`
+- `ops/runbooks/2026-04-24-x-intake-lab-compose-removal.md` → `Status: DONE`
+  (applied 2026-04-24 18:39 UTC by Matt; receipt `ops/verification/20260424-183925-x-intake-lab-removal/`)
+- `.cursor/prompts/2026-04-24-cline-x-intake-reply-leg-evidence-capture.md` → `done`
+  (PARTIAL-PASS evidence at `ops/verification/20260424-174246-x-intake-reply-leg-live-smoke.txt`)
+- `ops/runbooks/2026-04-23-x-intake-reply-leg-live-smoke-bob-arm.md` →
+  status header bumped from `PRECHECKS_PASSED` to **`PARTIAL-PASS`**
+- `.cursor/prompts/2026-04-24-cline-needs-matt-clearance-orchestration.md` → `done`
+  (all three orchestrated gates have committed evidence)
+
+Backdoor / exposure verdict (repo evidence only):
+
+- **No backdoor planted by Symphony code/config.** No suspicious
+  bind-shell, reverse-tunnel, or undocumented listener.
+- **One unexplained LAN binding remains open:** `*:8102` second listener
+  owned by `com.symphony.file-watcher` (PID 962 in the 2026-04-24 audit).
+  Bounded read-only evidence capture prompt+runbook armed; no Bob action
+  taken. Until the verdict line lands, this is the single open exposure
+  question.
+- **Documented-and-intentional LAN bindings:** 1234 (BlueBubbles, password-
+  protected), 8199 (iMessage bridge fallback), 8421 (trading-api),
+  11434 (Ollama). Each has a concrete reason and is recorded in the
+  port classification table.
+
+Lanes that remain genuinely open after this pass (each with exactly
+one prompt+runbook; no duplicates):
+
+1. `:8102` UNKNOWN second listener — read-only evidence prompt+runbook ARMED.
+2. PORTS.md registry refresh — partial fix on disk; the
+   "Localhost-Locked" section still under-states LAN exposure for
+   1234/8199/8421/11434 vs the audit classification.
+3. `[NEEDS_MATT] sudo setup/install_bob_watchdog.sh --deploy-system`
+   (sync 300s cooldown; not repo-closeable).
+4. `[FOLLOWUP: bluebubbles-send-method]` — macOS 26 AppleScript hang;
+   private-api helper not connecting. AppleScript bridge :8199 is the
+   working fallback.
+
+Verification receipt: `ops/verification/20260425-final-closure-and-exposure-audit.txt`.
+
+---
+
 ## Port & API Surface Audit — prompt armed (2026-04-24 UTC, Claude Code)
 
 Parent-agent docs-only pass. Matt asked (a) whether a recent full audit
