@@ -7,11 +7,12 @@ is_reviewed or creating profiles. Human approval is still required before
 any thread becomes an approved profile source.
 
 Usage:
-    python3 scripts/auto_triage_client_threads.py --dry-run         # default
+    python3 scripts/auto_triage_client_threads.py                   # dry-run, live chat.db
     python3 scripts/auto_triage_client_threads.py --apply
     python3 scripts/auto_triage_client_threads.py --summary
     python3 scripts/auto_triage_client_threads.py --bucket high_value
     python3 scripts/auto_triage_client_threads.py --limit 500 --verbose
+    python3 scripts/auto_triage_client_threads.py --chat-db data/client_intel/chatdb_snapshot/chat.db --apply
 
 Triage buckets:
     high_value       Named contacts or strong smart_home signals
@@ -223,14 +224,25 @@ def run_triage(
     limit: int = 500,
     dry_run: bool = True,
     bucket_filter: "str | None" = None,
+    chat_db_path: "Path | None" = None,
 ) -> dict[str, Any]:
     """Classify pending threads into triage buckets.
 
     Only processes is_reviewed=-1 threads.
     is_reviewed is never modified.
     Returns {dry_run, processed, counts, results}.
+
+    chat_db_path — when provided, read message texts from this SQLite file
+    instead of the live ~/Library/Messages/chat.db. Useful when Messages.app
+    holds a write lock on the live DB. WAL/SHM files alongside the snapshot
+    are handled transparently by SQLite.
     """
     _ensure_triage_columns(conn)
+
+    # Temporarily redirect _fetch_sample_texts to the snapshot if provided.
+    _orig_chat_db = _rct.CHAT_DB
+    if chat_db_path is not None:
+        _rct.CHAT_DB = Path(chat_db_path)
 
     rows = conn.execute(
         "SELECT thread_id, chat_guid, contact_handle, message_count, "
@@ -245,63 +257,67 @@ def run_triage(
     counts: dict[str, int] = {b: 0 for b in TRIAGE_BUCKETS}
     results: list[dict[str, Any]] = []
 
-    for r in rows:
-        handle = r["contact_handle"]
-        name   = _rct._lookup_contact_name(handle)
-        codes  = json.loads(r["reason_codes"] or "[]")
-        texts  = _rct._fetch_sample_texts(r["chat_guid"])
-        assist = _rct.analyze_thread_assist(name, texts, codes)
+    try:
+        for r in rows:
+            handle = r["contact_handle"]
+            name   = _rct._lookup_contact_name(handle)
+            codes  = json.loads(r["reason_codes"] or "[]")
+            texts  = _rct._fetch_sample_texts(r["chat_guid"])
+            assist = _rct.analyze_thread_assist(name, texts, codes)
 
-        bucket, reason, triage_conf = _determine_triage_bucket(
-            category        = r["category"],
-            work_confidence = r["work_confidence"],
-            message_count   = r["message_count"],
-            date_last       = r["date_last"] or "",
-            name            = name,
-            assist          = assist,
-        )
-
-        if bucket_filter and bucket != bucket_filter:
-            continue
-
-        counts[bucket] += 1
-        contact_display = name if name else _rct._mask(handle)
-        entry: dict[str, Any] = {
-            "thread_id":                     r["thread_id"],
-            "contact_masked":                _rct._mask(handle),
-            "triage_bucket":                 bucket,
-            "triage_reason":                 reason,
-            "triage_confidence":             round(triage_conf, 3),
-            "triage_suggested_relationship": assist["suggested_relationship_type"],
-            "triage_inferred_domain":        assist["inferred_domain"],
-            "triage_risk_flags":             json.dumps(assist["risk_flags"]),
-            "triage_contact_display":        contact_display,
-            "triaged_at":                    now_iso,
-        }
-        results.append(entry)
-
-        if not dry_run:
-            conn.execute(
-                "UPDATE threads SET "
-                "triage_bucket=?, triage_reason=?, triage_confidence=?, "
-                "triage_suggested_relationship=?, triage_inferred_domain=?, "
-                "triage_risk_flags=?, triage_contact_display=?, triaged_at=? "
-                "WHERE thread_id=?",
-                (
-                    entry["triage_bucket"],
-                    entry["triage_reason"],
-                    entry["triage_confidence"],
-                    entry["triage_suggested_relationship"],
-                    entry["triage_inferred_domain"],
-                    entry["triage_risk_flags"],
-                    entry["triage_contact_display"],
-                    entry["triaged_at"],
-                    r["thread_id"],
-                ),
+            bucket, reason, triage_conf = _determine_triage_bucket(
+                category        = r["category"],
+                work_confidence = r["work_confidence"],
+                message_count   = r["message_count"],
+                date_last       = r["date_last"] or "",
+                name            = name,
+                assist          = assist,
             )
 
-    if not dry_run:
-        conn.commit()
+            if bucket_filter and bucket != bucket_filter:
+                continue
+
+            counts[bucket] += 1
+            contact_display = name if name else _rct._mask(handle)
+            entry: dict[str, Any] = {
+                "thread_id":                     r["thread_id"],
+                "contact_masked":                _rct._mask(handle),
+                "triage_bucket":                 bucket,
+                "triage_reason":                 reason,
+                "triage_confidence":             round(triage_conf, 3),
+                "triage_suggested_relationship": assist["suggested_relationship_type"],
+                "triage_inferred_domain":        assist["inferred_domain"],
+                "triage_risk_flags":             json.dumps(assist["risk_flags"]),
+                "triage_contact_display":        contact_display,
+                "triaged_at":                    now_iso,
+            }
+            results.append(entry)
+
+            if not dry_run:
+                conn.execute(
+                    "UPDATE threads SET "
+                    "triage_bucket=?, triage_reason=?, triage_confidence=?, "
+                    "triage_suggested_relationship=?, triage_inferred_domain=?, "
+                    "triage_risk_flags=?, triage_contact_display=?, triaged_at=? "
+                    "WHERE thread_id=?",
+                    (
+                        entry["triage_bucket"],
+                        entry["triage_reason"],
+                        entry["triage_confidence"],
+                        entry["triage_suggested_relationship"],
+                        entry["triage_inferred_domain"],
+                        entry["triage_risk_flags"],
+                        entry["triage_contact_display"],
+                        entry["triaged_at"],
+                        r["thread_id"],
+                    ),
+                )
+
+        if not dry_run:
+            conn.commit()
+
+    finally:
+        _rct.CHAT_DB = _orig_chat_db
 
     return {
         "dry_run":   dry_run,
@@ -427,10 +443,11 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  python3 scripts/auto_triage_client_threads.py --dry-run --limit 200 --verbose
+  python3 scripts/auto_triage_client_threads.py --limit 200 --verbose
   python3 scripts/auto_triage_client_threads.py --apply
   python3 scripts/auto_triage_client_threads.py --summary
   python3 scripts/auto_triage_client_threads.py --bucket high_value --verbose
+  python3 scripts/auto_triage_client_threads.py --chat-db data/client_intel/chatdb_snapshot/chat.db --apply --verbose
 """,
     )
     parser.add_argument("--apply", action="store_true",
@@ -443,7 +460,21 @@ examples:
                         help="Show DB bucket counts only; no processing")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Print example entries from each bucket")
+    parser.add_argument("--chat-db", metavar="PATH",
+                        help="Path to a chat.db snapshot to use instead of the live "
+                             "~/Library/Messages/chat.db (useful when Messages.app holds a lock). "
+                             "WAL/SHM files alongside the snapshot are handled transparently.")
     args = parser.parse_args()
+
+    chat_db_path: "Path | None" = None
+    if args.chat_db:
+        chat_db_path = Path(args.chat_db)
+        if not chat_db_path.is_absolute():
+            chat_db_path = REPO_ROOT / chat_db_path
+        if not chat_db_path.is_file():
+            print(f"[error] --chat-db path not found: {chat_db_path}")
+            sys.exit(1)
+        print(f"  Using chat.db snapshot: {chat_db_path}")
 
     conn = _open_db()
     try:
@@ -459,6 +490,7 @@ examples:
             limit=args.limit,
             dry_run=not args.apply,
             bucket_filter=args.bucket,
+            chat_db_path=chat_db_path,
         )
         _print_run_summary(result, verbose=args.verbose)
         if result.get("dry_run"):

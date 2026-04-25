@@ -419,21 +419,36 @@ def _fetch_snippets(
 
 
 def _fetch_sample_texts(chat_guid: str, n: int = 20) -> list[str]:
-    """Fetch raw message texts from chat.db for domain signal analysis."""
+    """Fetch message texts from chat.db for domain signal analysis.
+
+    Handles both the plain-text `text` column and the binary NSAttributedString
+    `attributedBody` column that modern Messages.app uses for most messages.
+    """
     if not CHAT_DB.is_file():
         return []
     try:
         conn = sqlite3.connect(f"file:{CHAT_DB}?mode=ro&immutable=1", uri=True)
         rows = conn.execute(
-            "SELECT m.text FROM message m "
+            "SELECT m.text, m.attributedBody FROM message m "
             "JOIN chat_message_join cmj ON cmj.message_id = m.ROWID "
             "JOIN chat c ON c.ROWID = cmj.chat_id "
-            "WHERE c.guid = ? AND m.text IS NOT NULL AND m.date > 0 "
+            "WHERE c.guid = ? "
+            "  AND (m.text IS NOT NULL OR m.attributedBody IS NOT NULL) "
+            "  AND m.date > 0 "
             "ORDER BY m.date DESC LIMIT ?",
-            (chat_guid, n),
+            (chat_guid, n * 2),  # fetch extra rows to compensate for decode failures
         ).fetchall()
         conn.close()
-        return [r[0] for r in rows if r[0]]
+        out: list[str] = []
+        for text, attr_body in rows:
+            if len(out) >= n:
+                break
+            body = (text or "").strip()
+            if not body and attr_body:
+                body = _decode_attr_body(attr_body)
+            if body:
+                out.append(body)
+        return out
     except Exception:
         return []
 

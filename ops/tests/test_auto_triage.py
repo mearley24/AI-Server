@@ -541,6 +541,164 @@ class TestGetReviewQueue:
         assert "t1" not in thread_ids  # approved not in queue
 
 
+# ── TestChatDbSnapshot ───────────────────────────────────────────────────────
+
+def _create_snapshot_chat_db(path: Path, guid: str, messages: list[str]) -> Path:
+    """Build a minimal chat.db replica at path (same schema as Messages.app)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    conn.executescript("""
+        CREATE TABLE chat (
+            ROWID INTEGER PRIMARY KEY, guid TEXT NOT NULL, chat_identifier TEXT
+        );
+        CREATE TABLE message (
+            ROWID INTEGER PRIMARY KEY, text TEXT, attributedBody BLOB,
+            is_from_me INTEGER DEFAULT 0, date INTEGER DEFAULT 0
+        );
+        CREATE TABLE chat_message_join (chat_id INTEGER, message_id INTEGER);
+    """)
+    conn.execute("INSERT INTO chat VALUES (1, ?, '+15550000001')", (guid,))
+    for i, msg in enumerate(messages, 1):
+        conn.execute(
+            "INSERT INTO message VALUES (?, ?, NULL, 0, ?)",
+            (i, msg, i * 1_000_000_000),
+        )
+        conn.execute("INSERT INTO chat_message_join VALUES (1, ?)", (i,))
+    conn.commit()
+    conn.close()
+    return path
+
+
+class TestChatDbSnapshot:
+    """Verify that --chat-db / chat_db_path redirects _fetch_sample_texts."""
+
+    def test_snapshot_texts_are_read(self, tmp_path):
+        """Messages in the snapshot must reach analyze_thread_assist."""
+        chat_guid = "iMessage;-;+15550000001"
+        snap = _create_snapshot_chat_db(
+            tmp_path / "snap" / "chat.db",
+            chat_guid,
+            [
+                "Control4 proposal ready for Beaver Creek project",
+                "Sonos system installed, keypad programming done",
+                "Lighting scenes updated on the theater system",
+            ],
+        )
+
+        db = _create_thread_db(tmp_path, [{
+            "thread_id": "t1",
+            "chat_guid": chat_guid,
+            "contact_handle": "+15550000001",
+            "work_confidence": 0.80,
+            "message_count": 20,
+        }])
+        conn = _open_rw(db)
+
+        captured_texts: list[list[str]] = []
+
+        def _spy_assist(name, texts, codes):
+            captured_texts.append(texts)
+            return _make_assist(conf=0.75)
+
+        with patch.object(rct_mod, "_lookup_contact_name", return_value="John Smith"), \
+             patch.object(rct_mod, "analyze_thread_assist", side_effect=_spy_assist):
+            result = mod.run_triage(conn, dry_run=True, chat_db_path=snap)
+        conn.close()
+
+        assert captured_texts, "analyze_thread_assist was never called"
+        texts_seen = captured_texts[0]
+        assert any("Control4" in t for t in texts_seen), \
+            f"snapshot messages not read; got: {texts_seen}"
+
+    def test_snapshot_chat_db_restored_after_run(self, tmp_path):
+        """_rct.CHAT_DB must be restored to its original value after run_triage."""
+        original_path = rct_mod.CHAT_DB
+        chat_guid = "iMessage;-;+15550000002"
+        snap = _create_snapshot_chat_db(
+            tmp_path / "snap2" / "chat.db", chat_guid, ["hello world"]
+        )
+        db = _create_thread_db(tmp_path, [{
+            "thread_id": "t1", "chat_guid": chat_guid, "contact_handle": "+15550000002",
+        }])
+        conn = _open_rw(db)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=True, chat_db_path=snap)
+        conn.close()
+        assert rct_mod.CHAT_DB == original_path, \
+            f"CHAT_DB not restored: got {rct_mod.CHAT_DB}"
+
+    def test_snapshot_restored_even_on_error(self, tmp_path):
+        """CHAT_DB must be restored even if the loop raises."""
+        original_path = rct_mod.CHAT_DB
+        chat_guid = "iMessage;-;+15550000003"
+        snap = _create_snapshot_chat_db(
+            tmp_path / "snap3" / "chat.db", chat_guid, ["test"]
+        )
+        db = _create_thread_db(tmp_path, [{
+            "thread_id": "t1", "chat_guid": chat_guid, "contact_handle": "+15550000003",
+        }])
+        conn = _open_rw(db)
+
+        def _boom(name, texts, codes):
+            raise RuntimeError("simulated failure")
+
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "analyze_thread_assist", side_effect=_boom):
+            with pytest.raises(RuntimeError):
+                mod.run_triage(conn, dry_run=True, chat_db_path=snap)
+        conn.close()
+        assert rct_mod.CHAT_DB == original_path, "CHAT_DB not restored after exception"
+
+    def test_no_chat_db_arg_does_not_change_chat_db(self, tmp_path):
+        """When chat_db_path is None, _rct.CHAT_DB must not be touched."""
+        original_path = rct_mod.CHAT_DB
+        db = _create_thread_db(tmp_path, [{
+            "thread_id": "t1", "contact_handle": "+15550000004",
+        }])
+        conn = _open_rw(db)
+        with patch.object(rct_mod, "_lookup_contact_name", return_value=""), \
+             patch.object(rct_mod, "_fetch_sample_texts", return_value=[]), \
+             patch.object(rct_mod, "analyze_thread_assist", return_value=_make_assist()):
+            mod.run_triage(conn, dry_run=True, chat_db_path=None)
+        conn.close()
+        assert rct_mod.CHAT_DB == original_path
+
+    def test_snapshot_high_value_from_tech_signals(self, tmp_path):
+        """With strong tech messages in snapshot + named contact → high_value bucket."""
+        chat_guid = "iMessage;-;+15550000005"
+        snap = _create_snapshot_chat_db(
+            tmp_path / "snap5" / "chat.db",
+            chat_guid,
+            [
+                "Control4 keypad programming complete",
+                "Sonos multi-room audio configured for theater zone",
+                "Lighting scenes set via composer, all dimmers tested",
+                "Network rack installed with Araknis switch and WattBox",
+            ],
+        )
+        db = _create_thread_db(tmp_path, [{
+            "thread_id": "t1",
+            "chat_guid": chat_guid,
+            "contact_handle": "+15550000005",
+            "work_confidence": 0.85,
+            "message_count": 30,
+        }])
+        conn = _open_rw(db)
+
+        # Let analyze_thread_assist run for real (no mock) to test full pipeline.
+        with patch.object(rct_mod, "_lookup_contact_name", return_value="Jane Smith"):
+            result = mod.run_triage(conn, dry_run=True, chat_db_path=snap)
+        conn.close()
+
+        assert result["processed"] == 1
+        entry = result["results"][0]
+        # Named contact with strong tech signals must land in high_value
+        assert entry["triage_bucket"] == "high_value", (
+            f"expected high_value, got {entry['triage_bucket']}: {entry['triage_reason']}"
+        )
+
+
 # ── TestCortexEndpoints ───────────────────────────────────────────────────────
 
 class TestCortexEndpoints:

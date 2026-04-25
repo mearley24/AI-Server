@@ -2,9 +2,17 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
 
+### Client Intel Auto-Triage snapshot patch — 2026-04-25T15:27Z (Claude Code)
+
+Before (live locked DB): high_value=1, ambiguous=133, low_priority=133
+After (snapshot + attributedBody fix): high_value=3, ambiguous=165, low_priority=99
+Root cause: _fetch_sample_texts only read text column; 90,317 of 90,849 messages use attributedBody.
+Fix: _fetch_sample_texts now decodes attributedBody via _decode_attr_body.
+Also added --chat-db PATH flag to bypass Messages.app write lock.
+
 ### Client Intel Auto-Triage v1 — 2026-04-25T14:22Z (Claude Code)
 
-267 pending threads triaged: high_value=1, ambiguous=133, low_priority=133, hidden_personal=0.
+267 pending threads triaged (with snapshot): high_value=3, ambiguous=165, low_priority=99, hidden_personal=0.
 686 tests pass (48 new). is_reviewed unchanged; no profiles auto-created; numbers masked.
 
 New: `scripts/auto_triage_client_threads.py`, triage DB columns, `/api/client-intel/triage-summary`,
@@ -34,6 +42,12 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+### Self-improvement loop — 2026-04-25T14:24:27Z
+
+inbox processed: 18, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 18 inbox items already processed (idempotency check). No new processing required.
 
 ### Self-improvement loop — 2026-04-25T13:52:52Z
 
@@ -3892,3 +3906,13 @@ Processed the 20260425T131753Z batch (4 new items) plus re-archived all 17 inbox
 Meta-pattern identified: recurring identical iMessage capture patterns create processing overhead. Drafted `.cursor/prompts/self-improvement/extend-batch-consolidation.md` to implement smarter pattern recognition and consolidation for future runs.
 
 Verification: ops/verification/self-improve-20260425T071800Z.txt
+
+### Self-improvement loop — 20260425T145617Z
+
+inbox processed: 0 new items (18 total files, all already processed), cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 18 inbox items had existing archive copies and corresponding cards from prior processing runs. Idempotency check passed - no new processing required. Latest cards were created at 07:20 UTC, indicating active processing pipeline.
+
+Pattern: consistent iMessage X.com URL capture continues, with processing pipeline working correctly. All current items follow the established pattern of bare URLs requiring fetch or external connector follow-up.
+
+Verification: ops/verification/20260425T145617Z-self-improve.txt
