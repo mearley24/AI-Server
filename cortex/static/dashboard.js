@@ -67,6 +67,7 @@
   let _xiLoaded = false;
   let _trLoaded = false;
   let _symLoaded = false;
+  let _siLoaded = false;
   let _markupCheckInterval = null;
 
   window.switchTab = function switchTab(name) {
@@ -80,9 +81,10 @@
     if (['overview', 'xintake', 'symphony', 'autonomy'].includes(name)) {
       loadToolAccess(name);
     }
-    if (name === 'xintake'     && !_xiLoaded) { _xiLoaded = true; loadXIntake(); loadFollowUps(); }
-    if (name === 'transcripts' && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
-    if (name === 'autonomy'    && !_autonomyLoaded) { loadAutonomy(); }
+    if (name === 'xintake'          && !_xiLoaded) { _xiLoaded = true; loadXIntake(); loadFollowUps(); }
+    if (name === 'transcripts'      && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
+    if (name === 'autonomy'         && !_autonomyLoaded) { loadAutonomy(); }
+    if (name === 'self-improvement' && !_siLoaded) { _siLoaded = true; loadSelfImprovement(); }
     if (name === 'symphony') {
       if (!_symLoaded) { _symLoaded = true; loadSymphonyOps(); }
       checkMarkupHealth();
@@ -103,7 +105,7 @@
     b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
   const _hashTab = window.location.hash.replace('#', '');
-  if (['xintake', 'transcripts', 'symphony', 'autonomy'].includes(_hashTab))
+  if (['xintake', 'transcripts', 'symphony', 'autonomy', 'self-improvement'].includes(_hashTab))
     setTimeout(() => switchTab(_hashTab), 50);
 
   // ── Tool access registry ──────────────────────────────────────────────────
