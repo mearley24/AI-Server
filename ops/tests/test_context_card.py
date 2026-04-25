@@ -19,7 +19,7 @@ from cortex.engine import (
     _handle_from_guid,
     _normalize_handle,
     _lookup_contact_handle,
-    _draft_reply,
+    _build_draft_with_context,
     _suggest_action,
     _mask_handle,
 )
@@ -72,27 +72,42 @@ class TestHandleHelpers:
 
 # ── Unit tests: draft reply and action suggestions ─────────────────────────────
 
+def _profile(rel_type: str = "client", open_requests: list | None = None,
+             systems: list | None = None) -> dict:
+    return {
+        "relationship_type": rel_type,
+        "open_requests":     open_requests or [],
+        "systems_or_topics": systems or [],
+        "follow_ups":        [],
+        "summary":           "",
+        "confidence":        0.75,
+    }
+
+
 class TestDraftReply:
 
     def test_draft_uses_open_request_first(self):
-        draft = _draft_reply(["fix the Sonos offline issue"], ["Sonos"], "client")
-        assert "fix the Sonos offline issue" in draft
+        result = _build_draft_with_context(
+            _profile(open_requests=["fix the Sonos offline issue"]),
+            {}, {}, [],
+        )
+        assert "fix the Sonos offline issue" in result["draft_reply"]
 
     def test_draft_uses_system_when_no_request(self):
-        draft = _draft_reply([], ["Lutron"], "client")
-        assert "Lutron" in draft
+        result = _build_draft_with_context(_profile(systems=["Lutron"]), {}, {}, [])
+        assert "Lutron" in result["draft_reply"]
 
     def test_draft_vendor_fallback(self):
-        draft = _draft_reply([], [], "vendor")
-        assert "availability" in draft.lower() or "lead time" in draft.lower()
+        result = _build_draft_with_context(_profile("vendor"), {}, {}, [])
+        assert "availability" in result["draft_reply"].lower() or "lead time" in result["draft_reply"].lower()
 
     def test_draft_builder_fallback(self):
-        draft = _draft_reply([], [], "builder")
-        assert "schedul" in draft.lower() or "coordinat" in draft.lower()
+        result = _build_draft_with_context(_profile("builder"), {}, {}, [])
+        assert "schedul" in result["draft_reply"].lower() or "coordinat" in result["draft_reply"].lower()
 
     def test_draft_generic_fallback(self):
-        draft = _draft_reply([], [], "unknown")
-        assert len(draft) > 10
+        result = _build_draft_with_context(_profile("unknown"), {}, {}, [])
+        assert len(result["draft_reply"]) > 10
 
 
 class TestSuggestAction:
@@ -168,17 +183,16 @@ class TestContextCardIntegration:
 
     def test_known_client_returns_profile_context(self):
         profile = self._make_profile()
-        facts = [f for f in self._make_facts() if not f["is_rejected"]]  # exclude rejected
-        with patch("cortex.engine._profile_by_handle", return_value=profile), \
-             patch("cortex.engine._facts_for_profile", return_value=facts), \
-             patch("cortex.engine._receipts_for_handle", return_value=[]):
-            from cortex.engine import _draft_reply, _suggest_action, _mask_handle
-            import json as _json
-            open_reqs = _json.loads(profile["open_requests"])
-            systems = _json.loads(profile["systems_or_topics"])
-            draft = _draft_reply(open_reqs, systems, "client")
-            assert "check the Sonos system" in draft
-            assert profile["profile_id"] == "testprof001"
+        import json as _json
+        open_reqs = _json.loads(profile["open_requests"])
+        systems   = _json.loads(profile["systems_or_topics"])
+        result = _build_draft_with_context(
+            {"relationship_type": "client", "open_requests": open_reqs,
+             "systems_or_topics": systems, "follow_ups": [], "summary": "", "confidence": 0.75},
+            {}, {}, [],
+        )
+        assert "check the Sonos system" in result["draft_reply"]
+        assert profile["profile_id"] == "testprof001"
 
     def test_unknown_number_returns_no_profile(self):
         with patch("cortex.engine._profile_by_handle", return_value=None), \
@@ -216,12 +230,17 @@ class TestContextCardIntegration:
         assert "***" in masked
 
     def test_draft_not_auto_sent(self):
-        # Draft reply is just a string — no side-effect functions called
-        draft = _draft_reply(["fix the Sonos offline issue"], ["Sonos"], "client")
-        assert isinstance(draft, str)
-        assert len(draft) > 0
-        # Verify no send function exists on the output
-        assert "send" not in dir(draft)
+        result = _build_draft_with_context(
+            {"relationship_type": "client",
+             "open_requests": ["fix the Sonos offline issue"],
+             "systems_or_topics": ["Sonos"],
+             "follow_ups": [], "summary": "", "confidence": 0.75},
+            {}, {}, [],
+        )
+        assert isinstance(result["draft_reply"], str)
+        assert len(result["draft_reply"]) > 0
+        # Draft is a plain string value — no callable send method on it
+        assert not callable(result["draft_reply"])
 
 
 # ── HTTP endpoint smoke test ──────────────────────────────────────────────────

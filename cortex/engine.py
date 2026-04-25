@@ -928,7 +928,17 @@ _X_INTAKE_DATA_DIR = Path(os.environ.get("X_INTAKE_DATA_DIR", "/data/x_intake"))
 if not _X_INTAKE_DATA_DIR.is_dir():
     _X_INTAKE_DATA_DIR = Path("/Users/bob/AI-Server/data/x_intake")
 
+# Cortex reads receipts from x_intake (read-only mount); must not write there.
 _RECEIPT_LOG = _X_INTAKE_DATA_DIR / "reply_receipts.ndjson"
+
+# Cortex-owned writable data dir for approval records and dry-run receipts.
+# /data/cortex is bind-mounted rw; /data/x_intake is ro for this container.
+_CORTEX_DATA_DIR = Path(os.environ.get("CORTEX_DATA_DIR", "/data/cortex"))
+if not _CORTEX_DATA_DIR.is_dir():
+    _CORTEX_DATA_DIR = Path("/Users/bob/AI-Server/data/cortex")
+
+_APPROVAL_LOG_PATH   = _CORTEX_DATA_DIR / "reply_approvals.ndjson"
+_DRY_RUN_RECEIPT_LOG = _CORTEX_DATA_DIR / "reply_receipts_dry_run.ndjson"
 
 
 def _handle_from_guid(guid: str) -> str:
@@ -1354,8 +1364,11 @@ async def x_intake_context_card(
 
 
 # ── Reply approval flow ────────────────────────────────────────────────────────
+# Write to _CORTEX_DATA_DIR (/data/cortex), NOT _X_INTAKE_DATA_DIR (/data/x_intake).
+# The x_intake dir is mounted read-only in this container.
 
-_APPROVAL_LOG = _X_INTAKE_DATA_DIR / "reply_approvals.ndjson"
+# Keep a module-level alias so tests can patch it easily.
+_APPROVAL_LOG = _APPROVAL_LOG_PATH
 
 
 def _write_approval_record(record: dict[str, Any]) -> None:
@@ -1366,6 +1379,52 @@ def _write_approval_record(record: dict[str, Any]) -> None:
             fh.write(json.dumps(record) + "\n")
     except Exception as exc:
         logger.warning("reply_approval_write_failed err=%s", str(exc)[:100])
+
+
+def _write_dry_run_receipt(
+    approval_id: str,
+    contact_masked: str,
+    final_reply: str,
+    action_type: str = "approve_reply",
+) -> None:
+    """Write a dry-run send receipt to reply_receipts_dry_run.ndjson.
+
+    Stored in the Cortex data dir (rw) not the x_intake dir (ro).
+    Mirrors the field schema of x_intake/reply_actions/ack.py receipts
+    for consistency.  Always dry_run=True — the approval flow never
+    initiates a live send without an explicit separate enable step.
+    """
+    import re as _re
+    # Extract the last visible digits from the masked handle for traceability.
+    # e.g. "+13***32" → "...32".  We never store the raw phone.
+    digits = _re.sub(r"[^0-9]", "", contact_masked)
+    phone_last4 = f"...{digits[-4:]}" if len(digits) >= 2 else "...????"
+
+    receipt: dict[str, Any] = {
+        "ts":                datetime.now(timezone.utc).isoformat(),
+        "action_id":         approval_id,
+        "action_type":       action_type,
+        "dry_run":           True,
+        "success":           True,
+        "path":              "dry_run",
+        "phone_last4":       phone_last4,
+        "recipient_hash":    "",          # no raw thread_guid at approval time
+        "text":              final_reply[:500],
+        "error":             "",
+        "fallback_used":     False,
+        "bridge_status_code": None,
+        "contact_masked":    contact_masked,
+    }
+    try:
+        _DRY_RUN_RECEIPT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _DRY_RUN_RECEIPT_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(receipt) + "\n")
+        logger.info(
+            "dry_run_receipt_written approval_id=%s contact=%s",
+            approval_id, contact_masked,
+        )
+    except Exception as exc:
+        logger.warning("dry_run_receipt_write_failed err=%s", str(exc)[:100])
 
 
 @app.post("/api/x-intake/approve-reply", tags=["x-intake"])
@@ -1428,19 +1487,22 @@ async def x_intake_approve_reply(body: dict[str, Any]) -> dict[str, Any]:
         "status":         "approved",
     }
     _write_approval_record(record)
+    _write_dry_run_receipt(approval_id, contact_masked, final_reply)
     logger.info(
         "reply_approved approval_id=%s action_id=%s contact=%s edited=%s",
         approval_id, action_id, contact_masked, record["edited"],
     )
     return {
-        "status":      "ok",
-        "approval_id": approval_id,
-        "action_id":   action_id,
-        "contact_masked": contact_masked,
-        "final_reply": final_reply,
-        "edited":      record["edited"],
-        "stored":      True,
-        "send_triggered": False,
+        "status":             "ok",
+        "approval_id":        approval_id,
+        "action_id":          action_id,
+        "contact_masked":     contact_masked,
+        "final_reply":        final_reply,
+        "edited":             record["edited"],
+        "stored":             True,
+        "send_action_created": True,
+        "send_dry_run":       True,
+        "send_triggered":     False,
     }
 
 
