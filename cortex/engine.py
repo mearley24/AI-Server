@@ -764,6 +764,111 @@ async def client_intel_backfill_status() -> dict[str, Any]:
     return result
 
 
+# ── Triage endpoints ──────────────────────────────────────────────────────────
+
+_TRIAGE_BUCKETS = frozenset({"high_value", "ambiguous", "low_priority", "hidden_personal"})
+
+
+def _triage_cols_exist(conn: sqlite3.Connection) -> bool:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(threads)").fetchall()}
+    return "triage_bucket" in cols
+
+
+@app.get("/api/client-intel/triage-summary", tags=["client-intel"])
+async def client_intel_triage_summary() -> dict[str, Any]:
+    """Bucket counts for pending threads. Returns zeros if triage has not been run."""
+    conn = _client_intel_db_ro()
+    if conn is None:
+        return {"status": "unavailable"}
+    try:
+        result: dict[str, Any] = {
+            "status": "ok",
+            "high_value": 0, "ambiguous": 0, "low_priority": 0, "hidden_personal": 0,
+            "untriaged": 0, "last_triaged": None,
+        }
+        if not _triage_cols_exist(conn):
+            result["untriaged"] = conn.execute(
+                "SELECT COUNT(*) FROM threads WHERE is_reviewed=-1"
+            ).fetchone()[0]
+            return result
+        for r in conn.execute(
+            "SELECT triage_bucket, COUNT(*) FROM threads "
+            "WHERE is_reviewed=-1 AND triage_bucket IS NOT NULL GROUP BY triage_bucket"
+        ).fetchall():
+            if r[0] in _TRIAGE_BUCKETS:
+                result[r[0]] = r[1]
+        result["untriaged"] = conn.execute(
+            "SELECT COUNT(*) FROM threads WHERE is_reviewed=-1 AND triage_bucket IS NULL"
+        ).fetchone()[0]
+        result["last_triaged"] = conn.execute(
+            "SELECT MAX(triaged_at) FROM threads WHERE triaged_at IS NOT NULL"
+        ).fetchone()[0]
+        return result
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)[:200]}
+    finally:
+        conn.close()
+
+
+@app.get("/api/client-intel/review-queue", tags=["client-intel"])
+async def client_intel_review_queue(
+    bucket: str = "all",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Triaged pending threads grouped by bucket. Phone numbers are always masked."""
+    limit = min(limit, 200)
+    if bucket != "all" and bucket not in _TRIAGE_BUCKETS:
+        return {"status": "error", "error": f"Unknown bucket: {bucket}. Valid: {sorted(_TRIAGE_BUCKETS)}", "threads": [], "count": 0}
+    conn = _client_intel_db_ro()
+    if conn is None:
+        return {"status": "unavailable", "threads": [], "count": 0}
+    try:
+        if not _triage_cols_exist(conn):
+            return {
+                "status": "ok",
+                "message": "Triage not yet run. Execute: python3 scripts/auto_triage_client_threads.py --apply",
+                "threads": [], "count": 0,
+            }
+        where_parts = ["is_reviewed = -1", "triage_bucket IS NOT NULL"]
+        params: list[Any] = []
+        if bucket != "all":
+            where_parts.append("triage_bucket = ?")
+            params.append(bucket)
+        params.append(limit)
+        rows = conn.execute(
+            "SELECT thread_id, contact_handle, message_count, date_last, category, "
+            "work_confidence, triage_bucket, triage_reason, triage_confidence, "
+            "triage_suggested_relationship, triage_inferred_domain, "
+            "triage_risk_flags, triage_contact_display, triaged_at "
+            f"FROM threads WHERE {' AND '.join(where_parts)} "
+            "ORDER BY triage_confidence DESC, work_confidence DESC LIMIT ?",
+            params,
+        ).fetchall()
+        threads = []
+        for r in rows:
+            threads.append({
+                "thread_id":              r["thread_id"],
+                "contact_display":        r["triage_contact_display"] or _mask_handle(r["contact_handle"]),
+                "contact_masked":         _mask_handle(r["contact_handle"]),
+                "message_count":          r["message_count"],
+                "date_last":              (r["date_last"] or "")[:10],
+                "category":               r["category"],
+                "work_confidence":        r["work_confidence"],
+                "triage_bucket":          r["triage_bucket"],
+                "triage_reason":          r["triage_reason"],
+                "triage_confidence":      r["triage_confidence"],
+                "suggested_relationship": r["triage_suggested_relationship"],
+                "inferred_domain":        r["triage_inferred_domain"],
+                "risk_flags":             json.loads(r["triage_risk_flags"] or "[]"),
+            })
+        return {"status": "ok", "count": len(threads), "threads": threads}
+    except Exception as exc:
+        logger.warning("client_intel_review_queue_error err=%s", exc)
+        return {"status": "error", "error": str(exc)[:200], "threads": [], "count": 0}
+    finally:
+        conn.close()
+
+
 @app.get("/api/client-intel/profiles", tags=["client-intel"])
 async def client_intel_profiles(
     relationship_type: str = "all",

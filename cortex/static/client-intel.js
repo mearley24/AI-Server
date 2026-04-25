@@ -221,18 +221,120 @@
     el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">' + grid + '</div>' + lastRun;
   };
 
+  // ── Review Queue ──────────────────────────────────────────────────────────
+  var _BUCKET_META = {
+    high_value:       { label: 'High Value',       color: 'var(--green)' },
+    ambiguous:        { label: 'Ambiguous',         color: 'var(--yellow)' },
+    low_priority:     { label: 'Low Priority',      color: 'var(--muted)' },
+    hidden_personal:  { label: 'Hidden Personal',   color: 'var(--blue)' },
+  };
+  var _BUCKET_ORDER = ['high_value', 'ambiguous', 'low_priority', 'hidden_personal'];
+
+  window._ciQueueBucket = 'all';
+
+  function renderTriageSummary(d) {
+    var el = document.getElementById('ci-triage-summary');
+    if (!el) return;
+    if (!d || d.status === 'unavailable') {
+      el.innerHTML = '<div class="unavailable">triage not run yet — python3 scripts/auto_triage_client_threads.py --apply</div>';
+      return;
+    }
+    var cells = _BUCKET_ORDER.map(function(b) {
+      var meta = _BUCKET_META[b];
+      return '<div onclick="loadReviewQueue(\'' + b + '\')" style="cursor:pointer;text-align:center;padding:6px 10px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;">'
+        + '<div style="font-size:18px;font-weight:700;color:' + meta.color + ';font-family:var(--mono);">' + (d[b] || 0) + '</div>'
+        + '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' + meta.label + '</div>'
+        + '</div>';
+    });
+    var untriaged = d.untriaged || 0;
+    if (untriaged > 0) {
+      cells.push('<div style="text-align:center;padding:6px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:6px;opacity:.7;">'
+        + '<div style="font-size:18px;font-weight:700;color:var(--muted);font-family:var(--mono);">' + untriaged + '</div>'
+        + '<div style="font-size:10px;color:var(--muted);margin-top:2px;">Untriaged</div>'
+        + '</div>');
+    }
+    var ts = d.last_triaged
+      ? '<div class="small" style="margin-top:6px;color:var(--muted)">Last triage: ' + new Date(d.last_triaged).toLocaleString() + '</div>'
+      : '<div class="small" style="margin-top:6px;color:var(--muted)">Not triaged yet — run: python3 scripts/auto_triage_client_threads.py --apply</div>';
+    el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">' + cells.join('') + '</div>' + ts;
+  }
+
+  function renderQueueThreads(data, bucket) {
+    var el = document.getElementById('ci-review-queue');
+    if (!el) return;
+    var threads = (data && data.threads) || [];
+    if (!threads.length) {
+      var msg = (data && data.message) ? data.message : ('No ' + (bucket !== 'all' ? bucket : '') + ' threads in queue.');
+      el.innerHTML = '<div class="small" style="color:var(--muted);padding:8px 0;">' + esc(msg) + '</div>';
+      return;
+    }
+    el.innerHTML = threads.map(function(t) {
+      var meta = _BUCKET_META[t.triage_bucket] || { label: t.triage_bucket, color: 'var(--muted)' };
+      var flags = (t.risk_flags || []).join(', ');
+      var conf = ((t.triage_confidence || 0) * 100).toFixed(0);
+      var wconf = ((t.work_confidence || 0) * 100).toFixed(0);
+      return '<div style="border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:6px;">'
+        + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">'
+        + '<span style="font-size:10px;font-weight:700;color:' + meta.color + ';">' + esc(meta.label.toUpperCase()) + '</span>'
+        + '<span class="small mono" style="color:var(--text);font-weight:600;">' + esc(t.contact_display || t.contact_masked) + '</span>'
+        + '<span class="small" style="color:var(--muted);">' + esc(t.contact_masked) + '</span>'
+        + '<span class="small" style="color:var(--muted);margin-left:auto;">' + esc(t.date_last || '') + ' · ' + t.message_count + ' msgs · work=' + wconf + '%</span>'
+        + '</div>'
+        + '<div class="small" style="color:var(--muted);margin-bottom:3px;">'
+        + 'domain=<b style="color:var(--text);">' + esc(t.inferred_domain||'—') + '</b> &nbsp; '
+        + 'suggested=<b style="color:var(--text);">' + esc(t.suggested_relationship||'—') + '</b> &nbsp; '
+        + 'triage_conf=' + conf + '%'
+        + (flags ? ' &nbsp; <span style="color:var(--yellow);">⚠ ' + esc(flags) + '</span>' : '')
+        + '</div>'
+        + '<div class="small" style="color:var(--muted);">' + esc(t.triage_reason||'') + '</div>'
+        + '<div style="display:flex;gap:6px;margin-top:6px;">'
+        + '<button onclick="alert(\'Approve via CLI: python3 scripts/review_client_threads.py --full\')" style="font-size:10px;padding:2px 8px;border-radius:3px;border:1px solid var(--green);color:var(--green);background:transparent;cursor:pointer;">Approve (CLI)</button>'
+        + '<button onclick="alert(\'Reject via CLI: python3 scripts/review_client_threads.py --full\')" style="font-size:10px;padding:2px 8px;border-radius:3px;border:1px solid var(--muted);color:var(--muted);background:transparent;cursor:pointer;">Reject (CLI)</button>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  function updateQueueTabs(activeBucket) {
+    var el = document.getElementById('ci-queue-tabs');
+    if (!el) return;
+    var tabs = [['all', 'All', 'var(--text)']].concat(_BUCKET_ORDER.map(function(b) {
+      return [b, _BUCKET_META[b].label, _BUCKET_META[b].color];
+    }));
+    el.innerHTML = tabs.map(function(t) {
+      var active = (activeBucket === t[0]);
+      return '<button onclick="loadReviewQueue(\'' + t[0] + '\')" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid '
+        + (active ? t[2] : 'var(--border-2)') + ';color:' + (active ? t[2] : 'var(--muted)') + ';background:transparent;cursor:pointer;font-weight:'
+        + (active ? '700' : '400') + ';">' + t[1] + '</button>';
+    }).join('');
+  }
+
+  window.loadReviewQueue = async function(bucket) {
+    bucket = bucket || 'all';
+    window._ciQueueBucket = bucket;
+    var el = document.getElementById('ci-review-queue');
+    if (el) el.innerHTML = '<div class="small" style="color:var(--muted)">loading…</div>';
+    updateQueueTabs(bucket);
+    var url = '/api/client-intel/review-queue?limit=50' + (bucket !== 'all' ? '&bucket=' + bucket : '');
+    var data = await fetchJson(url);
+    renderQueueThreads(data, bucket);
+  };
+
   // ── Load ──────────────────────────────────────────────────────────────────
   window._ciLoaded = false;
   window.loadClientIntel = async function() {
     var badge = document.getElementById('ci-badge');
     badge.textContent = 'loading…';
-    const [pd, fd] = await Promise.all([
+    const [pd, fd, ts] = await Promise.all([
       fetchJson('/api/client-intel/profiles'),
       fetchJson('/api/client-intel/proposed-facts?accepted=all&limit=200'),
+      fetchJson('/api/client-intel/triage-summary'),
     ]);
     renderProfiles(pd);
     renderFacts(fd);
+    renderTriageSummary(ts);
     loadBackfillStatus();
+    loadReviewQueue('all');
     badge.textContent = pd ? (pd.count + ' profiles') : 'unavailable';
     window._ciLoaded = true;
   };

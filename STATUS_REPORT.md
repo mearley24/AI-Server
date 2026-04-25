@@ -1,6 +1,17 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-23 MDT
+Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
+
+### Client Intel Auto-Triage v1 — 2026-04-25T14:22Z (Claude Code)
+
+267 pending threads triaged: high_value=1, ambiguous=133, low_priority=133, hidden_personal=0.
+686 tests pass (48 new). is_reviewed unchanged; no profiles auto-created; numbers masked.
+
+New: `scripts/auto_triage_client_threads.py`, triage DB columns, `/api/client-intel/triage-summary`,
+`/api/client-intel/review-queue`, Review Queue card in Clients dashboard tab.
+
+- [FOLLOWUP] Re-run triage with Messages.app closed so chat.db is readable → better signal scoring
+- [FOLLOWUP] Review the 1 high_value thread and 133 ambiguous threads via `--bucket high_value`
 Host: Bob (Mac Mini M4), branch: main.
 Audit series: Prompt Q (full audit) → Prompt S (Cortex merge) → Z3–Z14 patches → autonomy gap-closer (2026-04-18) → X Intake reply-leg fix (2026-04-18) → **iMessage bridge host_redis_url helper land (2026-04-18 09:04, Cline)** → **STATUS_REPORT auto-summarizer (2026-04-18 10:45, Cline)** → **bob-watchdog + x-intake lane health (2026-04-21 11:49, Cline)** → **BlueBubbles integration + hardening (2026-04-21 13:02, Cline)** → **full-system sweep & audit (2026-04-21 14:35, Cline)** → **close yellow gaps (2026-04-21 15:03, Cline)** → **X-intake deep-dive audit + reply-action design + testbed spec (2026-04-23, Claude Code)** → **watchdog hotfix fully deployed + install script hardened (2026-04-23 08:10, Claude Code)** → **watchdog LaunchDaemon repo-root resolution fix (2026-04-23 14:14, Claude Code)** → **watchdog bash-3.2 + required-services override hotfix (2026-04-23 14:46, Claude Code)** → **watchdog required-source subshell fix + [FOLLOWUP] alert (2026-04-23 14:58, Claude Code)** → **network-dropout-watch LaunchAgent plist added + network-guard crash documented (2026-04-23 09:15, Claude Code)** → **network-monitoring verification run 2 — plist spec confirmed, guard still broken (2026-04-23 09:34, Claude Code)** → **network-dropout-watch armed + PATH fix (2026-04-23 09:37, Claude Code)** → **network-monitoring verification run 3 — dropout-watch confirmed healthy (2026-04-23 09:38, Claude Code)** → **network-monitoring phase-2 Cline prompt drafted — fix security_utils import (2026-04-23 15:26, Claude Code)**.
 
@@ -23,6 +34,46 @@ works — the summarizer's regex picks it up — but the explicit tags are
 preferred for new entries. See `ops/AGENT_VERIFICATION_PROTOCOL.md` →
 "STATUS_REPORT conventions" for the full rule.
 
+
+### Self-improvement loop — 2026-04-25T13:52:52Z
+
+inbox processed: 18, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 18 inbox items already processed (idempotency check). No new processing required.
+
+### Self-improvement loop — 2026-04-25T14:36:40Z
+
+inbox processed: 13, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 13 inbox items already processed (idempotency check). All items were iMessage X.com URLs forwarded to +19705193013 with existing archive copies and cards. Pattern confirms recurring manual forwarding workflow previously identified for automation.
+
+### Self-improvement loop — 2026-04-25T11:42:33Z
+
+inbox processed: 14, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 14 inbox items already processed (idempotency check). All items were iMessage X.com URLs with existing archive copies and cards. No new automation opportunities identified.
+
+### Self-improvement loop — 2026-04-25T10:05:56Z
+
+inbox processed: 13, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 13 inbox items already processed (idempotency check). All items were iMessage X.com URLs with existing archive copies and cards. Consolidated improvement card for batch processing already exists with auto-safe prompt ready.
+
+### Self-improvement loop — 2026-04-25T15:33:00Z
+
+Inbox processed: 14, cards: 3 (1 auto-run / 0 needs-Matt / 0 deferred / 0 external / 2 needs-fetch)
+
+- `20260424-20260425-consolidated-imessage-urls-card.md` Status: auto-run — batch processing efficiency improvement for similar iMessage URL patterns
+- `20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md` Status: auto-run — batch processing automation
+- `20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md` Status: needs fetch — URL content analysis automation
+
+Most items (11/14) were previously processed; 3 new cards created focusing on batch processing efficiency improvements.
+
+### Self-improvement loop — 2026-04-25T10:37:37Z
+
+inbox processed: 14, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 14 inbox items already processed (idempotency check). All items were iMessage X.com URLs with existing archive copies and matching improvement cards.
 
 ---
 
@@ -47,6 +98,19 @@ Verification: `ops/verification/20260425-075718-client-intel-backfill-v2.md`
 ### Full test suite — clean — 2026-04-25T06:26:24Z (Claude Code)
 
 **573 passed · 0 failed · 0 errors** · 4 warnings (FastAPI on_event deprecation, pre-existing).
+
+---
+
+### Self-improvement loop — 20260425T082833Z
+
+Inbox processed: 14, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 14 items already processed via idempotency check:
+- All archive files exist in ops/self_improvement/archive/
+- All corresponding cards exist in ops/self_improvement/cards/
+- No new processing required
+
+Verification: `ops/verification/self-improve-20260425T082833Z.txt`
 
 Three stale/broken tests fixed this pass:
 
@@ -3799,3 +3863,32 @@ One new inbox item archived and carded this run; 13 earlier items skipped per id
 Persistent blocker (cumulative): all 14 carded items are bare X.com URLs with no message body. The iMessage→x_intake auto-routing bridge with a fetch-enabled scoring lane remains the only structural unblock. The @moondevonyt repeat (two posts captured, zero scored) is the clearest concrete example of the toil this bridge would eliminate.
 
 Verification: ops/verification/self-improve-20260425T044500Z.txt
+
+### Self-improvement loop — 2026-04-25T16:32:00Z
+
+inbox processed: 14, cards: 2 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 2 needs-fetch)
+
+- `20260422-20260425-imessage-x-urls-pattern-card.md` Status: needs fetch — comprehensive iMessage X.com URL ingestion pipeline (consolidates pattern across 14 similar items)
+- `20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md` Status: needs fetch — individual URL classification automation
+
+Most items (12/14) were already processed in previous runs with existing archive copies and cards. Created 1 new comprehensive card addressing the broader automation opportunity for iMessage X.com URL processing.
+
+
+### Self-improvement loop — 2026-04-25T07:18:00Z
+
+inbox processed: 17, cards: 5 new (1 auto-run / 0 needs-Matt / 0 deferred / 4 external / 0 needs-fetch) + 13 already-processed (skipped)
+
+Processed the 20260425T131753Z batch (4 new items) plus re-archived all 17 inbox items. Most items were already carded from prior runs. Created consolidated automation approach for latest batch:
+
+**Auto-run tier:**
+- `20260425T131753Z-batch-imessage-x-urls-card.md` — **auto-run via ai-dispatch** (batch consolidation enhancement for recurring patterns; Impact 3 / Effort 2 / Risk 1)
+
+**External connector follow-up:**
+- `20260425T131753Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md` — **external connector follow-up** (extend x_intake monitoring for AI industry account)
+- `20260425T131753Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md` — **external connector follow-up** (extend x_intake monitoring for AI thought leader)
+- `20260425T131753Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md` — **external connector follow-up** (extend x_intake monitoring for AI agent platform; highest relevance)
+- `20260425T131753Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md` — **external connector follow-up** (extend x_intake monitoring for AI development)
+
+Meta-pattern identified: recurring identical iMessage capture patterns create processing overhead. Drafted `.cursor/prompts/self-improvement/extend-batch-consolidation.md` to implement smarter pattern recognition and consolidation for future runs.
+
+Verification: ops/verification/self-improve-20260425T071800Z.txt

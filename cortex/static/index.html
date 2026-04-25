@@ -461,6 +461,16 @@
     <div id="ci-backfill-status"><div class="unavailable">loading</div></div>
   </div>
 
+  <div class="card" id="ci-queue-card" style="margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <h2 style="margin:0;padding:0;border:0;">Review Queue</h2>
+      <button onclick="loadReviewQueue(window._ciQueueBucket||'all')" style="font-size:10px;padding:2px 8px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;">Refresh</button>
+    </div>
+    <div id="ci-triage-summary" style="margin-bottom:10px;"><div class="small" style="color:var(--muted)">loading…</div></div>
+    <div id="ci-queue-tabs" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;"></div>
+    <div id="ci-review-queue"><div class="unavailable">loading</div></div>
+  </div>
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
     <div class="card">
       <h2>Profiles <span id="ci-profiles-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>
