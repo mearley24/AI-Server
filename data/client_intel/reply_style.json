@@ -1,0 +1,228 @@
+{
+  "version": "1.0",
+  "extracted_at": "2026-04-25T05:08:54.705040+00:00",
+  "message_count": 58,
+  "thread_count": 4,
+  "allowed_relationship_types": [
+    "builder",
+    "client",
+    "trade_partner",
+    "vendor"
+  ],
+  "greeting_patterns": [
+    {
+      "phrase": "perfect",
+      "frequency": 2
+    },
+    {
+      "phrase": "alrighty",
+      "frequency": 2
+    },
+    {
+      "phrase": "sure",
+      "frequency": 1
+    },
+    {
+      "phrase": "all good",
+      "frequency": 1
+    },
+    {
+      "phrase": "sounds good",
+      "frequency": 1
+    },
+    {
+      "phrase": "yeah",
+      "frequency": 1
+    },
+    {
+      "phrase": "no biggie",
+      "frequency": 1
+    },
+    {
+      "phrase": "no worries",
+      "frequency": 1
+    }
+  ],
+  "acknowledgment_patterns": [
+    {
+      "phrase": "no biggie",
+      "frequency": 2
+    },
+    {
+      "phrase": "perfect",
+      "frequency": 2
+    },
+    {
+      "phrase": "sure, no problem",
+      "frequency": 1
+    },
+    {
+      "phrase": "all good",
+      "frequency": 1
+    },
+    {
+      "phrase": "sounds good",
+      "frequency": 1
+    },
+    {
+      "phrase": "no worries",
+      "frequency": 1
+    }
+  ],
+  "scheduling_language": [
+    {
+      "phrase": "what time",
+      "frequency": 1
+    },
+    {
+      "phrase": "give me call",
+      "frequency": 1
+    },
+    {
+      "phrase": "swing up",
+      "frequency": 1
+    }
+  ],
+  "closing_patterns": [
+    {
+      "phrase": "thank you",
+      "frequency": 9
+    },
+    {
+      "phrase": "let me know",
+      "frequency": 2
+    },
+    {
+      "phrase": "thanks again",
+      "frequency": 1
+    },
+    {
+      "phrase": "no worries",
+      "frequency": 1
+    }
+  ],
+  "common_phrases": [
+    {
+      "phrase": "it was",
+      "frequency": 3
+    },
+    {
+      "phrase": "you have",
+      "frequency": 3
+    },
+    {
+      "phrase": "will be",
+      "frequency": 3
+    },
+    {
+      "phrase": "be there",
+      "frequency": 2
+    },
+    {
+      "phrase": "let me",
+      "frequency": 2
+    },
+    {
+      "phrase": "me know",
+      "frequency": 2
+    },
+    {
+      "phrase": "know if",
+      "frequency": 2
+    },
+    {
+      "phrase": "let me know",
+      "frequency": 2
+    },
+    {
+      "phrase": "me know if",
+      "frequency": 2
+    },
+    {
+      "phrase": "sorry to",
+      "frequency": 2
+    },
+    {
+      "phrase": "to bother",
+      "frequency": 2
+    },
+    {
+      "phrase": "bother you",
+      "frequency": 2
+    },
+    {
+      "phrase": "to be",
+      "frequency": 2
+    },
+    {
+      "phrase": "sorry to bother",
+      "frequency": 2
+    },
+    {
+      "phrase": "to bother you",
+      "frequency": 2
+    }
+  ],
+  "tone": {
+    "avg_message_length_words": 9.9,
+    "avg_sentence_count": 1.4,
+    "double_exclamation_rate": 0.09,
+    "contraction_rate": 0.1,
+    "casual_words": [
+      "alrighty",
+      "no biggie",
+      "swing by",
+      "yeah",
+      "yep"
+    ],
+    "style_notes": [
+      "Short, direct messages preferred",
+      "Uses 'Alrighty' as distinctive opener",
+      "Rarely uses formal phrasing",
+      "'No biggie' to minimise client concern",
+      "Action-oriented: 'I'll swing by', 'give me a call'"
+    ]
+  },
+  "robotic_phrases": [
+    "I wanted to follow up on your request",
+    "thank you for reaching out",
+    "please don't hesitate to contact me",
+    "don't hesitate to reach out",
+    "I hope this finds you well",
+    "I'll get back to you at my earliest convenience",
+    "as per our conversation",
+    "going forward",
+    "at your earliest convenience",
+    "please feel free to",
+    "I look forward to hearing from you",
+    "let me know if you have any questions",
+    "I appreciate your patience",
+    "I apologize for any inconvenience"
+  ],
+  "replacements": [
+    {
+      "from": "I'll get back to you shortly",
+      "to": "I'll let you know"
+    },
+    {
+      "from": "get back to you with what I find",
+      "to": "let you know what I find"
+    },
+    {
+      "from": "I'll reach out once I have an update",
+      "to": "I'll let you know"
+    },
+    {
+      "from": "Give me a few minutes and I'll let you know what I find",
+      "to": "Give me a bit and I'll let you know"
+    },
+    {
+      "from": "let me know what I find",
+      "to": "let you know"
+    },
+    {
+      "from": "I'll take a look and let you know what I find",
+      "to": "I'll check on it and let you know"
+    }
+  ]
+}
