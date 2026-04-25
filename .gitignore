@@ -89,3 +89,7 @@ data/audio_intake/.worker.lock
 data/task_runner/.runner.lock
 data/task_runner/launchd.out.log
 data/task_runner/launchd.err.log
+
+# Runtime / watchdog noise
+data/task_runner/*
+ops/verification/*preflight*
