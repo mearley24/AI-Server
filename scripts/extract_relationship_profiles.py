@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Relationship Profile Extractor — Phase 1 (proposed facts only).
+Relationship Profile Extractor — Phase 2 (proposed facts only).
 
 Reads approved threads from message_thread_index.sqlite and their message
 snippets from chat.db, then creates proposed profile records and extracted
@@ -17,6 +17,10 @@ Rules:
   - Raw messages never stored in profiles
   - personal_work_related: work-relevant context only, no auto-reply eligibility
   - internal_team: ops/task references only, no client profile facts
+  - Fragment filter: values < 4 useful words dropped unless equipment/project name
+  - OCR/decode garbage (e.g. "iI", "lI") is silently dropped
+  - request facts validated: must imply actual ask/action/need/service-issue
+  - open_requests separated from project_refs: only phrases with action triggers
 """
 from __future__ import annotations
 
@@ -35,7 +39,7 @@ THREAD_INDEX_DB = DATA_DIR / "message_thread_index.sqlite"
 PROFILES_DB     = DATA_DIR / "client_profiles.sqlite"
 FACTS_DB        = DATA_DIR / "proposed_facts.sqlite"
 
-CHAT_DB   = Path.home() / "Library" / "Messages" / "chat.db"
+CHAT_DB = Path.home() / "Library" / "Messages" / "chat.db"
 
 PROCESSABLE_TYPES = frozenset({
     "client", "builder", "vendor", "trade_partner",
@@ -43,18 +47,19 @@ PROCESSABLE_TYPES = frozenset({
 })
 
 # ── Extraction rules — (pattern, fact_type) pairs per relationship_type ───────
+# request pattern uses [^\n.!?]{10,80} to stop at sentence boundaries naturally
 
 _RULES: dict[str, list[tuple[re.Pattern, str]]] = {
     "client": [
         (re.compile(r"\b(sonos|lutron|control4|vantage|araknis|wattbox|episode|triad|pakedge|snapav)\b", re.I), "equipment"),
         (re.compile(r"\b(theater|surveillance|camera|alarm|shade|keypad|dimmer|lighting|audio|network|wi.?fi|rack|prewire)\b", re.I), "system"),
-        (re.compile(r"(?:can you|please|need|want|would like|looking for|request)\s+(.{8,80})", re.I), "request"),
+        (re.compile(r"(?:can you|could you|please|need to|want to|would like|looking for|request)\s+([^\n.!?]{10,80})", re.I), "request"),
         (re.compile(r"\b(not working|broken|issue|problem|offline|trouble|cutting out|goes out)\b", re.I), "issue"),
         (re.compile(r"(?:follow.?up|call me|text me|let me know|get back|schedule|remind)\b", re.I), "follow_up"),
-        (re.compile(r"(?:project|job|house|home|property)\s+(?:at|on|in|called)?\s*([A-Z][^,.!?]{3,40})", re.I), "project_ref"),
+        (re.compile(r"(?:project|job|house|home|property)\s+(?:at|on|in|called)?\s*([A-Z][^,.!?\n]{3,40})", re.I), "project_ref"),
     ],
     "builder": [
-        (re.compile(r"(?:job|project|site|lot|build)\s+(?:at|on|called)?\s*([A-Z][^,.!?]{3,40})", re.I), "job_name"),
+        (re.compile(r"(?:job|project|site|lot|build)\s+(?:at|on|called)?\s*([A-Z][^,.!?\n]{3,40})", re.I), "job_name"),
         (re.compile(r"\b(monday|tuesday|wednesday|thursday|friday|next week|tomorrow|by the \d+|schedule|deadline)\b", re.I), "schedule"),
         (re.compile(r"\b(rough.?in|trim|finish|prewire|pre-wire|walkthrough|walk.through|punch.list|inspection)\b", re.I), "coordination"),
         (re.compile(r"(?:contact|call|reach|talk to)\s+([A-Z][a-z]+ [A-Z][a-z]+)", re.I), "contact"),
@@ -67,7 +72,7 @@ _RULES: dict[str, list[tuple[re.Pattern, str]]] = {
     ],
     "trade_partner": [
         (re.compile(r"\b(after you|before we|coordinate|handoff|hand.off|depends on|waiting on|sync up)\b", re.I), "coordination"),
-        (re.compile(r"(?:job|site|project)\s+(?:at|on)?\s*([A-Z][^,.!?]{3,40})", re.I), "job_dependency"),
+        (re.compile(r"(?:job|site|project)\s+(?:at|on)?\s*([A-Z][^,.!?\n]{3,40})", re.I), "job_dependency"),
         (re.compile(r"\b(schedule|timeline|milestone|phase|ready|complete)\b", re.I), "timeline"),
     ],
     "internal_team": [
@@ -80,8 +85,99 @@ _RULES: dict[str, list[tuple[re.Pattern, str]]] = {
     ],
 }
 
+# ── Quality filters ────────────────────────────────────────────────────────────
 
-# ── DB helpers ────────────────────────────────────────────────────────────────
+# Equipment/system names exempt from word-count requirement (short but meaningful)
+_EQUIPMENT_RE = re.compile(
+    r"\b(sonos|lutron|control4|vantage|araknis|wattbox|episode|triad|pakedge|snapav|"
+    r"network|wi.?fi|theater|alarm|camera|shade|keypad|dimmer|lighting|audio|rack|prewire)\b",
+    re.I,
+)
+
+# OCR/decoder artifacts: impossible mixed-case tokens from iMessage blob decoding
+# Note: we allow \xa0-\xff (Latin-1 extended) which appear legitimately in decoded blobs
+_OCR_JUNK_RE = re.compile(r"\b(iI|lI|Il|Ii|oO|O0|0O|l1|1l)\b|[^\x20-\x7e\xa0-\xff]{2,}")
+
+# Sentence boundary for trimming captured values
+_SENTENCE_END_RE = re.compile(r"[.!?]")
+
+# Clause break for trimming run-on captures
+_CLAUSE_BREAK_RE = re.compile(
+    r"\b(and then|and also|but then|however|in addition to|as well as)\b", re.I
+)
+
+# Minimum useful words for general-type facts
+_USEFUL_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+
+# Triggers that confirm a "request" fact is a real open ask/need/service-issue
+_REQUEST_TRIGGER_RE = re.compile(
+    r"\b(can you|could you|please|need|want|fix|check|verify|look at|schedule|book|"
+    r"send|call me|text me|let me know|follow.?up|not working|broken|issue|problem|"
+    r"offline|trouble|cutting out|goes out|help|replace|upgrade|restart|reset|"
+    r"come by|stop by|swing by|take a look|take a look at)\b",
+    re.I,
+)
+
+# Fact types where short values are inherently meaningful (no word-count gate)
+_SHORT_OK_TYPES = frozenset({"equipment", "product", "issue", "follow_up",
+                              "schedule", "coordination", "timeline",
+                              "work_context", "work_document", "ops_ref", "ops_timeline"})
+
+
+def _clean_value(value: str) -> str:
+    """Trim to sentence/clause boundary and strip likely-truncated trailing tokens."""
+    v = value.strip()
+    if not v:
+        return v
+    # Stop at first sentence-ending punctuation (skip first 8 chars to avoid empty result)
+    m = _SENTENCE_END_RE.search(v, 8)
+    if m:
+        v = v[: m.start()].strip()
+    # Stop at prominent clause break if it leaves at least 8 chars
+    m = _CLAUSE_BREAK_RE.search(v)
+    if m and m.start() >= 8:
+        v = v[: m.start()].strip()
+    # Strip trailing truncated token: ≤4 chars, no vowels (e.g. "syst" from "system")
+    words = v.split()
+    if len(words) >= 2:
+        last = words[-1].rstrip(".,!?;:")
+        if len(last) <= 4 and not re.search(r"[aeiou]", last, re.I):
+            v = " ".join(words[:-1]).strip()
+    return v.strip()
+
+
+def _is_fragment(value: str, fact_type: str) -> bool:
+    """Return True if value is too broken or short to trust as a proposed fact."""
+    v = value.strip()
+    if not v:
+        return True
+    # Short-OK types: only filter OCR junk, not word count
+    if fact_type in _SHORT_OK_TYPES:
+        return bool(_OCR_JUNK_RE.search(v))
+    # Equipment/system mentions exempt from word-count requirement
+    if _EQUIPMENT_RE.search(v):
+        return bool(_OCR_JUNK_RE.search(v))
+    # OCR/decoder garbage
+    if _OCR_JUNK_RE.search(v):
+        return True
+    # Require at least 4 useful words for request/project_ref/contact/pricing etc.
+    if len(_USEFUL_WORD_RE.findall(v)) < 4:
+        return True
+    return False
+
+
+def _is_open_request_phrase(value: str) -> bool:
+    """Return True if the phrase implies an ask, action, need, or service follow-up."""
+    return bool(_REQUEST_TRIGGER_RE.search(value))
+
+
+def _dedup_key(fact_type: str, value: str) -> str:
+    """Normalized dedup key: strip non-alphanumeric, lowercase, truncate to 50."""
+    norm = re.sub(r"[^a-z0-9]", "", value.lower())[:50]
+    return f"{fact_type}:{norm}"
+
+
+# ── DB helpers ─────────────────────────────────────────────────────────────────
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -146,13 +242,13 @@ def _ensure_facts_schema(conn: sqlite3.Connection) -> None:
     """)
 
 
-# ── chat.db access ────────────────────────────────────────────────────────────
+# ── chat.db access ─────────────────────────────────────────────────────────────
 
 _APPLE_EPOCH = 978_307_200  # Jan 1 2001 UTC
 
 
 def _fetch_messages(chat_guid: str, limit: int = 50) -> list[dict]:
-    """Return up to limit messages with text, direction, and timestamp."""
+    """Return up to limit messages with text, direction, and ISO timestamp."""
     if not CHAT_DB.is_file():
         return []
     msgs: list[dict] = []
@@ -185,6 +281,11 @@ def _fetch_messages(chat_guid: str, limit: int = 50) -> list[dict]:
 
 
 def _decode_attr(blob: bytes) -> str:
+    """Decode NSAttributedString binary blob to plain text.
+
+    Note: decoded messages often contain a trailing 'iI' artifact — this is
+    normal for iMessage blobs and is handled at the fact-value level, not here.
+    """
     try:
         raw = blob.decode("latin-1", errors="replace")
         raw = re.sub(
@@ -204,7 +305,7 @@ def _decode_attr(blob: bytes) -> str:
         return ""
 
 
-# ── Fact extraction ───────────────────────────────────────────────────────────
+# ── Fact extraction ────────────────────────────────────────────────────────────
 
 def extract_facts(
     thread_id: str,
@@ -213,7 +314,14 @@ def extract_facts(
     rel_type: str,
     messages: list[dict],
 ) -> list[dict]:
-    """Run extraction rules against messages; return proposed fact dicts."""
+    """Run extraction rules against messages; return proposed fact dicts.
+
+    Quality gates applied:
+    - _clean_value: trim at sentence/clause boundaries, strip truncated tokens
+    - _is_fragment: drop < 4-word non-equipment values and OCR junk
+    - _is_open_request_phrase: only keep 'request' facts that imply real asks
+    - _dedup_key: normalized dedup (alphanumeric-only, lowercase)
+    """
     rules = _RULES.get(rel_type, [])
     facts: list[dict] = []
     seen: set[str] = set()
@@ -224,20 +332,31 @@ def extract_facts(
 
         for pattern, fact_type in rules:
             for m in pattern.finditer(text):
-                # Use the first captured group if present, else the full match
-                value = (m.group(1) if m.lastindex and m.group(1) else m.group(0)).strip()
-                value = value[:200]
+                raw_value = (m.group(1) if m.lastindex and m.group(1) else m.group(0)).strip()
+                value = _clean_value(raw_value[:200])
                 if not value or len(value) < 2:
                     continue
-                dedup_key = f"{fact_type}:{value.lower()[:60]}"
+
+                # Drop fragments and OCR garbage
+                if _is_fragment(value, fact_type):
+                    continue
+
+                # Request facts must imply a real open ask or service issue
+                if fact_type == "request" and not _is_open_request_phrase(value):
+                    continue
+
+                # Deduplicate using normalized key (alphanumeric only)
+                dedup_key = _dedup_key(fact_type, value)
                 if dedup_key in seen:
                     continue
                 seen.add(dedup_key)
 
-                # Confidence: higher for strong keyword matches, lower for weak
+                # Confidence: higher for strong keyword / named-entity matches
                 confidence = 0.6 if m.lastindex else 0.5
                 if rel_type in ("client", "builder") and fact_type in ("equipment", "system", "job_name"):
                     confidence = 0.75
+                if fact_type == "request" and _EQUIPMENT_RE.search(value):
+                    confidence = 0.70  # service request mentioning known equipment
 
                 excerpt = text[:120].replace("\n", " ")
                 facts.append({
@@ -258,21 +377,44 @@ def extract_facts(
     return facts
 
 
-# ── Profile builder ───────────────────────────────────────────────────────────
+# ── Profile builder ────────────────────────────────────────────────────────────
 
 def build_profile(
     thread: dict,
     facts: list[dict],
     existing_thread_ids: list[str],
 ) -> dict:
-    """Create or merge a profile dict from a thread and extracted facts."""
+    """Create or merge a profile dict from a thread and extracted facts.
+
+    open_requests: only facts whose value implies an actual ask/action/need.
+    project_refs: job/project name facts only (not open requests).
+    """
     contact = thread["contact_handle"]
     rel     = thread["relationship_type"]
 
-    systems  = list({f["fact_value"] for f in facts if f["fact_type"] in ("system", "equipment", "product")})[:10]
-    requests = list({f["fact_value"] for f in facts if f["fact_type"] == "request"})[:5]
-    followups= list({f["fact_value"] for f in facts if f["fact_type"] in ("follow_up", "ops_timeline", "timeline")})[:5]
-    projects = list({f["fact_value"] for f in facts if f["fact_type"] in ("project_ref", "job_name", "job_dependency")})[:10]
+    systems = list({
+        f["fact_value"] for f in facts
+        if f["fact_type"] in ("system", "equipment", "product")
+    })[:10]
+
+    # open_requests: request-type facts that actually imply an open ask
+    requests = list({
+        f["fact_value"] for f in facts
+        if f["fact_type"] == "request" and _is_open_request_phrase(f["fact_value"])
+    })[:5]
+
+    # follow_ups: follow_up + ops timeline facts with action language
+    followups = list({
+        f["fact_value"] for f in facts
+        if f["fact_type"] in ("follow_up", "ops_timeline", "timeline")
+    })[:5]
+
+    # project_refs: project/job name facts — exclude values that look like open requests
+    projects = list({
+        f["fact_value"] for f in facts
+        if f["fact_type"] in ("project_ref", "job_name", "job_dependency")
+        and not _is_open_request_phrase(f["fact_value"])
+    })[:10]
 
     thread_ids = list({*existing_thread_ids, thread["thread_id"]})
     confidence = round(min(0.95, 0.5 + 0.05 * len(facts)), 3)
@@ -306,12 +448,11 @@ def build_profile(
     }
 
 
-# ── Main pipeline ─────────────────────────────────────────────────────────────
+# ── Main pipeline ──────────────────────────────────────────────────────────────
 
 def run_extraction(dry_run: bool = True) -> dict:
     mode = "DRY-RUN" if dry_run else "APPLY"
 
-    # Load approved threads (non-unknown relationship)
     idx_conn = sqlite3.connect(f"file:{THREAD_INDEX_DB}?mode=ro&immutable=1", uri=True)
     idx_conn.row_factory = sqlite3.Row
     threads = idx_conn.execute(
@@ -352,8 +493,9 @@ def run_extraction(dry_run: bool = True) -> dict:
         all_facts.extend(facts)
 
     if not dry_run:
+        thread_ids = [t["thread_id"] for t in threads]
         _write_profiles(all_profiles)
-        _write_facts(all_facts)
+        _write_facts(all_facts, reprocess_thread_ids=thread_ids)
 
     _print_summary(all_profiles, all_facts, skipped, dry_run)
     return {
@@ -381,9 +523,21 @@ def _write_profiles(profiles: list[dict]) -> None:
     conn.close()
 
 
-def _write_facts(facts: list[dict]) -> None:
+def _write_facts(
+    facts: list[dict],
+    reprocess_thread_ids: list[str] | None = None,
+) -> None:
+    """Write proposed facts, clearing pending (not yet reviewed) facts for reprocessed threads."""
     conn = sqlite3.connect(str(FACTS_DB))
     _ensure_facts_schema(conn)
+    # Remove pending facts for threads being re-processed; leave accepted/rejected alone
+    if reprocess_thread_ids:
+        placeholders = ",".join("?" * len(reprocess_thread_ids))
+        conn.execute(
+            f"DELETE FROM proposed_facts WHERE thread_id IN ({placeholders}) "
+            f"AND is_accepted=0 AND is_rejected=0",
+            reprocess_thread_ids,
+        )
     for f in facts:
         conn.execute(
             "INSERT OR IGNORE INTO proposed_facts VALUES "
@@ -413,9 +567,6 @@ def _print_summary(
     for p in profiles:
         by_type[p["relationship_type"]] = by_type.get(p["relationship_type"], 0) + 1
     for rt, n in sorted(by_type.items()):
-        type_facts = [f for f in facts if f.get("profile_id") == _pid(
-            next(p["contact_handle"] for p in profiles if p["relationship_type"] == rt), rt
-        )]
         print(f"    {rt:25s} profiles={n}")
 
     if facts:
@@ -428,10 +579,10 @@ def _print_summary(
     print()
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# ── CLI ────────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Relationship Profile Extractor — Phase 1")
+    parser = argparse.ArgumentParser(description="Relationship Profile Extractor — Phase 2")
     parser.add_argument("--dry-run", action="store_true", default=True,
                         help="Preview extraction without writing to DB (default)")
     parser.add_argument("--apply-approved", action="store_true",

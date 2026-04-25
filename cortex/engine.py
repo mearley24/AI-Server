@@ -837,6 +837,82 @@ async def client_intel_reject_fact(body: dict[str, Any]) -> dict[str, Any]:
         conn.close()
 
 
+@app.get("/api/client-intel/profiles/{profile_id}", tags=["client-intel"])
+async def client_intel_profile_detail(profile_id: str) -> dict[str, Any]:
+    """Return a single profile with its proposed facts grouped by fact_type.
+
+    Includes all facts (pending, accepted, rejected) so the operator can review
+    the full picture. Each fact includes value, confidence, source_excerpt,
+    source_timestamp, and review state.
+    """
+    p_conn = _profiles_db_ro()
+    if p_conn is None:
+        return {"status": "unavailable", "message": "Profiles DB not built yet.", "profile": None, "facts_by_type": {}}
+    f_conn = _facts_db_rw()
+    try:
+        row = p_conn.execute(
+            "SELECT profile_id, relationship_type, display_name, contact_handle, "
+            "thread_ids, first_seen, last_seen, summary, open_requests, follow_ups, "
+            "systems_or_topics, project_refs, dtools_project_refs, confidence, status, last_updated "
+            "FROM profiles WHERE profile_id=?",
+            (profile_id,),
+        ).fetchone()
+        if row is None:
+            return {"status": "error", "error": f"profile '{profile_id}' not found", "profile": None, "facts_by_type": {}}
+
+        profile = {
+            "profile_id":          row["profile_id"],
+            "relationship_type":   row["relationship_type"],
+            "display_name":        row["display_name"],
+            "contact_masked":      _mask_handle(row["contact_handle"]),
+            "thread_ids":          json.loads(row["thread_ids"] or "[]"),
+            "first_seen":          row["first_seen"],
+            "last_seen":           row["last_seen"],
+            "summary":             row["summary"],
+            "open_requests":       json.loads(row["open_requests"] or "[]"),
+            "follow_ups":          json.loads(row["follow_ups"] or "[]"),
+            "systems_or_topics":   json.loads(row["systems_or_topics"] or "[]"),
+            "project_refs":        json.loads(row["project_refs"] or "[]"),
+            "dtools_project_refs": json.loads(row["dtools_project_refs"] or "[]"),
+            "confidence":          row["confidence"],
+            "status":              row["status"],
+            "last_updated":        row["last_updated"],
+        }
+
+        facts_by_type: dict[str, list[dict]] = {}
+        if f_conn is not None:
+            fact_rows = f_conn.execute(
+                "SELECT fact_id, thread_id, fact_type, fact_value, confidence, "
+                "source_excerpt, source_timestamp, is_accepted, is_rejected, created_at "
+                "FROM proposed_facts WHERE profile_id=? "
+                "ORDER BY fact_type, confidence DESC, created_at DESC",
+                (profile_id,),
+            ).fetchall()
+            for fr in fact_rows:
+                ftype = fr["fact_type"]
+                facts_by_type.setdefault(ftype, []).append({
+                    "fact_id":          fr["fact_id"],
+                    "thread_id":        fr["thread_id"],
+                    "fact_type":        ftype,
+                    "fact_value":       fr["fact_value"],
+                    "confidence":       fr["confidence"],
+                    "source_excerpt":   fr["source_excerpt"],
+                    "source_timestamp": fr["source_timestamp"],
+                    "is_accepted":      fr["is_accepted"],
+                    "is_rejected":      fr["is_rejected"],
+                    "created_at":       fr["created_at"],
+                })
+
+        return {"status": "ok", "profile": profile, "facts_by_type": facts_by_type}
+    except Exception as exc:
+        logger.warning("client_intel_profile_detail_error profile_id=%s err=%s", profile_id, exc)
+        return {"status": "error", "error": str(exc)[:200], "profile": None, "facts_by_type": {}}
+    finally:
+        p_conn.close()
+        if f_conn is not None:
+            f_conn.close()
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 

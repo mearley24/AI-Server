@@ -1,4 +1,4 @@
-"""Tests for relationship profile extraction — Phase 1."""
+"""Tests for relationship profile extraction — Phase 2 (quality filters)."""
 from __future__ import annotations
 
 import hashlib
@@ -20,6 +20,10 @@ from scripts.extract_relationship_profiles import (
     _ensure_facts_schema,
     _pid,
     _fid,
+    _clean_value,
+    _is_fragment,
+    _is_open_request_phrase,
+    _dedup_key,
     extract_facts,
     build_profile,
     run_extraction,
@@ -231,3 +235,184 @@ class TestSchemas:
         conn.close()
         assert row[0] == 0
         assert row[1] == 0
+
+
+# ── Quality filter unit tests ─────────────────────────────────────────────────
+
+class TestCleanValue:
+
+    def test_trims_at_sentence_boundary(self):
+        v = _clean_value("check out the Sonos system. And also verify you")
+        assert v == "check out the Sonos system"
+
+    def test_strips_truncated_trailing_token(self):
+        # "syst" has no vowels and is ≤4 chars → stripped
+        v = _clean_value("check out your Sonos syst")
+        assert "syst" not in v
+        assert "Sonos" in v
+
+    def test_preserves_short_complete_value(self):
+        # "WiFi" has vowels → kept
+        v = _clean_value("WiFi")
+        assert v == "WiFi"
+
+    def test_clause_break_trimming(self):
+        v = _clean_value("Beaver Creek project and then also fix the TV")
+        assert "and then" not in v
+
+    def test_empty_string(self):
+        assert _clean_value("") == ""
+
+    def test_no_modification_for_clean_value(self):
+        v = _clean_value("fix the Sonos system at Beaver Creek")
+        assert "Sonos" in v
+
+
+class TestIsFragment:
+
+    def test_ocr_junk_rejected(self):
+        assert _is_fragment("anything else. iI", "request") is True
+
+    def test_short_non_equipment_request_not_fragment_but_no_trigger(self):
+        # "along with verifying you" passes _is_fragment (4 words, no garbage)
+        # but is rejected by _is_open_request_phrase in the extraction pipeline
+        assert _is_fragment("along with verifying you", "request") is False
+        assert _is_open_request_phrase("along with verifying you") is False
+
+    def test_equipment_name_kept_even_if_short(self):
+        assert _is_fragment("Sonos", "equipment") is False
+
+    def test_network_kept_as_system(self):
+        # "network" is in _EQUIPMENT_RE
+        assert _is_fragment("network", "system") is False
+
+    def test_real_request_with_equipment_kept(self):
+        assert _is_fragment("check out your Sonos system at Beaver Creek", "request") is False
+
+    def test_short_issue_value_kept(self):
+        # issue type is in _SHORT_OK_TYPES
+        assert _is_fragment("not working", "issue") is False
+
+    def test_follow_up_keyword_kept(self):
+        assert _is_fragment("schedule", "follow_up") is False
+
+    def test_four_word_non_equipment_without_action_rejected(self):
+        # No equipment, no OCR junk, but < 4 useful words
+        assert _is_fragment("come check this", "request") is True
+
+    def test_five_word_value_with_no_ocr_kept(self):
+        # 5 useful words, no OCR junk
+        assert _is_fragment("please schedule a service visit", "request") is False
+
+
+class TestIsOpenRequestPhrase:
+
+    def test_real_service_request_kept(self):
+        assert _is_open_request_phrase("can you check out the Sonos system") is True
+
+    def test_fix_trigger_kept(self):
+        assert _is_open_request_phrase("fix the network issue in the living room") is True
+
+    def test_schedule_trigger_kept(self):
+        assert _is_open_request_phrase("schedule a service visit next week") is True
+
+    def test_not_working_trigger_kept(self):
+        assert _is_open_request_phrase("the system is not working since Tuesday") is True
+
+    def test_vague_fragment_rejected(self):
+        assert _is_open_request_phrase("along with verifying you") is False
+
+    def test_plain_project_name_rejected(self):
+        assert _is_open_request_phrase("Beaver Creek Condo renovation") is False
+
+    def test_cutting_out_trigger_kept(self):
+        assert _is_open_request_phrase("the audio keeps cutting out in the theater") is True
+
+
+class TestDedupKey:
+
+    def test_same_value_different_case_same_key(self):
+        assert _dedup_key("equipment", "Sonos") == _dedup_key("equipment", "sonos")
+
+    def test_punctuation_stripped(self):
+        assert _dedup_key("request", "fix the Sonos!") == _dedup_key("request", "fix the Sonos")
+
+    def test_different_types_different_keys(self):
+        assert _dedup_key("equipment", "Sonos") != _dedup_key("system", "Sonos")
+
+
+class TestFragmentFiltering:
+    """Integration-level tests: extract_facts must drop known-bad fragments."""
+
+    def _pid_for(self, contact: str, rel: str) -> str:
+        return _pid(contact, rel)
+
+    def test_broken_fragment_along_with_verifying_ignored(self):
+        # Simulates the "along with verifying you" garbage from a request capture
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        # Message whose "can you" capture yields a vague fragment
+        msgs = [{"text": "I want along with verifying you know the system", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"}]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        request_values = [f["fact_value"] for f in facts if f["fact_type"] == "request"]
+        # No request fact should be kept — the captured text is a fragment with no action trigger
+        assert not any("verifying you" in v for v in request_values), \
+            f"Fragment 'verifying you' should not appear in facts: {request_values}"
+
+    def test_ocr_junk_iI_ignored(self):
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        msgs = [{"text": "can you do anything else. iI", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"}]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        request_values = [f["fact_value"] for f in facts if f["fact_type"] == "request"]
+        assert not any("iI" in v or "anything else" in v for v in request_values), \
+            f"OCR junk should not appear in facts: {request_values}"
+
+    def test_real_service_request_kept(self):
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        msgs = [{"text": "Can you check out the Sonos system? It keeps cutting out.", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"}]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        types = {f["fact_type"] for f in facts}
+        assert "equipment" in types or "request" in types or "issue" in types
+
+    def test_sonos_equipment_mention_kept(self):
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        msgs = [{"text": "The Sonos in the living room is offline", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"}]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        equip = [f["fact_value"].lower() for f in facts if f["fact_type"] == "equipment"]
+        assert any("sonos" in v for v in equip)
+
+    def test_network_system_mention_kept(self):
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        msgs = [{"text": "The network has been going down every night this week", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"}]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        types = {f["fact_type"] for f in facts}
+        assert "system" in types or "issue" in types
+
+    def test_duplicate_equipment_merged(self):
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        msgs = [
+            {"text": "Sonos issue in the living room", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"},
+            {"text": "The SONOS keeps cutting out", "from_me": False, "ts": "2026-04-24T10:01:00+00:00"},
+            {"text": "I mentioned the Sonos earlier", "from_me": False, "ts": "2026-04-24T10:02:00+00:00"},
+        ]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        sonos_facts = [f for f in facts if "sonos" in f["fact_value"].lower() and f["fact_type"] == "equipment"]
+        # Dedup by normalized key — should be exactly 1 equipment fact for Sonos
+        assert len(sonos_facts) == 1, f"Expected 1 Sonos equipment fact, got {len(sonos_facts)}"
+
+    def test_evidence_snippet_preserved(self):
+        contact = "+15551234567"
+        pid = self._pid_for(contact, "client")
+        msgs = [{"text": "Can you come check the Control4 system at Beaver Creek?", "from_me": False, "ts": "2026-04-24T10:00:00+00:00"}]
+        facts = extract_facts("tid1", pid, contact, "client", msgs)
+        for f in facts:
+            assert f["source_excerpt"], f"source_excerpt must not be empty for {f['fact_type']}"
+            assert f["source_timestamp"] == "2026-04-24T10:00:00+00:00"
+            assert f["thread_id"] == "tid1"
+            assert f["is_accepted"] == 0
+            assert f["is_rejected"] == 0
