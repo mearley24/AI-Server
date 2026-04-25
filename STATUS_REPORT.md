@@ -41,6 +41,21 @@ Verification: `ops/verification/self-improve-20260424T165000Z.txt`
 
 ---
 
+### Self-improvement loop — 2026-04-25T02:36:10Z
+
+inbox processed: 4, cards: 0 new (4 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 4 needs-fetch)
+
+Fully idempotent pass — all 4 inbox items were archived and carded in earlier runs. No new cards or prompts drafted. All items are raw X URLs from iMessage with no message body; tweet content must be fetched before relevance can be scored. Pattern (iMessage→X URL, same bridge proposal) has now surfaced across 3 run timestamps; bridge proposal merits escalation to needs-Matt if the pattern persists.
+
+- `20260422T111725Z-…-ihtesham2005-…-card.md` — needs fetch (X URL, tweet body unknown)
+- `20260424T163001Z-…-jameszmsun-…-card.md` — needs fetch (X URL, tweet body unknown)
+- `20260424T163001Z-…-nousresearch-…-card.md` — needs fetch (X URL, tweet body unknown, highest-priority given @nousresearch AI-research relevance)
+- `20260424T163001Z-…-openswarm-…-card.md` — needs fetch (X URL, tweet body unknown)
+
+Verification: `ops/verification/self-improve-20260425T023610Z.txt`
+
+---
+
 ## Final Closure & Exposure Audit (2026-04-25 UTC, Claude Code)
 
 Parent-agent docs-only pass. User question: "is this everything? go all
@@ -3491,6 +3506,14 @@ Verification: ops/verification/self-improve-20260424T180711Z.txt
 - ~~[FOLLOWUP] docker image prune -a reclaim 8.67 GB~~ ✅ Done 2026-04-24 — 432 MB reclaimed (remainder was active shared layers).
 - ~~[FOLLOWUP] vpn healthcheck investigation~~ ✅ Done 2026-04-24 — ping -c 1 -W 3, timeout 8s, start_period 60s. See commit `4efdbc3b`.
 
+## Client Intelligence Fact Quality Tightening (2026-04-25 UTC, Claude Code)
+- `scripts/audit_client_facts.py` added: dry-run/apply auditor that reclassifies low-quality accepted facts; never deletes rows; prints fact_id/type/value/confidence/verdict/reason per fact.
+- Reclassified 2 bad accepted facts as rejected: `request:"give me call as soon as you can..."` (speech/trailing fragment) and `follow_up:"Let me know"` (generic, non-actionable).
+- Preserved valid facts: `equipment:Sonos`, `system:WiFi`, `system:network` — unchanged.
+- Rejected facts already excluded by `is_rejected=0` SQL filter in `_facts_for_profile()` — context cards, suggested_next_action, and draft_reply unaffected.
+- Tests: `ops/tests/test_client_fact_quality.py` (39 new tests). Verification: `ops/verification/20260425-040002-client-fact-quality.md`.
+- **Remaining risk:** none blocking. TODO: extract `validate_fact()` into shared module for extraction-time use.
+
 ## Docker Restart Safety Policy (2026-04-25 UTC, Claude Code)
 - `scripts/docker-recover.sh` rewritten: 30s probe before declaring unhealthy, graceful quit before kill, waits for `com.docker.backend` to exit before reopening, 5-min cooldown file (`/tmp/docker-recover-cooldown`), `--force` flag for operator override.
 - `scripts/safe-service-restart.sh <service>` added: checks docker once (10s), uses `docker compose restart`, calls `docker-recover.sh` only if engine is down — never restarts Docker Desktop for one unhealthy container.
@@ -3630,3 +3653,47 @@ All 4 inbox items were already processed in prior run 20260424T193000Z. No new c
 Recurring pattern: 3 of 4 cards share the same capture date and source phone number — strengthens the iMessage→x_intake auto-routing bridge hypothesis (see jameszmsun card). A fetch-enabled pass is the only unblock.
 
 Verification: ops/verification/self-improve-20260425T013408Z.txt
+
+### Self-improvement loop — 2026-04-25T02:05:09Z
+
+Inbox processed: 4, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 4 inbox items were already archived and carded on a prior run — skipped per idempotency rule:
+
+- `20260422T111725Z-imessage-x-com-ihtesham2005-...-card.md` — already processed
+- `20260424T163001Z-imessage-x-com-jameszmsun-...-card.md` — already processed
+- `20260424T163001Z-imessage-x-com-nousresearch-...-card.md` — already processed
+- `20260424T163001Z-imessage-x-com-openswarm-...-card.md` — already processed
+
+Verification: ops/verification/self-improve-20260425T020509Z.txt
+
+### Self-improvement loop — 2026-04-25T03:30:00Z
+
+inbox processed: 8, cards: 4 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 4 needs-fetch) + 4 already-processed (skipped)
+
+Four new inbox items from the 20260425T030658Z capture batch were archived and carded this run. Four earlier items (ihtesham2005, jameszmsun, nousresearch, openswarm) were skipped as already-processed per idempotency rule. All new items are raw X URLs shared via iMessage to +19705193013 with no message body. Tweet content must be fetched before relevance can be scored. Ordered by (Impact ÷ Effort) descending within the needs-fetch tier:
+
+- `20260425T030658Z-…-moondevonyt-…-card.md` — **needs fetch** (trading/automation-adjacent handle @moondevonyt; highest impact potential if tweet is on-topic for polymarket-bot)
+- `20260425T030658Z-…-rnaudbertrand-…-card.md` — **needs fetch** (likely developer/researcher @rnaudbertrand; AI/agent content possible; cortex-autobuilder lane candidate)
+- `20260425T030658Z-…-juliangoldieseo-…-card.md` — **needs fetch** (SEO/marketing handle @juliangoldieseo; relevance to Symphony operations unclear)
+- `20260425T030658Z-…-talebm-…-card.md` — **needs fetch** (unrecognized handle @_talebm_; lowest signal confidence)
+
+Meta-pattern: this is now the **sixth run** where all inbox items are URL-only iMessage captures with no body text. The iMessage→x_intake auto-routing bridge hypothesis (first proposed in the ihtesham2005 card) has now been independently reinforced across 8 items from 4 capture batches. Escalating to `needs Matt` for an architectural decision is warranted if the pattern continues.
+
+Verification: ops/verification/self-improve-20260425T033000Z.txt
+
+### Self-improvement loop — 20260425T034500Z
+
+inbox processed: 13, cards: 5 new (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 5 needs-fetch) + 8 already-processed (skipped)
+
+Five new inbox items from the 20260425T033947Z–033948Z capture batch were archived and carded this run. Eight earlier items were skipped per idempotency rule. All five new items are bare X.com URLs shared via iMessage to +19705193013 with no message body. Tweet content must be fetched before relevance can be scored. Ordered by Impact descending within the needs-fetch tier:
+
+- `20260425T033947Z-…-shanerobinett-…-card.md` — **needs fetch** (AI/agent-space practitioner @shanerobinett; moderate chance of actionable orchestration content; Impact: 2)
+- `20260425T033947Z-…-sharbel-…-card.md` — **needs fetch** (unrecognized handle @sharbel; no body text)
+- `20260425T033947Z-…-divyansht91162-…-card.md` — **needs fetch** (unrecognized handle @divyansht91162; no body text)
+- `20260425T033948Z-…-eng-khairallah1-…-card.md` — **needs fetch** (engineering-adjacent handle; no body text)
+- `20260425T033948Z-…-sprytixl-…-card.md` — **needs fetch** (unrecognized handle @sprytixl; no body text)
+
+Meta-pattern: this is now the **seventh consecutive run** where every inbox item is a URL-only iMessage capture with no message body. Thirteen total URL-only items have been carded. The iMessage→x_intake auto-routing bridge remains the structural unblock. A fetch-enabled processing lane (x_intake RSS or cortex-autobuilder lookup) is needed before any of these cards can be scored — escalating to architectural decision territory.
+
+Verification: ops/verification/self-improve-20260425T034500Z.txt
