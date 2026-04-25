@@ -1,0 +1,16 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260425-012451
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
+Completed processing the self-improvement inbox. All 14 items were already processed in previous runs - they have matching archive copies and cards. No new processing was needed.
+
+**Summary:**
+- **Inbox processed:** 14 items (all already processed)
+- **New cards:** 0 
+- **Status breakdown:** 14 already-processed / 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 14 needs-fetch
+- **Verification artifact:** `ops/verification/self-improve-20260425T072557Z.txt`
+- **STATUS_REPORT.md:** Updated with new section
+
+The system is caught up on stream collection backlog. All existing cards maintain "needs fetch" status pending URL content retrieval from the X/Twitter links captured via iMessage.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260425-012451-run-prompt.txt
