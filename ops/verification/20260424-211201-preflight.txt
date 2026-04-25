@@ -1,0 +1,55 @@
+=== task-runner preflight ===
+started_at: 2026-04-24T21:11:59-06:00
+finished_at: 2026-04-24T21:12:01-06:00
+ok: True
+
+.gitattributes: no changes needed
+
+whitelisted conflicts resolved: 0
+
+dirty whitelisted paths staged:
+  - data/cortex/digests/2026-04-25.md
+
+unsafe conflicts: 0
+
+commit: 4dd6c657a6b4a2ff03fe1b3553ca7d83ec31f8a5 pushed to origin/main
+
+
+--- raw git status --porcelain (post-preflight) ---
+ M STATUS_REPORT.md
+ M data/task_runner/bob-watchdog-state/docker
+ M data/task_runner/bob_watchdog_heartbeat.txt
+ M data/task_runner/watchdog_heartbeat.txt
+?? data/cortex/reply_approvals.ndjson
+?? data/cortex/reply_receipts_dry_run.ndjson
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451.md
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033.md
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034.md
+?? ops/self_improvement/archive/20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md
+?? ops/self_improvement/cards/20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536-card.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-juliangoldieseo-status-2047568300637364451.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-moondevonyt-status-2047755043559154033.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-rnaudbertrand-status-2047560630694183034.md
+?? ops/self_improvement/inbox/20260425T030658Z-imessage-x-com-talebm-status-2047581216178655536.md
+
+
+--- structured result (JSON) ---
+{
+  "commit_pushed": true,
+  "commit_sha": "4dd6c657a6b4a2ff03fe1b3553ca7d83ec31f8a5",
+  "conflicts_resolved": [],
+  "dirty_whitelisted_staged": [
+    "data/cortex/digests/2026-04-25.md"
+  ],
+  "finished_at": "2026-04-24T21:12:01-06:00",
+  "gitattributes_added_lines": [],
+  "gitattributes_updated": false,
+  "notes": [],
+  "ok": true,
+  "report_path": "",
+  "started_at": "2026-04-24T21:11:59-06:00",
+  "unsafe_conflicts": []
+}
