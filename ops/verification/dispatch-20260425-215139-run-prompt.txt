@@ -1,0 +1,16 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260425-215139
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
+I've successfully processed the self-improvement inbox. All 20 items (oldest first) were already processed in previous runs - they exist in both archive and cards directories. Following idempotency rules, I skipped them and documented this in both STATUS_REPORT.md and the verification artifact.
+
+**Summary:**
+- **inbox processed:** 0 (all 20 already processed via idempotency check)  
+- **cards:** 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+- **STATUS_REPORT.md:** Updated with new section at 20260426T035311Z
+- **verification artifact:** Created at `ops/verification/self-improve-20260426T035311Z.txt`
+- **status:** OK
+
+All items were iMessage-sourced X.com URLs that have existing cards and automation proposals already in place.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260425-215139-run-prompt.txt
