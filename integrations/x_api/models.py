@@ -38,24 +38,28 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS x_items (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
-            x_item_id        TEXT    UNIQUE NOT NULL,
-            item_type        TEXT    NOT NULL,
-            x_post_id        TEXT,
-            author_handle    TEXT,
-            author_name      TEXT,
-            text             TEXT,
-            url              TEXT,
-            created_at       TEXT,
-            fetched_at       TEXT    NOT NULL,
-            category         TEXT,
-            tags             TEXT    DEFAULT '[]',
-            processed_status TEXT    NOT NULL DEFAULT 'pending',
-            source           TEXT
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            x_item_id               TEXT    UNIQUE NOT NULL,
+            item_type               TEXT    NOT NULL,
+            x_post_id               TEXT,
+            author_handle           TEXT,
+            author_name             TEXT,
+            text                    TEXT,
+            url                     TEXT,
+            created_at              TEXT,
+            fetched_at              TEXT    NOT NULL,
+            category                TEXT,
+            tags                    TEXT    DEFAULT '[]',
+            processed_status        TEXT    NOT NULL DEFAULT 'pending',
+            source                  TEXT,
+            work_relevance_score    REAL,
+            quality_flags           TEXT    DEFAULT '[]',
+            classification_reason   TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_x_items_type        ON x_items(item_type);
         CREATE INDEX IF NOT EXISTS idx_x_items_fetched_at  ON x_items(fetched_at);
         CREATE INDEX IF NOT EXISTS idx_x_items_status      ON x_items(processed_status);
+        CREATE INDEX IF NOT EXISTS idx_x_items_category    ON x_items(category);
 
         CREATE TABLE IF NOT EXISTS x_api_usage (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,7 +73,24 @@ def init_db(db_path: Path | None = None) -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_usage_ts ON x_api_usage(ts);
     """)
     conn.commit()
+    # Migrate existing DBs that predate quality-gate columns
+    _migrate_add_quality_gate_columns(conn)
     return conn
+
+
+def _migrate_add_quality_gate_columns(conn: sqlite3.Connection) -> None:
+    """Add quality gate columns to x_items if they don't exist yet."""
+    new_columns = [
+        ("work_relevance_score",  "REAL"),
+        ("quality_flags",         "TEXT DEFAULT '[]'"),
+        ("classification_reason", "TEXT"),
+    ]
+    for col, definition in new_columns:
+        try:
+            conn.execute(f"ALTER TABLE x_items ADD COLUMN {col} {definition}")
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 @dataclass
@@ -83,26 +104,32 @@ class XItem:
     url: Optional[str] = None
     created_at: Optional[str] = None
     fetched_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    category: Optional[str] = None
+    category: Optional[str] = None           # content_category: work|neutral|non_work|unsafe
     tags: list[str] = field(default_factory=list)
-    processed_status: str = "pending"
+    processed_status: str = "pending"        # pending|eligible|blocked
     source: Optional[str] = None
+    work_relevance_score: Optional[float] = None
+    quality_flags: list[str] = field(default_factory=list)
+    classification_reason: Optional[str] = None
 
     def to_row(self) -> dict:
         return {
-            "x_item_id":        self.x_item_id,
-            "item_type":        self.item_type,
-            "x_post_id":        self.x_post_id,
-            "author_handle":    self.author_handle,
-            "author_name":      self.author_name,
-            "text":             self.text,
-            "url":              self.url,
-            "created_at":       self.created_at,
-            "fetched_at":       self.fetched_at,
-            "category":         self.category,
-            "tags":             json.dumps(self.tags),
-            "processed_status": self.processed_status,
-            "source":           self.source,
+            "x_item_id":               self.x_item_id,
+            "item_type":               self.item_type,
+            "x_post_id":               self.x_post_id,
+            "author_handle":           self.author_handle,
+            "author_name":             self.author_name,
+            "text":                    self.text,
+            "url":                     self.url,
+            "created_at":              self.created_at,
+            "fetched_at":              self.fetched_at,
+            "category":                self.category,
+            "tags":                    json.dumps(self.tags),
+            "processed_status":        self.processed_status,
+            "source":                  self.source,
+            "work_relevance_score":    self.work_relevance_score,
+            "quality_flags":           json.dumps(self.quality_flags),
+            "classification_reason":   self.classification_reason,
         }
 
 
@@ -112,10 +139,12 @@ def insert_item(conn: sqlite3.Connection, item: XItem) -> bool:
         conn.execute(
             """INSERT INTO x_items
                (x_item_id, item_type, x_post_id, author_handle, author_name,
-                text, url, created_at, fetched_at, category, tags, processed_status, source)
+                text, url, created_at, fetched_at, category, tags, processed_status, source,
+                work_relevance_score, quality_flags, classification_reason)
                VALUES
                (:x_item_id, :item_type, :x_post_id, :author_handle, :author_name,
-                :text, :url, :created_at, :fetched_at, :category, :tags, :processed_status, :source)""",
+                :text, :url, :created_at, :fetched_at, :category, :tags, :processed_status, :source,
+                :work_relevance_score, :quality_flags, :classification_reason)""",
             item.to_row(),
         )
         conn.commit()

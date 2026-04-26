@@ -2827,9 +2827,10 @@ async def x_api_status() -> dict[str, Any]:
         last_run_row = conn.execute(
             "SELECT ts, endpoint, status FROM x_api_usage ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        pending = conn.execute(
-            "SELECT COUNT(*) FROM x_items WHERE processed_status='pending'"
-        ).fetchone()[0]
+        status_counts_rows = conn.execute(
+            "SELECT processed_status, COUNT(*) FROM x_items GROUP BY processed_status"
+        ).fetchall()
+        status_counts = {r[0]: r[1] for r in status_counts_rows}
         conn.close()
     except _sqlite3.OperationalError as exc:
         return {
@@ -2838,7 +2839,9 @@ async def x_api_status() -> dict[str, Any]:
             "daily_reads_used": 0,
             "within_limit":     True,
             "total_items":      0,
-            "pending_items":    0,
+            "items_eligible":   0,
+            "items_pending":    0,
+            "items_blocked":    0,
             "last_run":         None,
             "last_run_endpoint": None,
             "last_run_status":  None,
@@ -2853,7 +2856,9 @@ async def x_api_status() -> dict[str, Any]:
         "daily_reads_used":  int(daily_used),
         "within_limit":      int(daily_used) < daily_limit,
         "total_items":       total_items,
-        "pending_items":     pending,
+        "items_eligible":    status_counts.get("eligible", 0),
+        "items_pending":     status_counts.get("pending", 0),
+        "items_blocked":     status_counts.get("blocked", 0),
         "last_run":          last_run_row["ts"] if last_run_row else None,
         "last_run_endpoint": last_run_row["endpoint"] if last_run_row else None,
         "last_run_status":   last_run_row["status"] if last_run_row else None,
@@ -2861,10 +2866,17 @@ async def x_api_status() -> dict[str, Any]:
 
 
 @app.get("/api/x-api/items", tags=["x-api"])
-async def x_api_items(limit: int = 50, item_type: str = "") -> dict[str, Any]:
+async def x_api_items(
+    limit: int = 50,
+    item_type: str = "",
+    status: str = "",
+) -> dict[str, Any]:
     """Return recent X API items from local DB.
 
     Does not call X API — reads local DB only.
+    Blocked items are hidden by default; use ?status=blocked to see them.
+    ?status= filters by processed_status (eligible|pending|blocked).
+    If status is omitted, blocked items are excluded.
     """
     db_path = _x_api_db_path()
     if db_path is None:
@@ -2874,32 +2886,54 @@ async def x_api_items(limit: int = 50, item_type: str = "") -> dict[str, Any]:
     conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = _sqlite3.Row
 
+    # Build WHERE conditions
+    conditions: list[str] = []
+    params: list[Any] = []
+
     if item_type:
-        rows = conn.execute(
-            "SELECT * FROM x_items WHERE item_type=? ORDER BY fetched_at DESC LIMIT ?",
-            (item_type, min(limit, 200)),
-        ).fetchall()
+        conditions.append("item_type=?")
+        params.append(item_type)
+
+    if status:
+        conditions.append("processed_status=?")
+        params.append(status)
     else:
+        # Default: exclude blocked items from all Cortex views
+        conditions.append("processed_status != 'blocked'")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(min(limit, 200))
+
+    try:
         rows = conn.execute(
-            "SELECT * FROM x_items ORDER BY fetched_at DESC LIMIT ?",
-            (min(limit, 200),),
+            f"SELECT * FROM x_items {where} ORDER BY fetched_at DESC LIMIT ?",
+            params,
         ).fetchall()
+    except _sqlite3.OperationalError:
+        conn.close()
+        return {"status": "no_db", "items": [], "count": 0}
     conn.close()
 
     items = []
     for r in rows:
-        items.append({
-            "x_item_id":        r["x_item_id"],
-            "item_type":        r["item_type"],
-            "author_handle":    r["author_handle"],
-            "author_name":      r["author_name"],
-            "text":             (r["text"] or "")[:280],
-            "url":              r["url"],
-            "created_at":       r["created_at"],
-            "fetched_at":       r["fetched_at"],
-            "processed_status": r["processed_status"],
-            "source":           r["source"],
-        })
+        d = dict(r)
+        item = {
+            "x_item_id":               d["x_item_id"],
+            "item_type":               d["item_type"],
+            "author_handle":           d["author_handle"],
+            "author_name":             d["author_name"],
+            "text":                    (d["text"] or "")[:280],
+            "url":                     d["url"],
+            "created_at":              d["created_at"],
+            "fetched_at":              d["fetched_at"],
+            "processed_status":        d["processed_status"],
+            "source":                  d["source"],
+            "category":                d.get("category"),
+            "work_relevance_score":    d.get("work_relevance_score"),
+            "quality_flags":           d.get("quality_flags", "[]"),
+            "classification_reason":   d.get("classification_reason"),
+        }
+        items.append(item)
 
     return {"status": "ok", "items": items, "count": len(items)}
 

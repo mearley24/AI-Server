@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from integrations.x_api.classifier import classify
 from integrations.x_api.client import XCredentials, XReadOnlyClient
 from integrations.x_api.models import XItem, init_db, insert_item
 from integrations.x_api.usage import check_limit, log_usage, usage_summary
@@ -152,34 +153,61 @@ def run_intake(
     fetched = len(all_tweets)
     stored = 0
     skipped = 0
+    blocked = 0
+    eligible = 0
 
     for tweet in all_tweets:
         source = tweet["source"]
-        # Main tweet item
+        text   = tweet.get("text") or ""
+
+        # Classify the tweet text
+        clf = classify(text, item_type=source)
+
+        # Main tweet item — always store, status determined by classifier
         main_item = XItem(
-            x_item_id=     _make_x_item_id(source, tweet["x_post_id"]),
-            item_type=     source,
-            x_post_id=     tweet["x_post_id"],
-            author_handle= tweet.get("author_handle"),
-            author_name=   tweet.get("author_name"),
-            text=          tweet.get("text"),
-            created_at=    tweet.get("created_at"),
-            source=        source,
+            x_item_id=               _make_x_item_id(source, tweet["x_post_id"]),
+            item_type=               source,
+            x_post_id=               tweet["x_post_id"],
+            author_handle=           tweet.get("author_handle"),
+            author_name=             tweet.get("author_name"),
+            text=                    text,
+            created_at=              tweet.get("created_at"),
+            source=                  source,
+            category=                clf.content_category,
+            work_relevance_score=    clf.work_relevance_score,
+            quality_flags=           clf.quality_flags,
+            classification_reason=   clf.classification_reason,
+            processed_status=        clf.promoted_status,
         )
         if not dry_run:
             if insert_item(conn, main_item):
                 stored += 1
+                if clf.promoted_status == "blocked":
+                    blocked += 1
+                elif clf.promoted_status == "eligible":
+                    eligible += 1
             else:
                 skipped += 1
         else:
-            stored += 1  # count as "would store"
+            stored += 1
+            if clf.promoted_status == "blocked":
+                blocked += 1
+            elif clf.promoted_status == "eligible":
+                eligible += 1
 
-        # URL items
+        # URL items — only promote to learning if parent tweet is eligible
         for url_item in _extract_url_items(tweet, source):
+            url_item.category             = clf.content_category
+            url_item.work_relevance_score = clf.work_relevance_score
+            url_item.quality_flags        = clf.quality_flags
+            url_item.classification_reason = clf.classification_reason
+            url_item.processed_status     = clf.promoted_status
             if not dry_run:
                 if insert_item(conn, url_item):
                     stored += 1
-                    _maybe_route_to_learning(url_item)
+                    # Only route to learning pipeline if eligible
+                    if clf.promoted_status == "eligible":
+                        _maybe_route_to_learning(url_item)
                 else:
                     skipped += 1
             else:
@@ -192,6 +220,8 @@ def run_intake(
         "fetched":      fetched,
         "stored":       stored,
         "skipped":      skipped,
+        "blocked":      blocked,
+        "eligible":     eligible,
         "errors":       errors,
         "skipped_auth": skipped_auth,
         "dry_run":      dry_run,

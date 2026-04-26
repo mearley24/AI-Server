@@ -2,6 +2,10 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### X intake quality gate (work-only mode) — 20260426T233000Z
+
+Added heuristic content classification to X intake. `integrations/x_api/classifier.py` — pure keyword/pattern matching (no LLM), ~40 work terms (AI/ML/LLMs/smart home/startup/engineering) with float weights, ~30 non-work terms (politics/war/celebrity) with penalties, unsafe term detection, flag detection (political/emotional/rant/offensive/low_signal). Each item gets `content_category` (work|neutral|non_work|unsafe), `work_relevance_score` (0.0–1.0), `quality_flags[]`, `classification_reason`. Promotion: `eligible` (work + score≥0.7 + no flags), `pending` (work + 0.5–0.7 + no flags), `blocked` (everything else). DB schema extended with 3 new columns + migration for existing DBs. Learning pipeline (`_maybe_route_to_learning`) gated on `eligible` only. Cortex `GET /api/x-api/items` hides blocked by default; `?status=blocked` debug view available. Status endpoint now returns `items_eligible`/`items_pending`/`items_blocked` breakdown. 26 new tests — 98 total passing across x_api test files.
+
 ### X API bearer-safe posts mode — 20260426T225000Z
 
 Fixed avoidable 403 on likes endpoint. X API v2 `/users/:id/liked_tweets` requires OAuth user-context — bearer-token-only returns 403. Changes: `get_liked_tweets()` now guards for `has_user_auth()` with a clear error; `run_intake()` auto-skips likes/bookmarks when no user auth (reports in `skipped_auth`, not `errors`) unless `likes_explicitly_requested=True`; CLI defaults to posts-only when bearer-only; added `--no-likes` flag; `--likes-only` without user auth gives a clear OAuth error. Fixed `/api/x-api/status` 500 on uninitialised DB (returns `status: degraded` with warning). 11 new tests (27 total in test_x_api_intake.py).
