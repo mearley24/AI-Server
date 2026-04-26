@@ -197,6 +197,59 @@
     sum.textContent = [core, opt].filter(Boolean).join(' · ');
   }
 
+  function renderWatchdog(data) {
+    const host    = $('watchdog-overview');
+    const banner  = $('wd-header-alert');
+    const bannerT = $('wd-alert-text');
+
+    if (!data || data.status === 'error') {
+      host.innerHTML = unavail();
+      banner.classList.add('hidden');
+      return;
+    }
+
+    const degraded = data.degraded_count || 0;
+    const services = data.services || [];
+    const updatedAt = data.updated_at ? ' · updated ' + timeAgo(data.updated_at) : '';
+
+    // Header banner
+    if (degraded > 0) {
+      bannerT.textContent = `⚠ ${degraded} degraded service${degraded !== 1 ? 's' : ''}`;
+      banner.classList.remove('hidden');
+    } else {
+      banner.classList.add('hidden');
+    }
+
+    // Overview card
+    if (!services.length) {
+      const warn = data.warning ? `<div class="small" style="color:var(--muted);margin-top:4px">${esc(data.warning)}</div>` : '';
+      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear</div>${warn}`;
+      return;
+    }
+
+    const degradedSvcs = services.filter(s => s.state === 'degraded');
+    const okSvcs       = services.filter(s => s.state === 'ok');
+
+    if (degraded === 0) {
+      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear &mdash; ${services.length} service${services.length !== 1 ? 's' : ''} monitored${updatedAt}</div>`;
+      return;
+    }
+
+    const rows = degradedSvcs.map(s =>
+      `<div class="svc-item" title="${esc(s.details)}">
+        <span class="dot degraded"></span>
+        <span class="name">${esc(s.name)}</span>
+        <span class="small" style="color:var(--muted);margin-left:4px">${esc(s.details)}</span>
+      </div>`
+    ).join('');
+
+    const okLine = okSvcs.length
+      ? `<div class="small" style="color:var(--muted);margin-top:6px">${okSvcs.length} service${okSvcs.length !== 1 ? 's' : ''} ok${updatedAt}</div>`
+      : '';
+
+    host.innerHTML = `<div class="svc-grid">${rows}</div>${okLine}`;
+  }
+
   function renderEmails(data) {
     const host = $('emails');
     if (!data || data.error || (!data.emails && data.unread_count == null)) { host.innerHTML = unavail(); return; }
@@ -1040,7 +1093,7 @@
       services, wallet, positions, pnlSummary, activity,
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
-      xiStats, xiQueue, meetings, calls,
+      xiStats, xiQueue, meetings, calls, watchdog,
     ] = await Promise.all([
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
@@ -1061,6 +1114,7 @@
       fetchJson('/api/x-intake/queue?status=pending&limit=5'),
       fetchJson('/api/meetings/recent?limit=20'),
       fetchJson('/api/symphony/voice-receptionist'),
+      fetchJson('/api/watchdog/status'),
     ]);
 
     renderServices(services);
@@ -1079,6 +1133,7 @@
     renderXIntakeWidget(xiStats, xiQueue);
     renderMeetings(meetings);
     renderDigest(digest);
+    renderWatchdog(watchdog);
     renderFooter(health && health.memories, wallet, emails, system);
 
     $('refreshed').textContent = 'refreshed ' + new Date().toLocaleTimeString();

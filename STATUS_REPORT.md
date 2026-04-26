@@ -2,6 +2,10 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### Watchdog Status → Cortex Dashboard v1 — 20260426T190418Z
+
+Added `GET /api/watchdog/status` endpoint reading `data/task_runner/bob-watchdog-state/*` state files. Events < 3h old are marked degraded. Dashboard now shows a yellow header banner ("⚠ N degraded service(s)") and a "System Watchdog" card in the Overview column. Graceful fallback when state dir or files are missing. Read-only — no Docker commands, no sends. 972 tests passing.
+
 ### Reply Suggestion Inbox v1 — 20260426T180534Z
 
 Added `GET /api/reply/suggestions/pending` and `POST /api/reply/regenerate` endpoints plus a "Replies" dashboard tab. Each pending follow-up appears as an editable card with Regenerate, Copy, and Approve Draft buttons. Approve stores a dry-run receipt only — no messages are sent. 962 tests passing.
@@ -4297,3 +4301,16 @@ All 24 inbox items already processed (idempotency check). Items exist in both ar
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 20260426T182206Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox files were already processed in previous runs - no new items to process.
+
+
+### Self-improvement loop — 20260426T185439Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 26 inbox items already processed (idempotency check). Items exist in both archive and cards directories.

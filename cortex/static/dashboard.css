@@ -82,6 +82,16 @@ nav.tabs {
 .fu-alert:hover { background: rgba(248,113,113,0.22); }
 .fu-alert.hidden { display: none; }
 
+/* ── Watchdog header alert ────────────────────────────────────────────────── */
+.wd-alert {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 11px; border-radius: 100px;
+  background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.4);
+  color: var(--yellow); font-size: 11px; font-weight: 600;
+  white-space: nowrap;
+}
+.wd-alert.hidden { display: none; }
+
 /* ── Tab panels ──────────────────────────────────────────────────────────── */
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }

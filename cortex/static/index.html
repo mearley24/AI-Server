@@ -19,6 +19,9 @@
        onclick="goToFollowUps();return false;" title="Click to view follow-ups">
       <span id="fu-alert-text"></span>
     </a>
+    <span id="wd-header-alert" class="wd-alert hidden" title="Watchdog detected degraded services">
+      <span id="wd-alert-text"></span>
+    </span>
     <span class="clock mono" id="clock">&mdash;</span>
     <span class="badge" id="uptime">uptime &mdash;</span>
     <span id="refreshed">refreshed &mdash;</span>
@@ -64,6 +67,10 @@
       <h2>Service Health</h2>
       <div id="services" class="svc-grid"><div class="unavailable">loading</div></div>
       <div class="small" id="services-summary" style="margin-top:8px"></div>
+    </div>
+    <div class="card" id="watchdog-card">
+      <h2>System Watchdog</h2>
+      <div id="watchdog-overview"><div class="unavailable">loading</div></div>
     </div>
     <div class="card" id="tool-access-overview-card">
       <h2>Tool Access <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">local / tailscale</span></h2>

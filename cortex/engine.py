@@ -1146,6 +1146,13 @@ _X_INTAKE_DATA_DIR = Path(os.environ.get("X_INTAKE_DATA_DIR", "/data/x_intake"))
 if not _X_INTAKE_DATA_DIR.is_dir():
     _X_INTAKE_DATA_DIR = Path("/Users/bob/AI-Server/data/x_intake")
 
+_TASK_RUNNER_DIR = Path(os.environ.get("TASK_RUNNER_DATA_DIR", "/data/task_runner"))
+if not _TASK_RUNNER_DIR.is_dir():
+    _TASK_RUNNER_DIR = Path("/Users/bob/AI-Server/data/task_runner")
+
+_WATCHDOG_STATE_DIR = _TASK_RUNNER_DIR / "bob-watchdog-state"
+_WATCHDOG_HEARTBEAT  = _TASK_RUNNER_DIR / "bob_watchdog_heartbeat.txt"
+
 # Cortex reads receipts from x_intake (read-only mount); must not write there.
 _RECEIPT_LOG = _X_INTAKE_DATA_DIR / "reply_receipts.ndjson"
 
@@ -2748,6 +2755,143 @@ async def reply_regenerate(body: dict[str, Any]) -> dict[str, Any]:
         queue_item_id, result.get("confidence", 0),
     )
     return result
+
+
+# ── Watchdog Status ────────────────────────────────────────────────────────────
+
+# Maps state-file basename → friendly service name.
+# uh_{key} files mean the watchdog restarted that container; others are events.
+_WD_SERVICE_NAMES: dict[str, str] = {
+    "openclaw":           "OpenClaw",
+    "polymarket-bot":     "Polymarket Bot",
+    "vpn":                "VPN",
+    "x-alpha-collector":  "X Alpha Collector",
+    "docker":             "Docker engine",
+    "x_intake":           "X Intake",
+    "tailscale":          "Tailscale",
+    "containers":         "Containers",
+}
+
+# How many seconds after a watchdog intervention before we consider it resolved.
+_WD_STALE_SECS = 3 * 3600  # 3 hours — events older than this are informational only
+
+
+def _read_watchdog_state() -> dict[str, Any]:
+    """Parse bob-watchdog-state/* into a list of service records.
+
+    Files named uh_{service} contain Unix epoch timestamps of the last
+    unhealthy+restart event for that service.  Other files (docker, x_intake,
+    tailscale, containers) log recovery events.  required_source is metadata.
+
+    Returns {"services": [...], "degraded_count": int, "updated_at": str|None,
+             "warning": str|None}.
+    """
+    import time as _time
+
+    now = _time.time()
+    services: list[dict[str, Any]] = []
+    warning: str | None = None
+
+    if not _WATCHDOG_STATE_DIR.is_dir():
+        warning = "No watchdog state directory found."
+        return {"services": [], "degraded_count": 0, "updated_at": None, "warning": warning}
+
+    state_files = [p for p in _WATCHDOG_STATE_DIR.iterdir() if p.is_file()]
+    if not state_files:
+        warning = "No watchdog state files found."
+        return {"services": [], "degraded_count": 0, "updated_at": None, "warning": warning}
+
+    for path in sorted(state_files):
+        name = path.name
+        if name == "required_source":
+            continue  # metadata file, not a service
+
+        raw = path.read_text(encoding="utf-8").strip()
+        try:
+            ts = float(raw)
+        except (ValueError, OSError):
+            continue  # malformed — skip silently
+
+        age_secs = now - ts
+        is_recent = age_secs < _WD_STALE_SECS
+
+        # Resolve service key and display name
+        if name.startswith("uh_"):
+            key = name[3:]  # strip "uh_"
+            event_type = "restart"
+        else:
+            key = name
+            event_type = "recovery"
+
+        display_name = _WD_SERVICE_NAMES.get(key, key)
+        last_seen_iso = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        age_h = age_secs / 3600
+
+        if is_recent:
+            state = "degraded"
+            severity = "high" if age_h < 0.5 else "medium"
+            details = f"Watchdog {event_type} {age_h:.1f}h ago"
+        else:
+            state = "ok"
+            severity = "low"
+            details = f"Last watchdog action {age_h:.0f}h ago"
+
+        services.append({
+            "name":       display_name,
+            "key":        key,
+            "state":      state,
+            "severity":   severity,
+            "event_type": event_type,
+            "last_seen":  last_seen_iso,
+            "details":    details,
+        })
+
+    degraded_count = sum(1 for s in services if s["state"] == "degraded")
+
+    # Read heartbeat for updated_at
+    updated_at: str | None = None
+    if _WATCHDOG_HEARTBEAT.is_file():
+        try:
+            updated_at = _WATCHDOG_HEARTBEAT.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+
+    return {
+        "services":       services,
+        "degraded_count": degraded_count,
+        "updated_at":     updated_at,
+        "warning":        warning,
+    }
+
+
+@app.get("/api/watchdog/status", tags=["watchdog"])
+async def watchdog_status() -> dict[str, Any]:
+    """Return current watchdog service states from state files.
+
+    Reads data/task_runner/bob-watchdog-state/* (mounted read-only in
+    container).  Does not run Docker commands or modify any state.
+    Returns status=ok even when degraded; degraded_count signals UI severity.
+    """
+    try:
+        state = _read_watchdog_state()
+    except Exception as exc:
+        logger.exception("watchdog_status failed: %s", exc)
+        return {
+            "status":         "error",
+            "services":       [],
+            "degraded_count": 0,
+            "updated_at":     None,
+            "warning":        f"Failed to read watchdog state: {exc}",
+        }
+
+    overall = "degraded" if state["degraded_count"] > 0 else "ok"
+    return {
+        "status":         overall,
+        "services":       state["services"],
+        "degraded_count": state["degraded_count"],
+        "updated_at":     state["updated_at"],
+        "warning":        state["warning"],
+    }
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
