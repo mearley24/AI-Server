@@ -55,12 +55,36 @@ _UNSAFE_ACTION_PHRASES = [
     "i will schedule",
     "i can be there",
     "i'll get there",
+    "i'll be out",
+    "i will be out",
+    "i'll be over",
+    "i will be over",
+    "i'll head out",
+    "i will head out",
+    "i'll come out",
+    "i will come out",
+    "be out to check",
+    "out to check",
+    "out to take a look",
+    "out to fix",
+    "i'll need to visit",
+    "i will need to visit",
+    "i'll need to come",
+    "i will need to come",
+    "i'll need to stop by",
+    "i will need to stop by",
+    "i'll need to swing by",
+    "i will need to swing by",
 ]
 
 # Banned support filler (broader than _GENERIC_PHRASES — hard blocks)
 _BANNED_FILLER = [
     "let me know if you need further assistance",
     "let me know if you need any further assistance",
+    "let me know if you need further help",
+    "let me know if you need any further help",
+    "let me know if you need more help",
+    "let me know if you need anything else",
     "let me know if there's anything else",
     "let me know if there is anything else",
     "don't hesitate to reach out",
@@ -71,6 +95,9 @@ _BANNED_FILLER = [
     "thank you for contacting",
     "i hope this helps",
     "hope that helps",
+    "let me know when you're available",
+    "let me know when you are available",
+    "let me know your availability",
 ]
 
 # Diagnostic questions that are irrelevant to audio/AV-only requests
@@ -114,6 +141,14 @@ _NETWORK_KEYWORDS = [
 # System-aware fallback templates keyed by detected system keyword
 # {system_key: (self_fix, onsite_offer)}
 _SYSTEM_TEMPLATES: dict[str, tuple[str, str]] = {
+    "wifi": (
+        "try unplugging your router for 30 seconds and letting it reconnect",
+        "I can take a closer look at the network config",
+    ),
+    "wi-fi": (
+        "try unplugging your router for 30 seconds and letting it reconnect",
+        "I can take a closer look at the network config",
+    ),
     "sonos": (
         "try unplugging your Sonos for about 10 seconds and plugging it back in",
         "I can swing by and take a look",
@@ -227,51 +262,91 @@ def _clean_response(text: str) -> str:
 
 
 def _contains_generic(text: str) -> bool:
-    low = text.lower()
-    return any(phrase in low for phrase in _GENERIC_PHRASES)
+    norm = _normalize(text)
+    return any(phrase in norm for phrase in _GENERIC_PHRASES)
 
 
 # ── Safety gate ────────────────────────────────────────────────────────────────
 
+def _normalize(text: str) -> str:
+    """Lowercase and normalize typographic apostrophes/quotes to ASCII."""
+    return (
+        text.lower()
+        .replace("’", "'")   # right single quotation mark → straight
+        .replace("‘", "'")   # left single quotation mark → straight
+        .replace("“", '"')   # left double quotation mark → straight
+        .replace("”", '"')   # right double quotation mark → straight
+        .replace("–", "-")   # en dash
+        .replace("—", "-")   # em dash
+    )
+
+
+# Regex patterns for committed presence claims (I'll/I will, not "I can" conditionals)
+# "I can swing by if needed" is acceptable; "I'll swing by tomorrow" is not.
+_UNSAFE_ACTION_RE = re.compile(
+    r"""
+    (?:
+        i['']?m\s+(?:on\s+my\s+way|heading\s+over|coming\s+over|scheduled)
+      | i['']?ll\s+be\s+(?:there|by|out|over|around|at\s+your|heading|coming|stopping)
+      | i['']?ll\s+(?:come|go|head|stop|swing|pop|drop)\s+(?:by|over|out|in|around)
+      | i\s+will\s+(?:be\s+there|come\s+by|stop\s+by|swing\s+by|head\s+over|be\s+over|be\s+out)
+      | (?:be|come|stop|swing|pop|drop)\s+(?:by|over|out)\s+(?:shortly|soon|today|tomorrow|this\s+\w+|in\s+a\s+bit|later\s+today)
+      | on\s+my\s+way\s+(?:to|over|there)
+    )
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
 def _detect_unsafe_action(text: str) -> str | None:
     """Return the matched phrase if draft claims unconfirmed presence/action."""
-    low = text.lower()
+    norm = _normalize(text)
+    # Phrase list check first (fast path)
     for phrase in _UNSAFE_ACTION_PHRASES:
-        if phrase in low:
+        if phrase in norm:
             return phrase
+    # Regex catch-all for variants not in the phrase list
+    m = _UNSAFE_ACTION_RE.search(norm)
+    if m:
+        return m.group(0).strip()
     return None
 
 
 def _detect_banned_filler(text: str) -> str | None:
     """Return the matched phrase if draft uses hard-banned support filler."""
-    low = text.lower()
+    norm = _normalize(text)
     for phrase in _BANNED_FILLER:
-        if phrase in low:
+        if phrase in norm:
             return phrase
     return None
 
 
 def _is_irrelevant_network_diag(draft: str, message_text: str) -> bool:
     """True when draft asks about WiFi/router but message is audio-only."""
-    draft_low = draft.lower()
-    msg_low   = message_text.lower()
+    draft_norm = _normalize(draft)
+    msg_norm   = _normalize(message_text)
 
-    has_network_diag = any(p in draft_low for p in _NETWORK_DIAG_PHRASES)
+    has_network_diag = any(p in draft_norm for p in _NETWORK_DIAG_PHRASES)
     if not has_network_diag:
         return False
 
-    msg_mentions_audio   = any(k in msg_low for k in _AUDIO_ONLY_KEYWORDS)
-    msg_mentions_network = any(k in msg_low for k in _NETWORK_KEYWORDS)
+    msg_mentions_audio   = any(k in msg_norm for k in _AUDIO_ONLY_KEYWORDS)
+    msg_mentions_network = any(k in msg_norm for k in _NETWORK_KEYWORDS)
 
     # Irrelevant if the message is about audio but not networking
     return msg_mentions_audio and not msg_mentions_network
 
 
 def _detect_system(message_text: str, systems_on_file: list[str]) -> str | None:
-    """Return a system key if we can identify the affected equipment."""
-    combined = (message_text + " " + " ".join(systems_on_file)).lower()
+    """Return a system key for the equipment mentioned in the message.
+
+    Checks message text first. Only falls back to systems_on_file when the
+    message explicitly mentions a known system — avoids using Sonos template
+    for a WiFi complaint just because Sonos is in the profile.
+    """
+    msg_low = message_text.lower()
     for key in _SYSTEM_TEMPLATES:
-        if key in combined:
+        if key in msg_low:
             return key
     return None
 

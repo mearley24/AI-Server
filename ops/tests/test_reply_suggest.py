@@ -41,6 +41,7 @@ from cortex.reply_suggest import (
     _detect_banned_filler,
     _is_irrelevant_network_diag,
     _build_fallback,
+    _normalize,
     _GENERIC_PHRASES,
 )
 
@@ -383,6 +384,16 @@ class TestDetectUnsafeAction:
     def test_case_insensitive(self):
         assert _detect_unsafe_action("I AM ON MY WAY.") is not None
 
+    def test_smart_apostrophe_ill_be_over(self):
+        # LLM often outputs ’ (right single quotation mark) instead of straight '
+        assert _detect_unsafe_action("I’ll be over shortly.") is not None
+
+    def test_smart_apostrophe_ill_be_there(self):
+        assert _detect_unsafe_action("I’ll be there this afternoon.") is not None
+
+    def test_ill_be_out_detected(self):
+        assert _detect_unsafe_action("I'll be out to check it shortly.") is not None
+
 
 class TestDetectBannedFiller:
 
@@ -403,6 +414,13 @@ class TestDetectBannedFiller:
 
     def test_case_insensitive(self):
         assert _detect_banned_filler("LET ME KNOW IF YOU NEED FURTHER ASSISTANCE.") is not None
+
+    def test_further_help_variant_blocked(self):
+        assert _detect_banned_filler("Let me know if you need further help.") is not None
+
+    def test_smart_apostrophe_dont_hesitate(self):
+        # LLM outputs ' instead of '
+        assert _detect_banned_filler("Don't hesitate to reach out.") is not None
 
 
 class TestIrrelevantNetworkDiag:
