@@ -2527,6 +2527,84 @@ async def self_improvement_reject_rule(
     return {"status": "ok", "rule": result}
 
 
+# ── Reply Suggestion Engine ────────────────────────────────────────────────────
+
+from cortex import reply_suggest as _reply_suggest
+from cortex.config import OLLAMA_HOST, OLLAMA_MODEL
+
+
+@app.post("/api/reply/suggest", tags=["reply"])
+async def reply_suggest_endpoint(body: dict[str, Any] = None) -> dict[str, Any]:
+    """Generate a suggested reply draft via local Ollama.
+
+    Input:
+      {"contact_handle": "+1...", "message_text": "incoming text"}
+
+    Output:
+      {"status": "ok", "draft": "...", "confidence": 0.0–1.0,
+       "applied_rules": [...], "reasoning": "..."}
+
+    Never auto-sends. Draft requires manual review and approval.
+    Only calls local Ollama — no external API usage.
+    """
+    payload = body or {}
+    raw_handle  = payload.get("contact_handle", "").strip()
+    message_text = payload.get("message_text", "").strip()
+
+    if not raw_handle:
+        return {"status": "error", "error": "contact_handle is required", "draft": "", "confidence": 0.0}
+
+    handle = _normalize_handle(raw_handle)
+    if not handle:
+        return {"status": "error", "error": f"Cannot parse handle: {raw_handle!r}", "draft": "", "confidence": 0.0}
+
+    # Build profile + facts using existing helpers
+    profile_row = _profile_by_handle(handle)
+    profile: dict | None = None
+    accepted_by_type: dict[str, list[dict]] = {}
+
+    if profile_row is not None:
+        profile = {
+            "profile_id":        profile_row["profile_id"],
+            "relationship_type": profile_row["relationship_type"],
+            "display_name":      profile_row["display_name"],
+            "summary":           profile_row["summary"],
+            "open_requests":     json.loads(profile_row["open_requests"] or "[]"),
+            "systems_or_topics": json.loads(profile_row["systems_or_topics"] or "[]"),
+        }
+        facts = _facts_for_profile(profile_row["profile_id"])
+        for f in facts:
+            if f.get("is_accepted"):
+                accepted_by_type.setdefault(f["fact_type"], []).append(f)
+
+    recent_replies = _receipts_for_handle(handle, limit=5)
+
+    # Active rules — get_active_rules() already filters to approved only
+    try:
+        active_rules   = _si_engine.get_active_rules()
+        behavior_hints = _si_engine.apply_reply_hints(active_rules)
+    except Exception:
+        active_rules, behavior_hints = [], {}
+
+    result = await _reply_suggest.build_suggestion(
+        contact_handle=handle,
+        message_text=message_text,
+        profile=profile,
+        accepted_by_type=accepted_by_type,
+        recent_replies=recent_replies,
+        active_rules=active_rules,
+        behavior_hints=behavior_hints,
+        ollama_host=OLLAMA_HOST,
+        ollama_model=OLLAMA_MODEL,
+    )
+
+    logger.info(
+        "reply_suggest handle=%s confidence=%.2f rules=%d",
+        _mask_handle(handle), result.get("confidence", 0), len(result.get("applied_rules", [])),
+    )
+    return result
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 

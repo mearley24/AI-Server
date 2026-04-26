@@ -1586,12 +1586,46 @@
         + '</div>';
     }
 
+    // Active rules hint badge
+    var activeRulesHtml = '';
+    if (data.active_rules_applied && data.active_rules_applied.length) {
+      activeRulesHtml = '<div style="margin-bottom:8px;">'
+        + '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Active Rules Applied</div>'
+        + data.active_rules_applied.map(function(r) {
+            return '<div style="font-size:10px;padding:3px 6px;margin-bottom:3px;background:var(--surface-2);border-radius:4px;border-left:2px solid #22c55e;">'
+              + '<span style="color:#22c55e;font-family:monospace;">' + _ctxEsc(r.rule_id) + '</span>'
+              + ' <span style="color:var(--muted);">·</span> '
+              + _ctxEsc(r.summary)
+              + '</div>';
+          }).join('')
+        + '</div>';
+    }
+
+    var ctxHandle = _ctxEsc(data.contact_masked || '');
     var draftHtml = '<div style="border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--surface-2);margin-bottom:8px;">'
       + '<div style="font-size:10px;font-weight:700;color:var(--gold-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Draft Reply</div>'
       + '<div style="font-size:11px;color:var(--text);white-space:pre-wrap;">' + _ctxEsc(data.draft_reply || '') + '</div>'
-      + '<div style="margin-top:6px;">'
+      + '<div style="margin-top:6px;display:flex;gap:6px;align-items:center;">'
       + '<button disabled style="font-size:9px;padding:2px 10px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:not-allowed;" title="Auto-send disabled">✉ Send (disabled)</button>'
-      + '</div></div>';
+      + '</div></div>'
+
+      // Suggest Reply section
+      + '<div id="ctx-suggest-box" style="border:1px solid var(--border);border-radius:4px;padding:8px;background:var(--surface-2);margin-bottom:8px;">'
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+      + '<span style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;">Suggest Reply</span>'
+      + '<button id="ctx-suggest-btn" onclick="window._suggestReply()" style="font-size:9px;padding:2px 10px;border-radius:3px;border:1px solid #3b82f644;background:#3b82f611;color:#60a5fa;cursor:pointer;">✨ Generate</button>'
+      + '</div>'
+      + '<input id="ctx-suggest-msg" type="text" placeholder="Paste incoming message (optional)…" style="width:100%;box-sizing:border-box;font-size:11px;padding:4px 6px;border:1px solid var(--border-2);border-radius:3px;background:var(--surface);color:var(--text);margin-bottom:6px;">'
+      + '<div id="ctx-suggest-result" style="display:none;">'
+      + '<textarea id="ctx-suggest-draft" rows="3" style="width:100%;box-sizing:border-box;font-size:11px;padding:4px 6px;border:1px solid var(--border-2);border-radius:3px;background:var(--surface);color:var(--text);resize:vertical;margin-bottom:4px;"></textarea>'
+      + '<div style="display:flex;gap:6px;align-items:center;">'
+      + '<button onclick="window._copySuggestedReply()" style="font-size:9px;padding:2px 10px;border-radius:3px;border:1px solid var(--border-2);background:transparent;color:var(--muted);cursor:pointer;">⎘ Copy</button>'
+      + '<span id="ctx-suggest-meta" style="font-size:9px;color:var(--muted);"></span>'
+      + '</div></div>'
+      + '</div>';
+
+    // Store handle on window so _suggestReply can read it
+    window._ctxCurrentHandle = data.contact_masked || '';
 
     el.innerHTML = '<div style="border:1px solid var(--border);border-radius:6px;padding:12px;">'
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">'
@@ -1605,9 +1639,62 @@
       + '<span style="font-size:9px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.5px;">Suggested action</span>'
       + '<div style="margin-top:2px;color:var(--text);">' + _ctxEsc(data.suggested_next_action) + '</div></div>'
       + acceptedHtml + pendingHtml
-      + repliesHtml + draftHtml
+      + repliesHtml + activeRulesHtml + draftHtml
       + '</div>';
   }
+
+  window._suggestReply = async function() {
+    var btn     = document.getElementById('ctx-suggest-btn');
+    var msgEl   = document.getElementById('ctx-suggest-msg');
+    var resultEl = document.getElementById('ctx-suggest-result');
+    var draftEl = document.getElementById('ctx-suggest-draft');
+    var metaEl  = document.getElementById('ctx-suggest-meta');
+    if (!btn || !draftEl) return;
+
+    var handle = window._ctxCurrentHandle || '';
+    var msg    = msgEl ? msgEl.value.trim() : '';
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Generating…';
+    if (resultEl) resultEl.style.display = 'none';
+
+    try {
+      var resp = await fetch('/api/reply/suggest', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({contact_handle: handle, message_text: msg}),
+      });
+      var data = await resp.json();
+      console.log('[suggest] result', data);
+
+      if (data.status === 'ok' && data.draft) {
+        draftEl.value = data.draft;
+        if (metaEl) {
+          var conf = Math.round((data.confidence || 0) * 100);
+          var ruleNames = (data.applied_rules || []).map(function(r) { return r.rule_id; }).join(', ');
+          metaEl.textContent = conf + '% confidence' + (ruleNames ? ' · rules: ' + ruleNames : '');
+        }
+        if (resultEl) resultEl.style.display = '';
+      } else {
+        alert('Suggest failed: ' + (data.error || JSON.stringify(data)));
+      }
+    } catch (err) {
+      console.error('[suggest] error', err);
+      alert('Suggest error: ' + err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '✨ Generate';
+    }
+  };
+
+  window._copySuggestedReply = function() {
+    var draftEl = document.getElementById('ctx-suggest-draft');
+    if (!draftEl || !draftEl.value) return;
+    navigator.clipboard.writeText(draftEl.value).then(function() {
+      var btn = document.querySelector('#ctx-suggest-box button[onclick*="_copySuggestedReply"]');
+      if (btn) { btn.textContent = '✓ Copied'; setTimeout(function() { btn.textContent = '⎘ Copy'; }, 1500); }
+    });
+  };
 
   window.loadContextCard = async function() {
     var input = document.getElementById('ctx-thread-input');
