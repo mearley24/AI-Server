@@ -118,7 +118,17 @@ class XReadOnlyClient:
         return _parse_tweets(resp, source="post")
 
     def get_liked_tweets(self, max_results: int = 10) -> list[dict]:
-        """Fetch tweets Matt liked. Requires bearer token + X_USER_ID."""
+        """Fetch tweets Matt liked. Requires OAuth user-context + X_USER_ID.
+
+        X API v2 GET /2/users/:id/liked_tweets requires OAuth 1.0a or OAuth 2.0
+        user-context authentication. App-only bearer token returns 403.
+        """
+        if not self._creds.has_user_auth():
+            raise RuntimeError(
+                "Likes require OAuth user-context auth "
+                "(X_API_CLIENT_ID, X_API_CLIENT_SECRET, X_API_ACCESS_TOKEN, X_API_REFRESH_TOKEN). "
+                "Bearer-token-only access returns 403 on this endpoint."
+            )
         if not self._creds.user_id:
             raise RuntimeError("X_USER_ID not set.")
         client = self._get_client()

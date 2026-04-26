@@ -2,6 +2,10 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### X API bearer-safe posts mode — 20260426T225000Z
+
+Fixed avoidable 403 on likes endpoint. X API v2 `/users/:id/liked_tweets` requires OAuth user-context — bearer-token-only returns 403. Changes: `get_liked_tweets()` now guards for `has_user_auth()` with a clear error; `run_intake()` auto-skips likes/bookmarks when no user auth (reports in `skipped_auth`, not `errors`) unless `likes_explicitly_requested=True`; CLI defaults to posts-only when bearer-only; added `--no-likes` flag; `--likes-only` without user auth gives a clear OAuth error. Fixed `/api/x-api/status` 500 on uninitialised DB (returns `status: degraded` with warning). 11 new tests (27 total in test_x_api_intake.py).
+
 ### Secure Vault v1 — 20260426T220000Z
 
 AES-256-GCM encrypted local secrets vault. Key at `~/.config/bob/vault.key` (0600, never in repo or Docker). `data/vault/vault.sqlite` holds ciphertext only — plaintext never stored. CLI: `vault_set_secret.py` (interactive no-echo entry), `vault_get_secret.py` (metadata by default; `--reveal`/`--export-env` required for value), `vault_list.py` (fingerprints only, no values), `vault_migrate_env.py` (scan + propose .env migration, apply mode interactive). Cortex API: `GET /api/vault/secrets` (metadata-only list), `GET /api/vault/secret/{name}`, `POST /api/vault/request-secret` (log pending request for human fulfillment). Dashboard: new Vault tab with category filter, fingerprint table, policy badges, CLI quick-reference panel. Vault key never mounted in container; container gets read-only DB access to metadata. 34 new tests — 53 vault tests passing (34 vault, previously 53 watchdog/dep-map).
@@ -4356,3 +4360,10 @@ All 27 inbox items already processed (idempotency check). Items exist in both ar
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 27 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+### Self-improvement loop — 2026-04-26T22:12:39Z
+
+inbox processed: 1, cards: 1 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 1 needs-fetch)
+
+- 20260426T220751Z-imessage-x-com-moondevonyt-status-2048185361357234639-card.md — needs fetch — X.com URL from moondevonyt requiring content analysis

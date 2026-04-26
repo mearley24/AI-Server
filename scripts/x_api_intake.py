@@ -63,7 +63,14 @@ for _k in _X_API_VAULT_KEYS:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="X API read-only intake")
+    parser = argparse.ArgumentParser(
+        description="X API read-only intake",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Default mode: posts-only when only Bearer Token is configured.\n"
+            "Likes and bookmarks require OAuth user-context credentials."
+        ),
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run",  action="store_true", default=True,
                       help="Preview without writing (default)")
@@ -73,19 +80,43 @@ def main() -> int:
                         help="Max items per endpoint (default: 25)")
     parser.add_argument("--bookmarks", action="store_true",
                         help="Also fetch bookmarks (requires OAuth + Basic plan)")
-    parser.add_argument("--posts-only", action="store_true")
-    parser.add_argument("--likes-only", action="store_true")
+
+    source_group = parser.add_mutually_exclusive_group()
+    source_group.add_argument("--posts-only", action="store_true",
+                              help="Only fetch own posts (bearer-token safe)")
+    source_group.add_argument("--likes-only", action="store_true",
+                              help="Only fetch liked tweets (requires OAuth user-context)")
+    source_group.add_argument("--no-likes", action="store_true",
+                              help="Fetch posts only, skip likes (same as --posts-only)")
     args = parser.parse_args()
 
     dry_run = not args.apply
 
-    fetch_posts = not args.likes_only
-    fetch_likes = not args.posts_only
+    from integrations.x_api.client import XCredentials
+    creds = XCredentials.from_env()
+
+    # Determine what to fetch
+    if args.likes_only:
+        fetch_posts = False
+        fetch_likes = True
+        likes_explicitly_requested = True
+    elif args.posts_only or args.no_likes:
+        fetch_posts = True
+        fetch_likes = False
+        likes_explicitly_requested = False
+    else:
+        # Default: posts always; likes only if OAuth user-context is configured.
+        # This prevents avoidable 403s when only a Bearer Token is present.
+        fetch_posts = True
+        fetch_likes = creds.has_user_auth()
+        likes_explicitly_requested = False
+
     fetch_bookmarks = args.bookmarks
 
     from integrations.x_api.intake import run_intake
 
-    print(f"X API Intake — {'DRY RUN' if dry_run else 'APPLY'}")
+    mode_label = "likes-only" if args.likes_only else ("posts+likes" if fetch_likes else "posts-only")
+    print(f"X API Intake — {'DRY RUN' if dry_run else 'APPLY'}  [{mode_label}]")
     print(f"  limit={args.limit}  posts={fetch_posts}  likes={fetch_likes}  bookmarks={fetch_bookmarks}")
     print()
 
@@ -95,6 +126,7 @@ def main() -> int:
         fetch_posts=fetch_posts,
         fetch_likes=fetch_likes,
         fetch_bookmarks=fetch_bookmarks,
+        likes_explicitly_requested=likes_explicitly_requested,
     )
 
     print(json.dumps(result, indent=2))
@@ -105,6 +137,8 @@ def main() -> int:
     if result["status"] == "disabled":
         print("\nHint: set X_ENABLED=1 in .env to enable.", file=sys.stderr)
         return 0
+    for note in result.get("skipped_auth", []):
+        print(f"  note: {note}", file=sys.stderr)
     if result["errors"]:
         print(f"\n{len(result['errors'])} error(s):", file=sys.stderr)
         for e in result["errors"]:

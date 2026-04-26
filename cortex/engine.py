@@ -2807,30 +2807,50 @@ async def x_api_status() -> dict[str, Any]:
         }
 
     import sqlite3 as _sqlite3
-    conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    conn.row_factory = _sqlite3.Row
-
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    daily_used = conn.execute(
-        "SELECT COALESCE(SUM(request_count),0) FROM x_api_usage WHERE ts LIKE ?",
-        (f"{today}%",),
-    ).fetchone()[0]
     daily_limit = int(os.environ.get("X_DAILY_READ_LIMIT", "100"))
-    total_items = conn.execute("SELECT COUNT(*) FROM x_items").fetchone()[0]
-    last_run_row = conn.execute(
-        "SELECT ts, endpoint, status FROM x_api_usage ORDER BY id DESC LIMIT 1"
-    ).fetchone()
-    pending = conn.execute(
-        "SELECT COUNT(*) FROM x_items WHERE processed_status='pending'"
-    ).fetchone()[0]
-    conn.close()
-
-    return {
+    base = {
         "status":            "ok" if enabled else "disabled",
         "enabled":           enabled,
         "credentials":       creds,
-        "daily_reads_used":  int(daily_used),
         "daily_reads_limit": daily_limit,
+    }
+
+    try:
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.row_factory = _sqlite3.Row
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        daily_used = conn.execute(
+            "SELECT COALESCE(SUM(request_count),0) FROM x_api_usage WHERE ts LIKE ?",
+            (f"{today}%",),
+        ).fetchone()[0]
+        total_items = conn.execute("SELECT COUNT(*) FROM x_items").fetchone()[0]
+        last_run_row = conn.execute(
+            "SELECT ts, endpoint, status FROM x_api_usage ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM x_items WHERE processed_status='pending'"
+        ).fetchone()[0]
+        conn.close()
+    except _sqlite3.OperationalError as exc:
+        return {
+            **base,
+            "status":           "degraded",
+            "daily_reads_used": 0,
+            "within_limit":     True,
+            "total_items":      0,
+            "pending_items":    0,
+            "last_run":         None,
+            "last_run_endpoint": None,
+            "last_run_status":  None,
+            "warning": (
+                f"DB exists but tables are not initialised ({exc}). "
+                "Run: python3 scripts/x_api_intake.py --apply to initialise."
+            ),
+        }
+
+    return {
+        **base,
+        "daily_reads_used":  int(daily_used),
         "within_limit":      int(daily_used) < daily_limit,
         "total_items":       total_items,
         "pending_items":     pending,

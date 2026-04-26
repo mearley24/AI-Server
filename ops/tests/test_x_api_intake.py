@@ -331,3 +331,172 @@ class TestCortexEndpoints:
         assert result["would_run"] is True
         assert result["issues"] == []
         assert result["should_auto_run"] is False
+
+
+# ── TestBearerOnlyMode ─────────────────────────────────────────────────────────
+
+class TestBearerOnlyMode:
+    """Bearer-token-only (no OAuth user context) behaviour."""
+
+    def _bearer_env(self):
+        return {
+            "X_ENABLED":          "1",
+            "X_API_BEARER_TOKEN": "fake_bearer",
+            "X_USER_ID":          "123456",
+            # Intentionally NO X_API_CLIENT_ID / CLIENT_SECRET / ACCESS_TOKEN / REFRESH_TOKEN
+            "X_API_CLIENT_ID":      "",
+            "X_API_CLIENT_SECRET":  "",
+            "X_API_ACCESS_TOKEN":   "",
+            "X_API_REFRESH_TOKEN":  "",
+        }
+
+    def test_bearer_only_has_bearer_true(self):
+        from integrations.x_api.client import XCredentials
+        with patch.dict(os.environ, self._bearer_env(), clear=False):
+            creds = XCredentials.from_env()
+        assert creds.has_bearer() is True
+
+    def test_bearer_only_has_user_auth_false(self):
+        from integrations.x_api.client import XCredentials
+        with patch.dict(os.environ, self._bearer_env(), clear=False):
+            creds = XCredentials.from_env()
+        assert creds.has_user_auth() is False
+
+    def test_bearer_only_defaults_to_posts_only(self, tmp_path):
+        """With bearer only and no explicit flags, likes are auto-skipped."""
+        from integrations.x_api.intake import run_intake
+        from integrations.x_api.client import XReadOnlyClient
+
+        mock_posts = [
+            {"x_post_id": "1", "text": "post", "author_handle": "m",
+             "author_name": "M", "created_at": None, "urls": [], "source": "post"}
+        ]
+        with patch.dict(os.environ, self._bearer_env(), clear=False):
+            with patch.object(XReadOnlyClient, "get_user_tweets", return_value=mock_posts) as mock_tweets:
+                with patch.object(XReadOnlyClient, "get_liked_tweets") as mock_likes:
+                    result = run_intake(
+                        dry_run=True,
+                        fetch_posts=True,
+                        fetch_likes=True,        # caller says True…
+                        likes_explicitly_requested=False,  # …but not explicit
+                        db_path=tmp_path / "db.sqlite",
+                        fetch_bookmarks=False,
+                    )
+
+        # get_liked_tweets must NOT have been called
+        mock_likes.assert_not_called()
+        assert result["fetched"] > 0
+        assert any("likes" in note for note in result["skipped_auth"])
+
+    def test_likes_skipped_without_user_auth(self, tmp_path):
+        """likes skipped when no OAuth user context (no explicit request)."""
+        from integrations.x_api.intake import run_intake
+        from integrations.x_api.client import XReadOnlyClient
+
+        with patch.dict(os.environ, self._bearer_env(), clear=False):
+            with patch.object(XReadOnlyClient, "get_user_tweets", return_value=[]):
+                with patch.object(XReadOnlyClient, "get_liked_tweets") as mock_likes:
+                    result = run_intake(
+                        dry_run=True, fetch_posts=True, fetch_likes=True,
+                        likes_explicitly_requested=False,
+                        db_path=tmp_path / "db.sqlite", fetch_bookmarks=False,
+                    )
+
+        mock_likes.assert_not_called()
+        assert "skipped_auth" in result
+        assert len(result["skipped_auth"]) > 0
+
+    def test_likes_only_explicit_raises_clear_error(self, tmp_path):
+        """--likes-only without user auth propagates a clear RuntimeError from client."""
+        from integrations.x_api.intake import run_intake
+
+        with patch.dict(os.environ, self._bearer_env(), clear=False):
+            result = run_intake(
+                dry_run=True, fetch_posts=False, fetch_likes=True,
+                likes_explicitly_requested=True,
+                db_path=tmp_path / "db.sqlite", fetch_bookmarks=False,
+            )
+
+        # The error should mention OAuth/auth, not silently produce 0 results
+        assert result["errors"], "Expected an error when likes requested without user auth"
+        err_text = " ".join(result["errors"])
+        assert any(kw in err_text.lower() for kw in ("oauth", "auth", "user-context", "403"))
+
+    def test_get_liked_tweets_raises_without_user_auth(self):
+        """XReadOnlyClient.get_liked_tweets raises RuntimeError when no user auth."""
+        from integrations.x_api.client import XReadOnlyClient, XCredentials
+
+        creds = XCredentials(
+            bearer_token="fake", enabled=True, user_id="123",
+            consumer_key=None, consumer_secret=None,
+            access_token=None, access_token_secret=None,
+        )
+        client = XReadOnlyClient(creds)
+        with pytest.raises(RuntimeError, match="OAuth"):
+            client.get_liked_tweets()
+
+    def test_bookmarks_skipped_without_user_auth(self, tmp_path):
+        """Bookmarks are auto-skipped when no user auth (never explicitly requested)."""
+        from integrations.x_api.intake import run_intake
+        from integrations.x_api.client import XReadOnlyClient
+
+        with patch.dict(os.environ, self._bearer_env(), clear=False):
+            with patch.object(XReadOnlyClient, "get_user_tweets", return_value=[]):
+                with patch.object(XReadOnlyClient, "get_bookmarks") as mock_bk:
+                    result = run_intake(
+                        dry_run=True, fetch_posts=True, fetch_likes=False,
+                        fetch_bookmarks=True,  # requested but no user auth
+                        db_path=tmp_path / "db.sqlite",
+                    )
+
+        mock_bk.assert_not_called()
+        assert any("bookmarks" in note for note in result["skipped_auth"])
+
+
+# ── TestStatusEndpointRobustness ───────────────────────────────────────────────
+
+class TestStatusEndpointRobustness:
+    """GET /api/x-api/status must never 500."""
+
+    def test_status_no_db_returns_no_db(self):
+        import cortex.engine as eng
+        with patch.object(eng, "_x_api_db_path", return_value=None):
+            with patch.dict(os.environ, {"X_ENABLED": "0"}, clear=False):
+                result = _run(eng.x_api_status())
+        assert result["status"] == "no_db"
+        assert "warning" in result
+
+    def test_status_db_missing_tables_returns_degraded(self, tmp_path):
+        """DB file exists but tables not created → degraded, not 500."""
+        import sqlite3
+        import cortex.engine as eng
+
+        # Create a valid but empty SQLite DB (no tables)
+        empty_db = tmp_path / "empty.sqlite"
+        conn = sqlite3.connect(str(empty_db))
+        conn.close()
+
+        with patch.object(eng, "_x_api_db_path", return_value=empty_db):
+            with patch.dict(os.environ, {"X_ENABLED": "1", "X_API_BEARER_TOKEN": "tok"}, clear=False):
+                result = _run(eng.x_api_status())
+
+        assert result["status"] == "degraded"
+        assert "warning" in result
+        assert result["total_items"] == 0
+
+    def test_status_initialised_db_returns_ok_or_disabled(self, tmp_path):
+        """Properly initialised DB returns ok or disabled (never 500)."""
+        import cortex.engine as eng
+        from integrations.x_api.models import init_db
+
+        db_path = tmp_path / "x_items.sqlite"
+        conn = init_db(db_path)
+        conn.close()
+
+        with patch.object(eng, "_x_api_db_path", return_value=db_path):
+            with patch.dict(os.environ, {"X_ENABLED": "1", "X_API_BEARER_TOKEN": "tok"}, clear=False):
+                result = _run(eng.x_api_status())
+
+        assert result["status"] in ("ok", "disabled", "degraded")
+        assert "total_items" in result
+        assert result["total_items"] == 0

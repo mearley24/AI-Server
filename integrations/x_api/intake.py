@@ -57,6 +57,7 @@ def run_intake(
     fetch_posts: bool = True,
     fetch_likes: bool = True,
     fetch_bookmarks: bool = False,
+    likes_explicitly_requested: bool = False,
     db_path: Optional[Path] = None,
 ) -> dict:
     """Main intake entry point.
@@ -97,6 +98,25 @@ def run_intake(
             "message": f"Daily read limit reached ({used}/{lim}). Resets at midnight UTC.",
             "fetched": 0, "stored": 0, "skipped": 0, "errors": [],
         }
+
+    # Likes and bookmarks require OAuth user-context auth.
+    # Auto-skip unless explicitly requested; if explicitly requested without
+    # user auth, let the call proceed so the client raises a clear error.
+    skipped_auth: list[str] = []
+    if fetch_likes and not creds.has_user_auth():
+        if likes_explicitly_requested:
+            pass  # proceed — client will raise a descriptive RuntimeError
+        else:
+            fetch_likes = False
+            skipped_auth.append(
+                "likes: skipped (OAuth user-context not configured; "
+                "use --likes-only to attempt anyway)"
+            )
+    if fetch_bookmarks and not creds.has_user_auth():
+        fetch_bookmarks = False
+        skipped_auth.append(
+            "bookmarks: skipped (OAuth user-context not configured)"
+        )
 
     client = XReadOnlyClient(creds)
     all_tweets: list[dict] = []
@@ -168,12 +188,13 @@ def run_intake(
     conn.close()
 
     return {
-        "status":   "dry_run" if dry_run else "ok",
-        "fetched":  fetched,
-        "stored":   stored,
-        "skipped":  skipped,
-        "errors":   errors,
-        "dry_run":  dry_run,
+        "status":       "dry_run" if dry_run else "ok",
+        "fetched":      fetched,
+        "stored":       stored,
+        "skipped":      skipped,
+        "errors":       errors,
+        "skipped_auth": skipped_auth,
+        "dry_run":      dry_run,
     }
 
 
