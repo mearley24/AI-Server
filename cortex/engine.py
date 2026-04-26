@@ -2773,7 +2773,8 @@ _WD_SERVICE_NAMES: dict[str, str] = {
 }
 
 # How many seconds after a watchdog intervention before we consider it resolved.
-_WD_STALE_SECS = 3 * 3600  # 3 hours — events older than this are informational only
+# 1 hour: if a service was restarted and has been running since, it's recovered.
+_WD_STALE_SECS = 1 * 3600
 
 
 def _read_watchdog_state() -> dict[str, Any]:

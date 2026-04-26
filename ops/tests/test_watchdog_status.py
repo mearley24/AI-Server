@@ -83,9 +83,9 @@ class TestWatchdogStateFiles:
         return state_dir
 
     def test_old_events_are_ok(self, tmp_path):
-        """Events older than 3h should have state=ok."""
+        """Events older than 1h should have state=ok (service recovered)."""
         import cortex.engine as eng
-        old_ts = time.time() - 5 * 3600  # 5h ago
+        old_ts = time.time() - 2 * 3600  # 2h ago — beyond 1h threshold
         state_dir = self._make_state_dir(tmp_path, {"uh_openclaw": old_ts})
         with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
             with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
@@ -96,8 +96,19 @@ class TestWatchdogStateFiles:
         assert svc["state"] == "ok"
         assert svc["name"] == "OpenClaw"
 
+    def test_event_between_1h_and_3h_is_ok(self, tmp_path):
+        """Events 1–3h old are ok (recovered), not degraded — the OpenClaw case."""
+        import cortex.engine as eng
+        mid_ts = time.time() - 2.6 * 3600  # 2.6h ago — was 3h window, now 1h
+        state_dir = self._make_state_dir(tmp_path, {"uh_openclaw": mid_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        assert result["status"] == "ok"
+        assert result["degraded_count"] == 0
+
     def test_recent_event_is_degraded(self, tmp_path):
-        """Events within 3h should have state=degraded and bump degraded_count."""
+        """Events within 1h should have state=degraded and bump degraded_count."""
         import cortex.engine as eng
         recent_ts = time.time() - 30 * 60  # 30 min ago
         state_dir = self._make_state_dir(tmp_path, {"uh_vpn": recent_ts})
