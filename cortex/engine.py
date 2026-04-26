@@ -889,7 +889,12 @@ async def client_intel_review_queue(
                 "inferred_domain":        r["triage_inferred_domain"],
                 "risk_flags":             json.loads(r["triage_risk_flags"] or "[]"),
             })
-        return {"status": "ok", "count": len(threads), "threads": threads}
+        return {
+            "status":                "ok",
+            "count":                 len(threads),
+            "threads":               threads,
+            "active_rules_applied":  _active_rules_summary("triage_scoring"),
+        }
     except Exception as exc:
         logger.warning("client_intel_review_queue_error err=%s", exc)
         return {"status": "error", "error": str(exc)[:200], "threads": [], "count": 0}
@@ -1889,6 +1894,8 @@ async def x_intake_context_card(
         "draft_quality_reasons": built["draft_quality_reasons"],
         "style_applied":         style_applied,
         "style_confidence":      style_confidence,
+        "active_rule_hints":     built["active_rule_hints"],
+        "active_rules_applied":  _active_rules_summary("reply_phrasing"),
     }
 
 
@@ -2429,6 +2436,34 @@ async def x_intake_follow_up_count(
 # ── Self-Improvement Card Promotion ────────────────────────────────────────────
 
 _PROMOTED_RULES_PATH = _CORTEX_DATA_DIR / "promoted_rules.json"
+
+
+def _active_rules_summary(category: str | None = None) -> list[dict[str, Any]]:
+    """Compact list of approved rules for inclusion in API responses.
+
+    Only status=approved rules are returned.  Proposed and rejected rules are
+    always excluded so callers never surface unapproved behaviour.
+
+    Args:
+        category: optional behavior_category filter (e.g. "triage_scoring").
+                  Pass None to return all active rules.
+    """
+    try:
+        rules = _si_engine.get_active_rules()  # already filters to approved only
+        if category:
+            rules = [r for r in rules if r.get("behavior_category") == category]
+        return [
+            {
+                "rule_id":           r["rule_id"],
+                "behavior_category": r.get("behavior_category", "general"),
+                "summary":           r.get("summary", ""),
+                "approved_by":       r.get("approved_by") or "",
+                "approved_at":       (r.get("approved_at") or "")[:10],
+            }
+            for r in rules
+        ]
+    except Exception:
+        return []
 
 
 @app.get("/api/self-improvement/promoted-rules", tags=["self-improvement"])
