@@ -76,6 +76,8 @@ def main() -> int:
                       help="Preview without writing (default)")
     mode.add_argument("--apply",    action="store_true",
                       help="Fetch and write to DB")
+    mode.add_argument("--classify-existing", action="store_true",
+                      help="Reclassify all pending DB items without fetching from X API")
     parser.add_argument("--limit",     type=int, default=25,
                         help="Max items per endpoint (default: 25)")
     parser.add_argument("--bookmarks", action="store_true",
@@ -89,6 +91,16 @@ def main() -> int:
     source_group.add_argument("--no-likes", action="store_true",
                               help="Fetch posts only, skip likes (same as --posts-only)")
     args = parser.parse_args()
+
+    # --classify-existing: reclassify pending DB rows, no API calls
+    if args.classify_existing:
+        from integrations.x_api.intake import classify_pending_items
+        print("X API Intake — CLASSIFY EXISTING PENDING ITEMS")
+        print("  No API calls. Reads local DB and applies quality gate.")
+        print()
+        result = classify_pending_items()
+        print(json.dumps(result, indent=2))
+        return 0
 
     dry_run = not args.apply
 

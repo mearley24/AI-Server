@@ -2,6 +2,10 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### X quality gate — reclassify existing + status filter fix — 20260426T235900Z
+
+Fixed three bugs in quality gate rollout. (1) Duplicate inserts now call `_reclassify_if_pending()` — if the existing DB row is still `pending`, the quality gate runs and updates it. (2) New `--classify-existing` CLI flag batch-reclassifies all pending DB rows without any API calls (`classify_pending_items()` function). (3) Status endpoint field names corrected: `items_eligible`→`eligible_items`, `items_pending`→`pending_items`, `items_blocked`→`blocked_items`. Default items endpoint now hides blocked items; `?status=blocked` filter works correctly. Verified: 5 existing pending items reclassified → all 5 blocked; status endpoint returns `eligible_items:0 pending_items:0 blocked_items:5`; default items list returns empty (blocked hidden); `?status=blocked` returns all 5. 9 new tests (35 total in test_x_api_quality_gate.py).
+
 ### X intake quality gate (work-only mode) — 20260426T233000Z
 
 Added heuristic content classification to X intake. `integrations/x_api/classifier.py` — pure keyword/pattern matching (no LLM), ~40 work terms (AI/ML/LLMs/smart home/startup/engineering) with float weights, ~30 non-work terms (politics/war/celebrity) with penalties, unsafe term detection, flag detection (political/emotional/rant/offensive/low_signal). Each item gets `content_category` (work|neutral|non_work|unsafe), `work_relevance_score` (0.0–1.0), `quality_flags[]`, `classification_reason`. Promotion: `eligible` (work + score≥0.7 + no flags), `pending` (work + 0.5–0.7 + no flags), `blocked` (everything else). DB schema extended with 3 new columns + migration for existing DBs. Learning pipeline (`_maybe_route_to_learning`) gated on `eligible` only. Cortex `GET /api/x-api/items` hides blocked by default; `?status=blocked` debug view available. Status endpoint now returns `items_eligible`/`items_pending`/`items_blocked` breakdown. 26 new tests — 98 total passing across x_api test files.
@@ -13,6 +17,12 @@ Fixed avoidable 403 on likes endpoint. X API v2 `/users/:id/liked_tweets` requir
 ### Secure Vault v1 — 20260426T220000Z
 
 AES-256-GCM encrypted local secrets vault. Key at `~/.config/bob/vault.key` (0600, never in repo or Docker). `data/vault/vault.sqlite` holds ciphertext only — plaintext never stored. CLI: `vault_set_secret.py` (interactive no-echo entry), `vault_get_secret.py` (metadata by default; `--reveal`/`--export-env` required for value), `vault_list.py` (fingerprints only, no values), `vault_migrate_env.py` (scan + propose .env migration, apply mode interactive). Cortex API: `GET /api/vault/secrets` (metadata-only list), `GET /api/vault/secret/{name}`, `POST /api/vault/request-secret` (log pending request for human fulfillment). Dashboard: new Vault tab with category filter, fingerprint table, policy badges, CLI quick-reference panel. Vault key never mounted in container; container gets read-only DB access to metadata. 34 new tests — 53 vault tests passing (34 vault, previously 53 watchdog/dep-map).
+
+### Self-improvement loop — 2026-04-26T22:10:00Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items already processed (idempotency check). No new cards generated this run.
 
 ### Self-improvement loop — 20260426T213718Z
 

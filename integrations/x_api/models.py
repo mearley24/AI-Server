@@ -151,3 +151,45 @@ def insert_item(conn: sqlite3.Connection, item: XItem) -> bool:
         return True
     except sqlite3.IntegrityError:
         return False  # duplicate x_item_id
+
+
+def update_item_classification(
+    conn: sqlite3.Connection,
+    x_item_id: str,
+    category: str,
+    processed_status: str,
+    work_relevance_score: Optional[float],
+    quality_flags: list[str],
+    classification_reason: Optional[str],
+) -> bool:
+    """Update quality-gate columns for an existing item.
+
+    Only touches classification fields — never overwrites text, url, etc.
+    Returns True if a row was updated.
+    """
+    cur = conn.execute(
+        """UPDATE x_items
+           SET category=?, processed_status=?, work_relevance_score=?,
+               quality_flags=?, classification_reason=?
+           WHERE x_item_id=?""",
+        (
+            category,
+            processed_status,
+            work_relevance_score,
+            json.dumps(quality_flags),
+            classification_reason,
+            x_item_id,
+        ),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def get_pending_items(conn: sqlite3.Connection, batch_size: int = 500) -> list[dict]:
+    """Return rows with processed_status='pending' for reclassification."""
+    rows = conn.execute(
+        "SELECT x_item_id, text, url, item_type FROM x_items "
+        "WHERE processed_status='pending' LIMIT ?",
+        (batch_size,),
+    ).fetchall()
+    return [dict(r) for r in rows]

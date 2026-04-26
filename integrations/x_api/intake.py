@@ -15,7 +15,10 @@ from typing import Optional
 
 from integrations.x_api.classifier import classify
 from integrations.x_api.client import XCredentials, XReadOnlyClient
-from integrations.x_api.models import XItem, init_db, insert_item
+from integrations.x_api.models import (
+    XItem, init_db, insert_item,
+    update_item_classification, get_pending_items,
+)
 from integrations.x_api.usage import check_limit, log_usage, usage_summary
 
 logger = logging.getLogger(__name__)
@@ -180,14 +183,17 @@ def run_intake(
             processed_status=        clf.promoted_status,
         )
         if not dry_run:
-            if insert_item(conn, main_item):
+            inserted = insert_item(conn, main_item)
+            if inserted:
                 stored += 1
-                if clf.promoted_status == "blocked":
-                    blocked += 1
-                elif clf.promoted_status == "eligible":
-                    eligible += 1
             else:
+                # Already exists — reclassify if still pending
+                _reclassify_if_pending(conn, main_item.x_item_id, clf)
                 skipped += 1
+            if clf.promoted_status == "blocked":
+                blocked += 1
+            elif clf.promoted_status == "eligible":
+                eligible += 1
         else:
             stored += 1
             if clf.promoted_status == "blocked":
@@ -203,12 +209,13 @@ def run_intake(
             url_item.classification_reason = clf.classification_reason
             url_item.processed_status     = clf.promoted_status
             if not dry_run:
-                if insert_item(conn, url_item):
+                inserted_url = insert_item(conn, url_item)
+                if inserted_url:
                     stored += 1
-                    # Only route to learning pipeline if eligible
                     if clf.promoted_status == "eligible":
                         _maybe_route_to_learning(url_item)
                 else:
+                    _reclassify_if_pending(conn, url_item.x_item_id, clf)
                     skipped += 1
             else:
                 stored += 1
@@ -225,6 +232,72 @@ def run_intake(
         "errors":       errors,
         "skipped_auth": skipped_auth,
         "dry_run":      dry_run,
+    }
+
+
+def _reclassify_if_pending(conn, x_item_id: str, clf) -> None:
+    """If the existing DB row is still 'pending', overwrite its classification."""
+    from integrations.x_api.models import update_item_classification
+    import sqlite3
+    row = conn.execute(
+        "SELECT processed_status FROM x_items WHERE x_item_id=?", (x_item_id,)
+    ).fetchone()
+    if row and row[0] == "pending":
+        update_item_classification(
+            conn,
+            x_item_id=x_item_id,
+            category=clf.content_category,
+            processed_status=clf.promoted_status,
+            work_relevance_score=clf.work_relevance_score,
+            quality_flags=clf.quality_flags,
+            classification_reason=clf.classification_reason,
+        )
+
+
+def classify_pending_items(db_path: Optional[Path] = None) -> dict:
+    """Reclassify all rows with processed_status='pending'.
+
+    Makes no API calls — reads existing DB rows and applies the quality gate.
+    Returns a summary dict.
+    """
+    from integrations.x_api.models import init_db, get_pending_items, update_item_classification
+    conn = init_db(db_path)
+    rows = get_pending_items(conn, batch_size=10_000)
+
+    updated = 0
+    blocked = 0
+    eligible = 0
+    pending_remain = 0
+
+    for row in rows:
+        text = row.get("text") or ""
+        url  = row.get("url")
+        item_type = row.get("item_type", "post")
+        clf = classify(text, item_type=item_type, url=url)
+        update_item_classification(
+            conn,
+            x_item_id=row["x_item_id"],
+            category=clf.content_category,
+            processed_status=clf.promoted_status,
+            work_relevance_score=clf.work_relevance_score,
+            quality_flags=clf.quality_flags,
+            classification_reason=clf.classification_reason,
+        )
+        updated += 1
+        if clf.promoted_status == "blocked":
+            blocked += 1
+        elif clf.promoted_status == "eligible":
+            eligible += 1
+        else:
+            pending_remain += 1
+
+    conn.close()
+    return {
+        "status":         "ok",
+        "rows_processed": updated,
+        "blocked":        blocked,
+        "eligible":       eligible,
+        "pending_remain": pending_remain,
     }
 
 
