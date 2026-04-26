@@ -119,3 +119,31 @@ def fingerprint(plaintext: str) -> str:
 
 def verify_fingerprint(plaintext: str, expected_fp: str) -> bool:
     return fingerprint(plaintext) == expected_fp
+
+
+_VAULT_REF_PREFIX = "VAULT_REF:"
+
+
+def resolve_vault_ref(value: str) -> str:
+    """If value starts with 'VAULT_REF:<name>', decrypt and return the secret.
+
+    For any other value, return it unchanged.
+    Raises RuntimeError if the vault key or secret is missing.
+    Never logs or prints the resolved value.
+    """
+    if not value.startswith(_VAULT_REF_PREFIX):
+        return value
+    secret_name = value[len(_VAULT_REF_PREFIX):].strip()
+    if not secret_name:
+        raise RuntimeError("VAULT_REF: secret name is empty")
+    from integrations.vault.db import init_db, get_secret_encrypted
+    conn = init_db()
+    row = get_secret_encrypted(conn, secret_name)
+    conn.close()
+    if row is None:
+        raise RuntimeError(
+            f"VAULT_REF: secret '{secret_name}' not found in vault.\n"
+            f"Store it with: python3 scripts/vault_set_secret.py --name {secret_name} --category api_key"
+        )
+    _, enc_value, _ = row
+    return decrypt(enc_value)

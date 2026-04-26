@@ -44,6 +44,23 @@ if _env_file.is_file():
             k, _, v = line.partition("=")
             os.environ.setdefault(k.strip(), v.strip())
 
+# Resolve VAULT_REF values for X API secrets
+_X_API_VAULT_KEYS = (
+    "X_API_BEARER_TOKEN",
+    "X_API_CLIENT_ID",
+    "X_API_CLIENT_SECRET",
+    "X_API_ACCESS_TOKEN",
+    "X_API_REFRESH_TOKEN",
+)
+for _k in _X_API_VAULT_KEYS:
+    _v = os.environ.get(_k, "")
+    if _v.startswith("VAULT_REF:"):
+        try:
+            from integrations.vault.crypto import resolve_vault_ref
+            os.environ[_k] = resolve_vault_ref(_v)
+        except RuntimeError as _e:
+            print(f"Warning: could not resolve {_k} from vault — {_e}", file=sys.stderr)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="X API read-only intake")
