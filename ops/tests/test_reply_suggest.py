@@ -11,6 +11,11 @@ Covers:
   - _clean_response strips <think> tokens
   - _contains_generic detects filler phrases
   - _score_confidence range and fields
+  - safety gate: unsafe action phrases blocked
+  - safety gate: banned filler phrases blocked
+  - safety gate: irrelevant network diagnostics blocked for audio-only messages
+  - safety gate: Sonos fallback template used on rewrite
+  - confidence capped at 0.84 when safety gate fires
 """
 from __future__ import annotations
 
@@ -31,6 +36,11 @@ from cortex.reply_suggest import (
     _clean_response,
     _contains_generic,
     _score_confidence,
+    _safety_check,
+    _detect_unsafe_action,
+    _detect_banned_filler,
+    _is_irrelevant_network_diag,
+    _build_fallback,
     _GENERIC_PHRASES,
 )
 
@@ -341,3 +351,230 @@ class TestScoreConfidence:
         base  = _score_confidence(True, True, True, {}, True)
         boosted = _score_confidence(True, True, True, {"prefer_short": True}, True)
         assert boosted >= base
+
+    def test_safety_rewrite_caps_at_084(self):
+        score = _score_confidence(True, True, True, {"prefer_short": True}, True, safety_rewrite=True)
+        assert score <= 0.84
+
+    def test_no_safety_rewrite_can_exceed_084(self):
+        score = _score_confidence(True, True, True, {"prefer_short": True}, True, safety_rewrite=False)
+        assert score > 0.84
+
+
+# ── TestSafetyGate ────────────────────────────────────────────────────────────
+
+class TestDetectUnsafeAction:
+
+    def test_on_my_way_detected(self):
+        assert _detect_unsafe_action("I'm on my way to check the system.") is not None
+
+    def test_ill_be_there_detected(self):
+        assert _detect_unsafe_action("I'll be there this afternoon.") is not None
+
+    def test_ill_swing_by_detected(self):
+        assert _detect_unsafe_action("I'll swing by tomorrow.") is not None
+
+    def test_ill_stop_by_detected(self):
+        assert _detect_unsafe_action("I'll stop by and take a look.") is not None
+
+    def test_safe_draft_not_flagged(self):
+        assert _detect_unsafe_action("Got it — try unplugging the Sonos for 10 seconds.") is None
+
+    def test_case_insensitive(self):
+        assert _detect_unsafe_action("I AM ON MY WAY.") is not None
+
+
+class TestDetectBannedFiller:
+
+    def test_let_me_know_further_assistance(self):
+        assert _detect_banned_filler("Let me know if you need further assistance.") is not None
+
+    def test_dont_hesitate_to_reach_out(self):
+        assert _detect_banned_filler("Don't hesitate to reach out anytime.") is not None
+
+    def test_thank_you_for_reaching_out(self):
+        assert _detect_banned_filler("Thank you for reaching out.") is not None
+
+    def test_if_you_have_any_other_questions(self):
+        assert _detect_banned_filler("Let me know if there's anything else I can help with.") is not None
+
+    def test_clean_draft_not_flagged(self):
+        assert _detect_banned_filler("Got it — I'll check on that.") is None
+
+    def test_case_insensitive(self):
+        assert _detect_banned_filler("LET ME KNOW IF YOU NEED FURTHER ASSISTANCE.") is not None
+
+
+class TestIrrelevantNetworkDiag:
+
+    def test_wifi_question_for_sonos_request_flagged(self):
+        draft = "Have you confirmed the WiFi password and router settings?"
+        msg   = "Hey, the Sonos is acting up again."
+        assert _is_irrelevant_network_diag(draft, msg)
+
+    def test_router_question_for_audio_request_flagged(self):
+        draft = "Check your router settings and make sure you're connected to the network."
+        msg   = "My speakers aren't playing music."
+        assert _is_irrelevant_network_diag(draft, msg)
+
+    def test_wifi_question_ok_when_msg_mentions_network(self):
+        draft = "Check the WiFi password and router settings."
+        msg   = "The Sonos went offline and the wifi dropped."
+        assert not _is_irrelevant_network_diag(draft, msg)
+
+    def test_non_network_draft_not_flagged(self):
+        draft = "Try unplugging the Sonos for 10 seconds."
+        msg   = "The Sonos is acting up."
+        assert not _is_irrelevant_network_diag(draft, msg)
+
+    def test_non_audio_message_not_flagged(self):
+        draft = "Check your WiFi password."
+        msg   = "The network keeps dropping."
+        assert not _is_irrelevant_network_diag(draft, msg)
+
+
+class TestSafetyCheck:
+
+    def test_unsafe_action_triggers_rewrite(self):
+        draft, violations = _safety_check(
+            "I'm on my way to check the Sonos setup.",
+            "Hey, the Sonos is acting up again.",
+            ["Sonos"],
+        )
+        assert violations
+        assert "unsafe_action_phrase" in violations[0]
+        assert "I'm on my way" not in draft
+
+    def test_banned_filler_triggers_rewrite(self):
+        draft, violations = _safety_check(
+            "I'll look into that. Let me know if you need further assistance.",
+            "The lights aren't working.",
+            [],
+        )
+        assert violations
+        assert "banned_filler" in violations[0]
+
+    def test_network_diag_triggers_rewrite(self):
+        draft, violations = _safety_check(
+            "Have you confirmed the WiFi password and router settings?",
+            "Hey, the Sonos is acting up again.",
+            ["Sonos"],
+        )
+        assert violations
+        assert "irrelevant_network_diagnostic" in violations
+
+    def test_clean_draft_passes_gate(self):
+        draft, violations = _safety_check(
+            "Got it — try unplugging your Sonos for 10 seconds.",
+            "Hey, the Sonos is acting up again.",
+            ["Sonos"],
+        )
+        assert violations == []
+        assert "Sonos" in draft
+
+    def test_sonos_fallback_used_on_rewrite(self):
+        draft, violations = _safety_check(
+            "I'm on my way to check the Sonos setup.",
+            "Hey, the Sonos is acting up again.",
+            ["Sonos"],
+        )
+        assert "Sonos" in draft or "sonos" in draft.lower()
+        assert "unplug" in draft.lower() or "10 seconds" in draft.lower()
+
+    def test_generic_fallback_when_no_system(self):
+        draft, violations = _safety_check(
+            "I'm on my way.",
+            "Something is broken.",
+            [],
+        )
+        assert violations
+        assert len(draft) > 0  # fallback produced
+
+    def test_multiple_violations_all_reported(self):
+        draft = "I'm on my way. Let me know if you need further assistance."
+        _, violations = _safety_check(draft, "Sonos is broken.", ["Sonos"])
+        assert len(violations) >= 2
+
+
+class TestBuildSuggestionSafetyIntegration:
+    """End-to-end tests verifying safety gate fires within build_suggestion."""
+
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def _make_mock_client(self, reply_text: str):
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json = MagicMock(return_value={"response": reply_text})
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        return mock_client
+
+    def _call(self, reply_text: str, message_text: str = "Hey, the Sonos is acting up again.",
+              systems=None, **kwargs):
+        profile = {
+            "profile_id":        "p-001",
+            "relationship_type": "client",
+            "display_name":      "Test Client",
+            "summary":           "Sonos and Control4 install.",
+            "systems_or_topics": systems if systems is not None else ["Sonos"],
+            "open_requests":     [],
+        }
+        defaults = dict(
+            contact_handle="+13035257532",
+            message_text=message_text,
+            profile=profile,
+            accepted_by_type={},
+            recent_replies=[],
+            active_rules=[],
+            behavior_hints={"avoid_generic": True, "prefer_short": True},
+            ollama_host="http://localhost:11434",
+            ollama_model="qwen3:8b",
+        )
+        defaults.update(kwargs)
+        mock_client = self._make_mock_client(reply_text)
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            return self._run(build_suggestion(**defaults))
+
+    def test_sonos_unsafe_action_rewritten(self):
+        """The exact failing case from production."""
+        bad_draft = (
+            "I'm on my way to check the Sonos setup. Have you confirmed the WiFi password "
+            "and router settings? Let me know if you need further assistance."
+        )
+        result = self._call(bad_draft)
+        assert result["status"] == "ok"
+        assert "I'm on my way" not in result["draft"]
+        assert "let me know if you need further assistance" not in result["draft"].lower()
+        assert len(result["safety_violations"]) >= 1
+
+    def test_sonos_confidence_capped_on_rewrite(self):
+        bad_draft = "I'm on my way to check the Sonos setup."
+        result = self._call(bad_draft)
+        assert result["confidence"] <= 0.84
+
+    def test_sonos_draft_contains_self_fix_after_rewrite(self):
+        bad_draft = "I'm on my way to check the Sonos setup."
+        result = self._call(bad_draft)
+        draft_low = result["draft"].lower()
+        assert "unplug" in draft_low or "10 seconds" in draft_low or "sonos" in draft_low
+
+    def test_clean_draft_not_rewritten(self):
+        good_draft = "Got it — try unplugging your Sonos for about 10 seconds and plugging it back in."
+        result = self._call(good_draft)
+        assert result["safety_violations"] == []
+        assert "unplug" in result["draft"].lower()
+        assert result["confidence"] > 0.84
+
+    def test_safety_violations_field_present(self):
+        result = self._call("Got it, I'll check.")
+        assert "safety_violations" in result
+        assert isinstance(result["safety_violations"], list)
+
+    def test_banned_filler_rewritten(self):
+        bad_draft = "I'll look into it. Let me know if you need further assistance."
+        result = self._call(bad_draft)
+        assert "let me know if you need further assistance" not in result["draft"].lower()
+        assert result["safety_violations"]
