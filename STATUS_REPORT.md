@@ -2,6 +2,22 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### Secure Vault v1 — 20260426T220000Z
+
+AES-256-GCM encrypted local secrets vault. Key at `~/.config/bob/vault.key` (0600, never in repo or Docker). `data/vault/vault.sqlite` holds ciphertext only — plaintext never stored. CLI: `vault_set_secret.py` (interactive no-echo entry), `vault_get_secret.py` (metadata by default; `--reveal`/`--export-env` required for value), `vault_list.py` (fingerprints only, no values), `vault_migrate_env.py` (scan + propose .env migration, apply mode interactive). Cortex API: `GET /api/vault/secrets` (metadata-only list), `GET /api/vault/secret/{name}`, `POST /api/vault/request-secret` (log pending request for human fulfillment). Dashboard: new Vault tab with category filter, fingerprint table, policy badges, CLI quick-reference panel. Vault key never mounted in container; container gets read-only DB access to metadata. 34 new tests — 53 vault tests passing (34 vault, previously 53 watchdog/dep-map).
+
+### Self-improvement loop — 20260426T213718Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 26 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 2026-04-26T150000Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). No new cards generated this run.
+
 ### X API Intake v1 — 20260426T200604Z
 
 Added read-only X API intake foundation. `integrations/x_api/` module with models, usage tracking, and client (tweepy-based, write methods blocked at runtime). `scripts/x_api_intake.py --dry-run/--apply` CLI. Cortex endpoints: `GET /api/x-api/status` (secrets masked), `GET /api/x-api/items`, `POST /api/x-api/intake/dry-run`. X API Intake card in Symphony Ops dashboard. Daily read limit enforced. Default X_ENABLED=0. Matt needs `X_API_BEARER_TOKEN` + `X_USER_ID` + `X_ENABLED=1` in `.env` to activate. 17 new tests — 998 total passing.
@@ -4330,6 +4346,12 @@ inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 externa
 All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
 
 ### Self-improvement loop — 2026-04-26T135946Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 2026-04-26T20:32:56Z
 
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 

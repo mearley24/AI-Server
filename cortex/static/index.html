@@ -54,6 +54,7 @@
     <span class="tab-count hidden" id="nav-ri-count">0</span>
   </button>
   <button class="tab-btn" data-tab="shirts" role="tab">T-Shirts</button>
+  <button class="tab-btn" data-tab="vault" role="tab">Vault</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -837,6 +838,42 @@
 
     </div>
   </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB — VAULT (metadata only, no decryption)
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-vault" class="tab-panel">
+<div id="panel-vault" style="padding:16px 22px 80px;max-width:900px;">
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <h2 style="margin:0;padding:0;border:0;">Secure Vault</h2>
+    <span class="small" style="color:var(--muted);">AES-256-GCM · metadata only · no decryption in browser</span>
+    <button onclick="loadVault()" style="margin-left:auto;font-size:11px;padding:3px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--fg);cursor:pointer;">Refresh</button>
+  </div>
+
+  <div id="vault-filter-bar" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <button class="vault-cat-btn active" data-cat="">All</button>
+    <button class="vault-cat-btn" data-cat="api_key">API Keys</button>
+    <button class="vault-cat-btn" data-cat="token">Tokens</button>
+    <button class="vault-cat-btn" data-cat="password">Passwords</button>
+    <button class="vault-cat-btn" data-cat="credential">Credentials</button>
+    <button class="vault-cat-btn" data-cat="config">Config</button>
+    <button class="vault-cat-btn" data-cat="general">General</button>
+  </div>
+
+  <div id="vault-status" style="color:var(--muted);font-size:13px;margin-bottom:10px;">Loading…</div>
+  <div id="vault-table-wrap"></div>
+
+  <div style="margin-top:20px;padding:12px 16px;background:var(--surface2);border-radius:6px;border:1px solid var(--border);">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">CLI commands (run on host):</div>
+    <code style="font-size:12px;display:block;color:var(--fg);">python3 scripts/vault_list.py</code>
+    <code style="font-size:12px;display:block;color:var(--fg);margin-top:4px;">python3 scripts/vault_get_secret.py --name NAME --reveal</code>
+    <code style="font-size:12px;display:block;color:var(--fg);margin-top:4px;">python3 scripts/vault_set_secret.py --name NAME --category api_key</code>
+    <code style="font-size:12px;display:block;color:var(--fg);margin-top:4px;">python3 scripts/vault_migrate_env.py --apply</code>
+  </div>
+
 </div>
 </div>
 

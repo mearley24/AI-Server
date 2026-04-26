@@ -93,3 +93,7 @@ data/task_runner/launchd.err.log
 # Runtime / watchdog noise
 data/task_runner/*
 ops/verification/*preflight*
+
+# Vault — key file lives outside repo; DB and audit log are local data
+data/vault/vault.key
+data/vault/*.key

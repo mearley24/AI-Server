@@ -2410,4 +2410,96 @@
     }
   };
 
+  // ── Vault Tab ──────────────────────────────────────────────────────────────
+
+  let _vaultActiveCat = '';
+
+  function _vaultPolicyClass(policy) {
+    if (policy === 'high_risk')   return 'vault-policy-high';
+    if (policy === 'low_risk')    return 'vault-policy-low';
+    return 'vault-policy-medium';
+  }
+
+  function _vaultRelTime(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    const diff = Date.now() - d.getTime();
+    const mins = Math.round(diff / 60000);
+    if (mins < 60)   return `${mins}m ago`;
+    if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+    return `${Math.round(mins / 1440)}d ago`;
+  }
+
+  function renderVault(data) {
+    const status = document.getElementById('vault-status');
+    const wrap   = document.getElementById('vault-table-wrap');
+    if (!status || !wrap) return;
+
+    if (data.status === 'unavailable') {
+      status.textContent = '⚠ Vault DB not found. Run: python3 scripts/vault_set_secret.py --init';
+      wrap.innerHTML = '';
+      return;
+    }
+
+    const secrets = (data.secrets || []).filter(s =>
+      !_vaultActiveCat || s.category === _vaultActiveCat
+    );
+    status.textContent = `${secrets.length} secret${secrets.length === 1 ? '' : 's'}${_vaultActiveCat ? ' in ' + _vaultActiveCat : ''}`;
+
+    if (!secrets.length) {
+      wrap.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0;">No secrets found.</div>';
+      return;
+    }
+
+    const rows = secrets.map(s => `
+      <tr>
+        <td style="font-weight:500;font-size:12px;">${s.name}</td>
+        <td><span class="vault-cat-pill">${s.category}</span></td>
+        <td class="vault-fp">${s.sha256_fingerprint}</td>
+        <td class="${_vaultPolicyClass(s.access_policy)}" style="font-size:11px;">${s.access_policy.replace('_risk','')}</td>
+        <td style="color:var(--muted);font-size:11px;">${_vaultRelTime(s.last_accessed_at)}</td>
+        <td style="color:var(--muted);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.notes || ''}</td>
+      </tr>`).join('');
+
+    wrap.innerHTML = `
+      <table class="vault-table">
+        <thead><tr>
+          <th>Name</th><th>Category</th><th>Fingerprint (SHA-256 prefix)</th>
+          <th>Policy</th><th>Last Access</th><th>Notes</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  window.loadVault = async function() {
+    const status = document.getElementById('vault-status');
+    if (status) status.textContent = 'Loading…';
+    try {
+      const resp = await fetch('/api/vault/secrets');
+      const data = await resp.json();
+      renderVault(data);
+    } catch (err) {
+      if (status) status.textContent = 'Error loading vault: ' + String(err).slice(0, 60);
+    }
+  };
+
+  // Wire up category filter buttons
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.vault-cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.vault-cat-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        _vaultActiveCat = btn.dataset.cat || '';
+        loadVault();
+      });
+    });
+  });
+
+  // Load vault when its tab is activated
+  const _origSwitchTab = window.switchTab;
+  window.switchTab = function(tab) {
+    _origSwitchTab && _origSwitchTab(tab);
+    if (tab === 'vault') loadVault();
+  };
+
 })();

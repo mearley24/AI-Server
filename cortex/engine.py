@@ -2931,6 +2931,142 @@ async def x_api_intake_dry_run(body: dict[str, Any] = {}) -> dict[str, Any]:
     }
 
 
+# ── Vault (metadata-only — no decryption in container) ────────────────────────
+
+_VAULT_DB_CONTAINER = Path("/data/vault/vault.sqlite")
+_VAULT_DB_HOST      = Path("/Users/bob/AI-Server/data/vault/vault.sqlite")
+
+
+def _vault_db_path() -> Path | None:
+    if _VAULT_DB_CONTAINER.is_file():
+        return _VAULT_DB_CONTAINER
+    if _VAULT_DB_HOST.is_file():
+        return _VAULT_DB_HOST
+    return None
+
+
+def _vault_conn():
+    """Return a read-only sqlite3 connection to the vault DB, or None."""
+    import sqlite3
+    p = _vault_db_path()
+    if not p:
+        return None
+    conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+@app.get("/api/vault/secrets", tags=["vault"])
+async def vault_secrets(category: str = "") -> dict[str, Any]:
+    """List vault secrets — metadata only, never encrypted_value or plaintext."""
+    conn = _vault_conn()
+    if conn is None:
+        return {
+            "status":  "unavailable",
+            "secrets": [],
+            "warning": "Vault DB not found. Run: python3 scripts/vault_set_secret.py --init",
+        }
+    try:
+        query = (
+            "SELECT name, category, sha256_fingerprint, access_policy, "
+            "created_at, updated_at, last_accessed_at, notes "
+            "FROM secrets"
+        )
+        params: tuple = ()
+        if category:
+            query += " WHERE category=?"
+            params = (category,)
+        query += " ORDER BY name"
+        rows = conn.execute(query, params).fetchall()
+        secrets = [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+    return {
+        "status":  "ok",
+        "count":   len(secrets),
+        "secrets": secrets,
+    }
+
+
+@app.get("/api/vault/secret/{name}", tags=["vault"])
+async def vault_secret_meta(name: str) -> dict[str, Any]:
+    """Return metadata for a single secret — no encrypted_value."""
+    conn = _vault_conn()
+    if conn is None:
+        return {"status": "unavailable", "warning": "Vault DB not found."}
+    try:
+        row = conn.execute(
+            "SELECT name, category, sha256_fingerprint, access_policy, "
+            "created_at, updated_at, last_accessed_at, notes "
+            "FROM secrets WHERE name=?",
+            (name,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Secret '{name}' not found.")
+    return {"status": "ok", "secret": dict(row)}
+
+
+@app.post("/api/vault/request-secret", tags=["vault"])
+async def vault_request_secret(body: dict[str, Any] = {}) -> dict[str, Any]:
+    """Log a pending access request to the vault audit log.
+
+    The request must be approved and fulfilled by a human via vault_get_secret.py.
+    This endpoint never returns decrypted values.
+    """
+    name      = str(body.get("name", "")).strip()
+    requester = str(body.get("requester", "cortex")).strip()
+    purpose   = str(body.get("purpose", "")).strip()
+
+    if not name:
+        return {"status": "error", "detail": "name is required"}
+
+    conn = _vault_conn()
+    if conn is None:
+        return {"status": "unavailable", "warning": "Vault DB not found."}
+
+    try:
+        row = conn.execute(
+            "SELECT secret_id, sha256_fingerprint FROM secrets WHERE name=?", (name,)
+        ).fetchone()
+        secret_exists = row is not None
+        fp = row["sha256_fingerprint"] if row else None
+    finally:
+        conn.close()
+
+    if not secret_exists:
+        return {"status": "error", "detail": f"Secret '{name}' not found in vault."}
+
+    # Append audit entry via the audit module (host-compatible path)
+    try:
+        from integrations.vault.audit import log as _audit_log
+        _audit_log(
+            event_type="request",
+            secret_name=name,
+            requester=requester,
+            purpose=purpose or None,
+            approved=None,
+            fingerprint=fp,
+        )
+        logged = True
+    except Exception as exc:
+        logger.warning("vault request-secret audit log failed: %s", exc)
+        logged = False
+
+    return {
+        "status":    "pending",
+        "name":      name,
+        "requester": requester,
+        "purpose":   purpose,
+        "logged":    logged,
+        "fulfill":   f"python3 scripts/vault_get_secret.py --name {name} --reveal",
+    }
+
+
 # ── Watchdog Status ────────────────────────────────────────────────────────────
 
 # Maps state-file basename → friendly service name.

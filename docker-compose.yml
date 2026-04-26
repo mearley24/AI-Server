@@ -470,6 +470,7 @@ services:
       - ./ops/PROCESS_POLICY.md:/app/ops/PROCESS_POLICY.md:ro
       - ./data/task_runner:/data/task_runner:ro
       - ./data/x_api:/data/x_api:ro
+      - ./data/vault:/data/vault:rw
     environment:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102
