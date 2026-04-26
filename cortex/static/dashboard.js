@@ -1870,9 +1870,10 @@
 
       let actionHtml = '';
       if (r.status === 'proposed') {
+        const safeId = (r.rule_id || '').replace(/'/g, '');
         actionHtml = '<div style="display:flex;gap:8px;margin-top:8px;">'
-          + '<button onclick="window._siApprove(' + JSON.stringify(r.rule_id) + ')" style="padding:4px 12px;font-size:11px;background:#22c55e22;border:1px solid #22c55e44;color:#22c55e;border-radius:4px;cursor:pointer;">Approve</button>'
-          + '<button onclick="window._siReject(' + JSON.stringify(r.rule_id) + ')" style="padding:4px 12px;font-size:11px;background:#ef444422;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;">Reject</button>'
+          + '<button onclick="window.approveRule(\'' + safeId + '\')" style="padding:4px 12px;font-size:11px;background:#22c55e22;border:1px solid #22c55e44;color:#22c55e;border-radius:4px;cursor:pointer;">Approve</button>'
+          + '<button onclick="window.rejectRule(\'' + safeId + '\')" style="padding:4px 12px;font-size:11px;background:#ef444422;border:1px solid #ef444444;color:#ef4444;border-radius:4px;cursor:pointer;">Reject</button>'
           + '</div>';
       } else if (r.status === 'rejected' && r.rejected_reason) {
         actionHtml = '<div style="font-size:11px;color:var(--muted);margin-top:4px;">Reason: ' + _esc(r.rejected_reason) + '</div>';
@@ -1897,7 +1898,8 @@
     }).join('');
   };
 
-  window._siApprove = async function(ruleId) {
+  window.approveRule = async function(ruleId) {
+    console.log('[SI] approveRule clicked', ruleId);
     if (!confirm('Approve rule ' + ruleId + '?\n\nApproved rules influence system behavior immediately.')) return;
     try {
       const resp = await fetch('/api/self-improvement/promoted-rules/' + encodeURIComponent(ruleId) + '/approve', {
@@ -1906,17 +1908,20 @@
         body: JSON.stringify({approved_by: 'matt'}),
       });
       const data = await resp.json();
+      console.log('[SI] approve result', data);
       if (data.status === 'ok') {
-        window.loadSelfImprovement();
+        await window.loadSelfImprovement();
       } else {
         alert('Approve failed: ' + (data.detail || JSON.stringify(data)));
       }
     } catch (err) {
-      alert('Approve error: ' + err);
+      console.error('[SI] approve error', err);
+      alert('Failed to approve rule: ' + err);
     }
   };
 
-  window._siReject = async function(ruleId) {
+  window.rejectRule = async function(ruleId) {
+    console.log('[SI] rejectRule clicked', ruleId);
     const reason = prompt('Reason for rejecting ' + ruleId + ' (optional):') || '';
     try {
       const resp = await fetch('/api/self-improvement/promoted-rules/' + encodeURIComponent(ruleId) + '/reject', {
@@ -1925,13 +1930,15 @@
         body: JSON.stringify({reason: reason}),
       });
       const data = await resp.json();
+      console.log('[SI] reject result', data);
       if (data.status === 'ok') {
-        window.loadSelfImprovement();
+        await window.loadSelfImprovement();
       } else {
         alert('Reject failed: ' + (data.detail || JSON.stringify(data)));
       }
     } catch (err) {
-      alert('Reject error: ' + err);
+      console.error('[SI] reject error', err);
+      alert('Failed to reject rule: ' + err);
     }
   };
 
