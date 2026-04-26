@@ -1,6 +1,130 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-25 MDT
+Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
+
+### Self-improvement loop — 20260426T161302Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 2026-04-26T094020Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T150803Z
+
+inbox processed: 2, cards: 2 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 2 needs-fetch)
+
+- 20260426T150630Z-imessage-x-com-moondevonyt-status-2047991447752990852-card.md — needs fetch — requires URL content to assess automation potential
+- 20260426T150630Z-imessage-x-com-moondevonyt-status-2048359911571296256-card.md — needs fetch — requires URL content to assess automation potential
+
+### Self-improvement loop — 2026-04-26T14:04:37Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 25 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 2026-04-26T13:32:26Z
+
+inbox processed: 2, cards: 2 (0 auto-run / 0 needs-Matt / 2 deferred / 0 external / 0 needs-fetch)
+
+- 20260426T133016Z-imessage-x-com-marryevan999-status-2048245933956387195-card.md — reject/defer — duplicate X.com URL pattern already covered
+- 20260426T133016Z-imessage-x-com-zabihullahatal-status-2048049033718223196-card.md — reject/defer — duplicate X.com URL pattern already covered
+
+### Self-improvement loop — 20260426T115444Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T105058Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 19 deferred / 0 external / 2 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). Existing cards: 2 needs-fetch, 19 reject/defer.
+
+### Self-improvement loop — 20260426T101751Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T091325Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T080849Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T073651Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T063314Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T045716Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260426T003756Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260425T230217Z
+
+inbox processed: 1, cards: 1 (0 auto-run / 0 needs-Matt / 1 deferred / 0 external / 0 needs-fetch)
+
+- 20260425T230036Z-imessage-x-com-eng-khairallah1-status-2048126595937018251-card.md — Status: reject/defer — duplicate X URL iMessage pattern, already covered by existing automation
+
+### Self-improvement loop — 20260425T234500Z
+
+inbox processed: 20, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). All items exist in archive with corresponding cards. No new cards generated this run.
+
+### Self-improvement loop — 20260425T212527Z
+
+inbox processed: 20, cards: 15 (0 auto-run / 0 needs-Matt / 13 deferred / 0 external / 2 needs-fetch)
+
+- 20260425T183940Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md — Status: needs fetch — iMessage X URL auto-processing pattern
+- 20260425T183940Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md — Status: needs fetch — high-confidence automation content  
+- 20260425T183941Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183941Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183941Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183941Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183941Z-imessage-x-com-moondevonyt-status-2047634331162800514-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183941Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183941Z-imessage-x-com-sharbel-status-2047672262963171774-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183942Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183942Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183942Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183942Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183942Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md — Status: reject/defer — iMessage X URL batch item
+- 20260425T183942Z-imessage-x-com-talebm-status-2047581216178655536-card.md — Status: reject/defer — iMessage X URL batch item
+
+### Self-improvement loop — 20260425T210000Z
+
+inbox processed: 1, cards: 1 (0 auto-run / 0 needs-Matt / 1 deferred / 0 external / 1 needs-fetch)
+
+- 20260425T204944Z-imessage-x-com-starmexxx-status-2047632009510481949-card.md — Status: needs fetch — Additional iMessage X.com URL instance, pattern already covered by existing automation card
 
 ### Self-Improvement Rule Approval + Activation v1 — 2026-04-25T18:41Z (Claude Code)
 
@@ -3999,3 +4123,153 @@ All 18 inbox items had existing archive copies and corresponding cards from prio
 Pattern: consistent iMessage X.com URL capture continues, with processing pipeline working correctly. All current items follow the established pattern of bare URLs requiring fetch or external connector follow-up.
 
 Verification: ops/verification/20260425T145617Z-self-improve.txt
+
+### Self-improvement loop — 20260425T222943Z
+
+inbox processed: 0 new items (20 total files, all already processed), cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items had existing archive copies and corresponding cards from prior processing runs. Idempotency check passed - no new processing required. Processing pipeline continues to function correctly with consistent iMessage X.com URL capture pattern.
+
+Pattern: continued automated collection of iMessage X.com URLs maintains existing pipeline throughput. All current items follow established bare URL pattern requiring fetch or external connector follow-up.
+
+Verification: ops/verification/self-improve-20260425T222943Z.txt
+
+### Self-improvement loop — 20260425T233419Z
+
+inbox processed: 0 new items (21 total files, all already processed), cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items had existing archive copies and corresponding cards from prior processing runs. Idempotency check passed - no new processing required. Processing pipeline continues to function correctly with consistent iMessage X.com URL capture pattern.
+
+Pattern: automated collection maintains throughput with consistent iMessage X.com URL harvesting. All current items follow established bare URL pattern requiring fetch or external connector follow-up.
+
+Verification: ops/verification/self-improve-20260425T233419Z.txt
+
+### Self-improvement loop — 20260426T000621Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already have matching archive copies and improvement cards. No new processing required.
+
+
+### Self-improvement loop — 20260426T010941Z
+
+inbox processed: 21, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+No new cards created — all 21 inbox files already processed.
+### Self-improvement loop — 20260426T021504Z
+
+inbox processed: 20, cards: 20 (0 auto-run / 0 needs-Matt / 18 deferred / 0 external / 2 needs-fetch)
+
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md — needs fetch — first URL pattern requires content analysis
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md — needs fetch — AI research content may be relevant
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md — reject/defer — duplicate URL pattern
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md — reject/defer — duplicate URL pattern
+- (16 additional cards) — reject/defer — all duplicate iMessage Twitter URL patterns
+
+
+### Self-improvement loop — 20260426T024618Z
+
+inbox processed: 20, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items (first 20 of 21 total) already have matching archive copies and improvement cards. No new processing required. Idempotency check passed.
+
+### Self-improvement loop — 20260426T031956Z
+
+inbox processed: 20, cards: 20 (0 auto-run / 0 needs-Matt / 18 deferred / 0 external / 2 needs-fetch)
+
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md needs fetch — X.com URL requires content extraction for evaluation
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md needs fetch — X.com URL requires content extraction for evaluation  
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183940Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183940Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-moondevonyt-status-2047634331162800514-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-sharbel-status-2047672262963171774-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183941Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183942Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183942Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183942Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183942Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183942Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T183942Z-imessage-x-com-talebm-status-2047581216178655536-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+- 20260425T204944Z-imessage-x-com-starmexxx-status-2047632009510481949-card.md reject/defer — duplicate iMessage URL pattern with no additional automation value
+
+### Self-improvement loop — 20260426T035311Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+### Self-improvement loop — 20260426T042457Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 20260426T052928Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+All 21 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+### Self-improvement loop — 20260426T060136Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+### Self-improvement loop — 20260426T070500Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 20260426T084013Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 21 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+
+### Self-improvement loop — 20260426T094532Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+### Self-improvement loop — 20260426T112246Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+
+### Self-improvement loop — 20260426T122603Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 20260426T194000Z
+
+inbox processed: 2, cards: 2 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 2 needs-fetch)
+
+- 20260426T125645Z-imessage-x-com-retrochainer-status-2048142467929657757-card.md — needs fetch — X.com URL content required before assessment
+- 20260426T125645Z-imessage-x-com-alexfinn-status-2048184198016778518-card.md — needs fetch — X.com URL content required before assessment
+
+### Self-improvement loop — 20260426T143603Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 24 inbox items already processed (idempotency check). Items exist in both archive and cards directories.

@@ -1,7 +1,7 @@
 # Self-Improvement Promoted Rules
 
-_Last updated: 2026-04-25T18:25:57+00:00Z_
-_Cards scanned: 22 | Rules proposed: 3 | Source: ops/self_improvement/cards/_
+_Last updated: 2026-04-25T19:35:14+00:00Z_
+_Cards scanned: 24 | Rules proposed: 3 | Source: ops/self_improvement/cards/_
 
 ---
 
@@ -13,7 +13,7 @@ _Cards scanned: 22 | Rules proposed: 3 | Source: ops/self_improvement/cards/_
 - **risk_level**: low
 - **card_count**: 7
 - **source_card**: 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md (and 6 more)
-- **created_at**: 20260425T182557Z
+- **created_at**: 20260425T193514Z
 
 **Summary:** Route X.com URLs received via iMessage to the x_intake pipeline automatically.
 
@@ -30,9 +30,9 @@ _Cards scanned: 22 | Rules proposed: 3 | Source: ops/self_improvement/cards/_
 - **rule_id**: RULE-20260425-5ee7f5
 - **status**: proposed
 - **risk_level**: high
-- **card_count**: 3
-- **source_card**: 20260422-20260425-imessage-x-urls-pattern-card.md (and 2 more)
-- **created_at**: 20260425T182557Z
+- **card_count**: 4
+- **source_card**: 20260422-20260425-imessage-x-urls-pattern-card.md (and 3 more)
+- **created_at**: 20260425T193514Z
 
 
 > **Note:** manual approval required before applying
@@ -52,9 +52,9 @@ _Cards scanned: 22 | Rules proposed: 3 | Source: ops/self_improvement/cards/_
 - **rule_id**: RULE-20260425-f8c13b
 - **status**: proposed
 - **risk_level**: medium
-- **card_count**: 12
-- **source_card**: 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md (and 11 more)
-- **created_at**: 20260425T182557Z
+- **card_count**: 13
+- **source_card**: 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md (and 12 more)
+- **created_at**: 20260425T193514Z
 
 **Summary:** Unclassified improvement cards not matching a known automation pattern.
 
