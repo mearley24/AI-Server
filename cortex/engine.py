@@ -2772,9 +2772,252 @@ _WD_SERVICE_NAMES: dict[str, str] = {
     "containers":         "Containers",
 }
 
+# Service dependency map — embedded so it's available inside the container
+# without a separate volume mount. Mirrors ops/service_dependency_map.json.
+# Keys use canonical service names (hyphens). State-file keys normalise
+# underscore→hyphen before lookup (e.g. x_intake → x-intake).
+_SERVICE_DEP_MAP: dict[str, dict] = {
+    "redis": {
+        "depends_on":       [],
+        "impacts":          ["cortex", "x-intake", "openclaw", "clawwork", "notification-hub",
+                             "polymarket-bot", "x-alpha-collector", "intel-feeds",
+                             "client-portal", "proposals", "email-monitor",
+                             "calendar-agent", "voice-receptionist", "dtools-bridge"],
+        "impact_summary":   "All containers lose cache/queue; services reconnect automatically",
+        "safe_check_command":    "docker compose ps redis",
+        "safe_recovery_command": "scripts/safe-service-restart.sh redis",
+        "risk_level":       "medium",
+        "notes":            "Brief interruption to all dependents; they reconnect automatically.",
+    },
+    "cortex": {
+        "depends_on":       ["redis", "ollama"],
+        "impacts":          ["x-intake", "notification-hub", "client-portal",
+                             "cortex-autobuilder", "proposals", "email-monitor", "calendar-agent"],
+        "impact_summary":   "Reply drafting, client intel, and dashboard unavailable",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8102/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh cortex",
+        "risk_level":       "low",
+        "notes":            "Stateless — restarts cleanly.",
+    },
+    "x-intake": {
+        "depends_on":       ["redis", "cortex", "bluebubbles"],
+        "impacts":          ["reply suggestions", "message routing", "X.com ingestion"],
+        "impact_summary":   "Incoming iMessages not processed; reply suggestions go stale",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8101/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh x-intake",
+        "risk_level":       "low",
+        "notes":            "Queue persisted in SQLite; messages not lost while down.",
+    },
+    "openclaw": {
+        "depends_on":       ["redis", "clawwork", "bluebubbles"],
+        "impacts":          ["voice-receptionist", "clawwork", "iMessage auto-response", "daily briefings"],
+        "impact_summary":   "AI agents offline; auto-responder and briefings paused",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8099/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh openclaw",
+        "risk_level":       "low",
+        "notes":            "Stateless agent runner. Briefing state persisted.",
+    },
+    "clawwork": {
+        "depends_on":       ["openclaw", "redis"],
+        "impacts":          ["openclaw agents", "workflow automation"],
+        "impact_summary":   "OpenClaw agents cannot execute multi-step workflows",
+        "safe_check_command":    "docker compose ps clawwork",
+        "safe_recovery_command": "scripts/safe-service-restart.sh clawwork",
+        "risk_level":       "low",
+        "notes":            "OpenClaw reconnects automatically after restart.",
+    },
+    "bluebubbles": {
+        "depends_on":       [],
+        "impacts":          ["x-intake", "openclaw", "voice-receptionist", "all iMessage I/O"],
+        "impact_summary":   "All iMessage send/receive stops; Bob goes dark on iMessage",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:1234/api/v1/ping 2>/dev/null || echo 'BlueBubbles unreachable'",
+        "safe_recovery_command": "open -a BlueBubbles",
+        "risk_level":       "medium",
+        "notes":            "Mac app — not a Docker container. Check Activity Monitor.",
+    },
+    "ollama": {
+        "depends_on":       [],
+        "impacts":          ["cortex LLM drafts", "x-intake analysis", "reply suggestions"],
+        "impact_summary":   "AI draft generation falls back to templates; analysis degrades",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:11434/api/tags",
+        "safe_recovery_command": "open -a Ollama",
+        "risk_level":       "low",
+        "notes":            "Cortex degrades gracefully to template replies when Ollama offline.",
+    },
+    "docker": {
+        "depends_on":       [],
+        "impacts":          ["ALL containers"],
+        "impact_summary":   "All Docker services offline — complete system shutdown",
+        "safe_check_command":    "docker ps",
+        "safe_recovery_command": "scripts/docker-recover.sh",
+        "risk_level":       "high",
+        "notes":            "Only run docker-recover.sh if docker ps fails for 30+ seconds.",
+    },
+    "vpn": {
+        "depends_on":       [],
+        "impacts":          ["polymarket-bot"],
+        "impact_summary":   "Polymarket trading paused (VPN-gated API unreachable)",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8430/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh vpn",
+        "risk_level":       "low",
+        "notes":            "Container-level WireGuard. Restart reconnects in seconds.",
+    },
+    "polymarket-bot": {
+        "depends_on":       ["redis", "vpn"],
+        "impacts":          ["prediction market positions"],
+        "impact_summary":   "Polymarket trading paused; open positions maintained by exchange",
+        "safe_check_command":    "docker compose ps polymarket-bot",
+        "safe_recovery_command": "scripts/safe-service-restart.sh polymarket-bot",
+        "risk_level":       "low",
+        "notes":            "Positions held by Polymarket, not the bot.",
+    },
+    "notification-hub": {
+        "depends_on":       ["redis", "cortex"],
+        "impacts":          ["alert delivery", "system notifications"],
+        "impact_summary":   "System alerts not delivered; silent failures possible",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8095/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh notification-hub",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "voice-receptionist": {
+        "depends_on":       ["openclaw", "redis"],
+        "impacts":          ["inbound call handling", "voicemail"],
+        "impact_summary":   "Inbound calls unanswered or go to default voicemail",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8093/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh voice-receptionist",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "email-monitor": {
+        "depends_on":       ["cortex"],
+        "impacts":          ["email dashboard", "email alerts"],
+        "impact_summary":   "Email dashboard goes stale; no new email alerts",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8092/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh email-monitor",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "calendar-agent": {
+        "depends_on":       ["cortex"],
+        "impacts":          ["calendar dashboard", "meeting prep"],
+        "impact_summary":   "Calendar dashboard goes stale",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8094/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh calendar-agent",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "proposals": {
+        "depends_on":       ["redis", "cortex"],
+        "impacts":          ["client proposal generation"],
+        "impact_summary":   "Proposal generation offline",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8091/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh proposals",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "intel-feeds": {
+        "depends_on":       ["redis", "rsshub"],
+        "impacts":          ["market intelligence", "news feed dashboard"],
+        "impact_summary":   "Intelligence feed goes stale",
+        "safe_check_command":    "curl -fsS http://127.0.0.1:8765/health",
+        "safe_recovery_command": "scripts/safe-service-restart.sh intel-feeds",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "x-alpha-collector": {
+        "depends_on":       ["redis"],
+        "impacts":          ["X.com intelligence collection"],
+        "impact_summary":   "X.com data collection paused; feed goes stale",
+        "safe_check_command":    "docker compose ps x-alpha-collector",
+        "safe_recovery_command": "scripts/safe-service-restart.sh x-alpha-collector",
+        "risk_level":       "low",
+        "notes":            None,
+    },
+    "tailscale": {
+        "depends_on":       [],
+        "impacts":          ["remote dashboard access", "remote SSH"],
+        "impact_summary":   "Remote access to Bob unavailable (local access unaffected)",
+        "safe_check_command":    "tailscale status",
+        "safe_recovery_command": "sudo tailscale up",
+        "risk_level":       "medium",
+        "notes":            "Check 'tailscale status' before running 'tailscale up'.",
+    },
+    "containers": {
+        "depends_on":       ["docker"],
+        "impacts":          ["all containers affected by last recovery event"],
+        "impact_summary":   "Watchdog performed a bulk container recovery",
+        "safe_check_command":    "docker ps --format 'table {{.Names}}\\t{{.Status}}'",
+        "safe_recovery_command": "docker compose up -d",
+        "risk_level":       "medium",
+        "notes":            "Reflects a watchdog-level recovery event, not a single service.",
+    },
+    "task-runner": {
+        "depends_on":       ["docker"],
+        "impacts":          ["scheduled tasks", "self-improvement loop", "state file updates"],
+        "impact_summary":   "Automated tasks paused; state files go stale",
+        "safe_check_command":    "cat data/task_runner/bob_watchdog_heartbeat.txt",
+        "safe_recovery_command": "launchctl start com.bob.task-runner",
+        "risk_level":       "low",
+        "notes":            "Host-level LaunchDaemon. Check heartbeat file age.",
+    },
+    "bob-watchdog": {
+        "depends_on":       ["docker", "task-runner"],
+        "impacts":          ["auto-recovery", "container monitoring"],
+        "impact_summary":   "No automatic container recovery while watchdog is offline",
+        "safe_check_command":    "cat data/task_runner/watchdog_heartbeat.txt",
+        "safe_recovery_command": "launchctl start com.bob.watchdog",
+        "risk_level":       "low",
+        "notes":            "Host-level LaunchDaemon.",
+    },
+}
+
 # How many seconds after a watchdog intervention before we consider it resolved.
 # 1 hour: if a service was restarted and has been running since, it's recovered.
 _WD_STALE_SECS = 1 * 3600
+
+
+def _dep_map_lookup(key: str) -> dict | None:
+    """Look up a service in _SERVICE_DEP_MAP, normalising state-file key format.
+
+    State files use underscores (x_intake) while the dep map uses hyphens
+    (x-intake). Also tries the key as-is.
+    """
+    canonical = key.replace("_", "-")
+    return _SERVICE_DEP_MAP.get(canonical) or _SERVICE_DEP_MAP.get(key)
+
+
+def _enrich_with_deps(services: list[dict]) -> list[dict]:
+    """Add dependency/impact/recovery fields to each degraded service record.
+
+    For ok services, fields are omitted to keep the payload small.
+    Recovery actions are suggestions only — should_auto_run is always False.
+    """
+    enriched = []
+    for svc in services:
+        rec = dict(svc)
+        if svc["state"] == "degraded":
+            info = _dep_map_lookup(svc["key"])
+            if info:
+                rec["dependencies"]        = info.get("depends_on", [])
+                rec["downstream_impacts"]  = info.get("impacts", [])
+                rec["impact_summary"]      = info.get("impact_summary", "")
+                rec["suggested_checks"]    = [info["safe_check_command"]] if info.get("safe_check_command") else []
+                rec["suggested_recovery"]  = info.get("safe_recovery_command", "")
+                rec["recovery_risk"]       = info.get("risk_level", "unknown")
+                rec["recovery_notes"]      = info.get("notes") or ""
+                rec["should_auto_run"]     = False
+            else:
+                rec["dependencies"]        = []
+                rec["downstream_impacts"]  = []
+                rec["impact_summary"]      = ""
+                rec["suggested_checks"]    = []
+                rec["suggested_recovery"]  = ""
+                rec["recovery_risk"]       = "unknown"
+                rec["recovery_notes"]      = ""
+                rec["should_auto_run"]     = False
+        enriched.append(rec)
+    return enriched
 
 
 def _read_watchdog_state() -> dict[str, Any]:
@@ -2888,7 +3131,7 @@ async def watchdog_status() -> dict[str, Any]:
     overall = "degraded" if state["degraded_count"] > 0 else "ok"
     return {
         "status":         overall,
-        "services":       state["services"],
+        "services":       _enrich_with_deps(state["services"]),
         "degraded_count": state["degraded_count"],
         "updated_at":     state["updated_at"],
         "warning":        state["warning"],

@@ -197,6 +197,58 @@
     sum.textContent = [core, opt].filter(Boolean).join(' · ');
   }
 
+  const _RISK_COLOR = { high: 'var(--red)', medium: 'var(--yellow)', low: 'var(--green)', unknown: 'var(--muted)' };
+
+  function _wdCopyCmd(cmd) {
+    navigator.clipboard.writeText(cmd).catch(() => {});
+  }
+  window._wdCopyCmd = _wdCopyCmd;
+
+  function _wdDegradedCard(s) {
+    const riskColor = _RISK_COLOR[s.recovery_risk] || 'var(--muted)';
+    const riskLabel = (s.recovery_risk || 'unknown').toUpperCase();
+
+    const impactsHtml = (s.downstream_impacts || []).length
+      ? `<div class="small" style="margin-top:5px;color:var(--muted)">Affects: ${esc((s.downstream_impacts || []).join(', '))}</div>`
+      : '';
+
+    const impactSummary = s.impact_summary
+      ? `<div class="small" style="margin-top:3px;color:var(--yellow)">${esc(s.impact_summary)}</div>`
+      : '';
+
+    const checkHtml = (s.suggested_checks || []).length
+      ? `<div style="margin-top:8px">
+          <div class="small" style="color:var(--muted);margin-bottom:3px">Check:</div>
+          <div class="wd-cmd-row">
+            <code class="wd-cmd">${esc(s.suggested_checks[0])}</code>
+            <button class="wd-copy-btn" onclick="_wdCopyCmd(${JSON.stringify(s.suggested_checks[0])})" title="Copy">&#x2398;</button>
+          </div>
+        </div>`
+      : '';
+
+    const recoveryHtml = s.suggested_recovery
+      ? `<div style="margin-top:6px">
+          <div class="small" style="color:var(--muted);margin-bottom:3px">
+            Recovery <span style="color:${riskColor};font-weight:600">[${riskLabel} RISK]</span>:
+          </div>
+          <div class="wd-cmd-row">
+            <code class="wd-cmd">${esc(s.suggested_recovery)}</code>
+            <button class="wd-copy-btn" onclick="_wdCopyCmd(${JSON.stringify(s.suggested_recovery)})" title="Copy">&#x2398;</button>
+          </div>
+          ${s.recovery_notes ? `<div class="small" style="color:var(--muted);margin-top:3px">${esc(s.recovery_notes)}</div>` : ''}
+        </div>`
+      : '';
+
+    return `<div class="wd-degraded-card">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="dot degraded"></span>
+        <strong>${esc(s.name)}</strong>
+        <span class="small" style="color:var(--muted)">${esc(s.details)}</span>
+      </div>
+      ${impactSummary}${impactsHtml}${checkHtml}${recoveryHtml}
+    </div>`;
+  }
+
   function renderWatchdog(data) {
     const host    = $('watchdog-overview');
     const banner  = $('wd-header-alert');
@@ -212,9 +264,11 @@
     const services = data.services || [];
     const updatedAt = data.updated_at ? ' · updated ' + timeAgo(data.updated_at) : '';
 
-    // Header banner
+    // Header banner — show degraded service names
     if (degraded > 0) {
-      bannerT.textContent = `⚠ ${degraded} degraded service${degraded !== 1 ? 's' : ''}`;
+      const degradedSvcs = services.filter(s => s.state === 'degraded');
+      const names = degradedSvcs.map(s => s.name).join(', ');
+      bannerT.textContent = `⚠ ${degraded} degraded: ${names}`;
       banner.classList.remove('hidden');
     } else {
       banner.classList.add('hidden');
@@ -235,19 +289,12 @@
       return;
     }
 
-    const rows = degradedSvcs.map(s =>
-      `<div class="svc-item" title="${esc(s.details)}">
-        <span class="dot degraded"></span>
-        <span class="name">${esc(s.name)}</span>
-        <span class="small" style="color:var(--muted);margin-left:4px">${esc(s.details)}</span>
-      </div>`
-    ).join('');
-
+    const cards = degradedSvcs.map(_wdDegradedCard).join('');
     const okLine = okSvcs.length
-      ? `<div class="small" style="color:var(--muted);margin-top:6px">${okSvcs.length} service${okSvcs.length !== 1 ? 's' : ''} ok${updatedAt}</div>`
+      ? `<div class="small" style="color:var(--muted);margin-top:8px">${okSvcs.length} service${okSvcs.length !== 1 ? 's' : ''} ok${updatedAt}</div>`
       : '';
 
-    host.innerHTML = `<div class="svc-grid">${rows}</div>${okLine}`;
+    host.innerHTML = cards + okLine;
   }
 
   function renderEmails(data) {

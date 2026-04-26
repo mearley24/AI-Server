@@ -1,13 +1,18 @@
-"""Tests for GET /api/watchdog/status endpoint.
+"""Tests for GET /api/watchdog/status endpoint and service dependency map.
 
 Covers:
   - Returns status=ok and empty services with warning when state dir is missing
   - Returns correct service records from uh_* files
-  - Recent events (< 3h) are marked degraded; old ones are ok
+  - Recent events (< 1h) are marked degraded; old ones are ok
   - required_source file is skipped
   - Malformed file content does not crash endpoint
   - degraded_count matches degraded services count
   - No raw phone numbers exposed
+  - Dependency map loads and contains expected services
+  - Degraded service response includes impact/recovery fields
+  - Missing dep map entry degrades gracefully (fields present but empty)
+  - Docker recovery action marked high risk
+  - should_auto_run is always False for degraded services
 """
 from __future__ import annotations
 
@@ -200,3 +205,109 @@ class TestWatchdogStateFiles:
             with patch.object(eng, "_WATCHDOG_HEARTBEAT", hb):
                 result = _run(eng.watchdog_status())
         assert result["updated_at"] == "2026-04-26T13:00:22-0600"
+
+
+# ── TestServiceDependencyMap ───────────────────────────────────────────────────
+
+class TestServiceDependencyMap:
+    """Verify the embedded dependency map and enrichment logic."""
+
+    def _make_state_dir(self, tmp_path, files: dict[str, Any]) -> Path:
+        state_dir = tmp_path / "bob-watchdog-state"
+        state_dir.mkdir()
+        for name, ts in files.items():
+            (state_dir / name).write_text(str(ts))
+        return state_dir
+
+    def test_dep_map_contains_expected_services(self):
+        """_SERVICE_DEP_MAP must contain core services."""
+        import cortex.engine as eng
+        for key in ("redis", "cortex", "x-intake", "openclaw", "docker", "vpn"):
+            assert key in eng._SERVICE_DEP_MAP, f"Missing: {key}"
+
+    def test_docker_is_high_risk(self):
+        """Docker engine must be marked high risk."""
+        import cortex.engine as eng
+        assert eng._SERVICE_DEP_MAP["docker"]["risk_level"] == "high"
+
+    def test_degraded_service_includes_impact_fields(self, tmp_path):
+        """Degraded openclaw must include downstream_impacts and suggested_recovery."""
+        import cortex.engine as eng
+        recent_ts = time.time() - 20 * 60  # 20 min ago → degraded
+        state_dir = self._make_state_dir(tmp_path, {"uh_openclaw": recent_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        assert result["degraded_count"] == 1
+        svc = result["services"][0]
+        assert svc["state"] == "degraded"
+        assert isinstance(svc["downstream_impacts"], list)
+        assert len(svc["downstream_impacts"]) > 0
+        assert svc["suggested_recovery"] != ""
+        assert svc["recovery_risk"] == "low"
+        assert svc["should_auto_run"] is False
+
+    def test_should_auto_run_is_always_false(self, tmp_path):
+        """should_auto_run must be False for any degraded service."""
+        import cortex.engine as eng
+        recent_ts = time.time() - 10 * 60
+        state_dir = self._make_state_dir(tmp_path, {"docker": recent_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        for svc in result["services"]:
+            if svc["state"] == "degraded":
+                assert svc["should_auto_run"] is False, f"{svc['name']} has should_auto_run=True"
+
+    def test_docker_degraded_marked_high_risk(self, tmp_path):
+        """Docker engine degraded → recovery_risk must be 'high'."""
+        import cortex.engine as eng
+        recent_ts = time.time() - 15 * 60
+        state_dir = self._make_state_dir(tmp_path, {"docker": recent_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        svc = next(s for s in result["services"] if s["key"] == "docker")
+        assert svc["state"] == "degraded"
+        assert svc["recovery_risk"] == "high"
+
+    def test_x_intake_key_normalisation(self, tmp_path):
+        """State file 'x_intake' (underscore) must resolve to 'x-intake' dep entry."""
+        import cortex.engine as eng
+        recent_ts = time.time() - 10 * 60
+        state_dir = self._make_state_dir(tmp_path, {"x_intake": recent_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        svc = next(s for s in result["services"] if s["key"] == "x_intake")
+        assert svc["state"] == "degraded"
+        # x-intake is in dep map — must have enriched fields
+        assert svc["suggested_recovery"] != ""
+        assert "x-intake" in svc["suggested_recovery"]
+
+    def test_unknown_service_key_no_crash(self, tmp_path):
+        """A service key not in dep map must still return a valid record."""
+        import cortex.engine as eng
+        recent_ts = time.time() - 10 * 60
+        state_dir = self._make_state_dir(tmp_path, {"uh_unknown-svc": recent_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        svc = next(s for s in result["services"] if s["key"] == "unknown-svc")
+        assert svc["state"] == "degraded"
+        assert svc["should_auto_run"] is False
+        assert svc["downstream_impacts"] == []
+        assert svc["recovery_risk"] == "unknown"
+
+    def test_ok_services_have_no_dep_fields(self, tmp_path):
+        """ok services must not include the impact/recovery enrichment fields."""
+        import cortex.engine as eng
+        old_ts = time.time() - 5 * 3600
+        state_dir = self._make_state_dir(tmp_path, {"uh_openclaw": old_ts})
+        with patch.object(eng, "_WATCHDOG_STATE_DIR", state_dir):
+            with patch.object(eng, "_WATCHDOG_HEARTBEAT", tmp_path / "hb.txt"):
+                result = _run(eng.watchdog_status())
+        svc = result["services"][0]
+        assert svc["state"] == "ok"
+        assert "should_auto_run" not in svc
+        assert "suggested_recovery" not in svc

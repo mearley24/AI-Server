@@ -2,6 +2,10 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### Service Dependency Map + Recovery Actions v1 — 20260426T195733Z
+
+Added `ops/service_dependency_map.json` mapping 26 services with dependencies, downstream impacts, safe check/recovery commands, and risk levels. Extended `GET /api/watchdog/status` to enrich each degraded service with impact summary, suggested checks/recovery, recovery risk badge, and `should_auto_run: false`. Dashboard now shows enriched degraded cards with copy-to-clipboard command buttons (check and recovery). No commands execute automatically. 8 new tests — 981 total passing.
+
 ### Watchdog Status → Cortex Dashboard v1 — 20260426T190418Z
 
 Added `GET /api/watchdog/status` endpoint reading `data/task_runner/bob-watchdog-state/*` state files. Events < 3h old are marked degraded. Dashboard now shows a yellow header banner ("⚠ N degraded service(s)") and a "System Watchdog" card in the Overview column. Graceful fallback when state dir or files are missing. Read-only — no Docker commands, no sends. 972 tests passing.
@@ -4314,3 +4318,9 @@ All 27 inbox files were already processed in previous runs - no new items to pro
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 26 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 20260426T192738Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
