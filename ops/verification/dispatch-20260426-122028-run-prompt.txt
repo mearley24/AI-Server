@@ -1,0 +1,16 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260426-122028
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
+Self-improvement processing complete. All 27 inbox files had already been processed in previous runs - each had matching archive and card files. No new items required processing.
+
+**Summary:**
+- Inbox processed: 0 new items (27 already processed)
+- Cards generated: 0 new cards  
+- Status breakdown: 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch
+- Verification artifact: `ops/verification/self-improve-20260426T182206Z.txt`
+- STATUS_REPORT updated with run summary
+
+This was an idempotent run where the system correctly identified that all work had been completed previously.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260426-122028-run-prompt.txt
