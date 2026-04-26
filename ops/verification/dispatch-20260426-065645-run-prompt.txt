@@ -1,0 +1,27 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260426-065645
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
+I've successfully processed the self-improvement inbox. Here's what was completed:
+
+**Summary:**
+- **Processed:** 2 new items from the inbox  
+- **Already processed:** 21 existing items (idempotency check passed)
+- **Cards created:** 2 new improvement cards
+- **Status distribution:** 0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 2 needs-fetch
+
+**New items processed:**
+1. `20260426T125645Z-imessage-x-com-retrochainer-status-2048142467929657757.md` → **needs fetch**
+2. `20260426T125645Z-imessage-x-com-alexfinn-status-2048184198016778518.md` → **needs fetch**
+
+Both items are iMessage-captured X.com URLs that require web content fetching before automation assessment is possible. Since web access was not provided, both were correctly marked as "needs fetch" status.
+
+**Artifacts created:**
+- 2 archive copies in `ops/self_improvement/archive/`
+- 2 improvement cards in `ops/self_improvement/cards/`  
+- STATUS_REPORT.md updated with summary
+- Verification artifact at `ops/verification/self-improve-20260426T194000Z.txt`
+
+The process completed successfully with all requirements met and proper idempotency handling.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260426-065645-run-prompt.txt
