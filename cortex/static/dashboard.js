@@ -68,6 +68,7 @@
   let _trLoaded = false;
   let _symLoaded = false;
   let _siLoaded = false;
+  let _riLoaded = false;
   let _markupCheckInterval = null;
 
   window.switchTab = function switchTab(name) {
@@ -85,6 +86,7 @@
     if (name === 'transcripts'      && !_trLoaded) { _trLoaded = true; loadTranscripts(); }
     if (name === 'autonomy'         && !_autonomyLoaded) { loadAutonomy(); }
     if (name === 'self-improvement' && !_siLoaded) { _siLoaded = true; loadSelfImprovement(); }
+    if (name === 'reply-inbox'      && !_riLoaded) { _riLoaded = true; loadReplyInbox(); }
     if (name === 'symphony') {
       if (!_symLoaded) { _symLoaded = true; loadSymphonyOps(); }
       checkMarkupHealth();
@@ -105,7 +107,7 @@
     b.addEventListener('click', () => switchTab(b.dataset.tab)));
 
   const _hashTab = window.location.hash.replace('#', '');
-  if (['xintake', 'transcripts', 'symphony', 'autonomy', 'self-improvement'].includes(_hashTab))
+  if (['xintake', 'transcripts', 'symphony', 'autonomy', 'self-improvement', 'reply-inbox'].includes(_hashTab))
     setTimeout(() => switchTab(_hashTab), 50);
 
   // ── Tool access registry ──────────────────────────────────────────────────
@@ -2026,6 +2028,216 @@
     } catch (err) {
       console.error('[SI] reject error', err);
       alert('Failed to reject rule: ' + err);
+    }
+  };
+
+  // ── Reply Suggestion Inbox ──────────────────────────────────────────────────
+
+  const PRIORITY_STYLE = {
+    urgent: 'background:#ef444422;border:1px solid #ef444444;color:#ef4444;',
+    high:   'background:#f59e0b22;border:1px solid #f59e0b44;color:#f59e0b;',
+    medium: 'background:#3b82f622;border:1px solid #3b82f644;color:#3b82f6;',
+    low:    'background:var(--surface-2);border:1px solid var(--border-2);color:var(--muted);',
+    review: 'background:var(--surface-2);border:1px solid var(--border-2);color:var(--muted);',
+  };
+  const QUALITY_STYLE = {
+    pass:    'background:#22c55e22;border:1px solid #22c55e44;color:#22c55e;',
+    warn:    'background:#f59e0b22;border:1px solid #f59e0b44;color:#f59e0b;',
+    blocked: 'background:#ef444422;border:1px solid #ef444444;color:#ef4444;',
+  };
+
+  function _riCardHtml(s, idx) {
+    const priStyle   = PRIORITY_STYLE[s.follow_up_priority] || PRIORITY_STYLE.review;
+    const qualStyle  = QUALITY_STYLE[s.draft_quality_status] || QUALITY_STYLE.pass;
+    const systems    = (s.systems_or_topics || []).slice(0, 4).join(', ');
+    const rulesHtml  = (s.active_rules_applied || []).map(r =>
+      `<span style="display:inline-block;margin:2px 4px 2px 0;padding:1px 8px;border-radius:3px;font-size:10px;background:#22c55e18;border:1px solid #22c55e33;color:#22c55e;">${esc(r.summary)}</span>`
+    ).join('') || '<span style="color:var(--muted);font-size:11px;">none</span>';
+    const reasons    = (s.draft_quality_reasons || []).length
+      ? `<div style="margin-top:6px;font-size:11px;color:var(--muted);">Quality notes: ${esc(s.draft_quality_reasons.join('; '))}</div>`
+      : '';
+    const overdue    = s.overdue_by_hours > 0 ? ` — <span style="color:#f59e0b;">${s.overdue_by_hours}h overdue</span>` : '';
+
+    return `
+<div class="card" id="ri-card-${idx}" style="margin-bottom:16px;border-left:4px solid var(--border-2);">
+  <!-- Header row -->
+  <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+    <div style="flex:1;min-width:0;">
+      <span style="font-weight:600;font-size:13px;">${esc(s.display_name || s.contact_masked)}</span>
+      <span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(s.contact_masked)}</span>
+      <div style="margin-top:3px;font-size:11px;color:var(--muted);">
+        ${esc(s.relationship_type.replace(/_/g,' '))}${systems ? ' &mdash; ' + esc(systems) : ''}${overdue}
+      </div>
+    </div>
+    <span style="padding:2px 10px;border-radius:100px;font-size:11px;font-weight:700;${priStyle}">${esc(s.follow_up_priority)}</span>
+  </div>
+
+  <!-- Incoming message -->
+  ${s.last_message ? `<div style="margin-bottom:10px;padding:8px 12px;background:var(--surface-2);border-radius:6px;border-left:3px solid var(--border-2);font-size:12px;color:var(--muted);">"${esc(s.last_message)}"</div>` : ''}
+
+  <!-- Suggested reply textarea -->
+  <div style="margin-bottom:8px;">
+    <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Suggested reply</label>
+    <textarea id="ri-draft-${idx}" rows="3"
+      style="width:100%;box-sizing:border-box;padding:8px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:6px;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;"
+      >${esc(s.suggested_reply)}</textarea>
+  </div>
+
+  <!-- Confidence + quality -->
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;">
+    <span>Confidence: <strong>${Math.round((s.confidence||0)*100)}%</strong></span>
+    <span style="padding:1px 8px;border-radius:3px;${qualStyle}">${esc(s.draft_quality_status || 'pass')}</span>
+    ${reasons}
+  </div>
+
+  <!-- Active rules -->
+  <div style="margin-bottom:12px;">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Active rules applied:</div>
+    ${rulesHtml}
+  </div>
+
+  <!-- Action buttons -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn"
+      onclick="window._riRegenerate(${idx}, ${s.queue_item_id || 'null'})"
+      style="font-size:11px;padding:4px 12px;">
+      Regenerate
+    </button>
+    <button class="btn"
+      onclick="window._riCopy(${idx})"
+      style="font-size:11px;padding:4px 12px;">
+      Copy
+    </button>
+    <button class="btn"
+      onclick="window._riApprove(${idx}, '${esc(s.action_id)}', '${esc(s.contact_masked)}', ${s.confidence||0}, '${esc(s.draft_quality_status||'pass')}')"
+      style="font-size:11px;padding:4px 12px;background:#22c55e22;border-color:#22c55e44;color:#22c55e;">
+      Approve Draft
+    </button>
+    <span id="ri-status-${idx}" style="font-size:11px;color:var(--muted);align-self:center;"></span>
+  </div>
+
+  ${s.suggested_next_action ? `<div style="margin-top:10px;font-size:11px;color:var(--muted);">Next action: ${esc(s.suggested_next_action)}</div>` : ''}
+</div>`;
+  }
+
+  window.loadReplyInbox = async function loadReplyInbox() {
+    const cardsEl = document.getElementById('ri-cards');
+    const badgeEl = document.getElementById('ri-badge');
+    const navCount = document.getElementById('nav-ri-count');
+    if (cardsEl) cardsEl.innerHTML = '<div class="unavailable">loading…</div>';
+
+    let data;
+    try {
+      const resp = await fetch('/api/reply/suggestions/pending', { cache: 'no-store' });
+      data = await resp.json();
+    } catch (err) {
+      if (cardsEl) cardsEl.innerHTML = '<div class="unavailable">Failed to load reply suggestions.</div>';
+      return;
+    }
+
+    const suggestions = data.suggestions || [];
+    const count = data.count || 0;
+
+    if (badgeEl) badgeEl.textContent = count + ' pending';
+
+    if (navCount) {
+      if (count > 0) { navCount.textContent = count; navCount.classList.remove('hidden'); }
+      else { navCount.classList.add('hidden'); }
+    }
+
+    if (!cardsEl) return;
+
+    if (suggestions.length === 0) {
+      cardsEl.innerHTML = '<div class="unavailable">No pending reply suggestions.</div>';
+      return;
+    }
+
+    // Store suggestions for button handlers
+    window._riSuggestions = suggestions;
+    cardsEl.innerHTML = suggestions.map((s, i) => _riCardHtml(s, i)).join('');
+  };
+
+  window._riCopy = function(idx) {
+    const ta = document.getElementById('ri-draft-' + idx);
+    if (!ta) return;
+    navigator.clipboard.writeText(ta.value).then(() => {
+      const st = document.getElementById('ri-status-' + idx);
+      if (st) { st.textContent = 'Copied!'; setTimeout(() => { st.textContent = ''; }, 2000); }
+    }).catch(() => {
+      const st = document.getElementById('ri-status-' + idx);
+      if (st) st.textContent = 'Copy failed';
+    });
+  };
+
+  window._riRegenerate = async function(idx, queueItemId) {
+    const ta = document.getElementById('ri-draft-' + idx);
+    const st = document.getElementById('ri-status-' + idx);
+    if (st) st.textContent = 'Regenerating…';
+    try {
+      const resp = await fetch('/api/reply/regenerate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ queue_item_id: queueItemId, message_text: '' }),
+      });
+      const data = await resp.json();
+      if (data.status === 'ok' && data.draft && ta) {
+        ta.value = data.draft;
+        if (st) { st.textContent = `Regenerated (${Math.round((data.confidence||0)*100)}%)`; setTimeout(() => { st.textContent = ''; }, 3000); }
+      } else if (data.status === 'error') {
+        if (st) st.textContent = 'Regenerate failed: ' + (data.error || 'unknown');
+      } else {
+        // Ollama unavailable or no queue item — show message without alarming
+        if (st) { st.textContent = 'Not available (Ollama offline or no queue item)'; setTimeout(() => { st.textContent = ''; }, 3000); }
+      }
+    } catch (err) {
+      if (st) st.textContent = 'Error: ' + String(err).slice(0, 60);
+    }
+  };
+
+  window._riApprove = async function(idx, actionId, contactMasked, confidence, qualityStatus) {
+    const ta = document.getElementById('ri-draft-' + idx);
+    const st = document.getElementById('ri-status-' + idx);
+    if (!ta || !ta.value.trim()) {
+      if (st) st.textContent = 'Draft is empty — cannot approve.';
+      return;
+    }
+    const finalReply = ta.value.trim();
+    // The original draft from the suggestions list
+    const orig = (window._riSuggestions || [])[idx];
+    const origDraft = orig ? (orig.suggested_reply || '') : '';
+    const edited = finalReply !== origDraft;
+
+    if (st) st.textContent = 'Approving…';
+    try {
+      const resp = await fetch('/api/x-intake/approve-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_id:            actionId,
+          approved:             true,
+          draft_reply:          origDraft,
+          edited_reply:         edited ? finalReply : '',
+          contact_masked:       contactMasked,
+          reasoning:            'Approved from reply inbox',
+          confidence:           confidence,
+          draft_quality_status: qualityStatus,
+        }),
+      });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        const card = document.getElementById('ri-card-' + idx);
+        if (card) {
+          card.style.opacity = '0.5';
+          card.style.pointerEvents = 'none';
+        }
+        if (st) st.textContent = `Approved (dry-run) — approval_id ${data.approval_id}`;
+      } else if (data.status === 'blocked') {
+        if (st) st.textContent = 'Blocked: ' + (data.draft_quality_reasons || []).join('; ');
+      } else {
+        if (st) st.textContent = 'Approval failed: ' + (data.error || data.detail || JSON.stringify(data));
+      }
+    } catch (err) {
+      if (st) st.textContent = 'Error: ' + String(err).slice(0, 60);
     }
   };
 

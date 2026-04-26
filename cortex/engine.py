@@ -2605,6 +2605,151 @@ async def reply_suggest_endpoint(body: dict[str, Any] = None) -> dict[str, Any]:
     return result
 
 
+# ── Reply Suggestion Inbox ────────────────────────────────────────────────────
+
+
+@app.get("/api/reply/suggestions/pending", tags=["reply"])
+async def reply_suggestions_pending(limit: int = 10) -> dict[str, Any]:
+    """Return pending reply candidates from the follow-up engine.
+
+    Sources contacts from the overdue follow-up queue, enriches each with the
+    context-card draft and active rules, and returns suggestion cards for the
+    dashboard inbox. Never sends messages.
+
+    Returns status=ok with count=0 and suggestions=[] when the queue is empty.
+    """
+    import secrets as _secrets
+
+    follow_ups = _compute_follow_ups()[:limit]
+
+    if not follow_ups:
+        return {"status": "ok", "count": 0, "suggestions": []}
+
+    active_rules = _active_rules_summary("reply_phrasing")
+
+    suggestions: list[dict[str, Any]] = []
+    for item in follow_ups:
+        item.pop("priority_rank", None)
+        profile = item.get("profile") or {}
+        draft_quality_reasons: list[str] = []
+
+        # Derive last_message from open_requests or follow_ups on profile
+        last_message = ""
+        open_reqs = profile.get("open_requests") or []
+        if open_reqs:
+            last_message = open_reqs[-1] if isinstance(open_reqs, list) else ""
+
+        suggestions.append({
+            "action_id":             _secrets.token_hex(6),
+            "queue_item_id":         item.get("queue_item_id"),
+            "contact_masked":        item["contact_masked"],
+            "relationship_type":     item["relationship_type"],
+            "display_name":          profile.get("display_name", ""),
+            "systems_or_topics":     profile.get("systems_or_topics", []),
+            "last_message":          last_message,
+            "suggested_reply":       item.get("draft_reply", ""),
+            "confidence":            round(float(item.get("confidence", 0.0)), 3),
+            "draft_quality_status":  item.get("draft_quality_status", "pass") or "pass",
+            "draft_quality_reasons": draft_quality_reasons,
+            "active_rules_applied":  active_rules,
+            "suggested_next_action": item.get("suggested_next_action", ""),
+            "created_at":            item.get("created_at", ""),
+            "follow_up_priority":    item.get("priority", "review"),
+            "overdue_by_hours":      item.get("overdue_by_hours", 0.0),
+            "elapsed_hours":         item.get("elapsed_hours", 0.0),
+        })
+
+    return {"status": "ok", "count": len(suggestions), "suggestions": suggestions}
+
+
+@app.post("/api/reply/regenerate", tags=["reply"])
+async def reply_regenerate(body: dict[str, Any]) -> dict[str, Any]:
+    """Regenerate a reply suggestion for a pending queue item.
+
+    Body:
+      queue_item_id — integer row ID from x_intake_queue (never raw phone)
+      message_text  — optional incoming message text for context
+
+    Looks up sender_guid from the queue DB internally — the raw contact handle
+    never leaves the server. Returns same shape as /api/reply/suggest.
+    """
+    body = body or {}
+    queue_item_id = body.get("queue_item_id")
+    message_text  = str(body.get("message_text", "")).strip()[:500]
+
+    if queue_item_id is None:
+        return {"status": "error", "error": "queue_item_id required", "draft": "", "confidence": 0.0}
+
+    # Look up sender_guid from the queue DB (read-only mount)
+    sender_guid = ""
+    if _X_INTAKE_QUEUE_DB.is_file():
+        try:
+            conn = sqlite3.connect(f"file:{_X_INTAKE_QUEUE_DB}?mode=ro", uri=True)
+            row = conn.execute(
+                "SELECT sender_guid FROM x_intake_queue WHERE id = ?", (int(queue_item_id),)
+            ).fetchone()
+            conn.close()
+            if row:
+                sender_guid = row[0] or ""
+        except Exception:
+            pass
+
+    if not sender_guid:
+        return {
+            "status": "error",
+            "error": f"queue_item_id {queue_item_id} not found or has no sender_guid",
+            "draft": "", "confidence": 0.0,
+        }
+
+    # Derive handle from sender_guid (format: "any;-;+13035257532")
+    handle = _normalize_handle(sender_guid.split(";")[-1].strip())
+    if not handle:
+        return {"status": "error", "error": "Cannot parse handle from sender_guid", "draft": "", "confidence": 0.0}
+
+    profile_row = _profile_by_handle(handle)
+    profile: dict | None = None
+    accepted_by_type: dict[str, list[dict]] = {}
+
+    if profile_row is not None:
+        profile = {
+            "profile_id":        profile_row["profile_id"],
+            "relationship_type": profile_row["relationship_type"],
+            "display_name":      profile_row["display_name"],
+            "summary":           profile_row["summary"],
+            "open_requests":     json.loads(profile_row["open_requests"] or "[]"),
+            "systems_or_topics": json.loads(profile_row["systems_or_topics"] or "[]"),
+        }
+        for f in _facts_for_profile(profile_row["profile_id"]):
+            if f.get("is_accepted"):
+                accepted_by_type.setdefault(f["fact_type"], []).append(f)
+
+    recent_replies = _receipts_for_handle(handle, limit=5)
+
+    try:
+        active_rules   = _si_engine.get_active_rules()
+        behavior_hints = _si_engine.apply_reply_hints(active_rules)
+    except Exception:
+        active_rules, behavior_hints = [], {}
+
+    result = await _reply_suggest.build_suggestion(
+        contact_handle=handle,
+        message_text=message_text,
+        profile=profile,
+        accepted_by_type=accepted_by_type,
+        recent_replies=recent_replies,
+        active_rules=active_rules,
+        behavior_hints=behavior_hints,
+        ollama_host=OLLAMA_HOST,
+        ollama_model=OLLAMA_MODEL,
+    )
+
+    logger.info(
+        "reply_regenerate queue_item_id=%s confidence=%.2f",
+        queue_item_id, result.get("confidence", 0),
+    )
+    return result
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────────
 
 

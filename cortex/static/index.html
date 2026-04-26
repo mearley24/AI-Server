@@ -46,6 +46,10 @@
     Self Improvement
     <span class="tab-count hidden" id="nav-si-count">0</span>
   </button>
+  <button class="tab-btn" data-tab="reply-inbox" role="tab">
+    Replies
+    <span class="tab-count hidden" id="nav-ri-count">0</span>
+  </button>
   <button class="tab-btn" data-tab="shirts" role="tab">T-Shirts</button>
 </nav>
 
@@ -501,6 +505,20 @@
     <h2>Proposed Rules <span id="si-count" class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px"></span></h2>
     <div id="si-rules"><div class="unavailable">loading</div></div>
   </div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB — REPLY SUGGESTIONS INBOX
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-reply-inbox" class="tab-panel">
+<div id="panel-reply-inbox" style="padding:16px 22px 80px;max-width:900px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <h2 style="margin:0;padding:0;border:0;">Reply Suggestions</h2>
+    <span id="ri-badge" style="padding:3px 12px;border-radius:100px;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)">loading…</span>
+    <button onclick="loadReplyInbox()" style="margin-left:auto;font-size:11px;padding:3px 10px;background:var(--surface-2);border:1px solid var(--border-2);border-radius:4px;color:var(--muted);cursor:pointer;">Refresh</button>
+  </div>
+  <div id="ri-cards"><div class="unavailable">loading…</div></div>
 </div>
 </div>
 
