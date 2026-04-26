@@ -469,7 +469,7 @@ services:
       - ./ops/BACKLOG.md:/app/ops/BACKLOG.md:ro
       - ./ops/PROCESS_POLICY.md:/app/ops/PROCESS_POLICY.md:ro
       - ./data/task_runner:/data/task_runner:ro
-      - ./data/x_api:/data/x_api:ro
+      - ./data/x_api:/data/x_api:rw
       - ./data/vault:/data/vault:rw
     environment:
       - REDIS_URL=${REDIS_URL}
@@ -506,6 +506,8 @@ services:
         max-size: "10m"
         max-file: "5"
 
+    env_file:
+      - .env
   intel-feeds:
     build:
       context: ./integrations/intel_feeds
