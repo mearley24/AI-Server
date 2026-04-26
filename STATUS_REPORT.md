@@ -2,6 +2,10 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
 
+### X API Intake v1 — 20260426T200604Z
+
+Added read-only X API intake foundation. `integrations/x_api/` module with models, usage tracking, and client (tweepy-based, write methods blocked at runtime). `scripts/x_api_intake.py --dry-run/--apply` CLI. Cortex endpoints: `GET /api/x-api/status` (secrets masked), `GET /api/x-api/items`, `POST /api/x-api/intake/dry-run`. X API Intake card in Symphony Ops dashboard. Daily read limit enforced. Default X_ENABLED=0. Matt needs `X_API_BEARER_TOKEN` + `X_USER_ID` + `X_ENABLED=1` in `.env` to activate. 17 new tests — 998 total passing.
+
 ### Service Dependency Map + Recovery Actions v1 — 20260426T195733Z
 
 Added `ops/service_dependency_map.json` mapping 26 services with dependencies, downstream impacts, safe check/recovery commands, and risk levels. Extended `GET /api/watchdog/status` to enrich each degraded service with impact summary, suggested checks/recovery, recovery risk badge, and `should_auto_run: false`. Dashboard now shows enriched degraded cards with copy-to-clipboard command buttons (check and recovery). No commands execute automatically. 8 new tests — 981 total passing.
@@ -4324,3 +4328,9 @@ All 26 inbox items already processed (idempotency check). Items exist in both ar
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 20 inbox items already processed (idempotency check). Items exist in both archive and cards directories.
+
+### Self-improvement loop — 2026-04-26T135946Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). Items exist in both archive and cards directories.

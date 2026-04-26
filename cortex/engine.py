@@ -2757,6 +2757,180 @@ async def reply_regenerate(body: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+# ── X API Intake ───────────────────────────────────────────────────────────────
+
+_X_API_DB_CONTAINER = Path("/data/x_api/x_items.sqlite")
+_X_API_DB_HOST      = Path("/Users/bob/AI-Server/data/x_api/x_items.sqlite")
+
+
+def _x_api_db_path() -> Path | None:
+    """Return the x_api DB path if it exists, else None."""
+    if _X_API_DB_CONTAINER.is_file():
+        return _X_API_DB_CONTAINER
+    if _X_API_DB_HOST.is_file():
+        return _X_API_DB_HOST
+    return None
+
+
+def _x_api_creds_summary() -> dict[str, bool]:
+    """Return credential presence dict — never exposes actual values."""
+    return {
+        "bearer_token":        bool(os.environ.get("X_API_BEARER_TOKEN")),
+        "client_id":           bool(os.environ.get("X_API_CLIENT_ID")),
+        "client_secret":       bool(os.environ.get("X_API_CLIENT_SECRET")),
+        "access_token":        bool(os.environ.get("X_API_ACCESS_TOKEN")),
+        "refresh_token":       bool(os.environ.get("X_API_REFRESH_TOKEN")),
+        "user_id_configured":  bool(os.environ.get("X_USER_ID")),
+    }
+
+
+@app.get("/api/x-api/status", tags=["x-api"])
+async def x_api_status() -> dict[str, Any]:
+    """Return X API intake status — credential presence (masked), DB stats, usage.
+
+    Never exposes actual API keys or tokens.
+    """
+    enabled = os.environ.get("X_ENABLED", "0").strip() == "1"
+    creds   = _x_api_creds_summary()
+    db_path = _x_api_db_path()
+
+    if db_path is None:
+        return {
+            "status":            "no_db",
+            "enabled":           enabled,
+            "credentials":       creds,
+            "daily_reads_used":  0,
+            "daily_reads_limit": int(os.environ.get("X_DAILY_READ_LIMIT", "100")),
+            "total_items":       0,
+            "last_run":          None,
+            "warning":           "No X API DB found. Run scripts/x_api_intake.py --apply to initialise.",
+        }
+
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = _sqlite3.Row
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    daily_used = conn.execute(
+        "SELECT COALESCE(SUM(request_count),0) FROM x_api_usage WHERE ts LIKE ?",
+        (f"{today}%",),
+    ).fetchone()[0]
+    daily_limit = int(os.environ.get("X_DAILY_READ_LIMIT", "100"))
+    total_items = conn.execute("SELECT COUNT(*) FROM x_items").fetchone()[0]
+    last_run_row = conn.execute(
+        "SELECT ts, endpoint, status FROM x_api_usage ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM x_items WHERE processed_status='pending'"
+    ).fetchone()[0]
+    conn.close()
+
+    return {
+        "status":            "ok" if enabled else "disabled",
+        "enabled":           enabled,
+        "credentials":       creds,
+        "daily_reads_used":  int(daily_used),
+        "daily_reads_limit": daily_limit,
+        "within_limit":      int(daily_used) < daily_limit,
+        "total_items":       total_items,
+        "pending_items":     pending,
+        "last_run":          last_run_row["ts"] if last_run_row else None,
+        "last_run_endpoint": last_run_row["endpoint"] if last_run_row else None,
+        "last_run_status":   last_run_row["status"] if last_run_row else None,
+    }
+
+
+@app.get("/api/x-api/items", tags=["x-api"])
+async def x_api_items(limit: int = 50, item_type: str = "") -> dict[str, Any]:
+    """Return recent X API items from local DB.
+
+    Does not call X API — reads local DB only.
+    """
+    db_path = _x_api_db_path()
+    if db_path is None:
+        return {"status": "no_db", "items": [], "count": 0}
+
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    conn.row_factory = _sqlite3.Row
+
+    if item_type:
+        rows = conn.execute(
+            "SELECT * FROM x_items WHERE item_type=? ORDER BY fetched_at DESC LIMIT ?",
+            (item_type, min(limit, 200)),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM x_items ORDER BY fetched_at DESC LIMIT ?",
+            (min(limit, 200),),
+        ).fetchall()
+    conn.close()
+
+    items = []
+    for r in rows:
+        items.append({
+            "x_item_id":        r["x_item_id"],
+            "item_type":        r["item_type"],
+            "author_handle":    r["author_handle"],
+            "author_name":      r["author_name"],
+            "text":             (r["text"] or "")[:280],
+            "url":              r["url"],
+            "created_at":       r["created_at"],
+            "fetched_at":       r["fetched_at"],
+            "processed_status": r["processed_status"],
+            "source":           r["source"],
+        })
+
+    return {"status": "ok", "items": items, "count": len(items)}
+
+
+@app.post("/api/x-api/intake/dry-run", tags=["x-api"])
+async def x_api_intake_dry_run(body: dict[str, Any] = {}) -> dict[str, Any]:
+    """Preview what a live intake run would fetch — does not call X API or write to DB.
+
+    Returns credential status, limit status, and a preview message.
+    Actual intake runs via: python3 scripts/x_api_intake.py --apply
+    """
+    enabled  = os.environ.get("X_ENABLED", "0").strip() == "1"
+    creds    = _x_api_creds_summary()
+    db_path  = _x_api_db_path()
+    limit    = int(os.environ.get("X_DAILY_READ_LIMIT", "100"))
+
+    daily_used = 0
+    if db_path:
+        import sqlite3 as _sqlite3
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        daily_used = conn.execute(
+            "SELECT COALESCE(SUM(request_count),0) FROM x_api_usage WHERE ts LIKE ?",
+            (f"{today}%",),
+        ).fetchone()[0]
+        conn.close()
+
+    issues = []
+    if not enabled:
+        issues.append("X_ENABLED=0 — set X_ENABLED=1 to enable intake")
+    if not creds["bearer_token"]:
+        issues.append("X_API_BEARER_TOKEN not set")
+    if not creds["user_id_configured"]:
+        issues.append("X_USER_ID not set")
+    if int(daily_used) >= limit:
+        issues.append(f"Daily limit reached ({daily_used}/{limit})")
+
+    return {
+        "status":          "preview",
+        "would_run":       len(issues) == 0,
+        "issues":          issues,
+        "enabled":         enabled,
+        "credentials":     creds,
+        "daily_reads_used": int(daily_used),
+        "daily_reads_limit": limit,
+        "run_command":     "python3 scripts/x_api_intake.py --apply --limit 25",
+        "dry_run_command": "python3 scripts/x_api_intake.py --dry-run --limit 25",
+        "should_auto_run": False,
+    }
+
+
 # ── Watchdog Status ────────────────────────────────────────────────────────────
 
 # Maps state-file basename → friendly service name.

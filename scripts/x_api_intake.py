@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""X API Intake CLI — read-only fetch from Matt's X account.
+
+Usage:
+  python3 scripts/x_api_intake.py --dry-run [--limit 25]
+  python3 scripts/x_api_intake.py --apply  [--limit 25]
+
+Flags:
+  --dry-run      Fetch and preview without writing to DB (default)
+  --apply        Fetch and write to DB
+  --limit N      Max items per endpoint (default: 25)
+  --bookmarks    Also fetch bookmarks (requires OAuth user auth + Basic plan)
+  --posts-only   Only fetch own posts
+  --likes-only   Only fetch liked tweets
+
+Environment (add to .env):
+  X_API_BEARER_TOKEN   Bearer token from developer.x.com
+  X_API_CLIENT_ID      OAuth 2.0 client ID (for bookmarks)
+  X_API_CLIENT_SECRET  OAuth 2.0 client secret
+  X_API_ACCESS_TOKEN   OAuth 1.0a access token
+  X_API_REFRESH_TOKEN  OAuth 1.0a access token secret
+  X_USER_ID            Matt's numeric X user ID
+  X_DAILY_READ_LIMIT   Max API requests per day (default: 100)
+  X_ENABLED            Set to 1 to enable (default: 0)
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+# Repo root on sys.path
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+# Load .env if present
+_env_file = REPO_ROOT / ".env"
+if _env_file.is_file():
+    for line in _env_file.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip())
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="X API read-only intake")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run",  action="store_true", default=True,
+                      help="Preview without writing (default)")
+    mode.add_argument("--apply",    action="store_true",
+                      help="Fetch and write to DB")
+    parser.add_argument("--limit",     type=int, default=25,
+                        help="Max items per endpoint (default: 25)")
+    parser.add_argument("--bookmarks", action="store_true",
+                        help="Also fetch bookmarks (requires OAuth + Basic plan)")
+    parser.add_argument("--posts-only", action="store_true")
+    parser.add_argument("--likes-only", action="store_true")
+    args = parser.parse_args()
+
+    dry_run = not args.apply
+
+    fetch_posts = not args.likes_only
+    fetch_likes = not args.posts_only
+    fetch_bookmarks = args.bookmarks
+
+    from integrations.x_api.intake import run_intake
+
+    print(f"X API Intake — {'DRY RUN' if dry_run else 'APPLY'}")
+    print(f"  limit={args.limit}  posts={fetch_posts}  likes={fetch_likes}  bookmarks={fetch_bookmarks}")
+    print()
+
+    result = run_intake(
+        limit=args.limit,
+        dry_run=dry_run,
+        fetch_posts=fetch_posts,
+        fetch_likes=fetch_likes,
+        fetch_bookmarks=fetch_bookmarks,
+    )
+
+    print(json.dumps(result, indent=2))
+
+    if result["status"] == "missing_credentials":
+        print("\n" + result["message"], file=sys.stderr)
+        return 1
+    if result["status"] == "disabled":
+        print("\nHint: set X_ENABLED=1 in .env to enable.", file=sys.stderr)
+        return 0
+    if result["errors"]:
+        print(f"\n{len(result['errors'])} error(s):", file=sys.stderr)
+        for e in result["errors"]:
+            print(f"  - {e}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

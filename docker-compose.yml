@@ -469,6 +469,7 @@ services:
       - ./ops/BACKLOG.md:/app/ops/BACKLOG.md:ro
       - ./ops/PROCESS_POLICY.md:/app/ops/PROCESS_POLICY.md:ro
       - ./data/task_runner:/data/task_runner:ro
+      - ./data/x_api:/data/x_api:ro
     environment:
       - REDIS_URL=${REDIS_URL}
       - CORTEX_PORT=8102
@@ -481,6 +482,13 @@ services:
       - OPENCLAW_URL=http://openclaw:3000
       - BLUEBUBBLES_SERVER_URL=${BLUEBUBBLES_SERVER_URL:-}
       - BLUEBUBBLES_API_PASSWORD=${BLUEBUBBLES_API_PASSWORD:-}
+      - X_API_BEARER_TOKEN=${X_API_BEARER_TOKEN:-}
+      - X_API_CLIENT_ID=${X_API_CLIENT_ID:-}
+      - X_API_ACCESS_TOKEN=${X_API_ACCESS_TOKEN:-}
+      - X_API_REFRESH_TOKEN=${X_API_REFRESH_TOKEN:-}
+      - X_USER_ID=${X_USER_ID:-}
+      - X_DAILY_READ_LIMIT=${X_DAILY_READ_LIMIT:-100}
+      - X_ENABLED=${X_ENABLED:-0}
     depends_on:
       redis:
         condition: service_healthy

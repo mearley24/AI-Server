@@ -1200,6 +1200,73 @@
     loadCortexStats();
     checkPortalHealth();
     loadVoiceReceptionist();
+    loadXApiStatus();
+  }
+
+  async function loadXApiStatus() {
+    const [status, items] = await Promise.all([
+      fetchJson('/api/x-api/status'),
+      fetchJson('/api/x-api/items?limit=5'),
+    ]);
+    renderXApi(status, items);
+  }
+
+  function renderXApi(status, items) {
+    const host = $('x-api-overview');
+    if (!status) { host.innerHTML = unavail(); return; }
+
+    const enabled  = status.enabled;
+    const creds    = status.credentials || {};
+    const hasBearer = creds.bearer_token;
+    const hasUserId = creds.user_id_configured;
+
+    const credBadge = (ok, label) =>
+      `<span class="small" style="margin-right:6px;color:${ok ? 'var(--green)' : 'var(--muted)'}">
+        ${ok ? '&#10003;' : '&#10005;'} ${esc(label)}
+      </span>`;
+
+    const credLine = [
+      credBadge(hasBearer, 'Bearer Token'),
+      credBadge(creds.user_id_configured, 'User ID'),
+      credBadge(creds.access_token, 'User Auth'),
+    ].join('');
+
+    const usedPct = status.daily_reads_limit > 0
+      ? Math.round((status.daily_reads_used / status.daily_reads_limit) * 100) : 0;
+    const usageColor = usedPct >= 90 ? 'var(--red)' : usedPct >= 70 ? 'var(--yellow)' : 'var(--green)';
+
+    const statusBadge = enabled
+      ? `<span style="color:var(--green);font-weight:600">ENABLED</span>`
+      : `<span style="color:var(--muted)">DISABLED (X_ENABLED=0)</span>`;
+
+    const warning = status.warning
+      ? `<div class="small" style="color:var(--yellow);margin-top:4px">${esc(status.warning)}</div>` : '';
+
+    const lastRun = status.last_run
+      ? `<div class="small" style="color:var(--muted);margin-top:4px">Last run: ${esc(timeAgo(status.last_run))} via ${esc(status.last_run_endpoint || '')}</div>`
+      : `<div class="small" style="color:var(--muted);margin-top:4px">No runs recorded yet</div>`;
+
+    const recentItems = (items && items.items && items.items.length)
+      ? `<ul style="margin-top:6px">${items.items.map(i =>
+          `<li class="small" title="${esc(i.x_item_id)}">
+            <span style="color:var(--muted)">[${esc(i.item_type)}]</span>
+            ${i.url ? `<a href="${esc(i.url)}" target="_blank" style="color:var(--gold)">${esc((i.url).slice(0,60))}</a>` : esc((i.text || '').slice(0,60))}
+          </li>`
+        ).join('')}</ul>`
+      : `<div class="small" style="color:var(--muted);margin-top:4px">No items stored yet</div>`;
+
+    host.innerHTML = `
+      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <span>${statusBadge}</span>
+        <span class="small" style="color:var(--muted)">${esc(status.total_items || 0)} items · ${esc(status.pending_items || 0)} pending</span>
+        <span class="small" style="color:${usageColor}">${esc(status.daily_reads_used || 0)}/${esc(status.daily_reads_limit || 100)} reads today</span>
+      </div>
+      <div style="margin-top:6px">${credLine}</div>
+      ${warning}${lastRun}
+      <div style="margin-top:8px"><strong class="small">Recent items:</strong>${recentItems}</div>
+      <div class="small" style="color:var(--muted);margin-top:8px">
+        Run: <code>python3 scripts/x_api_intake.py --dry-run</code>
+      </div>`;
   }
 
   async function loadVoiceReceptionist() {
