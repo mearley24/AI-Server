@@ -42,7 +42,7 @@
       "impact_score": 0.9,
       "confidence_score": 0.5,
       "recommendation": "review",
-      "recommendation_reason": "High risk \u2014 manual approval required. Impact looks strong (42 affected events).",
+      "recommendation_reason": "High risk — manual approval required. Impact looks strong (42 affected events).",
       "impact_scored_at": "2026-04-25T22:09:14.567926+00:00",
       "behavior_category": "pipeline",
       "rejected_at": "2026-04-26T15:29:36.494029+00:00",
@@ -66,13 +66,59 @@
       "impact_score": 0.165,
       "confidence_score": 0.28,
       "recommendation": "ignore",
-      "recommendation_reason": "Unclassified \u2014 no actionable behavior pattern detected. Manual review needed.",
+      "recommendation_reason": "Unclassified — no actionable behavior pattern detected. Manual review needed.",
       "impact_scored_at": "2026-04-25T22:09:14.568088+00:00",
       "approved_at": "2026-04-26T15:22:28.760490+00:00",
       "approved_by": "matt",
       "behavior_category": "general"
+    },
+    {
+      "rule_id": "RULE-20260426-6b752f",
+      "source_card": "manually-authored",
+      "summary": "Keep client replies short, natural, and avoid generic filler like 'let me know' unless it was in Matt's original wording.",
+      "proposed_behavior": "When drafting a reply, prefer short responses. Avoid generic filler phrasing such as 'let me know if you have any questions' or 'feel free to reach out' unless the phrase appeared in Matt's prior messages to this contact. Wording should sound natural and specific to the context.",
+      "risk_level": "low",
+      "status": "approved",
+      "created_at": "20260426T000000Z",
+      "card_count": 1,
+      "scoring": {
+        "relevance": 5,
+        "actionability": 4,
+        "safety": 5
+      },
+      "approved_at": "2026-04-26T00:00:00+00:00",
+      "approved_by": "matt",
+      "behavior_category": "reply_phrasing",
+      "impact_events": 0,
+      "impact_score": 0.8,
+      "confidence_score": 0.9,
+      "recommendation": "approve",
+      "recommendation_reason": "Low risk, high relevance. Matches established style guidance."
+    },
+    {
+      "rule_id": "RULE-20260426-258cb8",
+      "source_card": "manually-authored",
+      "summary": "Prioritize saved contacts with strong smart-home signals in Client Intel review queue.",
+      "proposed_behavior": "When scoring threads for the Client Intel review queue, boost the review_value_score for contacts who are already in the relationship profiles database and whose messages contain smart-home signals (AV, lighting, shades, control4, Sonos, networking, installation). This surfaces warm leads and active clients above cold or ambiguous contacts.",
+      "risk_level": "low",
+      "status": "approved",
+      "created_at": "20260426T000000Z",
+      "card_count": 1,
+      "scoring": {
+        "relevance": 5,
+        "actionability": 4,
+        "safety": 5
+      },
+      "approved_at": "2026-04-26T00:00:00+00:00",
+      "approved_by": "matt",
+      "behavior_category": "triage_scoring",
+      "impact_events": 0,
+      "impact_score": 0.75,
+      "confidence_score": 0.85,
+      "recommendation": "approve",
+      "recommendation_reason": "Low risk, directly aligns with Symphony's client triage goals."
     }
   ],
-  "updated_at": "2026-04-26T15:29:36.494060+00:00",
+  "updated_at": "2026-04-26T00:00:00+00:00",
   "card_count": 24
 }
