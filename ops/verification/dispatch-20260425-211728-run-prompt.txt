@@ -1,0 +1,15 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260425-211728
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
+Processing complete! All 20 inbox items had already been processed in previous runs, triggering idempotency rules. No new cards were created.
+
+**Summary:**
+- **Items processed:** 20 of 21 (respecting 20-item limit)
+- **Status:** 18 reject/defer (duplicate patterns), 2 needs fetch (URL content required)
+- **New artifacts:** STATUS_REPORT.md updated, verification file created
+- **Next action:** None required - pipeline functioning correctly
+
+The self-improvement system correctly identified that all items were duplicate iMessage X.com URL patterns already processed, with proper archive copies and cards existing from prior runs.
+[ai-dispatch] done. log: /Users/bob/AI-Server/ops/verification/dispatch-20260425-211728-run-prompt.txt
