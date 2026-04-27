@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Pre-funding readiness audit — 20260427T165021Z
+
+Readiness score: **58/100**. SAFE TO FUND: **NO**. All three safety layers verified active in running container: POLY_DRY_RUN=true, POLY_OBSERVER_ONLY=true, POLY_ALLOW_LIVE=(empty). Observer-only gate confirmed: 894 observer_only_skip events in last 30 min, zero copytrade_copy_attempt, zero crypto_paper_order, zero trade_recorded. Container healthy (Up 8 min, healthy). 1135 tests pass. Exposure: 78 legacy positions, cost $375.43, current value $398.69 (+$23.26 unrealized). Remaining blockers: (1) EIP-712 signer not live-validated against CLOB — unit tests pass but no real submission attempted; (2) no paper simulation run — observer-only has never been turned off, bot has never opened a simulated position; (3) on-chain balance $3.72, below bot's own $7.50 circuit-breaker minimum; (4) 78 legacy positions outstanding, not managed by current bot code. Next steps: paper sim 24-48h → log review → small capped fund (≤$50, MAX_SINGLE_TRADE=$5). Full report: ops/verification/20260427-165021-polymarket-pre-funding-readiness.md.
+
+
 ### P3 (fix): Observer-only enforced — copytrade_copy_attempt/crypto_paper_order/trade_recorded eliminated — 20260427T184500Z
 
 Root causes: (1) polymarket-bot container was running a stale image built before the observer-only gate code was committed, so the gate code wasn't active; (2) Kraken/Avellaneda market maker was not gated by observer_only — it started whenever KRAKEN_API_KEY was present regardless of POLY_OBSERVER_ONLY, producing `crypto_paper_order` and `trade_recorded` events; (3) POLY_OBSERVER_ONLY was absent from the container's env (container pre-dated the docker-compose env var addition). Fixes: (1) rebuilt Docker image with `DOCKER_BUILDKIT=0` (legacy builder, no keychain auth needed); (2) added `if settings.observer_only:` guard in `src/main.py` before Kraken strategy init — logs `observer_only_skip path=kraken_market_maker` and skips start; (3) recreated container so POLY_OBSERVER_ONLY=true is now in container env. Verified: only `observer_only_skip` in logs, zero `copytrade_copy_attempt`, zero `crypto_paper_order`, zero `trade_recorded`. Tests: 13 total (12 strategy gates + 1 ops/tests delegation), all pass.
