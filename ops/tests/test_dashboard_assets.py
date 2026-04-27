@@ -395,3 +395,49 @@ def test_api_dashboard_audit_summary_counts_are_ints():
     assert isinstance(data["fixes_applied_count"], int)
     assert data["recommendation_count"] >= 0
     assert data["fixes_applied_count"] >= 0
+
+
+# ── Dashboard audit card — HTML + JS structural tests ───────────────────────
+
+
+def test_index_html_has_dashboard_audit_card():
+    """Overview tab must contain the dashboard-audit-card element."""
+    html = (STATIC_DIR / "index.html").read_text()
+    assert 'id="dashboard-audit-card"' in html, "missing #dashboard-audit-card in index.html"
+    assert 'id="dashboard-audit"' in html, "missing #dashboard-audit render target in index.html"
+
+
+def test_dashboard_js_calls_audit_summary_endpoint():
+    """dashboard.js must fetch /api/dashboard/audit-summary."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "/api/dashboard/audit-summary" in js, (
+        "dashboard.js does not call /api/dashboard/audit-summary"
+    )
+
+
+def test_dashboard_js_has_render_dashboard_audit():
+    """dashboard.js must define renderDashboardAudit and call it."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "renderDashboardAudit" in js, "renderDashboardAudit function missing from dashboard.js"
+
+
+def test_dashboard_js_audit_renders_failing_and_stale():
+    """renderDashboardAudit must reference failing_sections and stale_sections."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "failing_sections" in js
+    assert "stale_sections" in js
+
+
+def test_api_dashboard_audit_summary_rendered_on_page():
+    """GET /dashboard HTML includes the audit card div (served statically)."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/dashboard")
+    assert r.status_code == 200
+    assert "dashboard-audit-card" in r.text, "audit card not present in served dashboard HTML"
+    assert "dashboard-audit" in r.text

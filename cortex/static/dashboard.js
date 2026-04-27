@@ -1180,6 +1180,75 @@
   };
 
   // ══════════════════════════════════════════════════════════════════════════
+  //  DASHBOARD AUDIT SUMMARY
+  // ══════════════════════════════════════════════════════════════════════════
+
+  function renderDashboardAudit(data) {
+    const host = $('dashboard-audit');
+    const card = $('dashboard-audit-card');
+    if (!data) { host.innerHTML = unavail(); return; }
+
+    const live    = (data.live_sections    || []).length;
+    const failing = (data.failing_sections || []).length;
+    const stale   = (data.stale_sections   || []).length;
+    const debug   = (data.debug_only_sections || []).length;
+    const planned = (data.planned_sections || []).length;
+    const recCount  = data.recommendation_count  ?? 0;
+    const fixCount  = data.fixes_applied_count   ?? 0;
+
+    if (card) {
+      if (failing > 0) card.classList.add('alert');
+      else card.classList.remove('alert');
+    }
+
+    const _prioColor = (p) =>
+      p === 'P1' ? 'var(--red)' : p === 'P2' ? 'var(--yellow)' : 'var(--muted)';
+
+    const _sectionRows = (entries, showPrio) =>
+      (entries || []).map((e) => `
+        <tr>
+          <td style="font-weight:500;font-size:11px;color:var(--text);">${esc(e.section)}</td>
+          <td class="small mono" style="color:var(--muted)">${esc(e.endpoint)}</td>
+          ${showPrio ? `<td style="font-size:10px;font-weight:700;color:${_prioColor(e.priority)}">${esc(e.priority||'')}</td>` : '<td></td>'}
+          <td class="small" style="color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.reason)}">${esc((e.reason||'').slice(0,70))}</td>
+        </tr>`).join('');
+
+    const _section = (title, entries, showPrio, borderColor) => {
+      if (!entries || !entries.length) return '';
+      return `
+        <div style="margin-top:10px;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${borderColor};margin-bottom:4px;">${esc(title)}</div>
+          <table style="width:100%;border-collapse:collapse;border-left:2px solid ${borderColor};padding-left:6px;">
+            <tbody>${_sectionRows(entries, showPrio)}</tbody>
+          </table>
+        </div>`;
+    };
+
+    const asOf = data.as_of ? `<div class="small" style="color:var(--muted);margin-top:6px;">audited ${timeAgo(data.as_of)}</div>` : '';
+    const auditFile = 'ops/verification/20260427T180800Z-cortex-dashboard-audit.md';
+
+    host.innerHTML = `
+      <div class="stat-row" style="flex-wrap:wrap;gap:8px;">
+        <div><div class="stat-big" style="color:var(--green)">${live}</div><div class="stat-label">live</div></div>
+        <div><div class="stat-big" style="color:${failing>0?'var(--red)':'var(--text)'}">${failing}</div><div class="stat-label">failing</div></div>
+        <div><div class="stat-big" style="color:${stale>0?'var(--yellow)':'var(--text)'}">${stale}</div><div class="stat-label">stale</div></div>
+        <div><div class="stat-big" style="color:var(--muted)">${planned}</div><div class="stat-label">planned</div></div>
+        <div><div class="stat-big" style="color:var(--green)">${fixCount}</div><div class="stat-label">fixed</div></div>
+      </div>
+      ${_section('Failing', data.failing_sections, true, 'var(--red)')}
+      ${_section('Stale / Misleading', data.stale_sections, true, 'var(--yellow)')}
+      ${_section('Debug-only (fixed)', data.debug_only_sections, false, 'var(--muted)')}
+      ${_section('Planned (not built yet)', data.planned_sections, false, 'var(--blue)')}
+      <div style="margin-top:10px;font-size:10px;color:var(--muted);">
+        ${recCount} recommendation${recCount !== 1 ? 's' : ''} · ${fixCount} fix${fixCount !== 1 ? 'es' : ''} applied
+      </div>
+      <div style="margin-top:6px;font-size:10px;color:var(--muted);">
+        Full report: <code style="font-size:9px;">${esc(auditFile)}</code>
+      </div>
+      ${asOf}`;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   //  OVERVIEW REFRESH ORCHESTRATOR
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -1189,7 +1258,7 @@
       services, wallet, positions, pnlSummary, activity,
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
-      xiStats, xiQueue, meetings, calls, watchdog, exposure,
+      xiStats, xiQueue, meetings, calls, watchdog, exposure, auditSummary,
     ] = await Promise.all([
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
@@ -1212,6 +1281,7 @@
       fetchJson('/api/symphony/voice-receptionist'),
       fetchJson('/api/watchdog/status'),
       fetchJson('/api/polymarket/exposure'),
+      fetchJson('/api/dashboard/audit-summary'),
     ]);
 
     renderServices(services);
@@ -1232,6 +1302,7 @@
     renderDigest(digest);
     renderWatchdog(watchdog);
     renderPolyExposure(exposure);
+    renderDashboardAudit(auditSummary);
     renderFooter(health && health.memories, wallet, emails, system);
 
     $('refreshed').textContent = 'refreshed ' + new Date().toLocaleTimeString();

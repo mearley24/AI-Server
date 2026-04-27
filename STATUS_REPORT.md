@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Cortex dashboard audit card visible — 20260427T190000Z
+
+Dashboard Audit card now visible on Cortex Overview tab (Column 1, below System Watchdog). Card shows: live (8) / failing (3) / stale (4) / planned (1) / fixes-applied (1) counts; Failing section table (wallet, pnl-series, trading-intel with P1/P2 priority); Stale/Misleading section (decisions, watchdog, meetings, activity); Debug-only section (vault TEST_* filter); Planned section (voice receptionist). Full audit report filename shown at bottom. Root cause of 404 was stale container image — cortex was restarted to pick up dashboard.py changes from prior commit. 5 additional HTML/JS tests added (audit card exists in HTML, JS calls endpoint, renderDashboardAudit defined, failing/stale sections referenced). ops/tests: 1149 passed, 0 failures.
+
+
 ### Cortex dashboard full audit — 20260427T180800Z
 
 Full sweep of 40+ Cortex dashboard API endpoints. Findings: 3 **broken** sections (wallet, pnl-series, trading-intel), 4 **stale/misleading** sections (decisions journal is D-Tools automation noise; watchdog shows "degraded" for containers that are actually healthy; meetings have 2024 dates + empty summaries; activity feed is system noise), 1 **synthetic** data issue (TEST_VAULT_SECRET visible in production Vault tab), 1 **planned-but-not-built** section (voice receptionist calls), 8 **live and reliable** sections (polymarket exposure, x-intake, self-improvement, client-intel, services, tools, process backlog, pnl-summary). Fixes applied: (1) `TEST_VAULT_SECRET` and any `TEST_*` vault entries hidden in production unless `CORTEX_DEBUG=true` (engine.py); (2) `GET /api/dashboard/audit-summary` endpoint added to dashboard.py — returns `{live_sections, failing_sections, stale_sections, debug_only_sections, planned_sections, recommendation_count, fixes_applied_count}` for automated monitoring. 5 new tests added to `ops/tests/test_dashboard_assets.py`, all pass. Full ops/tests: 1144 passed, 0 failures. Remaining fixes require UI or bot changes (see ops/verification/20260427T180800Z-cortex-dashboard-audit.md, R1-R6).
