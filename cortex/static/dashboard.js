@@ -515,6 +515,55 @@
       <div class="small" style="margin-top:4px">gas (POL): ${Number(data.matic_balance||0).toFixed(2)}</div>`;
   }
 
+  function renderPolyExposure(data) {
+    const host = $('polyexposure');
+    if (!data || data.error) { host.innerHTML = unavail(data?.error || 'unavailable'); return; }
+    const cls  = (n) => n > 0 ? 'pnl-positive' : n < 0 ? 'pnl-negative' : 'pnl-neutral';
+    const sign = (n) => n > 0 ? '+' : '';
+    const pnl  = Number(data.unrealized_pnl || 0);
+    const val  = Number(data.current_value  || 0);
+    const cost = Number(data.cost_basis     || 0);
+    const winners = (data.top_winners || []).slice(0, 3);
+    const losers  = (data.top_losers  || []).slice(0, 3);
+    const age = data.fetched_at ? timeAgo(data.fetched_at) : '';
+
+    const posRow = (p, isWinner) => {
+      const pnlCls = isWinner ? 'pnl-positive' : 'pnl-negative';
+      const market = (p.market || '').slice(0, 48);
+      return `<li style="display:flex;justify-content:space-between;gap:6px;margin-bottom:3px">
+        <span class="small" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(market)}</span>
+        <span class="small mono ${pnlCls}" style="white-space:nowrap">${sign(p.pnl)}${fmtUsd(p.pnl)}</span>
+      </li>`;
+    };
+
+    host.innerHTML = `
+      <div class="stat-row" style="margin-bottom:10px">
+        <div>
+          <div class="stat-big mono">${fmtUsd(val)}</div>
+          <div class="stat-label">current value</div>
+        </div>
+        <div>
+          <div class="stat-big mono ${cls(pnl)}">${sign(pnl)}${fmtUsd(pnl)}</div>
+          <div class="stat-label">unrealized P&L</div>
+        </div>
+      </div>
+      <div class="stat-row" style="margin-bottom:10px">
+        <div><div class="small mono">${fmtUsd(cost)}</div><div class="stat-label">cost basis</div></div>
+        <div><div class="small mono">${esc(data.position_count)}</div><div class="stat-label">positions</div></div>
+      </div>
+      ${winners.length ? `
+        <div class="small" style="color:var(--muted);margin-bottom:4px">top winners</div>
+        <ul style="margin:0 0 8px;padding:0;list-style:none">${winners.map((p) => posRow(p, true)).join('')}</ul>
+      ` : ''}
+      ${losers.length ? `
+        <div class="small" style="color:var(--muted);margin-bottom:4px">top losers</div>
+        <ul style="margin:0 0 8px;padding:0;list-style:none">${losers.map((p) => posRow(p, false)).join('')}</ul>
+      ` : ''}
+      <div class="small" style="color:var(--muted);margin-top:4px">
+        ${esc(data.wallet)} · ${esc(data.source)} · ${esc(age)}
+      </div>`;
+  }
+
   function renderMemory(stats, memories) {
     const host = $('memory');
     if (!stats && !memories) { host.innerHTML = unavail(); return; }
@@ -1140,7 +1189,7 @@
       services, wallet, positions, pnlSummary, activity,
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
-      xiStats, xiQueue, meetings, calls, watchdog,
+      xiStats, xiQueue, meetings, calls, watchdog, exposure,
     ] = await Promise.all([
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
@@ -1162,6 +1211,7 @@
       fetchJson('/api/meetings/recent?limit=20'),
       fetchJson('/api/symphony/voice-receptionist'),
       fetchJson('/api/watchdog/status'),
+      fetchJson('/api/polymarket/exposure'),
     ]);
 
     renderServices(services);
@@ -1181,6 +1231,7 @@
     renderMeetings(meetings);
     renderDigest(digest);
     renderWatchdog(watchdog);
+    renderPolyExposure(exposure);
     renderFooter(health && health.memories, wallet, emails, system);
 
     $('refreshed').textContent = 'refreshed ' + new Date().toLocaleTimeString();

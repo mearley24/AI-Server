@@ -614,6 +614,86 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             ]
         return []
 
+    @app.get("/api/polymarket/exposure")
+    async def api_polymarket_exposure():
+        """Structured on-chain Polymarket positions for the exposure dashboard tile.
+
+        Fetches live positions from the public Polymarket data API (no auth needed).
+        Returns masked wallet, all positions sorted by value, top winners/losers,
+        and summary stats. Read-only — does not place or modify any orders.
+        """
+        poly_wallet = os.environ.get(
+            "POLY_WALLET_ADDRESS", "0xa791E3090312981A1E18ed93238e480a03E7C0d2"
+        )
+        masked = f"{poly_wallet[:6]}...{poly_wallet[-4:]}" if len(poly_wallet) >= 10 else "***"
+        empty = {
+            "wallet": masked,
+            "position_count": 0,
+            "cost_basis": 0.0,
+            "current_value": 0.0,
+            "unrealized_pnl": 0.0,
+            "positions": [],
+            "top_winners": [],
+            "top_losers": [],
+            "source": "unavailable",
+            "fetched_at": None,
+            "error": "unavailable",
+        }
+        raw = await _safe_get(
+            f"https://data-api.polymarket.com/positions"
+            f"?user={poly_wallet}&sizeThreshold=0.001&limit=500",
+            timeout=12.0,
+        )
+        if not raw or not isinstance(raw, list):
+            return empty
+
+        positions = []
+        for p in raw:
+            try:
+                market = (p.get("title") or p.get("market") or "Unknown")
+                outcome = p.get("outcome", p.get("side", "?"))
+                shares = float(p.get("size", p.get("shares", 0)) or 0)
+                avg_price = float(
+                    p.get("avgPrice", p.get("avg_price", p.get("avg", 0))) or 0
+                )
+                cur_price = float(
+                    p.get("curPrice", p.get("currentPrice", p.get("price", 0))) or 0
+                )
+                value = round(shares * cur_price, 4)
+                cost = round(shares * avg_price, 4)
+                pnl = round(value - cost, 4)
+                positions.append({
+                    "market": market,
+                    "outcome": outcome,
+                    "shares": round(shares, 4),
+                    "avg_price": avg_price,
+                    "current_price": cur_price,
+                    "value": value,
+                    "pnl": pnl,
+                })
+            except (TypeError, ValueError):
+                continue
+
+        positions.sort(key=lambda x: x["value"], reverse=True)
+        winners = sorted(positions, key=lambda x: x["pnl"], reverse=True)[:5]
+        losers = sorted(positions, key=lambda x: x["pnl"])[:5]
+        total_value = round(sum(p["value"] for p in positions), 2)
+        total_cost = round(sum(p["shares"] * p["avg_price"] for p in positions), 2)
+
+        from datetime import datetime, timezone
+        return {
+            "wallet": masked,
+            "position_count": len(positions),
+            "cost_basis": total_cost,
+            "current_value": total_value,
+            "unrealized_pnl": round(total_value - total_cost, 2),
+            "positions": positions,
+            "top_winners": winners,
+            "top_losers": losers,
+            "source": "live_api",
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     @app.get("/api/pnl-series")
     async def api_pnl_series():
         r = _get_redis_sync()
