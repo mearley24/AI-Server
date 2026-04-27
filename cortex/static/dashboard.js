@@ -1183,6 +1183,147 @@
   //  DASHBOARD AUDIT SUMMARY
   // ══════════════════════════════════════════════════════════════════════════
 
+  function renderTodayNeedsAttention(watchdog, followups, xiStats, emails, exposure, auditSummary) {
+    const host = $('today-needs-attention');
+    if (!host) return;
+
+    const items = [];
+
+    // Watchdog degraded services
+    const degraded = (watchdog && watchdog.services)
+      ? watchdog.services.filter((s) => s.state === 'degraded' || s.state === 'stale')
+      : [];
+    if (degraded.length > 0) {
+      items.push({
+        level: 'red',
+        label: `${degraded.length} service${degraded.length !== 1 ? 's' : ''} degraded`,
+        detail: degraded.map((s) => esc(s.name)).join(', '),
+        tab: 'overview',
+      });
+    }
+
+    // Overdue follow-ups
+    const overdueFollowups = (followups && Array.isArray(followups.followups))
+      ? followups.followups.filter((f) => f.overdue || f.status === 'overdue')
+      : [];
+    if (overdueFollowups.length > 0) {
+      items.push({
+        level: 'yellow',
+        label: `${overdueFollowups.length} overdue follow-up${overdueFollowups.length !== 1 ? 's' : ''}`,
+        detail: overdueFollowups.slice(0, 2).map((f) => esc(f.name || f.client || '')).filter(Boolean).join(', '),
+        tab: 'xintake',
+      });
+    }
+
+    // X intake pending
+    const xiPending = xiStats && xiStats.pending != null ? xiStats.pending : 0;
+    if (xiPending > 0) {
+      items.push({
+        level: xiPending > 10 ? 'yellow' : 'green',
+        label: `${xiPending} X intake item${xiPending !== 1 ? 's' : ''} pending`,
+        detail: '',
+        tab: 'xintake',
+      });
+    }
+
+    // Unread emails
+    const unreadEmails = emails && emails.unread != null ? emails.unread
+      : (emails && Array.isArray(emails.emails)) ? emails.emails.filter((e) => !e.read).length : 0;
+    if (unreadEmails > 0) {
+      items.push({
+        level: 'green',
+        label: `${unreadEmails} unread email${unreadEmails !== 1 ? 's' : ''}`,
+        detail: '',
+        tab: 'overview',
+      });
+    }
+
+    // Polymarket open positions
+    const positions = exposure && exposure.positions != null ? exposure.positions : 0;
+    const totalValue = exposure && exposure.total_value != null ? exposure.total_value : null;
+    if (positions > 0) {
+      items.push({
+        level: 'green',
+        label: `${positions} Polymarket position${positions !== 1 ? 's' : ''}`,
+        detail: totalValue != null ? `${fmtUsd(totalValue)} exposure` : '',
+        tab: 'money',
+      });
+    }
+
+    // Audit failures
+    const failingCount = auditSummary && auditSummary.failing_sections
+      ? auditSummary.failing_sections.length : 0;
+    if (failingCount > 0) {
+      items.push({
+        level: 'red',
+        label: `${failingCount} dashboard endpoint${failingCount !== 1 ? 's' : ''} failing`,
+        detail: '',
+        tab: 'debug',
+      });
+    }
+
+    if (items.length === 0) {
+      host.innerHTML = `<div style="color:var(--green);font-weight:600;font-size:13px;">All clear — nothing needs attention right now.</div>`;
+      return;
+    }
+
+    const _levelColor = (l) => l === 'red' ? 'var(--red)' : l === 'yellow' ? 'var(--yellow)' : 'var(--green)';
+
+    host.innerHTML = items.map((item) => `
+      <div style="display:flex;align-items:baseline;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);">
+        <span style="width:6px;height:6px;border-radius:50%;background:${_levelColor(item.level)};flex-shrink:0;margin-top:4px;display:inline-block;"></span>
+        <span style="font-weight:600;font-size:12px;color:var(--text);">
+          <a href="#" onclick="switchTab('${esc(item.tab)}');return false;" style="color:inherit;text-decoration:none;">${esc(item.label)}</a>
+        </span>
+        ${item.detail ? `<span class="small" style="color:var(--muted);">${item.detail}</span>` : ''}
+      </div>`).join('');
+  }
+
+  function renderSafeToFund(exposure) {
+    const host = $('safe-to-fund');
+    const card = $('safe-to-fund-card');
+    if (!host) return;
+
+    // Static blockers from audit (known at build time)
+    const staticBlockers = [
+      { label: 'On-chain balance below circuit breaker', detail: '$3.72 on-chain < $7.50 minimum', resolved: false },
+      { label: 'No 48h paper simulation completed', detail: 'Required before live funding', resolved: false },
+      { label: 'EIP-712 signing not live-validated', detail: 'Must be verified end-to-end first', resolved: false },
+      { label: '78 legacy positions pending resolution', detail: 'Must resolve or document before adding capital', resolved: false },
+    ];
+
+    const unresolvedCount = staticBlockers.filter((b) => !b.resolved).length;
+    const safe = unresolvedCount === 0;
+
+    if (card) {
+      if (!safe) card.style.borderLeftColor = 'var(--red)';
+      else card.style.borderLeftColor = 'var(--green)';
+    }
+
+    // Live exposure from API
+    const livePositions = exposure && exposure.positions != null ? exposure.positions : null;
+    const liveValue = exposure && exposure.total_value != null ? exposure.total_value : null;
+    const liveRow = (livePositions != null)
+      ? `<div style="margin-bottom:10px;font-size:12px;color:var(--muted);">Live: ${livePositions} open position${livePositions !== 1 ? 's' : ''} · ${liveValue != null ? fmtUsd(liveValue) : '—'} exposure</div>`
+      : '';
+
+    host.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:22px;font-weight:900;color:${safe ? 'var(--green)' : 'var(--red)'};">${safe ? 'SAFE TO FUND' : 'NOT SAFE TO FUND'}</span>
+        <span class="card-badge ${safe ? 'badge-live' : 'badge-unavail'}">${safe ? 'CLEAR' : 'BLOCKED'}</span>
+      </div>
+      ${liveRow}
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px;">${unresolvedCount} blocker${unresolvedCount !== 1 ? 's' : ''} remaining</div>
+      ${staticBlockers.map((b) => `
+        <div style="display:flex;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);">
+          <span style="color:${b.resolved ? 'var(--green)' : 'var(--red)'};font-size:12px;">${b.resolved ? '✓' : '✗'}</span>
+          <span>
+            <span style="font-size:12px;font-weight:600;color:var(--text);">${esc(b.label)}</span>
+            <span class="small" style="color:var(--muted);display:block;">${esc(b.detail)}</span>
+          </span>
+        </div>`).join('')}`;
+  }
+
   function renderDashboardAudit(data) {
     const host = $('dashboard-audit');
     const card = $('dashboard-audit-card');
@@ -1303,6 +1444,8 @@
     renderWatchdog(watchdog);
     renderPolyExposure(exposure);
     renderDashboardAudit(auditSummary);
+    renderTodayNeedsAttention(watchdog, followups, xiStats, emails, exposure, auditSummary);
+    renderSafeToFund(exposure);
     renderFooter(health && health.memories, wallet, emails, system);
 
     $('refreshed').textContent = 'refreshed ' + new Date().toLocaleTimeString();

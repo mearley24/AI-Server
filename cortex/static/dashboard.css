@@ -177,6 +177,20 @@ main.grid { display: grid; gap: 14px; padding: 14px 22px 80px;
 .btn.reject:hover  { background: rgba(248,113,113,0.16); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ── Card quality badges (LIVE / STALE / DEBUG / PLANNED / NOISY) ────────── */
+.card-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; vertical-align: middle; margin-left: 6px;
+  font-family: var(--mono);
+}
+.badge-live    { background: rgba(74,222,128,0.16);  color: var(--green); }
+.badge-stale   { background: rgba(251,191,36,0.16);  color: var(--yellow); }
+.badge-debug   { background: rgba(138,138,138,0.16); color: var(--muted); }
+.badge-planned { background: rgba(96,165,250,0.16);  color: var(--blue); }
+.badge-noisy   { background: rgba(251,191,36,0.10);  color: var(--yellow); }
+.badge-unavail { background: rgba(248,113,113,0.16); color: var(--red); }
+
 /* ── Status / type badges ────────────────────────────────────────────────── */
 .badge-status { display: inline-block; padding: 1px 7px; border-radius: 3px;
   font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }

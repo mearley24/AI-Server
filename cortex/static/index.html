@@ -30,7 +30,8 @@
 
 <!-- ═══ TAB NAV ════════════════════════════════════════════════════════════ -->
 <nav class="tabs" role="tablist">
-  <button class="tab-btn active" data-tab="overview" role="tab">Overview</button>
+  <button class="tab-btn active" data-tab="overview" role="tab">Today</button>
+  <button class="tab-btn" data-tab="money" role="tab">Money</button>
   <button class="tab-btn" data-tab="xintake" role="tab">
     X Intake
     <span class="tab-count hidden" id="nav-xi-count">0</span>
@@ -55,15 +56,20 @@
   </button>
   <button class="tab-btn" data-tab="shirts" role="tab">T-Shirts</button>
   <button class="tab-btn" data-tab="vault" role="tab">Vault</button>
+  <button class="tab-btn" data-tab="debug" role="tab">Debug</button>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
-     TAB 1 — OVERVIEW
+     TAB 1 — TODAY / NEEDS MATT
 ══════════════════════════════════════════════════════════════════════════ -->
 <div id="tab-overview" class="tab-panel active">
-<main class="grid">
-  <!-- Column 1: Operations -->
+<main class="grid" style="grid-template-columns:1fr 1fr">
+  <!-- Left: Attention + Health -->
   <section class="column">
+    <div class="card" id="today-needs-attention-card">
+      <h2>Today <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">needs attention</span></h2>
+      <div id="today-needs-attention"><div class="unavailable">loading</div></div>
+    </div>
     <div class="card">
       <h2>Service Health</h2>
       <div id="services" class="svc-grid"><div class="unavailable">loading</div></div>
@@ -73,13 +79,17 @@
       <h2>System Watchdog</h2>
       <div id="watchdog-overview"><div class="unavailable">loading</div></div>
     </div>
-    <div class="card" id="dashboard-audit-card">
-      <h2>Dashboard Audit <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">data quality</span></h2>
-      <div id="dashboard-audit"><div class="unavailable">loading</div></div>
-    </div>
     <div class="card" id="tool-access-overview-card">
       <h2>Tool Access <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">local / tailscale</span></h2>
       <div id="tool-access-overview" class="tool-list"><div class="unavailable">loading</div></div>
+    </div>
+  </section>
+
+  <!-- Right: Inbox / Comms -->
+  <section class="column">
+    <div class="card">
+      <h2>Follow-ups <span class="card-badge badge-live">LIVE</span></h2>
+      <div id="followups"><div class="unavailable">loading</div></div>
     </div>
     <div class="card">
       <h2>Email</h2>
@@ -89,72 +99,62 @@
       <h2>Calendar</h2>
       <div id="calendar"><div class="unavailable">loading</div></div>
     </div>
-    <div class="card">
-      <h2>Follow-ups</h2>
-      <div id="followups"><div class="unavailable">loading</div></div>
+    <div class="card" id="xintake-card">
+      <h2>X Intake <span class="card-badge badge-live">LIVE</span> <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— <a href="#xintake" onclick="switchTab('xintake');return false;" style="color:var(--gold-dim)">full view →</a></span></h2>
+      <div id="xintake"><div class="unavailable">loading</div></div>
     </div>
     <div class="card" id="calls-card">
-      <h2>Calls <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">voice receptionist</span></h2>
+      <h2>Calls <span class="card-badge badge-planned">PLANNED</span> <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">voice receptionist</span></h2>
       <div id="calls"><div class="unavailable">loading</div></div>
     </div>
   </section>
-
-  <!-- Column 2: Trading -->
-  <section class="column">
-    <div class="card">
-      <h2>Wallet</h2>
-      <div id="wallet"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>Positions</h2>
-      <div id="positions"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>P&amp;L</h2>
-      <div id="pnl"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>Recent Activity</h2>
-      <div id="activity"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>Auto-Redeemer</h2>
-      <div id="redeemer"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>Exposure</h2>
-      <div id="polyexposure"><div class="unavailable">loading</div></div>
-    </div>
-  </section>
-
-  <!-- Column 3: Brain -->
-  <section class="column">
-    <div class="card">
-      <h2>Memory</h2>
-      <div id="memory"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>Goals</h2>
-      <div id="goals"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card" id="decisions-card">
-      <h2>Decisions</h2>
-      <div id="decisions"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card" id="xintake-card">
-      <h2>X Intake <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— <a href="#xintake" onclick="switchTab('xintake');return false;" style="color:var(--gold-dim)">full view →</a></span></h2>
-      <div id="xintake"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card" id="meetings-card">
-      <h2>Meetings <span style="font-size:10px;color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">— audio intake</span></h2>
-      <div id="meetings"><div class="unavailable">loading</div></div>
-    </div>
-    <div class="card">
-      <h2>Daily Digest</h2>
-      <div id="digest"><div class="unavailable">loading</div></div>
-    </div>
-  </section>
 </main>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB — MONEY / TRADING
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-money" class="tab-panel">
+<div id="panel-money" style="padding:16px 22px 80px;max-width:1100px;">
+
+  <!-- Safe-to-fund status — full width -->
+  <div class="card" id="safe-to-fund-card" style="margin-bottom:14px;border-left:3px solid var(--red);">
+    <h2>Polymarket — Safe to Fund <span class="card-badge badge-unavail">NOT SAFE</span></h2>
+    <div id="safe-to-fund"><div class="unavailable">loading</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+    <!-- Left: live exposure -->
+    <div>
+      <div class="card">
+        <h2>Exposure <span class="card-badge badge-live">LIVE</span></h2>
+        <div id="polyexposure"><div class="unavailable">loading</div></div>
+      </div>
+    </div>
+
+    <!-- Right: stale/partial data -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card">
+        <h2>Wallet <span class="card-badge badge-stale">STALE</span> <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">Redis snapshot not populated</span></h2>
+        <div id="wallet"><div class="unavailable">loading</div></div>
+      </div>
+      <div class="card">
+        <h2>Positions</h2>
+        <div id="positions"><div class="unavailable">loading</div></div>
+      </div>
+      <div class="card">
+        <h2>P&amp;L <span class="card-badge badge-stale">PARTIAL</span> <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">daily P&amp;L unavailable</span></h2>
+        <div id="pnl"><div class="unavailable">loading</div></div>
+      </div>
+      <div class="card">
+        <h2>Auto-Redeemer</h2>
+        <div id="redeemer"><div class="unavailable">loading</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════
@@ -890,6 +890,70 @@
     <code style="font-size:12px;display:block;color:var(--fg);margin-top:4px;">python3 scripts/vault_migrate_env.py --apply</code>
   </div>
 
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     TAB — DEBUG / ARCHIVE
+     Contains stale, noisy, broken, and diagnostic data.
+     Not shown on main operator view by design.
+══════════════════════════════════════════════════════════════════════════ -->
+<div id="tab-debug" class="tab-panel">
+<div id="panel-debug" style="padding:16px 22px 80px;max-width:1100px;">
+
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+    <h2 style="margin:0;padding:0;border:0;">Debug / Archive</h2>
+    <span class="card-badge badge-debug" style="font-size:11px;padding:2px 8px;">stale · noisy · diagnostic data</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+
+    <!-- Left column -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <div class="card" id="dashboard-audit-card">
+        <h2>Dashboard Audit <span class="card-badge badge-debug">DEBUG</span></h2>
+        <div id="dashboard-audit"><div class="unavailable">loading</div></div>
+      </div>
+
+      <div class="card" id="decisions-card">
+        <h2>Decisions <span class="card-badge badge-stale">STALE</span> <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">journal dominated by automation</span></h2>
+        <div id="decisions"><div class="unavailable">loading</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Memory</h2>
+        <div id="memory"><div class="unavailable">loading</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Goals</h2>
+        <div id="goals"><div class="unavailable">loading</div></div>
+      </div>
+
+    </div>
+
+    <!-- Right column -->
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <div class="card" id="meetings-card">
+        <h2>Meetings <span class="card-badge badge-stale">STALE</span> <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">2024 dates · no summaries</span></h2>
+        <div id="meetings"><div class="unavailable">loading</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Activity <span class="card-badge badge-noisy">NOISY</span> <span class="small" style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;margin-left:4px">health.checked noise</span></h2>
+        <div id="activity"><div class="unavailable">loading</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Daily Digest</h2>
+        <div id="digest"><div class="unavailable">loading</div></div>
+      </div>
+
+    </div>
+
+  </div>
 </div>
 </div>
 

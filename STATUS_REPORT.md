@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Cortex dashboard reorganized for operator workflow — 20260427T200000Z
+
+Full dashboard restructure (Cleanup v1). New 12-tab layout: **Today** (tab-overview), **Money** (tab-money), X Intake, Transcripts, Symphony Ops, Autonomy, Clients, Self Improvement, Replies, T-Shirts, Vault, **Debug** (tab-debug). Key changes: (1) Today/tab-overview is now actionable-only — shows `#today-needs-attention` card (degraded services, overdue follow-ups, X intake pending, unread emails, Polymarket position count, audit failures) with per-item links to relevant tabs; stale/noisy widgets (decisions, meetings, activity) removed from overview. (2) Money/tab-money is full-width safe-to-fund status — `#safe-to-fund` card (hard NOT SAFE TO FUND label, 4 remaining blockers), Polymarket exposure, wallet, positions, P&L, redeemer. (3) Debug/tab-debug holds Dashboard Audit, Decisions (STALE badge), Memory, Goals, Meetings (STALE), Activity (NOISY), Daily Digest. (4) All cards have `.card-badge` quality badges: LIVE / STALE / DEBUG / PLANNED / NOISY / UNAVAILABLE. (5) `renderTodayNeedsAttention()` and `renderSafeToFund()` added to dashboard.js and wired into `refresh()`. 5 new tests added (today-needs-attention card in tab-overview, stale widgets not in overview, money tab has exposure+safe-to-fund, debug tab has audit card, JS defines both render functions). ops/tests: 1154 passed, 0 failures.
+
+
 ### Cortex dashboard audit card visible — 20260427T190000Z
 
 Dashboard Audit card now visible on Cortex Overview tab (Column 1, below System Watchdog). Card shows: live (8) / failing (3) / stale (4) / planned (1) / fixes-applied (1) counts; Failing section table (wallet, pnl-series, trading-intel with P1/P2 priority); Stale/Misleading section (decisions, watchdog, meetings, activity); Debug-only section (vault TEST_* filter); Planned section (voice receptionist). Full audit report filename shown at bottom. Root cause of 404 was stale container image — cortex was restarted to pick up dashboard.py changes from prior commit. 5 additional HTML/JS tests added (audit card exists in HTML, JS calls endpoint, renderDashboardAudit defined, failing/stale sections referenced). ops/tests: 1149 passed, 0 failures.

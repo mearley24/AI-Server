@@ -401,7 +401,7 @@ def test_api_dashboard_audit_summary_counts_are_ints():
 
 
 def test_index_html_has_dashboard_audit_card():
-    """Overview tab must contain the dashboard-audit-card element."""
+    """Debug tab must contain the dashboard-audit-card element."""
     html = (STATIC_DIR / "index.html").read_text()
     assert 'id="dashboard-audit-card"' in html, "missing #dashboard-audit-card in index.html"
     assert 'id="dashboard-audit"' in html, "missing #dashboard-audit render target in index.html"
@@ -441,3 +441,80 @@ def test_api_dashboard_audit_summary_rendered_on_page():
     assert r.status_code == 200
     assert "dashboard-audit-card" in r.text, "audit card not present in served dashboard HTML"
     assert "dashboard-audit" in r.text
+
+
+# ── Dashboard Cleanup v1 — layout structural tests ──────────────────────────
+
+
+def test_today_tab_has_needs_attention_card():
+    """tab-overview must contain the today-needs-attention card."""
+    html = (STATIC_DIR / "index.html").read_text()
+    assert 'id="today-needs-attention-card"' in html, (
+        "missing #today-needs-attention-card in index.html"
+    )
+    assert 'id="today-needs-attention"' in html, (
+        "missing #today-needs-attention render target"
+    )
+    # Confirm it's inside tab-overview, not another tab
+    tab_overview_start = html.find('id="tab-overview"')
+    tab_overview_end = html.find('id="tab-', tab_overview_start + 1)
+    overview_html = html[tab_overview_start:tab_overview_end]
+    assert 'id="today-needs-attention-card"' in overview_html, (
+        "#today-needs-attention-card must be inside tab-overview"
+    )
+
+
+def test_stale_widgets_not_in_today_tab():
+    """Stale/noisy sections (decisions, meetings, activity) must not appear in tab-overview."""
+    html = (STATIC_DIR / "index.html").read_text()
+    tab_overview_start = html.find('id="tab-overview"')
+    tab_overview_end = html.find('id="tab-', tab_overview_start + 1)
+    overview_html = html[tab_overview_start:tab_overview_end]
+    assert 'id="decisions"' not in overview_html, (
+        "#decisions (stale) must not be in tab-overview"
+    )
+    assert 'id="meetings"' not in overview_html, (
+        "#meetings (stale) must not be in tab-overview"
+    )
+    assert 'id="activity"' not in overview_html, (
+        "#activity (noisy) must not be in tab-overview"
+    )
+
+
+def test_money_tab_has_exposure_and_safe_to_fund():
+    """tab-money must contain both polyexposure and safe-to-fund cards."""
+    html = (STATIC_DIR / "index.html").read_text()
+    tab_money_start = html.find('id="tab-money"')
+    assert tab_money_start != -1, "missing tab-money panel"
+    tab_money_end = html.find('id="tab-', tab_money_start + 1)
+    money_html = html[tab_money_start:tab_money_end]
+    assert 'id="polyexposure"' in money_html, (
+        "#polyexposure must be inside tab-money"
+    )
+    assert 'id="safe-to-fund"' in money_html, (
+        "#safe-to-fund must be inside tab-money"
+    )
+
+
+def test_debug_tab_has_dashboard_audit():
+    """tab-debug must contain the dashboard-audit card."""
+    html = (STATIC_DIR / "index.html").read_text()
+    tab_debug_start = html.find('id="tab-debug"')
+    assert tab_debug_start != -1, "missing tab-debug panel"
+    tab_debug_end = html.find('id="tab-', tab_debug_start + 1)
+    # tab-debug may be the last panel, so handle end-of-file
+    debug_html = html[tab_debug_start:] if tab_debug_end == -1 else html[tab_debug_start:tab_debug_end]
+    assert 'id="dashboard-audit-card"' in debug_html, (
+        "#dashboard-audit-card must be inside tab-debug"
+    )
+
+
+def test_dashboard_js_has_today_and_safe_to_fund_renderers():
+    """dashboard.js must define renderTodayNeedsAttention and renderSafeToFund."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "renderTodayNeedsAttention" in js, (
+        "renderTodayNeedsAttention missing from dashboard.js"
+    )
+    assert "renderSafeToFund" in js, (
+        "renderSafeToFund missing from dashboard.js"
+    )
