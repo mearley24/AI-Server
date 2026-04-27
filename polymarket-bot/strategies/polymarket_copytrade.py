@@ -325,6 +325,7 @@ class PolymarketCopyTrader:
         self._scan_interval_hours: float = getattr(settings, "copytrade_scan_interval_hours", 6.0)
         self._check_interval: float = getattr(settings, "copytrade_check_interval", 30.0)
         self._dry_run: bool = settings.dry_run
+        self._observer_only: bool = getattr(settings, "observer_only", True)
 
         # Daily risk controls — no fixed spend cap, but stop on drawdown
         self._daily_loss_limit: float = getattr(settings, "copytrade_daily_loss_limit", 40.0)
@@ -1781,6 +1782,9 @@ class PolymarketCopyTrader:
     ) -> bool:
         """Copy a BUY trade with Kelly sizing, LLM validation, and correlation checks.
         Returns True if trade was actually placed, False if skipped."""
+        if self._observer_only:
+            logger.info("observer_only_skip", path="copy_trade", market=market_question[:40], price=price)
+            return False
         logger.info("copytrade_copy_attempt", market=market_question[:40], price=price, token=token_id[:16])
 
         # Skip tiny source trades (noise/test)
@@ -3048,6 +3052,11 @@ class PolymarketCopyTrader:
             ws_hard_cap = 20.0 if ws_in_sweet else 15.0 if ws_in_solid else 10.0
             size_usd = min(size_usd, ws_hard_cap)
 
+            # Observer-only: log the signal but skip all order placement
+            if self._observer_only:
+                logger.info("observer_only_skip", path="whale_signal", tier=tier, market=market_question[:50])
+                continue
+
             # Place order
             buy_price = round(round(price / 0.01) * 0.01, 2)
             if buy_price >= 1.0:
@@ -3258,6 +3267,10 @@ class PolymarketCopyTrader:
 
         position_id = f"ct-re-{uuid.uuid4().hex[:10]}"
 
+        if self._observer_only:
+            logger.info("observer_only_skip", path="reentry", market=market_question[:40])
+            return
+
         logger.info(
             "copytrade_reentry_attempt",
             market=market_question[:40],
@@ -3369,6 +3382,10 @@ class PolymarketCopyTrader:
         """Close a copied position (full or partial)."""
         pos = self._positions.get(position_id)
         if not pos:
+            return
+
+        if self._observer_only:
+            logger.info("observer_only_skip", path="exit_position", position_id=position_id)
             return
 
         # Haircut sell size by 0.5% to avoid 'not enough balance' errors from
@@ -3729,6 +3746,7 @@ class PolymarketCopyTrader:
             "name": "polymarket_copytrade",
             "running": self._running,
             "dry_run": self._dry_run,
+            "observer_only": self._observer_only,
             "scored_wallets": len(self._scored_wallets),
             "top_wallets": [
                 {

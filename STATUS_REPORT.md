@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### P3: Polymarket observer-only mode added — 20260427T174000Z
+
+Added `POLY_OBSERVER_ONLY=true` mode (default: true). When active, all four order-placement paths in PolymarketCopyTrader log `observer_only_skip` and return without placing any order — neither paper nor live. Gates: `_copy_trade()` (before `copytrade_copy_attempt`), `_check_whale_signals()` tiers 2-4 (after category/bankroll checks, before order build), `_execute_reentry()` (before `copytrade_reentry_attempt`), `_exit_position()` (after position lookup). Tier 1 whale watch signals are exempt — they already place no orders. `get_status()` exposes `observer_only` flag. `Settings.observer_only` reads `POLY_OBSERVER_ONLY` env var via `validation_alias`. Docker-compose defaults added. Tests: 12 new tests in `polymarket-bot/tests/test_observer_only.py` — all pass.
+
+
 ### P2: EIP-712 signing fixed — orders can now be generated correctly — 20260427T160000Z
 
 Fixed two bugs in polymarket-bot/src/signer.py: (1) `int(token_id)` used base-10, crashing with `ValueError` on any `0x`-prefixed hex token ID — fixed with `_token_id_to_int()` that handles both decimal and hex strings; (2) `encode_typed_data(structured)` passed the full EIP-712 message dict as the `domain_data` positional arg (eth_account ≥0.9 API), causing "Invalid domain key: types" — fixed by using `encode_typed_data(full_message=structured)` keyword argument. Signed order generation now works for both decimal and hex token IDs, both normal and neg_risk markets. Signature recovery verified correct. Tests: 34 new tests in polymarket-bot/tests/test_signer.py — all pass. Previously failing test_client.py::test_place_order now passes. POLY_DRY_RUN unchanged (still true). No real orders placed. SAFE TO FUND: NO — ≥48h paper trading validation still required before any deposit.
@@ -4662,3 +4667,19 @@ All 34 existing inbox files already have corresponding archive copies and improv
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 20 oldest inbox files already had corresponding archive and card files. No new processing required.
+
+### Self-improvement loop — 2026-04-27T16:09:00Z
+
+inbox processed: 46, cards: 10 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 10 needs-fetch), already processed: 36
+
+- 20260427T160303Z-imessage-x-com-alexfinn-status-2048555030857576753-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160303Z-imessage-x-com-andrewbolis-status-2048722603943342366-card.md - needs fetch - X.com URL content extraction automation pattern  
+- 20260427T160303Z-imessage-x-com-moondevonyt-status-2048786749187362881-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160303Z-imessage-x-com-nolimitgains-status-2048764917449208025-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160304Z-imessage-x-com-codi-fyy-status-2048337801188651071-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160304Z-imessage-x-com-datachaz-status-2048716448961290347-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160304Z-imessage-x-com-ericksky-status-2048535883335270627-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160304Z-imessage-x-com-howtoai-status-2048639272773935203-card.md - needs fetch - X.com URL content extraction automation pattern  
+- 20260427T160304Z-imessage-x-com-juliangoldieseo-status-2048722091323879854-card.md - needs fetch - X.com URL content extraction automation pattern
+- 20260427T160304Z-imessage-x-com-leopardracer-status-2048499773494161700-card.md - needs fetch - X.com URL content extraction automation pattern
+
