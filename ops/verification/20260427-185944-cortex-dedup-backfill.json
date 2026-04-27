@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-04-27T18:59:44.890986+00:00",
+  "db": "/private/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/pytest-of-bob/pytest-133/test_backfill_apply_collapses_0/brain.db",
+  "groups": 2,
+  "duplicates_found": 2,
+  "rows_deleted": 2,
+  "keys_set": 2,
+  "dry_run": false
+}
