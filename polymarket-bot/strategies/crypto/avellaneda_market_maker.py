@@ -259,9 +259,27 @@ class AvellanedaMarketMaker:
             inventory=self._inventory.status(),
         )
 
+    @staticmethod
+    def _crypto_trading_enabled() -> bool:
+        """Returns True only if both Kraken guards are explicitly enabled."""
+        mm = os.environ.get("KRAKEN_MM_ENABLED", "").lower() in {"1", "true", "yes"}
+        ct = os.environ.get("CRYPTO_TRADING_ENABLED", "").lower() in {"1", "true", "yes"}
+        return mm and ct
+
     async def _run_loop(self) -> None:
         """Main loop — calls _tick() for each pair on each interval."""
         while self._running:
+            # Simulation guard: both KRAKEN_MM_ENABLED and CRYPTO_TRADING_ENABLED must be true
+            if not self._crypto_trading_enabled():
+                logger.info(
+                    "crypto_disabled_skip",
+                    strategy="avellaneda",
+                    path="_run_loop",
+                    reason="KRAKEN_MM_ENABLED and CRYPTO_TRADING_ENABLED must both be true",
+                )
+                await asyncio.sleep(self._tick_interval)
+                continue
+
             # Daily loss circuit breaker
             if self._daily_pnl <= self._max_daily_loss and not self._daily_pnl_halted:
                 self._daily_pnl_halted = True
@@ -635,6 +653,18 @@ class AvellanedaMarketMaker:
         )
 
         try:
+            # Belt-and-suspenders: refuse to place or record if crypto trading disabled
+            if not self._crypto_trading_enabled():
+                logger.info(
+                    "crypto_disabled_skip",
+                    strategy="avellaneda",
+                    path="_place_quote",
+                    pair=pair,
+                    side=side,
+                    reason="KRAKEN_MM_ENABLED and CRYPTO_TRADING_ENABLED must both be true",
+                )
+                return
+
             result = await self._client.place_order(order)
             order_id = result.get("id", "")
 
