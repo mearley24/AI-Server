@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Copytrade throttle + simulation correction — 20260427T175030Z
+
+Simulation-only was safety-clean but behavior-noisy: `copytrade_copy_attempt` was logged at the very top of `_copy_trade()` BEFORE any per-minute rate cap, per-token dedup, or global max-price filter, so dozens of events (including prices 0.95-0.999) appeared in logs within seconds. Three new throttles added that all fire BEFORE `copytrade_copy_attempt` is logged: (1) `COPYTRADE_MAX_ATTEMPTS_PER_MINUTE=5` — rolling 60s cap, logs `copytrade_skipped_rate_limited`; (2) `COPYTRADE_DEDUPE_WINDOW_SECONDS=3600` — per-token 1h dedup, logs `copytrade_skipped_duplicate`; (3) `COPYTRADE_MAX_PRICE=0.90` — global max entry price, logs `copytrade_skipped_price_too_high` (bypass: `COPYTRADE_ALLOW_HIGH_PRICE=true`). `copytrade_copy_attempt` now only fires for trades that passed all throttles. 2-minute simulation-only run: 0 `copytrade_copy_attempt`, 0 `crypto_paper_order`, 0 `trade_recorded`, 0 `avellaneda_mm_started`. Tests: 11 new tests (test_copytrade_throttle.py) + 1 ops delegation, all pass. Full ops/tests: 1139 passed. Bot restored to observer-only. SAFE TO FUND: NO — ≥48h paper simulation still required. Full report: ops/verification/20260427T175030Z-polymarket-simulation-throttle-correction.md.
+
+
 ### P0: Avellaneda active path blocked in simulation mode — 20260427T173617Z
 
 Root cause: `CryptoClient.place_order()` guard (prior commit) returns `{"status":"disabled"}` but `AvellanedaMarketMaker._place_quote()` continued past it into the dry-run PnL block (`if self._client.is_dry_run:`) — emitting `trade_recorded strategy=avellaneda` regardless. Separately, the `main.py` Kraken init gate from the simulation-only commit was present in source but the running container used the OLD `ai-server-polymarket-bot:latest` image (not the manually-tagged `polymarket-bot:latest` I had built). Docker compose uses its own image name. Three layers of fix now in place: (1) `main.py` init gate — `AvellanedaMarketMaker` never instantiated when `simulation_only=true` and both guards off (logs `crypto_disabled_skip path=kraken_market_maker`); (2) `_run_loop()` guard — every loop iteration checks `_crypto_trading_enabled()`, logs `crypto_disabled_skip strategy=avellaneda path=_run_loop`, sleeps, continues — `_tick()` never called; (3) `_place_quote()` guard — belt-and-suspenders before `place_order()` and `pnl.record_trade()` — logs `crypto_disabled_skip strategy=avellaneda path=_place_quote`. Container rebuilt as `ai-server-polymarket-bot:latest` and recreated. Verified in 60s simulation-only run: `simulation_only_started` ✓, `crypto_disabled_skip path=kraken_market_maker` ✓, no `avellaneda_mm_started`, no `crypto_paper_order`, no `trade_recorded`. Bot restored to observer-only. Tests: 11 new integration tests (test_avellaneda_simulation_guard.py) all pass.
@@ -4718,3 +4723,11 @@ All 46 inbox items had already been processed with existing archive copies and c
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 45 inbox items had already been processed with existing archive copies and cards. No new processing required.
+
+
+### Self-improvement loop — 2026-04-27T17:43:28Z
+
+inbox processed: 1, cards: 1 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 1 needs-fetch)
+
+- 20260427T174157Z-imessage-x-com-healthranger-status-2048807460689866913-card.md - needs fetch - X.com URL requires content fetch for automation assessment
+

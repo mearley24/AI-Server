@@ -435,6 +435,29 @@ class PolymarketCopyTrader:
         self._max_trades_per_hour: int = int(os.environ.get("MAX_TRADES_PER_HOUR", "15"))
         self._hourly_trade_times: list[float] = []  # epoch timestamps of recent trades
 
+        # ── Attempt throttle — rolling per-minute cap ─────────────────
+        self._max_attempts_per_minute: int = int(
+            os.environ.get("COPYTRADE_MAX_ATTEMPTS_PER_MINUTE", "5")
+        )
+        self._attempt_times: list[float] = []  # epoch timestamps of recent copy attempts
+
+        # ── Per-token/market dedup window ─────────────────────────────
+        self._dedupe_window_seconds: float = float(
+            os.environ.get("COPYTRADE_DEDUPE_WINDOW_SECONDS", "3600")
+        )
+        self._max_attempts_per_market_per_hour: int = int(
+            os.environ.get("COPYTRADE_MAX_ATTEMPTS_PER_MARKET_PER_HOUR", "1")
+        )
+        self._token_last_attempt: dict[str, float] = {}  # token_id -> last attempt epoch
+
+        # ── Global max entry price ─────────────────────────────────────
+        self._copytrade_max_price: float = float(
+            os.environ.get("COPYTRADE_MAX_PRICE", "0.90")
+        )
+        self._allow_high_price: bool = os.environ.get(
+            "COPYTRADE_ALLOW_HIGH_PRICE", "false"
+        ).lower() in {"1", "true", "yes"}
+
         # ── Per-wallet daily trade limit ──────────────────────────────
         self._max_trades_per_wallet_per_day: int = int(os.environ.get("MAX_TRADES_PER_WALLET_PER_DAY", "3"))
         self._wallet_daily_trades: dict[str, int] = {}  # wallet_address -> trade count today
@@ -1791,6 +1814,45 @@ class PolymarketCopyTrader:
         if self._observer_only:
             logger.info("observer_only_skip", path="copy_trade", market=market_question[:40], price=price)
             return False
+
+        # ── Throttle 1: per-minute attempt rate cap ──────────────────
+        now = time.time()
+        self._attempt_times = [t for t in self._attempt_times if now - t < 60.0]
+        if len(self._attempt_times) >= self._max_attempts_per_minute:
+            logger.info(
+                "copytrade_skipped_rate_limited",
+                attempts_last_minute=len(self._attempt_times),
+                limit=self._max_attempts_per_minute,
+                market=market_question[:40],
+            )
+            return False
+
+        # ── Throttle 2: per-token dedup window ───────────────────────
+        last_seen = self._token_last_attempt.get(token_id, 0.0)
+        if now - last_seen < self._dedupe_window_seconds:
+            logger.info(
+                "copytrade_skipped_duplicate",
+                token=token_id[:16],
+                seconds_ago=round(now - last_seen),
+                window=int(self._dedupe_window_seconds),
+                market=market_question[:40],
+            )
+            return False
+
+        # ── Throttle 3: global max entry price ───────────────────────
+        if price > self._copytrade_max_price and not self._allow_high_price:
+            logger.info(
+                "copytrade_skipped_price_too_high",
+                price=price,
+                max_price=self._copytrade_max_price,
+                market=market_question[:40],
+            )
+            return False
+
+        # Record this attempt against both rate-limit and dedup windows
+        self._attempt_times.append(now)
+        self._token_last_attempt[token_id] = now
+
         logger.info("copytrade_copy_attempt", market=market_question[:40], price=price, token=token_id[:16])
 
         # Skip tiny source trades (noise/test)
