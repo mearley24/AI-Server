@@ -459,8 +459,14 @@ async def lifespan(app: FastAPI):
 
     # ── Kraken Avellaneda Market Maker ─────────────────────────────────
     kraken_strategy = None
+    _kraken_mm_enabled = os.environ.get("KRAKEN_MM_ENABLED", "").lower() in {"1", "true", "yes"}
+    _crypto_trading_enabled = os.environ.get("CRYPTO_TRADING_ENABLED", "").lower() in {"1", "true", "yes"}
+    _kraken_allowed = _kraken_mm_enabled and _crypto_trading_enabled
     if settings.observer_only:
         log.info("observer_only_skip", path="kraken_market_maker", reason="observer_only=true")
+    elif settings.simulation_only and not _kraken_allowed:
+        log.info("crypto_disabled_skip", path="kraken_market_maker",
+                 reason="simulation_only=true; set KRAKEN_MM_ENABLED=true AND CRYPTO_TRADING_ENABLED=true to enable")
     elif os.environ.get("KRAKEN_API_KEY"):
         try:
             from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
@@ -743,10 +749,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log.error("heartbeat_scheduler_error", error=str(exc))
 
+    if settings.simulation_only:
+        log.info("simulation_only_started",
+                 message="Polymarket paper trades active; Kraken/crypto disabled unless KRAKEN_MM_ENABLED+CRYPTO_TRADING_ENABLED")
+
     active_strategy_names = [n for n, _ in platform_strategies] + [n for n, _ in managed_strategies]
+    _mode = "SIMULATION (paper-only)" if settings.simulation_only else ("OBSERVER (dry-run)" if settings.dry_run else "LIVE")
     log.info(
         "polymarket_bot_started",
-        mode="OBSERVER (dry-run)" if settings.dry_run else "LIVE",
+        mode=_mode,
         port=settings.port,
         wallet=client.wallet_address or "(not configured)",
         strategies=active_strategy_names,

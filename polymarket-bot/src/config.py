@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # --- Observer / Dry-run mode ---
     dry_run: bool = Field(default=True, validation_alias="poly_dry_run", description="Observer mode — no real orders, logs paper trades")
     observer_only: bool = Field(default=True, validation_alias="poly_observer_only", description="Observer-only mode — strategies scan/log signals but skip all order placement (paper or live)")
+    simulation_only: bool = Field(default=False, validation_alias="poly_simulation_only", description="Simulation-only mode — Polymarket paper trades allowed, Kraken/crypto disabled unless KRAKEN_MM_ENABLED+CRYPTO_TRADING_ENABLED both set")
     paper_ledger_file: str = Field(default="/data/paper_trades.jsonl", description="Path to paper trades ledger")
     paper_ledger_scoring_interval: int = Field(default=3600, description="Seconds between resolved-market scoring checks")
 

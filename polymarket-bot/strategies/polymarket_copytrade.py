@@ -326,6 +326,10 @@ class PolymarketCopyTrader:
         self._check_interval: float = getattr(settings, "copytrade_check_interval", 30.0)
         self._dry_run: bool = settings.dry_run
         self._observer_only: bool = getattr(settings, "observer_only", True)
+        self._simulation_only: bool = getattr(settings, "simulation_only", False)
+        if self._simulation_only and not self._observer_only:
+            logger.info("simulation_only_started",
+                        message="Polymarket paper trades active; Kraken/crypto disabled by simulation_only mode")
 
         # Daily risk controls — no fixed spend cap, but stop on drawdown
         self._daily_loss_limit: float = getattr(settings, "copytrade_daily_loss_limit", 40.0)
@@ -589,6 +593,8 @@ class PolymarketCopyTrader:
             daily_loss_limit=self._daily_loss_limit,
             max_trades_per_hour=self._max_trades_per_hour,
             dry_run=self._dry_run,
+            observer_only=self._observer_only,
+            simulation_only=self._simulation_only,
             kelly_enabled=self._kelly_enabled,
             bankroll=self._bankroll,
             llm_validation=self._llm_validator.enabled,
@@ -2287,6 +2293,8 @@ class PolymarketCopyTrader:
         order_id = ""
         if self._dry_run:
             order_id = f"paper-{position_id}"
+            logger.info("polymarket_paper_order", path="copy_trade", market=market_question[:40],
+                        price=buy_price, size_usd=round(size_usd, 2), size_shares=size_shares)
             logger.info(
                 "copytrade_copy_executed",
                 mode="dry_run",
@@ -3083,6 +3091,8 @@ class PolymarketCopyTrader:
             order_id = ""
             if self._dry_run:
                 order_id = f"paper-{position_id}"
+                logger.info("polymarket_paper_order", path="whale_signal", tier=tier,
+                            market=market_question[:40], price=buy_price, size_usd=round(size_usd, 2))
                 logger.info("whale_signal_trade_executed", mode="dry_run", tier=tier, market=market_question[:40], size=round(size_usd, 2))
             else:
                 if self._clob_client is None:
@@ -3281,6 +3291,8 @@ class PolymarketCopyTrader:
 
         if self._dry_run:
             order_id = f"paper-re-{position_id}"
+            logger.info("polymarket_paper_order", path="reentry", market=market_question[:40],
+                        price=buy_price, size_usd=round(size_usd, 2), size_shares=size_shares)
         else:
             try:
                 loop = asyncio.get_event_loop()
@@ -3424,6 +3436,8 @@ class PolymarketCopyTrader:
         hold_hours = signal.hold_time_hours
 
         if self._dry_run:
+            logger.info("polymarket_paper_order", path="exit_position", position_id=position_id,
+                        price=current_price, size_shares=sell_shares, pnl_pct=round(pnl_pct * 100, 2))
             logger.info(
                 "copytrade_position_exit",
                 mode="dry_run",
@@ -3747,6 +3761,7 @@ class PolymarketCopyTrader:
             "running": self._running,
             "dry_run": self._dry_run,
             "observer_only": self._observer_only,
+            "simulation_only": self._simulation_only,
             "scored_wallets": len(self._scored_wallets),
             "top_wallets": [
                 {
