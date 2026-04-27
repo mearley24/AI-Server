@@ -162,10 +162,17 @@ class TestCryptoClient:
         assert client._paper_trader is None
 
 
+_KRAKEN_ENABLED_ENV = {
+    "KRAKEN_MM_ENABLED": "true",
+    "CRYPTO_TRADING_ENABLED": "true",
+}
+
+
 class TestCryptoClientDryRun:
     """Test CryptoClient with dry-run paper trading."""
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", _KRAKEN_ENABLED_ENV)
     async def test_place_order_dry_run(self):
         client = CryptoClient(dry_run=True)
         order = Order(
@@ -181,6 +188,7 @@ class TestCryptoClientDryRun:
         assert result["status"] == "closed"
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", _KRAKEN_ENABLED_ENV)
     async def test_cancel_order_dry_run(self):
         client = CryptoClient(dry_run=True)
         # Place an order first
@@ -196,6 +204,7 @@ class TestCryptoClientDryRun:
         assert await client.cancel_order(result["id"]) is True
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", _KRAKEN_ENABLED_ENV)
     async def test_get_positions_dry_run(self):
         client = CryptoClient(dry_run=True)
         order = Order(

@@ -8,6 +8,7 @@ of XRP, XCN, PI and other assets.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -236,8 +237,24 @@ class CryptoClient(PlatformClient):
             logger.error("crypto_orderbook_error", symbol=market_id, error=str(exc))
             return {"bids": [], "asks": [], "symbol": market_id}
 
+    @staticmethod
+    def _crypto_trading_enabled() -> bool:
+        """Returns True only if both Kraken guards are explicitly enabled."""
+        mm = os.environ.get("KRAKEN_MM_ENABLED", "").lower() in {"1", "true", "yes"}
+        ct = os.environ.get("CRYPTO_TRADING_ENABLED", "").lower() in {"1", "true", "yes"}
+        return mm and ct
+
     async def place_order(self, order: Order) -> dict:
         """Place a trade on the exchange."""
+        if not self._crypto_trading_enabled():
+            logger.info(
+                "crypto_disabled_skip",
+                path="place_order",
+                symbol=order.market_id,
+                reason="KRAKEN_MM_ENABLED and CRYPTO_TRADING_ENABLED must both be true",
+            )
+            return {"status": "disabled", "order_id": ""}
+
         if self._dry_run and self._paper_trader:
             result = self._paper_trader.place_order(order)
             logger.info(
