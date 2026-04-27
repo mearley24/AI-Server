@@ -67,6 +67,21 @@
     return `<div style="color:var(--green);font-size:12px;padding:4px 0;">${esc(msg)}</div>`;
   }
 
+  // Truth-layer banner: classify data as REAL / PAPER / STALE / BROKEN
+  function sourceBanner(type, detail = '') {
+    const configs = {
+      real:   { cls: 'badge-live',    label: 'REAL',        bg: 'rgba(74,222,128,0.08)'  },
+      paper:  { cls: 'badge-stale',   label: 'SIMULATED',   bg: 'rgba(251,191,36,0.08)'  },
+      stale:  { cls: 'badge-debug',   label: 'OUTDATED',    bg: 'rgba(138,138,138,0.08)' },
+      broken: { cls: 'badge-unavail', label: 'UNAVAILABLE', bg: 'rgba(248,113,113,0.08)' },
+    };
+    const c = configs[type] || configs.broken;
+    const detailHtml = detail ? `<span style="font-size:10px;color:var(--muted);margin-left:6px;">${esc(detail)}</span>` : '';
+    return `<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:4px;background:${c.bg};margin-bottom:8px;">
+      <span class="card-badge ${c.cls}">${c.label}</span>${detailHtml}
+    </div>`;
+  }
+
   // Global debug mode — disables all freshness pruning.
   // Seeded from URL (?debug=1) immediately; overwritten by /api/dashboard/config on first refresh.
   let _debugMode = /[?&]debug=1/.test(window.location.search);
@@ -324,20 +339,52 @@
     }
 
     const degradedSvcs = services.filter(s => s.state === 'degraded');
-    // In normal mode: hide resolved (ok) services whose state has been ok for >1h
     const okSvcs = services.filter(s => s.state === 'ok');
 
+    // Per-service staleness: classify ok services by how long since last seen
+    const _svcAge = (s) => ageSeconds(s.last_seen || s.updated_at || s.checked_at || null);
+    const _svcClass = (s) => {
+      const age = _svcAge(s);
+      if (age > _FRESH_STALE_SECS) return 'broken';   // >7d
+      if (age > _FRESH_RECENT_SECS) return 'stale';   // >24h
+      if (age > _FRESH_ACTIVE_SECS) return 'recent';  // >1h
+      return 'ok';
+    };
+
     if (degraded === 0) {
-      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear &mdash; ${services.length} service${services.length !== 1 ? 's' : ''} monitored${updatedAt} ${staleBadge}</div>`;
+      // Check whether any ok services are actually stale
+      const staleOk = !_debugMode ? okSvcs.filter(s => _svcAge(s) > _FRESH_ACTIVE_SECS) : [];
+      if (staleOk.length === 0) {
+        host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear &mdash; ${services.length} service${services.length !== 1 ? 's' : ''} monitored${updatedAt} ${staleBadge}</div>`;
+        return;
+      }
+      // Some services appear ok but haven't reported recently — show warning
+      const staleLines = staleOk.map(s => {
+        const tier = _svcClass(s);
+        const dotColor = tier === 'broken' ? 'var(--red)' : 'var(--yellow)';
+        const lastSeen = s.last_seen || s.updated_at || s.checked_at || null;
+        const ago = lastSeen ? timeAgo(lastSeen) : 'unknown';
+        return `<li style="color:${dotColor}">&#9679; ${esc(s.name)} — last seen ${esc(ago)} ${freshnessTag(lastSeen)}</li>`;
+      }).join('');
+      const freshOk = okSvcs.filter(s => _svcAge(s) <= _FRESH_ACTIVE_SECS);
+      const freshLine = freshOk.length
+        ? `<div class="small" style="color:var(--green);margin-top:6px">&#10003; ${freshOk.length} service${freshOk.length !== 1 ? 's' : ''} reporting normally${updatedAt}</div>`
+        : '';
+      host.innerHTML = `<ul style="margin:0;padding:0;list-style:none">${staleLines}</ul>${freshLine}`;
       return;
     }
 
     const cards = degradedSvcs.map(_wdDegradedCard).join('');
-    const okLine = okSvcs.length
-      ? `<div class="small" style="color:var(--muted);margin-top:8px">${okSvcs.length} service${okSvcs.length !== 1 ? 's' : ''} ok${updatedAt} ${staleBadge}</div>`
+    const staleOkSvcs = !_debugMode ? okSvcs.filter(s => _svcAge(s) > _FRESH_ACTIVE_SECS) : [];
+    const freshOkCount = okSvcs.length - staleOkSvcs.length;
+    const staleWarning = staleOkSvcs.length
+      ? `<div class="small" style="color:var(--yellow);margin-top:6px">⚠ ${staleOkSvcs.length} service${staleOkSvcs.length !== 1 ? 's' : ''} ok but stale: ${staleOkSvcs.map(s => esc(s.name)).join(', ')}</div>`
+      : '';
+    const okLine = freshOkCount > 0
+      ? `<div class="small" style="color:var(--muted);margin-top:8px">${freshOkCount} service${freshOkCount !== 1 ? 's' : ''} ok${updatedAt} ${staleBadge}</div>`
       : '';
 
-    host.innerHTML = cards + okLine;
+    host.innerHTML = cards + staleWarning + okLine;
   }
 
   function renderEmails(data) {
@@ -379,10 +426,8 @@
     if (!data) { host.innerHTML = unavail(); return; }
     // Explicit DB-unavailable state (follow_ups.db not mounted in container)
     if (data.error) {
-      host.innerHTML = `
-        <div style="color:var(--yellow);font-size:12px;font-weight:600;">DB unavailable</div>
-        <div class="small" style="color:var(--muted);margin-top:4px;">follow_ups.db not mounted</div>
-        <div class="small" style="color:var(--muted);margin-top:2px;font-family:var(--mono);">data/openclaw/follow_ups.db</div>`;
+      host.innerHTML = sourceBanner('broken', 'follow_ups.db not mounted — run: fix data volume mount') +
+        `<div class="small" style="color:var(--muted);font-family:var(--mono);">data/openclaw/follow_ups.db</div>`;
       return;
     }
     const total   = data.total ?? 0;
@@ -488,7 +533,12 @@
     const active  = Number(data.active_value || data.position_value || 0);
     const snapAge = data.snapshot_age ? 'updated ' + timeAgo(data.snapshot_age) : 'live';
     const ftag    = data.snapshot_age ? freshnessTag(data.snapshot_age) : '';
-    host.innerHTML = `
+    // Detect broken wallet: Redis key portfolio:snapshot never pushed (shows all zeros)
+    const isBroken = usdc === 0 && active === 0 && !data.snapshot_age;
+    const banner = isBroken
+      ? sourceBanner('broken', 'Redis key portfolio:snapshot not pushed — real balance in Redeemer card')
+      : '';
+    host.innerHTML = banner + `
       <div class="stat-big">${fmtUsd(usdc + active)}</div>
       <div class="stat-label">account value</div>
       <div class="stat-row" style="margin-top:8px">
@@ -510,21 +560,17 @@
     const hasPaper    = paperCount > 0;
 
     const exposure = positions.reduce((s, p) => s + Number(p.currentValue || p.current_value || 0), 0);
-    const paperBadge = hasPaper
-      ? `<span class="card-badge badge-stale" style="margin-left:4px;">PAPER</span>`
-      : '';
-    const paperNote = isPaperOnly && !_debugMode
-      ? `<div class="small" style="color:var(--yellow);margin-top:4px;">⚠ All ${paperCount} positions are paper simulation trades (cvd_arb). Real legacy positions → Polymarket Exposure card.</div>`
+    const paperBanner = isPaperOnly && !_debugMode
+      ? sourceBanner('paper', `All ${paperCount} positions are paper simulation trades (cvd_arb) — real legacy positions: Polymarket Exposure card`)
       : (hasPaper && !_debugMode
-          ? `<div class="small" style="color:var(--yellow);margin-top:4px;">⚠ ${paperCount} paper simulation position${paperCount!==1?'s':''} included.</div>`
+          ? sourceBanner('paper', `${paperCount} paper simulation position${paperCount!==1?'s':''} included`)
           : '');
 
-    host.innerHTML = `
+    host.innerHTML = paperBanner + `
       <div class="stat-row">
         <div><div class="stat-big">${positions.length}</div><div class="stat-label">open${isPaperOnly?' (paper)':''}</div></div>
         <div><div class="stat-big mono">${fmtUsd(exposure)}</div><div class="stat-label">exposure</div></div>
       </div>
-      ${paperNote}
       <ul style="margin-top:8px">
         ${positions.slice(0,5).map((p) => {
           const isPaper = String(p.order_id || '').startsWith('paper-');
@@ -544,7 +590,12 @@
     const allTimeHtml = allTime !== null
       ? `<div><div class="stat-big ${cls(allTime)}">${sign(allTime)}${fmtUsd(allTime)}</div><div class="stat-label">all-time realized</div></div>`
       : `<div><div class="stat-big pnl-neutral">—</div><div class="stat-label">all-time realized</div></div>`;
-    host.innerHTML = `
+    // pnlSummary data comes from cvd_arb paper simulation trades
+    const hasPaperPnl = pnlSummary && !pnlSummary.error && allTime !== null && !_debugMode;
+    const pnlBanner = hasPaperPnl
+      ? sourceBanner('paper', 'P&L from paper simulation trades (cvd_arb) — not real realized gains')
+      : '';
+    host.innerHTML = pnlBanner + `
       <div class="stat-row">
         <div><div class="stat-big ${cls(daily)}">${sign(daily)}${fmtUsd(daily)}</div><div class="stat-label">today</div></div>
         ${allTimeHtml}
@@ -2755,9 +2806,15 @@
     let data;
     try {
       const resp = await fetch('/api/reply/suggestions/pending', { cache: 'no-store' });
+      if (!resp.ok) {
+        if (cardsEl) cardsEl.innerHTML = sourceBanner('broken', `Reply inbox endpoint returned HTTP ${resp.status}`) +
+          `<div class="small" style="color:var(--muted)">endpoint: /api/reply/suggestions/pending</div>`;
+        return;
+      }
       data = await resp.json();
     } catch (err) {
-      if (cardsEl) cardsEl.innerHTML = '<div class="unavailable">Failed to load reply suggestions.</div>';
+      if (cardsEl) cardsEl.innerHTML = sourceBanner('broken', 'Reply inbox failed to load — service may be offline') +
+        `<div class="small" style="color:var(--muted)">${esc(String(err))}</div>`;
       return;
     }
 

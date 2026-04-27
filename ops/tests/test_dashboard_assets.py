@@ -677,8 +677,8 @@ def test_dashboard_js_positions_paper_badge():
     assert "paper-" in positions_fn, (
         "renderPositions must check for paper- order_id prefix"
     )
-    assert "PAPER" in positions_fn or "paperNote" in positions_fn, (
-        "renderPositions must render a PAPER warning"
+    assert "paperBanner" in positions_fn or "sourceBanner" in positions_fn, (
+        "renderPositions must render a paper truth-layer banner"
     )
 
 
@@ -721,4 +721,113 @@ def test_dashboard_js_followups_db_error_state():
     )
     assert "follow_ups.db" in followups_fn, (
         "renderFollowups must name the missing DB file"
+    )
+
+
+# ---------------------------------------------------------------------------
+# v4 — Data Truth Layer tests
+# ---------------------------------------------------------------------------
+
+def test_dashboard_js_source_banner_helper():
+    """sourceBanner() must be defined and handle real/paper/stale/broken types."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "function sourceBanner(" in js, "sourceBanner() helper must be defined"
+    # Must define all four truth-layer classifications
+    for label in ("REAL", "SIMULATED", "OUTDATED", "UNAVAILABLE"):
+        assert label in js, f"sourceBanner must include label '{label}'"
+    # Must reference badge classes
+    for badge in ("badge-live", "badge-stale", "badge-debug", "badge-unavail"):
+        assert badge in js, f"sourceBanner must reference badge class '{badge}'"
+
+
+def test_dashboard_js_wallet_broken_detection():
+    """renderWallet must classify broken state when Redis key not pushed (all zeros)."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    wallet_start = js.find("function renderWallet(")
+    wallet_end   = js.find("\n  function ", wallet_start + 1)
+    wallet_fn    = js[wallet_start:wallet_end]
+    assert "isBroken" in wallet_fn, (
+        "renderWallet must detect broken state (isBroken variable)"
+    )
+    assert "sourceBanner" in wallet_fn, (
+        "renderWallet must use sourceBanner() for broken state"
+    )
+    assert "portfolio:snapshot" in wallet_fn, (
+        "renderWallet broken message must reference Redis key portfolio:snapshot"
+    )
+
+
+def test_dashboard_js_positions_uses_source_banner():
+    """renderPositions must use sourceBanner() for paper trade classification."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    positions_start = js.find("function renderPositions(")
+    positions_end   = js.find("\n  function ", positions_start + 1)
+    positions_fn    = js[positions_start:positions_end]
+    assert "sourceBanner" in positions_fn, (
+        "renderPositions must use sourceBanner() for paper trade banner"
+    )
+    assert "paper" in positions_fn, (
+        "renderPositions must reference 'paper' type in sourceBanner call"
+    )
+
+
+def test_dashboard_js_pnl_paper_banner():
+    """renderPnl must show paper simulation banner for cvd_arb data."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    pnl_start = js.find("function renderPnl(")
+    pnl_end   = js.find("\n  function ", pnl_start + 1)
+    pnl_fn    = js[pnl_start:pnl_end]
+    assert "sourceBanner" in pnl_fn, (
+        "renderPnl must use sourceBanner() for paper trade banner"
+    )
+    assert "paper" in pnl_fn, (
+        "renderPnl must classify pnl as paper simulation data"
+    )
+    assert "cvd_arb" in pnl_fn or "simulation" in pnl_fn, (
+        "renderPnl banner must mention simulation/cvd_arb context"
+    )
+
+
+def test_dashboard_js_watchdog_per_service_staleness():
+    """renderWatchdog must classify each service by last-seen age, not just overall state."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    wd_start = js.find("function renderWatchdog(")
+    wd_end   = js.find("\n  function ", wd_start + 1)
+    wd_fn    = js[wd_start:wd_end]
+    assert "_svcAge" in wd_fn or "svcAge" in wd_fn, (
+        "renderWatchdog must compute per-service age"
+    )
+    assert "_svcClass" in wd_fn or "svcClass" in wd_fn, (
+        "renderWatchdog must classify per-service staleness"
+    )
+    assert "stale" in wd_fn.lower(), (
+        "renderWatchdog must surface stale service warning"
+    )
+
+
+def test_dashboard_js_reply_inbox_broken_on_error():
+    """loadReplyInbox must show sourceBanner broken state on HTTP error."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    ri_start = js.find("window.loadReplyInbox")
+    ri_end   = js.find("\n  window.", ri_start + 1)
+    ri_fn    = js[ri_start:ri_end]
+    assert "sourceBanner" in ri_fn, (
+        "loadReplyInbox must use sourceBanner() for error state"
+    )
+    assert "resp.ok" in ri_fn or "resp.status" in ri_fn, (
+        "loadReplyInbox must check HTTP response status"
+    )
+
+
+def test_dashboard_js_followups_uses_source_banner():
+    """renderFollowups must use sourceBanner() for the broken DB state."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    followups_start = js.find("function renderFollowups(")
+    followups_end   = js.find("\n  function ", followups_start + 1)
+    followups_fn    = js[followups_start:followups_end]
+    assert "sourceBanner" in followups_fn, (
+        "renderFollowups must use sourceBanner() for DB error state"
+    )
+    assert "broken" in followups_fn, (
+        "renderFollowups must classify DB unavailability as 'broken'"
     )
