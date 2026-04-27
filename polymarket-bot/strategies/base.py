@@ -21,6 +21,7 @@ from src.websocket_client import OrderbookFeed
 if TYPE_CHECKING:
     from src.debate_engine import DebateEngine
     from src.paper_ledger import PaperLedger
+    from src.security.sandbox import ExecutionSandbox
 
 logger = structlog.get_logger(__name__)
 
@@ -74,6 +75,7 @@ class BaseStrategy(ABC):
         self._tick_count: int = 0
         self._debate_engine: DebateEngine | None = None
         self._paper_ledger: PaperLedger | None = None
+        self._sandbox: ExecutionSandbox | None = None
 
     def set_debate_engine(self, engine: DebateEngine) -> None:
         """Attach the debate engine for pre-trade validation."""
@@ -82,6 +84,10 @@ class BaseStrategy(ABC):
     def set_paper_ledger(self, ledger: PaperLedger) -> None:
         """Attach the paper ledger for dry-run mode."""
         self._paper_ledger = ledger
+
+    def set_sandbox(self, sandbox: ExecutionSandbox) -> None:
+        """Attach the execution sandbox — all order helpers enforce its limits."""
+        self._sandbox = sandbox
 
     @property
     def state(self) -> StrategyState:
@@ -225,6 +231,19 @@ class BaseStrategy(ABC):
                     )
                     return None
 
+        # Sandbox check (must pass before any live order is placed)
+        if self._sandbox and not self._settings.dry_run:
+            allowed, reason = await self._sandbox.check_trade(size=size, price=price)
+            if not allowed:
+                logger.warning(
+                    "sandbox_blocked_limit_order",
+                    reason=reason,
+                    strategy=self.name,
+                    market=market,
+                    notional=round(size * price, 2),
+                )
+                return None
+
         # --- Dry-run mode: log paper trade instead of placing real order ---
         if self._settings.dry_run:
             return self._record_paper_trade(
@@ -255,9 +274,75 @@ class BaseStrategy(ABC):
                 strategy=self.name,
             )
             self._open_orders[order_id] = order
+            if self._sandbox:
+                self._sandbox.record_trade(size * price)
             return order
         except Exception as exc:
             logger.error("place_order_error", error=str(exc), token_id=token_id)
+            return None
+
+    async def _place_market_order(
+        self,
+        token_id: str,
+        market: str,
+        price: float,
+        size: float,
+        side: int,
+        order_type: str = "FOK",
+    ) -> OpenOrder | None:
+        """Place a market/FOK/GTC order through the guarded execution path.
+
+        Checks sandbox limits, enforces dry-run, and records the trade.
+        All strategies MUST use this helper instead of calling client.place_order() directly.
+        """
+        # Sandbox check before any real order
+        if self._sandbox and not self._settings.dry_run:
+            allowed, reason = await self._sandbox.check_trade(size=size, price=price)
+            if not allowed:
+                logger.warning(
+                    "sandbox_blocked_market_order",
+                    reason=reason,
+                    strategy=self.name,
+                    market=market,
+                    notional=round(size * price, 2),
+                )
+                return None
+
+        # Dry-run: record paper trade, no real API call
+        if self._settings.dry_run:
+            return self._record_paper_trade(
+                token_id=token_id,
+                market=market,
+                price=price,
+                size=size,
+                side=side,
+            )
+
+        # Live: place real order
+        try:
+            result = await self._client.place_order(
+                token_id=token_id,
+                price=price,
+                size=size,
+                side=side,
+                order_type=order_type,
+            )
+            order_id = result.get("orderID", str(uuid.uuid4()))
+            order = OpenOrder(
+                order_id=order_id,
+                token_id=token_id,
+                market=market,
+                side="BUY" if side == 0 else "SELL",
+                price=price,
+                size=size,
+                strategy=self.name,
+            )
+            self._open_orders[order_id] = order
+            if self._sandbox:
+                self._sandbox.record_trade(size * price)
+            return order
+        except Exception as exc:
+            logger.error("place_market_order_error", error=str(exc), token_id=token_id)
             return None
 
     def _record_paper_trade(

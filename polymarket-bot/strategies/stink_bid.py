@@ -232,28 +232,20 @@ class StinkBidStrategy(BaseStrategy):
                 continue
 
     async def _exit_position(self, token_id: str, price: float, reason: str) -> None:
-        """Exit a position by selling."""
+        """Exit a position by selling through the guarded execution path."""
         pos = self._filled_positions.get(token_id)
         if not pos:
             return
 
-        try:
-            if self._settings.dry_run:
-                self._record_paper_trade(
-                    token_id=token_id,
-                    market=pos["market"].question,
-                    price=price,
-                    size=pos["size"],
-                    side=SIDE_SELL,
-                )
-            else:
-                await self._client.place_order(
-                    token_id=token_id,
-                    price=price,
-                    size=pos["size"],
-                    side=SIDE_SELL,
-                    order_type="FOK",
-                )
+        order = await self._place_market_order(
+            token_id=token_id,
+            market=pos["market"].question,
+            price=price,
+            size=pos["size"],
+            side=SIDE_SELL,
+            order_type="FOK",
+        )
+        if order:
             logger.info(
                 "position_exited",
                 market=pos["market"].question,
@@ -263,9 +255,7 @@ class StinkBidStrategy(BaseStrategy):
                 pnl=price - pos["entry_price"],
                 dry_run=self._settings.dry_run,
             )
-        except Exception as exc:
-            logger.error("exit_position_error", token_id=token_id, error=str(exc))
 
-        # Clean up regardless
+        # Clean up regardless (position is unrecoverable whether blocked or filled)
         if token_id in self._filled_positions:
             del self._filled_positions[token_id]

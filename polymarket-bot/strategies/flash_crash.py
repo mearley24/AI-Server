@@ -165,52 +165,36 @@ class FlashCrashStrategy(BaseStrategy):
     async def _execute_crash_buy(
         self, token_id: str, market: ScannedMarket, current_price: float
     ) -> None:
-        """Execute a buy order when a flash crash is detected."""
+        """Execute a buy order when a flash crash is detected, via guarded path."""
         size = self._params["size"]
 
-        # Buy at current price with FOK (fill-or-kill) for immediate execution
-        try:
-            if self._settings.dry_run:
-                order_id = self._record_paper_trade(
-                    token_id=token_id,
-                    market=market.question,
-                    price=current_price,
-                    size=size,
-                    side=SIDE_BUY,
-                ).order_id
-            else:
-                result = await self._client.place_order(
-                    token_id=token_id,
-                    price=current_price,
-                    size=size,
-                    side=SIDE_BUY,
-                    order_type="FOK",
-                )
-                order_id = result.get("orderID", "")
+        order = await self._place_market_order(
+            token_id=token_id,
+            market=market.question,
+            price=current_price,
+            size=size,
+            side=SIDE_BUY,
+            order_type="FOK",
+        )
+        if not order:
+            logger.warning("flash_crash_buy_blocked", market=market.question)
+            return
 
-            self._positions[token_id] = {
-                "market": market,
-                "entry_price": current_price,
-                "size": size,
-                "order_id": order_id,
-                "bought_at": time.time(),
-            }
-
-            logger.info(
-                "flash_crash_bought",
-                market=market.question,
-                entry_price=current_price,
-                size=size,
-                order_id=order_id,
-                dry_run=self._settings.dry_run,
-            )
-
-        except Exception as exc:
-            logger.error(
-                "flash_crash_buy_error",
-                market=market.question,
-                error=str(exc),
-            )
+        self._positions[token_id] = {
+            "market": market,
+            "entry_price": current_price,
+            "size": size,
+            "order_id": order.order_id,
+            "bought_at": time.time(),
+        }
+        logger.info(
+            "flash_crash_bought",
+            market=market.question,
+            entry_price=current_price,
+            size=size,
+            order_id=order.order_id,
+            dry_run=self._settings.dry_run,
+        )
 
     async def _manage_positions(self) -> None:
         """Check take-profit and stop-loss for open positions."""
@@ -251,29 +235,28 @@ class FlashCrashStrategy(BaseStrategy):
                 continue
 
     async def _exit_position(self, token_id: str, reason: str) -> None:
-        """Exit a position by selling at current price."""
+        """Exit a position by selling at current price, via guarded path."""
         pos = self._positions.get(token_id)
         if not pos:
             return
 
         try:
             current_price = await self._client.get_midpoint(token_id)
-            if self._settings.dry_run:
-                self._record_paper_trade(
-                    token_id=token_id,
-                    market=pos["market"].question,
-                    price=current_price,
-                    size=pos["size"],
-                    side=SIDE_SELL,
-                )
-            else:
-                await self._client.place_order(
-                    token_id=token_id,
-                    price=current_price,
-                    size=pos["size"],
-                    side=SIDE_SELL,
-                    order_type="FOK",
-                )
+        except Exception as exc:
+            logger.error("flash_crash_exit_price_error", token_id=token_id, error=str(exc))
+            if token_id in self._positions:
+                del self._positions[token_id]
+            return
+
+        order = await self._place_market_order(
+            token_id=token_id,
+            market=pos["market"].question,
+            price=current_price,
+            size=pos["size"],
+            side=SIDE_SELL,
+            order_type="FOK",
+        )
+        if order:
             logger.info(
                 "flash_crash_exited",
                 market=pos["market"].question,
@@ -283,8 +266,6 @@ class FlashCrashStrategy(BaseStrategy):
                 pnl=current_price - pos["entry_price"],
                 dry_run=self._settings.dry_run,
             )
-        except Exception as exc:
-            logger.error("flash_crash_exit_error", token_id=token_id, error=str(exc))
 
         if token_id in self._positions:
             del self._positions[token_id]

@@ -339,9 +339,10 @@ class SportsArbStrategy(BaseStrategy):
         return (float(target_shares), float(target_shares))
 
     async def _execute_arb(self, arb: dict[str, Any], size_a: float, size_b: float) -> bool:
-        """Place FOK orders on both sides simultaneously.
+        """Place FOK orders on both sides through the guarded execution path.
 
-        If one side fails, neither trade goes through (FOK guarantees this).
+        Sandbox is checked for BOTH legs before any order is placed.
+        If one side fails or is blocked, neither trade goes through.
         """
         order_type = "FOK" if self._params["use_fok_orders"] else "GTC"
         slippage = self._params["slippage_tolerance"]
@@ -357,6 +358,19 @@ class SportsArbStrategy(BaseStrategy):
                 threshold=self._params["arb_threshold"],
             )
             return False
+
+        # Pre-check sandbox for BOTH legs before placing either order.
+        # Done manually here so a single-token rate-limit leftover can't fund
+        # one leg while blocking the other.
+        if self._sandbox and not self._settings.dry_run:
+            ok_a, reason_a = await self._sandbox.check_trade(size=size_a, price=price_a)
+            if not ok_a:
+                logger.warning("sports_arb_sandbox_blocked_leg_a", reason=reason_a, market=arb["question"])
+                return False
+            ok_b, reason_b = await self._sandbox.check_trade(size=size_b, price=price_b)
+            if not ok_b:
+                logger.warning("sports_arb_sandbox_blocked_leg_b", reason=reason_b, market=arb["question"])
+                return False
 
         try:
             if self._settings.dry_run:
@@ -387,7 +401,7 @@ class SportsArbStrategy(BaseStrategy):
                 )
                 return True
 
-            # Place both orders concurrently
+            # Live: place both orders concurrently (sandbox pre-checks above already passed)
             results = await asyncio.gather(
                 self._client.place_order(
                     token_id=arb["token_id_a"],
@@ -406,7 +420,6 @@ class SportsArbStrategy(BaseStrategy):
                 return_exceptions=True,
             )
 
-            # Check results
             errors = [r for r in results if isinstance(r, Exception)]
             if errors:
                 logger.error(
@@ -414,10 +427,12 @@ class SportsArbStrategy(BaseStrategy):
                     errors=[str(e) for e in errors],
                     market=arb["question"],
                 )
-                # With FOK, failed orders aren't filled — no cleanup needed
                 return False
 
             order_a, order_b = results
+            if self._sandbox:
+                self._sandbox.record_trade(price_a * size_a)
+                self._sandbox.record_trade(price_b * size_b)
             logger.info(
                 "sports_arb_executed",
                 market=arb["question"],

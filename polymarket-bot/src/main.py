@@ -397,6 +397,7 @@ async def lifespan(app: FastAPI):
             client=client, settings=settings, scanner=scanner,
             orderbook=orderbook, pnl_tracker=pnl_tracker,
         )
+        presolution_scalp.set_sandbox(sandbox)
         if strategy_manager_enabled:
             managed_strategies.append(("presolution_scalp", presolution_scalp))
         else:
@@ -412,6 +413,7 @@ async def lifespan(app: FastAPI):
             client=client, settings=settings, scanner=scanner,
             orderbook=orderbook, pnl_tracker=pnl_tracker,
         )
+        sports_arb.set_sandbox(sandbox)
         platform_strategies.append(("sports_arb", sports_arb))
         log.info("strategy_loaded", strategy="sports_arb")
     except Exception as exc:
@@ -424,6 +426,7 @@ async def lifespan(app: FastAPI):
             client=client, settings=settings, scanner=scanner,
             orderbook=orderbook, pnl_tracker=pnl_tracker,
         )
+        flash_crash.set_sandbox(sandbox)
         platform_strategies.append(("flash_crash", flash_crash))
         log.info("strategy_loaded", strategy="flash_crash")
     except Exception as exc:
@@ -436,6 +439,7 @@ async def lifespan(app: FastAPI):
             client=client, settings=settings, scanner=scanner,
             orderbook=orderbook, pnl_tracker=pnl_tracker,
         )
+        stink_bid.set_sandbox(sandbox)
         platform_strategies.append(("stink_bid", stink_bid))
         log.info("strategy_loaded", strategy="stink_bid")
     except Exception as exc:

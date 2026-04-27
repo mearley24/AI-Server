@@ -15,7 +15,7 @@ import redis
 
 from src.client import ORDER_TYPE_GTC
 from src.signer import SIDE_BUY
-from strategies.base import BaseStrategy
+from strategies.base import BaseStrategy, OpenOrder
 from strategies.llm_completion import completion as llm_complete
 
 logger = logging.getLogger(__name__)
@@ -286,29 +286,29 @@ class PresolutionScalpStrategy(BaseStrategy):
             except Exception:
                 pass
 
-        if self._settings.dry_run:
-            self._presolution_positions[cid] = pos
-            self._active_condition_ids.add(cid)
-            if self._registry:
-                await self._registry.claim(token_id, self.name, price, shares, market_question=pos.market_question)
-            logger.info("presolution_scalp.entered_paper %s", pos.market_question[:60])
+        # All order placement goes through the guarded execution path.
+        # _place_market_order handles dry_run, sandbox limits, and recording.
+        order: OpenOrder | None = await self._place_market_order(
+            token_id=token_id,
+            market=pos.market_question,
+            price=price,
+            size=shares,
+            side=SIDE_BUY,
+            order_type=ORDER_TYPE_GTC,
+        )
+        if order is None:
+            logger.warning("presolution_scalp.order_blocked_or_failed market=%s", pos.market_question[:60])
             return
 
-        try:
-            await self._client.place_order(
-                token_id=token_id,
-                price=price,
-                size=shares,
-                side=SIDE_BUY,
-                order_type=ORDER_TYPE_GTC,
-            )
-            self._presolution_positions[cid] = pos
-            self._active_condition_ids.add(cid)
-            if self._registry:
-                await self._registry.claim(token_id, self.name, price, shares, market_question=pos.market_question)
-            logger.info("presolution_scalp.entered %s", pos.market_question[:60])
-        except Exception as exc:
-            logger.warning("presolution_scalp.order_failed: %s", str(exc)[:160])
+        self._presolution_positions[cid] = pos
+        self._active_condition_ids.add(cid)
+        if self._registry:
+            await self._registry.claim(token_id, self.name, price, shares, market_question=pos.market_question)
+        logger.info(
+            "presolution_scalp.entered%s %s",
+            "_paper" if self._settings.dry_run else "",
+            pos.market_question[:60],
+        )
 
     async def _check_resolutions(self) -> None:
         for cid, pos in list(self._presolution_positions.items()):

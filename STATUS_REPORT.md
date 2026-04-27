@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### P1: Polymarket sandbox bypass fixed in all strategies — 20260427T153448Z
+
+All 4 strategies that previously bypassed the ExecutionSandbox now route every order through a single guarded execution path. Changes: (1) BaseStrategy gained `_sandbox` field, `set_sandbox()`, `_place_market_order()` helper, and sandbox checks in `_place_limit_order()`; (2) stink_bid `_exit_position()` → `_place_market_order()`; (3) flash_crash `_execute_crash_buy()` and `_exit_position()` → `_place_market_order()`; (4) presolution_scalp `_enter_position()` → `_place_market_order()`; (5) sports_arb `_execute_arb()` — manual sandbox pre-check for both legs before concurrent orders, record_trade after success; (6) main.py wires `set_sandbox(sandbox)` to all 4 strategies. signer.py NOT modified. Kill switch, max single trade, daily volume ceiling, rate limiter, dry_run gate now uniform across all strategies. Tests: 20 unit tests in polymarket-bot/tests/test_sandbox_bypass_fixed.py + 8 in ops/tests/test_sandbox_bypass_fixed.py (all pass). Verification: ops/verification/20260427-153448-polymarket-sandbox-bypass-fixed.md. SAFE TO FUND: NO — signer.py EIP-712 fix and ≥48h paper trading still required.
+
+
 ### P0: Polymarket bot locked into safe dry-run mode — 20260427T150000Z
 
 Live trading gate added — bot will NOT place real orders unless BOTH `POLY_DRY_RUN=false` AND `POLY_ALLOW_LIVE=I_UNDERSTAND_REAL_MONEY_RISK` are explicitly set. Five changes applied: (1) `_enforce_live_gate()` in main.py forces dry_run=True and logs CRITICAL if gate passphrase is absent; (2) config.yaml defaults corrected — dry_run=true everywhere (polymarket, kalshi, crypto); (3) `load_settings()` now properly flattens security/kalshi/crypto YAML sections into Settings fields (was silently ignored, limits never applied); (4) docker-compose.yml defaults hardened — `POLY_DRY_RUN` default changed false→true, `POLY_ALLOW_LIVE` added (empty default = gate blocked), `KRAKEN_DRY_RUN` default set true, `COPYTRADE_MAX_POSITIONS` 100→30, `MAX_POSITIONS_PER_CATEGORY` 50→15, security limit env vars added with conservative values (10/100/50); (5) Kraken market maker default fixed false→true. Conservative security limits now active: MAX_SINGLE_TRADE=$10, MAX_DAILY_VOLUME=$100, MAX_DAILY_LOSS=$50 kill-switch. Tests: ops/tests/test_live_gate.py (6 test cases covering all gate scenarios). Capital safety audit: ops/verification/20260427-142348-polymarket-audit.md — readiness score 51/100, SAFE TO FUND: NO. Remaining items before funding: sandbox coverage for 4 bypass strategies, signer.py EIP-712 fix.
@@ -16,6 +21,15 @@ Fixed 4 failing agents by correcting interpreter paths and environment variables
 
 Unloaded and archived 24 ghost launch agents (all referenced missing/deleted scripts). Plists moved to `_archive/launchagents-retired-20260427/`. 23 clean bootouts, 1 already unregistered (notes-watcher). All 7 protected agents confirmed untouched: trading-api (PID 98451 running), imessage-bridge (PID 2421 running), markup-app (PID 762 running), approval-drainer, voice-webhook, notes-sync, x-autoposter. Retired clusters: 13 trading/ scripts (all missing), 3 orchestrator/ scripts (all missing), 5 individual missing tools, 2 missing symphony.email modules, 1 missing Telegram script. Remaining failing agents (Pass 2): approval-drainer (malformed SQLite DB — needs Matt), voice-webhook (port 8088 conflict), notes-sync (pip install pyyaml), email-reply-agent (auto-send risk — needs Matt policy decision), imessage-watcher (log isolation needed), daily-digest + bob-maintenance (cosmetic exit 1).
 
+
+### Self-improvement loop — 2026-04-27T15:32:25Z
+
+inbox processed: 3, cards: 3 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 3 needs-fetch)
+
+Latest iMessage URL captures requiring external fetch for automation assessment:
+- 20260427T153049Z-imessage-x-com-0x-discover-status-2048472641481146482-card.md — needs fetch — Twitter URL content required
+- 20260427T153049Z-imessage-x-com-moondevonyt-status-2048785006307545476-card.md — needs fetch — Twitter URL content required  
+- 20260427T153049Z-imessage-x-com-nftcps-status-2048587253145108626-card.md — needs fetch — Twitter URL content required
 
 ### Self-improvement loop — 20260427T132353Z
 
@@ -4637,3 +4651,9 @@ All 34 inbox items had already been processed with existing archive copies and c
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 34 existing inbox files already have corresponding archive copies and improvement cards. No new processing required.
+
+### Self-improvement loop — 2026-04-27T20:21:55Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 oldest inbox files already had corresponding archive and card files. No new processing required.

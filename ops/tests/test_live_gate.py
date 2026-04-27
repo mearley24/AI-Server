@@ -71,11 +71,10 @@ def _load_gate_function():
             if isinstance(node, ast.FunctionDef) and node.name == "_enforce_live_gate":
                 needed.append(ast.get_source_segment(source, node))
 
-        exec(  # noqa: S102
-            textwrap.dedent("\n".join(needed)),
-            {"os": os},
-            module.__dict__,
-        )
+        # Use a single dict so the constant is visible in the function's globals.
+        ns: dict = {"os": os}
+        exec(textwrap.dedent("\n".join(needed)), ns)  # noqa: S102
+        module.__dict__.update(ns)
 
     return module._enforce_live_gate, module._LIVE_GATE_PASSPHRASE
 
