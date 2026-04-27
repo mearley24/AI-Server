@@ -534,16 +534,20 @@
     const snapAge = data.snapshot_age ? 'updated ' + timeAgo(data.snapshot_age) : 'live';
     const ftag    = data.snapshot_age ? freshnessTag(data.snapshot_age) : '';
     // Detect broken wallet: Redis key portfolio:snapshot never pushed (shows all zeros)
+    const matic   = Number(data.matic_balance || 0);
     const isBroken = usdc === 0 && active === 0 && !data.snapshot_age;
     const banner = isBroken
       ? sourceBanner('broken', 'Redis key portfolio:snapshot not pushed — real balance in Redeemer card')
       : '';
+    const maticLine = matic > 0
+      ? `<div><div class="small">POL Gas</div><div class="mono">${matic.toFixed(2)}</div></div>` : '';
     host.innerHTML = banner + `
       <div class="stat-big">${fmtUsd(usdc + active)}</div>
       <div class="stat-label">account value</div>
       <div class="stat-row" style="margin-top:8px">
         <div><div class="small">USDC</div><div class="mono">${fmtUsd(usdc)}</div></div>
         <div><div class="small">Open</div><div class="mono">${fmtUsd(active)}</div></div>
+        ${maticLine}
       </div>
       <div class="small" style="margin-top:6px">${esc(snapAge)} ${ftag}</div>`;
   }
@@ -608,11 +612,12 @@
       host.innerHTML = emptyState('No recent activity — system is quiet');
       return;
     }
-    // In normal mode filter out health.checked system pings (noise — ~20% of feed)
+    // In normal mode filter out system noise events — server also filters (debug=true sends raw)
+    const _NOISE_TYPES = new Set(['health.checked', 'health.check', 'jobs.synced', 'heartbeat', 'tick']);
     const _isNoise = (e) => {
       const p = e.payload || e;
-      const t = p.type || '';
-      return t === 'health.checked' || t === 'health.check';
+      const t = p.type || e.kind || '';
+      return _NOISE_TYPES.has(t);
     };
     const filtered = _debugMode ? data : data.filter((e) => !_isNoise(e));
     const source = filtered.length ? filtered : data; // fall back to all if everything is noise
@@ -1593,14 +1598,14 @@
       fetchJson('/api/wallet'),
       fetchJson('/api/positions'),
       fetchJson('/api/pnl-summary'),
-      fetchJson('/api/activity'),
+      fetchJson(_debugMode ? '/api/activity?debug=true' : '/api/activity'),
       fetchJson('/api/emails'),
       fetchJson('/api/calendar'),
       fetchJson('/api/followups'),
       fetchJson('/goals'),
       fetchJson('/health'),
       fetchJson('/memories?limit=10'),
-      fetchJson('/api/decisions/recent?limit=20'),
+      fetchJson(_debugMode ? '/api/decisions/recent?limit=20&exclude_automation=false' : '/api/decisions/recent?limit=20'),
       fetchJson('/digest/today'),
       fetchJson('/api/system'),
       fetchJson('/api/redeemer'),

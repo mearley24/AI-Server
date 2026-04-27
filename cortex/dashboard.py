@@ -528,20 +528,39 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                     return data
             except Exception:
                 pass
-        # Fall back to live bot
+        # Fall back to live bot — /status has USDC nested under strategies.redeemer
         data = await _safe_get(f"{TRADING_BOT_URL}/status", timeout=5.0)
         if data:
             try:
+                redeemer_section = (data.get("strategies") or {}).get("redeemer") or {}
+                usdc = float(
+                    data.get("usdc_balance")
+                    or redeemer_section.get("usdc_balance")
+                    or 0
+                )
+                matic = float(redeemer_section.get("matic_balance") or 0)
+                redeemed = int(redeemer_section.get("redeemed_conditions") or 0)
+                pending = int((redeemer_section.get("last_cycle_summary") or {}).get("pending") or 0)
+                redeemer_ts = redeemer_section.get("last_cycle_at")
+                snap_ts = redeemer_ts if redeemer_ts else None
+                if snap_ts:
+                    from datetime import datetime as _dt
+                    snap_ts = _dt.fromtimestamp(snap_ts, tz=timezone.utc).isoformat()
                 return {
-                    "usdc_balance": float(data.get("usdc_balance", 0)),
+                    "usdc_balance": usdc,
+                    "matic_balance": matic,
                     "position_value": float(data.get("position_value", 0)),
                     "active_value": float(data.get("active_value", 0)),
                     "redeemable_value": float(data.get("redeemable_value", 0)),
-                    "redeemable_count": int(data.get("redeemable_count", 0)),
+                    "redeemable_count": redeemed,
+                    "pending_count": pending,
                     "lost_count": int(data.get("lost_count", 0)),
                     "dust_count": int(data.get("dust_count", 0)),
                     "daily_pnl": float(data.get("daily_pnl", 0)),
                     "weekly_pnl": float(data.get("weekly_pnl", 0)),
+                    "snapshot_age": snap_ts,
+                    "source": "bot_status",
+                    "source_type": "real",
                 }
             except (TypeError, ValueError):
                 pass
@@ -739,41 +758,52 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         except Exception as exc:
             return {"error": str(exc)[:200]}
 
+    # Noise event types that don't represent human-relevant activity
+    _ACTIVITY_NOISE_TYPES = frozenset({
+        "health.checked", "health.check",
+        "jobs.synced",     # D-Tools automation ticks
+        "heartbeat",       # bot keepalive pings
+        "tick",            # generic strategy ticks
+    })
+
+    def _is_activity_noise(event: dict) -> bool:
+        p = event.get("payload") or event
+        t = (p.get("type") or event.get("kind") or "").lower()
+        return t in _ACTIVITY_NOISE_TYPES
+
     @app.get("/api/activity")
-    async def api_activity():
-        """Last 50 entries from Redis events:log."""
+    async def api_activity(debug: bool = Query(False)):
+        """Last 50 entries from Redis events:log.
+
+        In normal mode (debug=false) noise events (health checks, sync ticks,
+        heartbeats) are removed before capping at 50 — so the feed shows
+        human-relevant events only. Debug mode returns the raw feed.
+        """
         r = _get_redis_sync()
+        raw: list[dict] = []
         if r is not None:
             try:
-                entries = r.lrange("events:log", 0, 49)
+                # Fetch more raw entries so filtering doesn't starve the result
+                fetch_count = 50 if debug else 200
+                entries = r.lrange("events:log", 0, fetch_count - 1)
                 if entries:
-                    result = []
                     for entry in entries:
                         try:
-                            result.append(json.loads(entry))
+                            raw.append(json.loads(entry))
                         except Exception:
-                            result.append(
-                                {
-                                    "timestamp": "",
-                                    "type": "info",
-                                    "message": str(entry),
-                                }
-                            )
-                    return result
+                            raw.append({"timestamp": "", "type": "info", "message": str(entry)})
             except Exception as exc:
                 logger.debug("activity_redis_fail error=%s", exc)
-        # Fallback: trading events sub-list
-        if r is not None:
+        if not raw and r is not None:
             try:
                 entries = r.lrange("events:trading", 0, 49)
-                if entries:
-                    return [
-                        json.loads(e) if isinstance(e, str) else e
-                        for e in entries
-                    ]
+                raw = [json.loads(e) if isinstance(e, str) else e for e in entries]
             except Exception:
                 pass
-        return []
+        if debug:
+            return raw[:50]
+        filtered = [e for e in raw if not _is_activity_noise(e)]
+        return (filtered if filtered else raw)[:50]
 
     @app.get("/api/trading")
     async def api_trading():
@@ -880,7 +910,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                 "error": "db not found",
             }
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"file://{db_path}?immutable=1", uri=True)
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM follow_ups ORDER BY last_client_ts DESC LIMIT 50"
@@ -926,20 +956,29 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
                 "error": str(exc),
             }
 
+    # Categories treated as automation noise (not human decisions)
+    _AUTOMATION_CATEGORIES = frozenset({"jobs", "sync", "heartbeat", "health"})
+
     @app.get("/api/decisions/recent")
     async def api_decisions_recent(
         hours: int = Query(48, ge=1, le=720),
         limit: int = Query(20, ge=1, le=100),
+        exclude_automation: bool = Query(True),
     ):
         """Read recent decisions from Cortex's own memory + the openclaw
-        decision_journal (read-only). Cortex entries first."""
+        decision_journal (read-only). Cortex entries first.
+
+        exclude_automation=true (default) hides category=jobs/sync/heartbeat/health
+        entries — these are D-Tools and task-runner noise, not human decisions.
+        Pass exclude_automation=false (or debug mode) to see everything.
+        """
         engine = engine_ref()
         cortex_decisions: list[dict] = []
         if engine is not None:
             try:
                 rows = engine.memory.conn.execute(
                     "SELECT * FROM decisions ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
+                    (limit * 3,),
                 ).fetchall()
                 cortex_decisions = [dict(r) for r in rows]
             except Exception:
@@ -949,21 +988,30 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         db_path = _find_db(DECISION_JOURNAL_DB_CANDIDATES)
         if db_path is not None:
             try:
-                conn = sqlite3.connect(str(db_path))
+                conn = sqlite3.connect(f"file://{db_path}?immutable=1", uri=True)
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     "SELECT * FROM decisions ORDER BY rowid DESC LIMIT ?",
-                    (limit,),
+                    (limit * 3,),
                 ).fetchall()
                 conn.close()
                 journal_decisions = [dict(r) for r in rows]
             except Exception as exc:
                 logger.debug("decisions_db_fail error=%s", exc)
 
+        if exclude_automation:
+            def _not_automation(d: dict) -> bool:
+                cat = (d.get("category") or "").lower().strip()
+                return cat not in _AUTOMATION_CATEGORIES
+            cortex_decisions = [d for d in cortex_decisions if _not_automation(d)]
+            journal_decisions = [d for d in journal_decisions if _not_automation(d)]
+
         return {
             "cortex": cortex_decisions[:limit],
             "journal": journal_decisions[:limit],
             "hours": hours,
+            "exclude_automation": exclude_automation,
+            "automation_note": "Pass exclude_automation=false to see D-Tools/sync entries" if exclude_automation else None,
         }
 
     @app.get("/api/events-log")
@@ -1128,7 +1176,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         if db_path is None:
             return {"items": [], "count": 0, "total": 0, "error": "db not found"}
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"file://{db_path}?immutable=1", uri=True)
             conn.row_factory = sqlite3.Row
 
             where_clauses: list[str] = []
@@ -1184,7 +1232,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         if db_path is None:
             return {"transcripts": [], "total": 0, "error": "db not found"}
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"file://{db_path}?immutable=1", uri=True)
             conn.row_factory = sqlite3.Row
             if author:
                 rows = conn.execute(
@@ -1218,7 +1266,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
 
         # Fetch queue row
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"file://{db_path}?immutable=1", uri=True)
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM x_intake_queue WHERE id = ?", (item_id,)
@@ -1308,7 +1356,7 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
         if db_path is None:
             return []
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(f"file://{db_path}?immutable=1", uri=True)
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT id, original_name, source_date, status, summary, "

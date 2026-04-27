@@ -831,3 +831,110 @@ def test_dashboard_js_followups_uses_source_banner():
     assert "broken" in followups_fn, (
         "renderFollowups must classify DB unavailability as 'broken'"
     )
+
+
+# ---------------------------------------------------------------------------
+# Broken sources fix — follow-ups, wallet, decisions/activity noise
+# ---------------------------------------------------------------------------
+
+def test_followups_db_uses_immutable_mode():
+    """follow_ups DB must be opened with immutable=1 URI to work on read-only mounts."""
+    py = (REPO_ROOT / "cortex" / "dashboard.py").read_text()
+    followups_start = py.find("async def api_followups(")
+    followups_end   = py.find("\n    @app.", followups_start + 1)
+    followups_fn    = py[followups_start:followups_end]
+    assert "immutable=1" in followups_fn, (
+        "api_followups must open DB with immutable=1 URI (read-only mount workaround)"
+    )
+    assert "uri=True" in followups_fn, (
+        "api_followups must pass uri=True to sqlite3.connect"
+    )
+
+
+def test_wallet_reads_usdc_from_bot_status():
+    """api_wallet must read USDC from strategies.redeemer.usdc_balance in bot status."""
+    py = (REPO_ROOT / "cortex" / "dashboard.py").read_text()
+    wallet_start = py.find("async def api_wallet(")
+    wallet_end   = py.find("\n    @app.", wallet_start + 1)
+    wallet_fn    = py[wallet_start:wallet_end]
+    assert "redeemer" in wallet_fn, (
+        "api_wallet must check strategies.redeemer for USDC balance"
+    )
+    assert "usdc_balance" in wallet_fn and "source_type" in wallet_fn, (
+        "api_wallet must return source_type field for truth layer classification"
+    )
+    assert "matic_balance" in wallet_fn, (
+        "api_wallet must expose matic_balance from redeemer section"
+    )
+
+
+def test_wallet_js_shows_matic_balance():
+    """renderWallet must show MATIC/POL gas balance when non-zero."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    wallet_start = js.find("function renderWallet(")
+    wallet_end   = js.find("\n  function ", wallet_start + 1)
+    wallet_fn    = js[wallet_start:wallet_end]
+    assert "matic_balance" in wallet_fn or "matic" in wallet_fn.lower(), (
+        "renderWallet must expose MATIC/POL gas balance"
+    )
+
+
+def test_decisions_endpoint_has_exclude_automation_param():
+    """api_decisions_recent must support exclude_automation query param."""
+    py = (REPO_ROOT / "cortex" / "dashboard.py").read_text()
+    decisions_start = py.find("async def api_decisions_recent(")
+    decisions_end   = py.find("\n    @app.", decisions_start + 1)
+    decisions_fn    = py[decisions_start:decisions_end]
+    assert "exclude_automation" in decisions_fn, (
+        "api_decisions_recent must accept exclude_automation query param"
+    )
+    assert "_AUTOMATION_CATEGORIES" in py or "automation_categories" in py.lower(), (
+        "dashboard.py must define automation category filter set"
+    )
+
+
+def test_activity_endpoint_has_debug_param():
+    """api_activity must support debug query param for noise filtering."""
+    py = (REPO_ROOT / "cortex" / "dashboard.py").read_text()
+    activity_start = py.find("async def api_activity(")
+    activity_end   = py.find("\n    @app.", activity_start + 1)
+    activity_fn    = py[activity_start:activity_end]
+    assert "debug" in activity_fn, (
+        "api_activity must accept debug query param"
+    )
+    assert "_ACTIVITY_NOISE_TYPES" in py or "noise_types" in py.lower(), (
+        "dashboard.py must define activity noise type filter set"
+    )
+
+
+def test_activity_noise_filter_covers_jobs_synced():
+    """Activity noise filter must include jobs.synced (D-Tools automation events)."""
+    py = (REPO_ROOT / "cortex" / "dashboard.py").read_text()
+    assert "jobs.synced" in py, (
+        "dashboard.py must filter jobs.synced events in activity feed"
+    )
+    assert "heartbeat" in py, (
+        "dashboard.py must filter heartbeat events in activity feed"
+    )
+
+
+def test_dashboard_js_activity_filters_jobs_synced():
+    """renderActivity JS must filter jobs.synced events (D-Tools noise) in normal mode."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    activity_start = js.find("function renderActivity(")
+    activity_end   = js.find("\n  function ", activity_start + 1)
+    activity_fn    = js[activity_start:activity_end]
+    assert "jobs.synced" in activity_fn, (
+        "renderActivity must filter jobs.synced noise events in normal mode"
+    )
+
+
+def test_dashboard_js_debug_mode_uses_raw_endpoints():
+    """In debug mode, dashboard.js must request unfiltered data from server."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "debug=true" in js or "debug=True" in js, (
+        "dashboard.js must pass debug=true to activity endpoint in debug mode"
+    )
+    assert "exclude_automation=false" in js, (
+        "dashboard.js must pass exclude_automation=false in debug mode"
+    )
