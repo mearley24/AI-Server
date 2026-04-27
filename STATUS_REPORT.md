@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### P3 (fix): Observer-only enforced — copytrade_copy_attempt/crypto_paper_order/trade_recorded eliminated — 20260427T184500Z
+
+Root causes: (1) polymarket-bot container was running a stale image built before the observer-only gate code was committed, so the gate code wasn't active; (2) Kraken/Avellaneda market maker was not gated by observer_only — it started whenever KRAKEN_API_KEY was present regardless of POLY_OBSERVER_ONLY, producing `crypto_paper_order` and `trade_recorded` events; (3) POLY_OBSERVER_ONLY was absent from the container's env (container pre-dated the docker-compose env var addition). Fixes: (1) rebuilt Docker image with `DOCKER_BUILDKIT=0` (legacy builder, no keychain auth needed); (2) added `if settings.observer_only:` guard in `src/main.py` before Kraken strategy init — logs `observer_only_skip path=kraken_market_maker` and skips start; (3) recreated container so POLY_OBSERVER_ONLY=true is now in container env. Verified: only `observer_only_skip` in logs, zero `copytrade_copy_attempt`, zero `crypto_paper_order`, zero `trade_recorded`. Tests: 13 total (12 strategy gates + 1 ops/tests delegation), all pass.
+
+
 ### P3: Polymarket observer-only mode added — 20260427T174000Z
 
 Added `POLY_OBSERVER_ONLY=true` mode (default: true). When active, all four order-placement paths in PolymarketCopyTrader log `observer_only_skip` and return without placing any order — neither paper nor live. Gates: `_copy_trade()` (before `copytrade_copy_attempt`), `_check_whale_signals()` tiers 2-4 (after category/bankroll checks, before order build), `_execute_reentry()` (before `copytrade_reentry_attempt`), `_exit_position()` (after position lookup). Tier 1 whale watch signals are exempt — they already place no orders. `get_status()` exposes `observer_only` flag. `Settings.observer_only` reads `POLY_OBSERVER_ONLY` env var via `validation_alias`. Docker-compose defaults added. Tests: 12 new tests in `polymarket-bot/tests/test_observer_only.py` — all pass.
@@ -4683,3 +4688,11 @@ inbox processed: 46, cards: 10 (0 auto-run / 0 needs-Matt / 0 deferred / 0 exter
 - 20260427T160304Z-imessage-x-com-juliangoldieseo-status-2048722091323879854-card.md - needs fetch - X.com URL content extraction automation pattern
 - 20260427T160304Z-imessage-x-com-leopardracer-status-2048499773494161700-card.md - needs fetch - X.com URL content extraction automation pattern
 
+
+
+
+### Self-improvement loop — 20260427T163818Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 46 inbox items had already been processed with existing archive copies and cards. No new processing required.

@@ -459,7 +459,9 @@ async def lifespan(app: FastAPI):
 
     # ── Kraken Avellaneda Market Maker ─────────────────────────────────
     kraken_strategy = None
-    if os.environ.get("KRAKEN_API_KEY"):
+    if settings.observer_only:
+        log.info("observer_only_skip", path="kraken_market_maker", reason="observer_only=true")
+    elif os.environ.get("KRAKEN_API_KEY"):
         try:
             from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
             from src.platforms.crypto_client import CryptoClient
