@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### P0: Avellaneda active path blocked in simulation mode — 20260427T173617Z
+
+Root cause: `CryptoClient.place_order()` guard (prior commit) returns `{"status":"disabled"}` but `AvellanedaMarketMaker._place_quote()` continued past it into the dry-run PnL block (`if self._client.is_dry_run:`) — emitting `trade_recorded strategy=avellaneda` regardless. Separately, the `main.py` Kraken init gate from the simulation-only commit was present in source but the running container used the OLD `ai-server-polymarket-bot:latest` image (not the manually-tagged `polymarket-bot:latest` I had built). Docker compose uses its own image name. Three layers of fix now in place: (1) `main.py` init gate — `AvellanedaMarketMaker` never instantiated when `simulation_only=true` and both guards off (logs `crypto_disabled_skip path=kraken_market_maker`); (2) `_run_loop()` guard — every loop iteration checks `_crypto_trading_enabled()`, logs `crypto_disabled_skip strategy=avellaneda path=_run_loop`, sleeps, continues — `_tick()` never called; (3) `_place_quote()` guard — belt-and-suspenders before `place_order()` and `pnl.record_trade()` — logs `crypto_disabled_skip strategy=avellaneda path=_place_quote`. Container rebuilt as `ai-server-polymarket-bot:latest` and recreated. Verified in 60s simulation-only run: `simulation_only_started` ✓, `crypto_disabled_skip path=kraken_market_maker` ✓, no `avellaneda_mm_started`, no `crypto_paper_order`, no `trade_recorded`. Bot restored to observer-only. Tests: 11 new integration tests (test_avellaneda_simulation_guard.py) all pass.
+
+
 ### Polymarket simulation-only mode — 20260427T174500Z
 
 Added `POLY_SIMULATION_ONLY=true` mode (third operating mode between observer-only and live). When active: (1) Polymarket paper trades are allowed through all four order paths (`_copy_trade`, `_check_whale_signals`, `_execute_reentry`, `_exit_position`); (2) Kraken/Avellaneda market maker is blocked at `main.py` init via `crypto_disabled_skip` log unless both `KRAKEN_MM_ENABLED=true` AND `CRYPTO_TRADING_ENABLED=true` are explicitly set; (3) `simulation_only_started` is logged at strategy init; (4) `polymarket_paper_order` is logged at every dry-run order placement (distinguishes Polymarket paper from crypto paper). Mode matrix: observer-only (scan only) → simulation-only (Polymarket paper) → live (POLY_ALLOW_LIVE passphrase + POLY_DRY_RUN=false). Changes: `src/config.py` (new `simulation_only` field), `src/main.py` (Kraken dual-gate: KRAKEN_MM_ENABLED + CRYPTO_TRADING_ENABLED), `strategies/polymarket_copytrade.py` (simulation_only flag + polymarket_paper_order in all 4 dry_run branches + get_status exposure), `docker-compose.yml` (3 new env vars), `.env.example` (documented). Tests: 30 new tests (18 simulation + 12 observer existing) all pass; ops/tests delegation added. `POLY_SIMULATION_ONLY` defaults to false in docker-compose — container still in observer-only mode until explicitly switched.
@@ -4706,3 +4711,10 @@ inbox processed: 46, cards: 10 (0 auto-run / 0 needs-Matt / 0 deferred / 0 exter
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 46 inbox items had already been processed with existing archive copies and cards. No new processing required.
+
+
+### Self-improvement loop — 20260427T171049Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 45 inbox items had already been processed with existing archive copies and cards. No new processing required.
