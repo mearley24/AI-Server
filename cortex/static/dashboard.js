@@ -1201,6 +1201,55 @@
     checkPortalHealth();
     loadVoiceReceptionist();
     loadXApiStatus();
+    loadXInsights();
+  }
+
+  async function loadXInsights() {
+    const data = await fetchJson('/api/x-api/insights?limit=10');
+    renderXInsights(data);
+  }
+
+  function renderXInsights(data) {
+    const host = $('x-insights-overview');
+    if (!data) { host.innerHTML = unavail(); return; }
+
+    if (data.status === 'no_db' || data.count === 0) {
+      host.innerHTML = `<div class="small" style="color:var(--muted)">
+        No insights extracted yet. Run:
+        <code>python3 scripts/x_api_extract_insights.py --apply</code>
+      </div>`;
+      return;
+    }
+
+    const topicColor = t => ({
+      smart_home: 'var(--green)', av: 'var(--gold)', ai_ml: 'var(--blue)',
+      engineering: 'var(--purple, #9b8dff)', business: 'var(--yellow)',
+    }[t] || 'var(--muted)');
+
+    const typeLabel = t => ({
+      troubleshooting_tip: '&#128736; fix', workflow_improvement: '&#9889; workflow',
+      product_idea: '&#128161; idea', general_knowledge: '&#128218; knowledge',
+    }[t] || t);
+
+    const cards = data.insights.map(i => `
+      <div style="border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+          <span style="color:${topicColor(i.topic)};font-weight:600;font-size:0.8em;text-transform:uppercase;letter-spacing:0.05em">${esc(i.topic)}</span>
+          <span class="small" style="color:var(--muted)">${typeLabel(i.insight_type)}</span>
+          <span class="small" style="color:var(--muted);margin-left:auto">score ${(i.relevance_score || 0).toFixed(2)}</span>
+        </div>
+        <div style="font-size:0.9em;margin-bottom:4px">${esc(i.summary)}</div>
+        ${i.source_url
+          ? `<a href="${esc(i.source_url)}" target="_blank" rel="noopener" class="small" style="color:var(--gold)">${esc(i.source_url.slice(0, 70))}</a>`
+          : (i.author_handle ? `<span class="small" style="color:var(--muted)">@${esc(i.author_handle)}</span>` : '')}
+      </div>`).join('');
+
+    host.innerHTML = `
+      <div class="small" style="color:var(--muted);margin-bottom:8px">${esc(data.count)} insight${data.count !== 1 ? 's' : ''} extracted from eligible items</div>
+      ${cards}
+      <div class="small" style="color:var(--muted);margin-top:4px">
+        Run: <code>python3 scripts/x_api_extract_insights.py --apply</code>
+      </div>`;
   }
 
   async function loadXApiStatus() {

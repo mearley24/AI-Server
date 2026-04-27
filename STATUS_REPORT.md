@@ -1,6 +1,35 @@
 # STATUS REPORT — Symphony AI-Server
 
-Generated: 2026-04-11 | Last updated: 2026-04-26 MDT
+Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
+
+### X Insight Extraction v1 — 20260427T010000Z
+
+Added structured insight extraction pipeline for eligible X items. `integrations/x_api/insight_extractor.py` — pure heuristic/keyword extraction (no LLM): topic detection (smart_home|av|ai_ml|engineering|business|general), insight_type classification (troubleshooting_tip|workflow_improvement|product_idea|general_knowledge), 1–2 sentence summary (max 150 chars), up to 3 key points, relevance_score (from existing work_relevance_score). `integrations/x_api/insight_models.py` — `x_insights.sqlite` schema with topic/type/score indexes. `integrations/x_api/insight_pipeline.py` — reads eligible x_items only, writes to x_insights, optionally creates self-improvement card stubs. Gate: score ≥ 0.7 AND summary ≥ 30 chars AND non-generic. Blocked/pending items never sourced. `scripts/x_api_extract_insights.py` — CLI with --dry-run/--apply/--si-cards/--limit. Cortex: `GET /api/x-api/insights` with ?topic= and ?insight_type= filters. Dashboard: "X Insights" card showing summary, topic badge, insight type, source link. 29 new tests (1117 total passing).
+
+
+### Self-improvement loop — 20260427T005331Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T001940Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 2026-04-26T23:47:52Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 2026-04-26T23:15:54Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items already processed (idempotency check). No new cards generated this run.
 
 ### X quality gate — reclassify existing + status filter fix — 20260426T235900Z
 
@@ -4381,3 +4410,34 @@ All 27 inbox items already processed (idempotency check). Items exist in both ar
 inbox processed: 1, cards: 1 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 1 needs-fetch)
 
 - 20260426T220751Z-imessage-x-com-moondevonyt-status-2048185361357234639-card.md — needs fetch — X.com URL from moondevonyt requiring content analysis
+
+### Self-improvement loop — 2026-04-27T01:28:17Z
+
+inbox processed: 20, cards: 20 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 20 needs-fetch)
+
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md — needs fetch — X.com URL from ihtesham2005 requiring content analysis
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md — needs fetch — X.com URL from jameszmsun requiring content analysis
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md — needs fetch — X.com URL from nousresearch requiring content analysis
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md — needs fetch — X.com URL from openswarm requiring content analysis
+- 20260425T183940Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md — needs fetch — X.com URL from alexfinn requiring content analysis
+- 20260425T183940Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md — needs fetch — X.com URL from hyperagentapp requiring content analysis
+- 20260425T183941Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md — needs fetch — X.com URL from aiwithyasir requiring content analysis
+- 20260425T183941Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md — needs fetch — X.com URL from divyansht91162 requiring content analysis
+- 20260425T183941Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md — needs fetch — X.com URL from heygurisingh requiring content analysis
+- 20260425T183941Z-imessage-x-com-moondevonyt-status-2047634331162800514-card.md — needs fetch — X.com URL from moondevonyt requiring content analysis
+- 20260425T183941Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md — needs fetch — X.com URL from shanerobinett requiring content analysis
+- 20260425T183941Z-imessage-x-com-sharbel-status-2047672262963171774-card.md — needs fetch — X.com URL from sharbel requiring content analysis
+- 20260425T183941Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md — needs fetch — X.com URL from sprytixl requiring content analysis
+- 20260425T183942Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md — needs fetch — X.com URL from eng-khairallah1 requiring content analysis
+- 20260425T183942Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md — needs fetch — X.com URL from juliangoldieseo requiring content analysis
+- 20260425T183942Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md — needs fetch — X.com URL from moondevonyt requiring content analysis
+- 20260425T183942Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md — needs fetch — X.com URL from rnaudbertrand requiring content analysis
+- 20260425T183942Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md — needs fetch — X.com URL from sprytixl requiring content analysis
+- 20260425T183942Z-imessage-x-com-talebm-status-2047581216178655536-card.md — needs fetch — X.com URL from talebm requiring content analysis
+- 20260425T204944Z-imessage-x-com-starmexxx-status-2047632009510481949-card.md — needs fetch — X.com URL from starmexxx requiring content analysis
+
+### Self-improvement loop — 20260427T020101Z
+
+inbox processed: 27, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox files already had matching archive copies and cards - no new processing required.

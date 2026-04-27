@@ -2938,6 +2938,85 @@ async def x_api_items(
     return {"status": "ok", "items": items, "count": len(items)}
 
 
+_X_INSIGHTS_DB_CONTAINER = Path("/data/x_api/x_insights.sqlite")
+_X_INSIGHTS_DB_HOST      = Path("/Users/bob/AI-Server/data/x_api/x_insights.sqlite")
+
+
+def _x_insights_db_path() -> Path | None:
+    if _X_INSIGHTS_DB_CONTAINER.exists():
+        return _X_INSIGHTS_DB_CONTAINER
+    if _X_INSIGHTS_DB_HOST.exists():
+        return _X_INSIGHTS_DB_HOST
+    return None
+
+
+@app.get("/api/x-api/insights", tags=["x-api"])
+async def x_api_insights(
+    limit: int = 50,
+    topic: str = "",
+    insight_type: str = "",
+) -> dict[str, Any]:
+    """Return extracted X insights from local DB.
+
+    Insights are derived from eligible x_items only — blocked/pending items
+    are never sourced here.
+
+    Query params:
+      ?limit=       max results (default 50, max 200)
+      ?topic=       filter by topic (smart_home|av|ai_ml|engineering|business|general)
+      ?insight_type= filter by type (troubleshooting_tip|workflow_improvement|
+                    product_idea|general_knowledge)
+    """
+    db_path = _x_insights_db_path()
+    if db_path is None:
+        return {"status": "no_db", "insights": [], "count": 0}
+
+    import sqlite3 as _sqlite3
+    import json as _json
+
+    try:
+        conn = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.row_factory = _sqlite3.Row
+
+        conditions: list[str] = []
+        params: list[Any] = []
+        if topic:
+            conditions.append("topic=?")
+            params.append(topic)
+        if insight_type:
+            conditions.append("insight_type=?")
+            params.append(insight_type)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(min(limit, 200))
+
+        rows = conn.execute(
+            f"SELECT * FROM x_insights {where} "
+            f"ORDER BY relevance_score DESC, extracted_at DESC LIMIT ?",
+            params,
+        ).fetchall()
+        conn.close()
+    except _sqlite3.OperationalError:
+        return {"status": "no_db", "insights": [], "count": 0}
+
+    insights = []
+    for r in rows:
+        d = dict(r)
+        insights.append({
+            "x_item_id":       d["x_item_id"],
+            "topic":           d["topic"],
+            "insight_type":    d["insight_type"],
+            "summary":         d["summary"],
+            "key_points":      _json.loads(d.get("key_points") or "[]"),
+            "relevance_score": d["relevance_score"],
+            "source_url":      d.get("source_url"),
+            "author_handle":   d.get("author_handle"),
+            "created_at":      d.get("created_at"),
+            "extracted_at":    d["extracted_at"],
+        })
+
+    return {"status": "ok", "insights": insights, "count": len(insights)}
+
+
 @app.post("/api/x-api/intake/dry-run", tags=["x-api"])
 async def x_api_intake_dry_run(body: dict[str, Any] = {}) -> dict[str, Any]:
     """Preview what a live intake run would fetch — does not call X API or write to DB.
