@@ -1,0 +1,280 @@
+==============================================================================
+AUTONOMY SWEEP — 20260427-111136
+==============================================================================
+trigger: launchd-watchpath
+host:    Bobs-Mac-mini.local
+repo:    /Users/bob/AI-Server
+python:  /opt/homebrew/opt/python@3.14/bin/python3.14
+
+=== trigger ===
+trigger file: ops/realized_changes/20260418-bootstrap.change
+---
+realized-change: bootstrap
+by:              cline-init
+at:              2026-04-18T19:05:50Z
+summary:         first sweep from autonomy bootstrap prompt
+---
+
+=== git state ===
+head:   859fbeff
+branch: main
+dirty:  144 changed files
+last 5 commits:
+  859fbeff 2026-04-27 11:10:54 -0600 ops: task-runner preflight — 1 state files synced
+  a9a65375 2026-04-27 11:09:50 -0600 ops: task-runner preflight — 1 state files synced
+  8d7446c9 2026-04-27 11:09:29 -0600 ops: task-runner preflight — 1 state files synced
+  361c7cb8 2026-04-27 11:08:27 -0600 ops: task-runner preflight — 1 state files synced
+  2fcca53e 2026-04-27 11:06:54 -0600 ops: task-runner preflight — 1 state files synced
+
+dirty files:
+  M STATUS_REPORT.md
+   M data/clawwork/data/clawwork_state.json
+   M data/clawwork/data/sector_performance.json
+   M data/cortex/reply_approvals.ndjson
+   M data/cortex/reply_receipts_dry_run.ndjson
+   M data/cortex/rule_application_log.ndjson
+   M data/notes_index.json
+   M data/task_runner/bob-watchdog-state/containers
+   M data/task_runner/bob-watchdog-state/docker
+   M data/task_runner/bob-watchdog-state/uh_openclaw
+   D data/task_runner/bob-watchdog-state/x_intake
+   M data/task_runner/bob_watchdog_heartbeat.txt
+   M data/task_runner/watchdog_heartbeat.txt
+   M docker-compose.yml
+   M ops/self_improvement/archive/20260426T133016Z-imessage-x-com-marryevan999-status-2048245933956387195.md
+   M ops/self_improvement/archive/20260426T133016Z-imessage-x-com-zabihullahatal-status-2048049033718223196.md
+   M ops/self_improvement/archive/20260426T150630Z-imessage-x-com-moondevonyt-status-2047991447752990852.md
+   M ops/self_improvement/archive/20260426T150630Z-imessage-x-com-moondevonyt-status-2048359911571296256.md
+   M ops/self_improvement/cards/20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md
+   M ops/self_improvement/cards/20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md
+   M ops/self_improvement/cards/20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md
+   M ops/self_improvement/cards/20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md
+   M ops/self_improvement/cards/20260425T183940Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md
+   M ops/self_improvement/cards/20260425T183940Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-moondevonyt-status-2047634331162800514-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-sharbel-status-2047672262963171774-card.md
+   M ops/self_improvement/cards/20260425T183941Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md
+   M ops/self_improvement/cards/20260425T183942Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md
+   M ops/self_improvement/cards/20260425T183942Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md
+   M ops/self_improvement/cards/20260425T183942Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md
+   M ops/self_improvement/cards/20260425T183942Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md
+   M ops/self_improvement/cards/20260425T183942Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md
+   M ops/self_improvement/cards/20260425T183942Z-imessage-x-com-talebm-status-2047581216178655536-card.md
+   M ops/self_improvement/cards/20260425T204944Z-imessage-x-com-starmexxx-status-2047632009510481949-card.md
+   M ops/self_improvement/cards/20260426T125645Z-imessage-x-com-alexfinn-status-2048184198016778518-card.md
+   M ops/self_improvement/cards/20260426T125645Z-imessage-x-com-retrochainer-status-2048142467929657757-card.md
+   M ops/self_improvement/cards/20260426T133016Z-imessage-x-com-marryevan999-status-2048245933956387195-card.md
+   M ops/self_improvement/cards/20260426T133016Z-imessage-x-com-zabihullahatal-status-2048049033718223196-card.md
+   M ops/self_improvement/cards/20260426T150630Z-imessage-x-com-moondevonyt-status-2047991447752990852-card.md
+   M polymarket-bot/.env.example
+   M polymarket-bot/src/config.py
+   M polymarket-bot/src/main.py
+   M polymarket-bot/strategies/polymarket_copytrade.py
+   M scripts/data/notes_index.json
+  ?? _archive/launchagents-retired-20260427/
+  ?? data/vault/
+  ?? data/x_api/
+  ?? ops/self_improvement/archive/20260426T220751Z-imessage-x-com-moondevonyt-status-2048185361357234639.md
+  ?? ops/self_improvement/archive/20260427T124833Z-imessage-x-com-juliangoldieseo-status-2048440694382145776.md
+  ?? ops/self_improvement/archive/20260427T124833Z-imessage-x-com-warrenronsiek-status-2046984811055546468.md
+  ?? ops/self_improvement/archive/20260427T132137Z-imessage-x-com-elora-khatun-status-2048251251629109429.md
+  ?? ops/self_improvement/archive/20260427T132137Z-imessage-x-com-juliangoldieseo-status-2048633237539352750.md
+  ?? ops/self_improvement/archive/20260427T132137Z-imessage-x-com-moondevonyt-status-2048723775332725228.md
+  ?? ops/self_improvement/archive/20260427T132137Z-imessage-x-com-nosp321-status-2048402613159211218.md
+  ?? ops/self_improvement/archive/20260427T132137Z-imessage-x-com-this-is-tasnim-status-2048612127192277241.md
+  ?? ops/self_improvement/archive/20260427T153049Z-imessage-x-com-0x-discover-status-2048472641481146482.md
+  ?? ops/self_improvement/archive/20260427T153049Z-imessage-x-com-moondevonyt-status-2048785006307545476.md
+  ?? ops/self_improvement/archive/20260427T153049Z-imessage-x-com-nftcps-status-2048587253145108626.md
+  ?? ops/self_improvement/archive/20260427T160303Z-imessage-x-com-alexfinn-status-2048555030857576753.md
+  ?? ops/self_improvement/archive/20260427T160303Z-imessage-x-com-andrewbolis-status-2048722603943342366.md
+  ?? ops/self_improvement/archive/20260427T160303Z-imessage-x-com-moondevonyt-status-2048786749187362881.md
+  ?? ops/self_improvement/archive/20260427T160303Z-imessage-x-com-nolimitgains-status-2048764917449208025.md
+  ?? ops/self_improvement/archive/20260427T160304Z-imessage-x-com-codi-fyy-status-2048337801188651071.md
+  ?? ops/self_improvement/archive/20260427T160304Z-imessage-x-com-datachaz-status-2048716448961290347.md
+  ?? ops/self_improvement/archive/20260427T160304Z-imessage-x-com-ericksky-status-2048535883335270627.md
+  ?? ops/self_improvement/archive/20260427T160304Z-imessage-x-com-howtoai-status-2048639272773935203.md
+  ?? ops/self_improvement/archive/20260427T160304Z-imessage-x-com-juliangoldieseo-status-2048722091323879854.md
+  ?? ops/self_improvement/archive/20260427T160304Z-imessage-x-com-leopardracer-status-2048499773494161700.md
+  ?? ops/self_improvement/cards/20260424T163001Z-imessage-x-com-jameszmsun-status-card.md
+  ?? ops/self_improvement/cards/20260424T163001Z-imessage-x-com-nousresearch-status-card.md
+  ?? ops/self_improvement/cards/20260424T163001Z-imessage-x-com-openswarm-status-card.md
+  ?? ops/self_improvement/cards/20260425T183940Z-imessage-x-com-alexfinn-status-card.md
+  ?? ops/self_improvement/cards/20260425T183940Z-imessage-x-com-hyperagentapp-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-aiwithyasir-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-divyansht91162-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-heygurisingh-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-moondevonyt-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-shanerobinett-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-sharbel-status-card.md
+  ?? ops/self_improvement/cards/20260425T183941Z-imessage-x-com-sprytixl-status-card.md
+  ?? ops/self_improvement/cards/20260425T183942Z-imessage-x-com-eng-khairallah1-status-card.md
+  ?? ops/self_improvement/cards/20260425T183942Z-imessage-x-com-juliangoldieseo-status-card.md
+  ?? ops/self_improvement/cards/20260425T183942Z-imessage-x-com-moondevonyt-status-card.md
+  ?? ops/self_improvement/cards/20260425T183942Z-imessage-x-com-rnaudbertrand-status-card.md
+  ?? ops/self_improvement/cards/20260425T183942Z-imessage-x-com-sprytixl-status-card.md
+  ?? ops/self_improvement/cards/20260425T183942Z-imessage-x-com-talebm-status-card.md
+  ?? ops/self_improvement/cards/20260425T204944Z-imessage-x-com-starmexxx-status-card.md
+  ?? ops/self_improvement/cards/20260426T220751Z-imessage-x-com-moondevonyt-status-2048185361357234639-card.md
+  ?? ops/self_improvement/cards/20260427T124833Z-imessage-x-com-juliangoldieseo-status-2048440694382145776-card.md
+  ?? ops/self_improvement/cards/20260427T124833Z-imessage-x-com-warrenronsiek-status-2046984811055546468-card.md
+  ?? ops/self_improvement/cards/20260427T132137Z-imessage-x-com-elora-khatun-status-2048251251629109429-card.md
+  ?? ops/self_improvement/cards/20260427T132137Z-imessage-x-com-juliangoldieseo-status-2048633237539352750-card.md
+  ?? ops/self_improvement/cards/20260427T132137Z-imessage-x-com-moondevonyt-status-2048723775332725228-card.md
+  ?? ops/self_improvement/cards/20260427T132137Z-imessage-x-com-nosp321-status-2048402613159211218-card.md
+  ?? ops/self_improvement/cards/20260427T132137Z-imessage-x-com-this-is-tasnim-status-2048612127192277241-card.md
+  ?? ops/self_improvement/cards/20260427T153049Z-imessage-x-com-0x-discover-status-2048472641481146482-card.md
+  ?? ops/self_improvement/cards/20260427T153049Z-imessage-x-com-moondevonyt-status-2048785006307545476-card.md
+  ?? ops/self_improvement/cards/20260427T153049Z-imessage-x-com-nftcps-status-2048587253145108626-card.md
+  ?? ops/self_improvement/cards/20260427T160303Z-imessage-x-com-alexfinn-status-2048555030857576753-card.md
+  ?? ops/self_improvement/cards/20260427T160303Z-imessage-x-com-andrewbolis-status-2048722603943342366-card.md
+  ?? ops/self_improvement/cards/20260427T160303Z-imessage-x-com-moondevonyt-status-2048786749187362881-card.md
+  ?? ops/self_improvement/cards/20260427T160303Z-imessage-x-com-nolimitgains-status-2048764917449208025-card.md
+  ?? ops/self_improvement/cards/20260427T160304Z-imessage-x-com-codi-fyy-status-2048337801188651071-card.md
+  ?? ops/self_improvement/cards/20260427T160304Z-imessage-x-com-datachaz-status-2048716448961290347-card.md
+  ?? ops/self_improvement/cards/20260427T160304Z-imessage-x-com-ericksky-status-2048535883335270627-card.md
+  ?? ops/self_improvement/cards/20260427T160304Z-imessage-x-com-howtoai-status-2048639272773935203-card.md
+  ?? ops/self_improvement/cards/20260427T160304Z-imessage-x-com-juliangoldieseo-status-2048722091323879854-card.md
+  ?? ops/self_improvement/cards/20260427T160304Z-imessage-x-com-leopardracer-status-2048499773494161700-card.md
+  ?? ops/self_improvement/cards/create_cards.sh
+  ?? ops/self_improvement/cards/ops/
+  ?? ops/self_improvement/inbox/20260426T220751Z-imessage-x-com-moondevonyt-status-2048185361357234639.md
+  ?? ops/self_improvement/inbox/20260427T124833Z-imessage-x-com-juliangoldieseo-status-2048440694382145776.md
+  ?? ops/self_improvement/inbox/20260427T124833Z-imessage-x-com-warrenronsiek-status-2046984811055546468.md
+  ?? ops/self_improvement/inbox/20260427T132137Z-imessage-x-com-elora-khatun-status-2048251251629109429.md
+  ?? ops/self_improvement/inbox/20260427T132137Z-imessage-x-com-juliangoldieseo-status-2048633237539352750.md
+  ?? ops/self_improvement/inbox/20260427T132137Z-imessage-x-com-moondevonyt-status-2048723775332725228.md
+  ?? ops/self_improvement/inbox/20260427T132137Z-imessage-x-com-nosp321-status-2048402613159211218.md
+  ?? ops/self_improvement/inbox/20260427T132137Z-imessage-x-com-this-is-tasnim-status-2048612127192277241.md
+  ?? ops/self_improvement/inbox/20260427T153049Z-imessage-x-com-0x-discover-status-2048472641481146482.md
+  ?? ops/self_improvement/inbox/20260427T153049Z-imessage-x-com-moondevonyt-status-2048785006307545476.md
+  ?? ops/self_improvement/inbox/20260427T153049Z-imessage-x-com-nftcps-status-2048587253145108626.md
+  ?? ops/self_improvement/inbox/20260427T160303Z-imessage-x-com-alexfinn-status-2048555030857576753.md
+  ?? ops/self_improvement/inbox/20260427T160303Z-imessage-x-com-andrewbolis-status-2048722603943342366.md
+  ?? ops/self_improvement/inbox/20260427T160303Z-imessage-x-com-moondevonyt-status-2048786749187362881.md
+  ?? ops/self_improvement/inbox/20260427T160303Z-imessage-x-com-nolimitgains-status-2048764917449208025.md
+  ?? ops/self_improvement/inbox/20260427T160304Z-imessage-x-com-codi-fyy-status-2048337801188651071.md
+  ?? ops/self_improvement/inbox/20260427T160304Z-imessage-x-com-datachaz-status-2048716448961290347.md
+  ?? ops/self_improvement/inbox/20260427T160304Z-imessage-x-com-ericksky-status-2048535883335270627.md
+  ?? ops/self_improvement/inbox/20260427T160304Z-imessage-x-com-howtoai-status-2048639272773935203.md
+  ?? ops/self_improvement/inbox/20260427T160304Z-imessage-x-com-juliangoldieseo-status-2048722091323879854.md
+  ?? ops/self_improvement/inbox/20260427T160304Z-imessage-x-com-leopardracer-status-2048499773494161700.md
+  ?? ops/self_improvement/ops/self_improvement/
+  ?? ops/self_improvement/ops/verification/self-improve-2026-04-26T135946Z.txt
+  ?? ops/tests/test_simulation_only.py
+  ?? ops/verification/20260427-171059-cortex-dedup-backfill.json
+  ?? ops/verification/20260427-171109-cortex-embed-backfill.json
+  ?? ops/verification/dispatch-20260427-110927-run-prompt.txt
+  ?? ops/verification/self-improve-20260427T171049Z.txt
+  ?? polymarket-bot/knowledge/log/
+  ?? polymarket-bot/tests/test_simulation_only.py
+
+=== prompt index ===
+exit=0
+wrote .cursor/prompts/INDEX.md (65 prompts)
+
+=== work queue ===
+pending    0
+completed  21
+rejected   0
+failed     0
+blocked    0
+
+=== recent verification ===
+last 8 files (of 7285):
+  2026-04-27T06:18:02       462  self-improve-20260427T121753Z.txt
+  2026-04-27T06:51:23       987  self-improve-20260427T125047Z.txt
+  2026-04-27T07:24:15      1347  self-improve-20260427T132353Z.txt
+  2026-04-27T08:28:56       414  self-improve-20260427T142848Z.txt
+  2026-04-27T10:38:39      4060  self-improve-20260427T163818Z.txt
+  2026-04-27T11:11:24      5118  self-improve-20260427T171049Z.txt
+  2026-04-27T09:00:32       550  self-improve-20260427T202155Z.txt
+  2026-04-27T00:17:33      2464  self-improve-20260427T225530Z.txt
+
+=== task runner health ===
+exit=0
+task-runner: healthy (report=/Users/bob/AI-Server/ops/verification/20260427-111137-task-runner-health.txt)
+  OK launchd.loaded: launchctl list: 86392	0	com.symphony.task-runner
+  OK heartbeat.fresh: heartbeat age=344s; content='last-heartbeat: 2026-04-27T11:05:53-06:00'
+  OK queue.not_stuck: pending=0
+  OK verification.recent: newest=20260427-171109-cortex-embed-backfill.json age=28s
+  OK preflight.seen: newest preflight=20260427-111056-preflight.txt age=41s
+  OK disk.pressure: free=61.20 GiB / total=228.3 GiB (used 73.2%) at /Users/bob/AI-Server
+
+=== status report summary ===
+exit=0
+# STATUS_REPORT summary
+
+_Generated: 2026-04-27 11:11 MDT · repo commit: `859fbeff1f7e` · STATUS_REPORT last touched: 2026-04-27_
+
+This digest is produced by `ops/status_report_summarizer.py` from `STATUS_REPORT.md`. See `ops/AGENT_VERIFICATION_PROTOCOL.md` for the tagging conventions (`[FOLLOWUP]`, `[NEEDS_MATT]`).
+
+## Headline
+
+- **Open items:** 11 across 3 actionable sections
+- **Follow-ups:** 9
+- **Needs Matt:** 1
+- **Completed (in Done section):** 24
+
+## What changed since last summary
+
+_No prior snapshot or no detectable changes._
+
+## Current open items by category
+
+### Now (1)
+
+- 🧑 [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategie…
+
+### Next (1)
+
+- **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot…
+
+### Later (9)
+
+- 🔁 **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- 🔁 **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- 🔁 **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- 🔁 **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- 🔁 **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- 🔁 **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- 🔁 **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- 🔁 **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- 🔁 **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Follow-ups
+
+- _Later_: **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compo…
+- _Later_: **pull.sh hardening** — current `scripts/pull.sh` is 50 lines (stash + pull + conflict scan). Target ~90 lines: add `py_compile` check per service dir, `--verify` flag for smoke t…
+- _Later_: **Dropbox link validator** — lesson #4 (links must use `scl/fi/` not `/preview/`) has no automated validator; still "unknown" from the April 4 audit.
+- _Later_: **Sell haircut rounding** — lesson #17 (exit loops from rounding) is unverified in `polymarket-bot`. Check and confirm or fix.
+- _Later_: **imessage-server `_re` NameError** — `scripts/imessage-server.py::handle_reset_command` references `_re` which is not defined at module level (only `_idea_re = re` is). Low sever…
+- _Later_: **Supabase cleanup (AI-Server)** — env vars `SUPABASE_*` exist in `.env` but zero Docker services use them; `integrations/supabase/` is an empty shell. Safe to remove vars and uni…
+- _Later_: **Supabase → Bob migration (symphonysh)** — contact form, appointment booking, confirmation emails, and Matterport upload all depend on Supabase. Not urgent while the free tier co…
+- _Later_: **Kalshi live mode** — `KALSHI_DRY_RUN=true` / `KALSHI_ENVIRONMENT=demo`. Set to production once API key is verified. See §Z9.
+- _Later_: **Vite/esbuild upgrade (symphonysh)** — `npm audit` reports 2 moderate findings (esbuild ≤0.24.2 via vite ≤6.4.1); dev-server only, not in production build. Requires `vite@8` upgr…
+
+## Needs Matt
+
+_Items that require Matt's real-world decision or input._
+
+- _Now_: [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_bankroll`. No code chan…
+
+## Top 3 next actions
+
+1. _Now_ (🧑 needs Matt): [NEEDS_MATT] **Fund Polymarket wallet** — deposit $50+ USDC to `0xa791E3090312981A1E18ed93238e480a03E7C0d2` on Polygon. Wallet holds $4.56 USDC.e (as of 2026-04-17); all strategies skip with `low_ban…
+2. _Next_: **Verify Prompt I runtime** — all code changes for redeem-cleanup are confirmed present; what's unverified is runtime execution. Run `docker compose logs --tail=100 polymarket-bot 2>&1 | grep redeeme…
+3. _Later_ (🔁 follow-up): **client-portal `/health` endpoint** — container reports unhealthy because `client-portal/main.py` has no `GET /health` route. Add one returning `{"status":"ok"}` to fix the compose healthcheck. See…
+
+## Reference sections (historical)
+
+STATUS_REPORT.md contains 20 reference sections (detailed incident reports / historical snapshots). They are not enumerated here; run `grep '^## Reference' STATUS_REPORT.md` to list them.
+
+---
+
+_Produced by `ops/status_report_summarizer.py`. Snapshot written to `data/status_report_summarizer/last_snapshot.json`; next run will diff against it._
+
+### sweep finished 2026-04-27T11:11:37-06:00 ok=True
