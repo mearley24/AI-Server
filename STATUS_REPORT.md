@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### P2: EIP-712 signing fixed — orders can now be generated correctly — 20260427T160000Z
+
+Fixed two bugs in polymarket-bot/src/signer.py: (1) `int(token_id)` used base-10, crashing with `ValueError` on any `0x`-prefixed hex token ID — fixed with `_token_id_to_int()` that handles both decimal and hex strings; (2) `encode_typed_data(structured)` passed the full EIP-712 message dict as the `domain_data` positional arg (eth_account ≥0.9 API), causing "Invalid domain key: types" — fixed by using `encode_typed_data(full_message=structured)` keyword argument. Signed order generation now works for both decimal and hex token IDs, both normal and neg_risk markets. Signature recovery verified correct. Tests: 34 new tests in polymarket-bot/tests/test_signer.py — all pass. Previously failing test_client.py::test_place_order now passes. POLY_DRY_RUN unchanged (still true). No real orders placed. SAFE TO FUND: NO — ≥48h paper trading validation still required before any deposit.
+
+
 ### P1: Polymarket sandbox bypass fixed in all strategies — 20260427T153448Z
 
 All 4 strategies that previously bypassed the ExecutionSandbox now route every order through a single guarded execution path. Changes: (1) BaseStrategy gained `_sandbox` field, `set_sandbox()`, `_place_market_order()` helper, and sandbox checks in `_place_limit_order()`; (2) stink_bid `_exit_position()` → `_place_market_order()`; (3) flash_crash `_execute_crash_buy()` and `_exit_position()` → `_place_market_order()`; (4) presolution_scalp `_enter_position()` → `_place_market_order()`; (5) sports_arb `_execute_arb()` — manual sandbox pre-check for both legs before concurrent orders, record_trade after success; (6) main.py wires `set_sandbox(sandbox)` to all 4 strategies. signer.py NOT modified. Kill switch, max single trade, daily volume ceiling, rate limiter, dry_run gate now uniform across all strategies. Tests: 20 unit tests in polymarket-bot/tests/test_sandbox_bypass_fixed.py + 8 in ops/tests/test_sandbox_bypass_fixed.py (all pass). Verification: ops/verification/20260427-153448-polymarket-sandbox-bypass-fixed.md. SAFE TO FUND: NO — signer.py EIP-712 fix and ≥48h paper trading still required.

@@ -6,10 +6,7 @@ import time
 from typing import Any
 
 from eth_account import Account
-try:
-    from eth_account.messages import encode_structured_data
-except ImportError:
-    from eth_account.messages import encode_typed_data as encode_structured_data
+from eth_account.messages import encode_typed_data
 
 # Polymarket CLOB exchange contract on Polygon
 EXCHANGE_ADDRESS = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"
@@ -74,6 +71,19 @@ def _to_wei(amount: float, decimals: int = 6) -> int:
     return int(amount * (10**decimals))
 
 
+def _token_id_to_int(token_id: str) -> int:
+    """Convert a Polymarket token_id string to int.
+
+    Token IDs from the CLOB API arrive as large decimal strings.
+    Some API responses (or blockchain event logs) may use 0x-prefixed hex.
+    Both formats are normalised here before being placed in the EIP-712 struct.
+    """
+    s = str(token_id).strip()
+    if s.startswith(("0x", "0X")):
+        return int(s, 16)
+    return int(s)
+
+
 class OrderSigner:
     """Signs Polymarket CLOB orders using EIP-712."""
 
@@ -114,7 +124,7 @@ class OrderSigner:
             "maker": self.address,
             "signer": self.address,
             "taker": taker,
-            "tokenId": int(token_id),
+            "tokenId": _token_id_to_int(token_id),
             "makerAmount": maker_amount,
             "takerAmount": taker_amount,
             "expiration": expiration,
@@ -133,7 +143,9 @@ class OrderSigner:
             "domain": domain,
             "message": order,
         }
-        encoded = encode_structured_data(structured)
+        # eth_account >= 0.9 requires full_message= keyword; positional passes
+        # the dict as domain_data, causing "Invalid domain key: types".
+        encoded = encode_typed_data(full_message=structured)
         signed = self._account.sign_message(encoded)
         return signed.signature.hex()
 
