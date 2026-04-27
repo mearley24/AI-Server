@@ -1,0 +1,57 @@
+=== task-runner health check ===
+started_at: 2026-04-27T09:55:19-06:00
+finished_at: 2026-04-27T09:55:20-06:00
+overall_ok: True
+
+checks:
+  [OK ] launchd.loaded: launchctl list: -	0	com.symphony.task-runner
+  [OK ] heartbeat.fresh: heartbeat age=114s; content='last-heartbeat: 2026-04-27T09:53:26-06:00'
+  [OK ] queue.not_stuck: pending=0
+  [OK ] verification.recent: newest=20260427-095511-preflight.txt age=8s
+  [OK ] preflight.seen: newest preflight=20260427-095511-preflight.txt age=8s
+  [OK ] disk.pressure: free=62.14 GiB / total=228.3 GiB (used 72.8%) at /Users/bob/AI-Server
+
+--- environment ---
+LAUNCHD_LABEL: com.symphony.task-runner
+HEARTBEAT_PATH: /Users/bob/AI-Server/data/task_runner/heartbeat.txt
+PENDING_DIR: /Users/bob/AI-Server/ops/work_queue/pending
+VERIFICATION_DIR: /Users/bob/AI-Server/ops/verification
+
+--- structured result (JSON) ---
+{
+  "checks": [
+    {
+      "detail": "launchctl list: -\t0\tcom.symphony.task-runner",
+      "name": "launchd.loaded",
+      "ok": true
+    },
+    {
+      "detail": "heartbeat age=114s; content='last-heartbeat: 2026-04-27T09:53:26-06:00'",
+      "name": "heartbeat.fresh",
+      "ok": true
+    },
+    {
+      "detail": "pending=0",
+      "name": "queue.not_stuck",
+      "ok": true
+    },
+    {
+      "detail": "newest=20260427-095511-preflight.txt age=8s",
+      "name": "verification.recent",
+      "ok": true
+    },
+    {
+      "detail": "newest preflight=20260427-095511-preflight.txt age=8s",
+      "name": "preflight.seen",
+      "ok": true
+    },
+    {
+      "detail": "free=62.14 GiB / total=228.3 GiB (used 72.8%) at /Users/bob/AI-Server",
+      "name": "disk.pressure",
+      "ok": true
+    }
+  ],
+  "finished_at": "2026-04-27T09:55:20-06:00",
+  "ok": true,
+  "started_at": "2026-04-27T09:55:19-06:00"
+}
