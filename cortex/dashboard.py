@@ -1526,6 +1526,96 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             "rules": len(rules),
         }
 
+    # ── Dashboard audit summary ─────────────────────────────────────────
+    @app.get("/api/dashboard/audit-summary", tags=["dashboard"])
+    async def api_dashboard_audit_summary():
+        """Structured audit health summary for the Cortex dashboard.
+
+        Returns a stable shape describing which sections are live, stale,
+        failing, or debug-only so automated monitoring can track dashboard
+        health without re-running a full endpoint sweep.
+
+        Generated from the 2026-04-27 full audit
+        (ops/verification/20260427T180800Z-cortex-dashboard-audit.md).
+        """
+        return {
+            "as_of": "2026-04-27T18:08:00Z",
+            "live_sections": [
+                "polymarket_exposure",
+                "x_intake",
+                "self_improvement",
+                "client_intel",
+                "services",
+                "tools_registry",
+                "process_backlog",
+                "pnl_summary",
+            ],
+            "failing_sections": [
+                {
+                    "section": "wallet",
+                    "endpoint": "/api/wallet",
+                    "reason": "portfolio:snapshot Redis key not pushed by bot; falls back to Polymarket data API (position_value only, usdc_balance=0)",
+                    "priority": "P1",
+                },
+                {
+                    "section": "pnl_series",
+                    "endpoint": "/api/pnl-series",
+                    "reason": "portfolio:pnl_series Redis key never populated",
+                    "priority": "P1",
+                },
+                {
+                    "section": "trading_intel",
+                    "endpoint": "/api/trading/intel",
+                    "reason": "X-intel not actively scoring; all zeros returned",
+                    "priority": "P2",
+                },
+            ],
+            "stale_sections": [
+                {
+                    "section": "decisions",
+                    "endpoint": "/api/decisions/recent",
+                    "reason": "journal dominated by D-Tools automation entries, not human decisions",
+                    "priority": "P1",
+                },
+                {
+                    "section": "watchdog",
+                    "endpoint": "/api/watchdog/status",
+                    "reason": "state=degraded for recovery events that fired within 1h window; all containers actually healthy",
+                    "priority": "P1",
+                },
+                {
+                    "section": "meetings",
+                    "endpoint": "/api/meetings/recent",
+                    "reason": "rows have 2024 source_dates and empty summaries",
+                    "priority": "P2",
+                },
+                {
+                    "section": "activity",
+                    "endpoint": "/api/activity",
+                    "reason": "feed dominated by health.checked system noise",
+                    "priority": "P2",
+                },
+            ],
+            "debug_only_sections": [
+                {
+                    "section": "vault",
+                    "endpoint": "/api/vault/secrets",
+                    "reason": "TEST_VAULT_SECRET synthetic entry was visible in production; now hidden behind CORTEX_DEBUG=true",
+                    "fix_applied": True,
+                },
+            ],
+            "planned_sections": [
+                {
+                    "section": "voice_receptionist",
+                    "endpoint": "/api/symphony/voice-receptionist",
+                    "reason": "recent_calls/missed_calls/voicemails always empty — Twilio ingestion not yet wired to Cortex",
+                    "priority": "P3",
+                },
+            ],
+            "recommendation_count": 6,
+            "fixes_applied_count": 1,
+        }
+
 
 # ── Intel Briefing proxy ──────────────────────────────────────────────────────
 

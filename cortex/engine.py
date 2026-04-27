@@ -3099,6 +3099,7 @@ async def vault_secrets(category: str = "") -> dict[str, Any]:
             "secrets": [],
             "warning": "Vault DB not found. Run: python3 scripts/vault_set_secret.py --init",
         }
+    _debug = os.environ.get("CORTEX_DEBUG", "").lower() in {"1", "true", "yes"}
     try:
         query = (
             "SELECT name, category, sha256_fingerprint, access_policy, "
@@ -3114,6 +3115,10 @@ async def vault_secrets(category: str = "") -> dict[str, Any]:
         secrets = [dict(r) for r in rows]
     finally:
         conn.close()
+
+    # Hide synthetic test entries in production; visible only with CORTEX_DEBUG=true.
+    if not _debug:
+        secrets = [s for s in secrets if not s.get("name", "").upper().startswith("TEST_")]
 
     return {
         "status":  "ok",

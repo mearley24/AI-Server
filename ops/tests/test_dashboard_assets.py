@@ -307,3 +307,91 @@ def test_api_voice_receptionist_returns_planned_contract():
     assert {
         "send_text", "send_email", "create_intake", "escalate_to_matt",
     }.issubset(actions)
+
+
+# ── Dashboard audit-summary endpoint ────────────────────────────────────────
+
+
+def test_api_dashboard_audit_summary_shape():
+    """GET /api/dashboard/audit-summary returns required top-level keys."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/api/dashboard/audit-summary")
+    assert r.status_code == 200
+    data = r.json()
+    required_keys = {
+        "as_of", "live_sections", "failing_sections", "stale_sections",
+        "debug_only_sections", "planned_sections",
+        "recommendation_count", "fixes_applied_count",
+    }
+    assert required_keys.issubset(data.keys()), (
+        f"missing keys: {required_keys - set(data.keys())}"
+    )
+
+
+def test_api_dashboard_audit_summary_live_sections_nonempty():
+    """live_sections must be a non-empty list."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/audit-summary").json()
+    assert isinstance(data["live_sections"], list)
+    assert len(data["live_sections"]) > 0
+
+
+def test_api_dashboard_audit_summary_failing_sections_have_priority():
+    """Each failing_section entry has section, endpoint, reason, and priority."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/audit-summary").json()
+    for entry in data.get("failing_sections", []):
+        assert "section" in entry
+        assert "endpoint" in entry
+        assert "reason" in entry
+        assert "priority" in entry
+
+
+def test_api_dashboard_audit_summary_vault_fix_applied():
+    """debug_only_sections must include vault with fix_applied=True."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/audit-summary").json()
+    debug_sections = data.get("debug_only_sections", [])
+    vault_entry = next((s for s in debug_sections if s.get("section") == "vault"), None)
+    assert vault_entry is not None, "vault must appear in debug_only_sections"
+    assert vault_entry.get("fix_applied") is True
+
+
+def test_api_dashboard_audit_summary_counts_are_ints():
+    """recommendation_count and fixes_applied_count must be non-negative ints."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/audit-summary").json()
+    assert isinstance(data["recommendation_count"], int)
+    assert isinstance(data["fixes_applied_count"], int)
+    assert data["recommendation_count"] >= 0
+    assert data["fixes_applied_count"] >= 0
