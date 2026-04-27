@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-27T14:17:36.253928+00:00",
+  "db": "/private/var/folders/rs/3nm851213dl098h3f0hrm3bm0000gn/T/pytest-of-bob/pytest-118/test_backfill_apply_populates_0/brain.db",
+  "model": "null-v1",
+  "total": 10,
+  "already_done": 0,
+  "missing": 10,
+  "written": 10,
+  "failed": 0,
+  "dry_run": false
+}
