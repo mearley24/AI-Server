@@ -32,6 +32,45 @@
            d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
+  // ── Freshness system ──────────────────────────────────────────────────────
+
+  const _FRESH_ACTIVE_SECS = 3_600;          // < 1 h  → LIVE
+  const _FRESH_RECENT_SECS = 86_400;         // < 24 h → RECENT
+  const _FRESH_STALE_SECS  = 7 * 86_400;    // < 7 d  → STALE (else ARCHIVE)
+
+  // Age of a timestamp in seconds (ISO string or unix seconds int)
+  function ageSeconds(ts) {
+    if (ts == null || ts === '') return Infinity;
+    const t = typeof ts === 'number' ? ts * 1000 : new Date(ts).getTime();
+    return isNaN(t) ? Infinity : Math.max(0, (Date.now() - t) / 1000);
+  }
+
+  // 'active' | 'recent' | 'stale' | 'archive'
+  function freshnessTier(ts) {
+    const s = ageSeconds(ts);
+    if (s < _FRESH_ACTIVE_SECS) return 'active';
+    if (s < _FRESH_RECENT_SECS) return 'recent';
+    if (s < _FRESH_STALE_SECS)  return 'stale';
+    return 'archive';
+  }
+
+  // Inline card-badge for a freshness tier
+  function freshnessTag(ts) {
+    const tier  = freshnessTier(ts);
+    const cls   = { active: 'badge-live', recent: 'badge-stale', stale: 'badge-debug', archive: 'badge-debug' }[tier];
+    const label = { active: 'LIVE', recent: 'RECENT', stale: 'STALE', archive: 'ARCHIVE' }[tier];
+    return `<span class="card-badge ${cls}" style="font-size:8px;padding:0 4px;vertical-align:middle;">${label}</span>`;
+  }
+
+  // Consistent "nothing to show" empty state (green = system healthy, not broken)
+  function emptyState(msg = 'No active items — system is clean') {
+    return `<div style="color:var(--green);font-size:12px;padding:4px 0;">${esc(msg)}</div>`;
+  }
+
+  // Global debug mode — disables all freshness pruning.
+  // Seeded from URL (?debug=1) immediately; overwritten by /api/dashboard/config on first refresh.
+  let _debugMode = /[?&]debug=1/.test(window.location.search);
+
   async function fetchJson(url) {
     try {
       const r = await fetch(url, { cache: 'no-store' });
@@ -262,9 +301,12 @@
 
     const degraded = data.degraded_count || 0;
     const services = data.services || [];
-    const updatedAt = data.updated_at ? ' · updated ' + timeAgo(data.updated_at) : '';
+    const wdAge    = data.updated_at;
+    const wdStale  = ageSeconds(wdAge) > _FRESH_ACTIVE_SECS && !_debugMode;
+    const updatedAt = wdAge ? ' · updated ' + timeAgo(wdAge) : '';
+    const staleBadge = wdStale ? freshnessTag(wdAge) : '';
 
-    // Header banner — show degraded service names
+    // Header banner — show degraded service names (always, even if watchdog data is stale)
     if (degraded > 0) {
       const degradedSvcs = services.filter(s => s.state === 'degraded');
       const names = degradedSvcs.map(s => s.name).join(', ');
@@ -277,21 +319,22 @@
     // Overview card
     if (!services.length) {
       const warn = data.warning ? `<div class="small" style="color:var(--muted);margin-top:4px">${esc(data.warning)}</div>` : '';
-      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear</div>${warn}`;
+      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear${updatedAt}</div>${staleBadge}${warn}`;
       return;
     }
 
     const degradedSvcs = services.filter(s => s.state === 'degraded');
-    const okSvcs       = services.filter(s => s.state === 'ok');
+    // In normal mode: hide resolved (ok) services whose state has been ok for >1h
+    const okSvcs = services.filter(s => s.state === 'ok');
 
     if (degraded === 0) {
-      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear &mdash; ${services.length} service${services.length !== 1 ? 's' : ''} monitored${updatedAt}</div>`;
+      host.innerHTML = `<div class="small" style="color:var(--green)">&#10003; all clear &mdash; ${services.length} service${services.length !== 1 ? 's' : ''} monitored${updatedAt} ${staleBadge}</div>`;
       return;
     }
 
     const cards = degradedSvcs.map(_wdDegradedCard).join('');
     const okLine = okSvcs.length
-      ? `<div class="small" style="color:var(--muted);margin-top:8px">${okSvcs.length} service${okSvcs.length !== 1 ? 's' : ''} ok${updatedAt}</div>`
+      ? `<div class="small" style="color:var(--muted);margin-top:8px">${okSvcs.length} service${okSvcs.length !== 1 ? 's' : ''} ok${updatedAt} ${staleBadge}</div>`
       : '';
 
     host.innerHTML = cards + okLine;
@@ -433,9 +476,10 @@
   function renderWallet(data) {
     const host = $('wallet');
     if (!data || data.error) { host.innerHTML = unavail(data?.error || 'unavailable'); return; }
-    const usdc   = Number(data.usdc_balance || 0);
-    const active = Number(data.active_value || data.position_value || 0);
+    const usdc    = Number(data.usdc_balance || 0);
+    const active  = Number(data.active_value || data.position_value || 0);
     const snapAge = data.snapshot_age ? 'updated ' + timeAgo(data.snapshot_age) : 'live';
+    const ftag    = data.snapshot_age ? freshnessTag(data.snapshot_age) : '';
     host.innerHTML = `
       <div class="stat-big">${fmtUsd(usdc + active)}</div>
       <div class="stat-label">account value</div>
@@ -443,7 +487,7 @@
         <div><div class="small">USDC</div><div class="mono">${fmtUsd(usdc)}</div></div>
         <div><div class="small">Open</div><div class="mono">${fmtUsd(active)}</div></div>
       </div>
-      <div class="small" style="margin-top:6px">${esc(snapAge)}</div>`;
+      <div class="small" style="margin-top:6px">${esc(snapAge)} ${ftag}</div>`;
   }
 
   function renderPositions(data) {
@@ -481,13 +525,17 @@
 
   function renderActivity(data) {
     const host = $('activity');
-    if (!Array.isArray(data) || !data.length) { host.innerHTML = unavail('no events'); return; }
-    const items = data.slice(0, 5).map((e) => {
-      const p = e.payload || e;
-      const t = p.type || e.channel || 'event';
+    if (!Array.isArray(data) || !data.length) {
+      host.innerHTML = emptyState('No recent activity — system is quiet');
+      return;
+    }
+    const items = data.slice(0, 10).map((e) => {
+      const p    = e.payload || e;
+      const t    = p.type || e.channel || 'event';
       const when = e.ts || e.timestamp || p.ts || p.timestamp || '';
       const msg  = p.message || p.msg || e.message || '';
-      return `<li><span class="mono small">${esc(t)}</span> ${esc((msg||'').slice(0,50))} <span class="small">${esc(timeAgo(when))}</span></li>`;
+      const ftag = when ? freshnessTag(when) : '';
+      return `<li><span class="mono small">${esc(t)}</span> ${esc((msg||'').slice(0,50))} <span class="small">${esc(timeAgo(when))}</span>${ftag}</li>`;
     });
     host.innerHTML = `<ul>${items.join('')}</ul>`;
   }
@@ -596,18 +644,40 @@
   function renderDecisions(data) {
     const host = $('decisions'), card = $('decisions-card');
     if (!data) { host.innerHTML = unavail(); return; }
-    const cortex  = (data.cortex || []).slice(0, 5);
-    const jCnt    = (data.journal || []).length;
-    const pending = (data.journal || []).filter((d) => (d.status||'').toLowerCase() === 'pending').length;
-    if (pending > 20) card.classList.add('alert'); else card.classList.remove('alert');
+
+    const _dTs = (d) => d.created_at || d.updated_at || d.timestamp || d.date || null;
+
+    const allJournal = data.journal || [];
+    const allCortex  = data.cortex  || [];
+
+    // In normal mode filter to RECENT (<24h); debug shows everything
+    const journal = _debugMode ? allJournal : allJournal.filter((d) => ageSeconds(_dTs(d)) < _FRESH_RECENT_SECS);
+    const cortex  = _debugMode ? allCortex  : allCortex.filter( (d) => ageSeconds(_dTs(d)) < _FRESH_RECENT_SECS);
+
+    const jCnt    = journal.length;
+    const pending = journal.filter((d) => (d.status||'').toLowerCase() === 'pending').length;
+    if (card) { if (pending > 20) card.classList.add('alert'); else card.classList.remove('alert'); }
+
+    if (!_debugMode && !jCnt && !cortex.length) {
+      const total = allJournal.length + allCortex.length;
+      host.innerHTML = emptyState(`No active decisions in the last 24h${total > 0 ? ` (${total} archived)` : ''}`) +
+        `<div class="small" style="margin-top:6px;color:var(--muted)">Full history → <a href="#" onclick="switchTab('debug');return false;" style="color:var(--muted)">Debug tab</a></div>`;
+      return;
+    }
+
+    const staleBanner = !_debugMode
+      ? `<div class="small" style="margin-top:6px;color:var(--muted)">showing last 24h · <a href="#" onclick="switchTab('debug');return false;" style="color:var(--muted)">Debug tab for full history</a></div>`
+      : `<div class="small" style="margin-top:6px;color:var(--yellow)">debug mode — showing all ${allJournal.length + allCortex.length} items</div>`;
+
     host.innerHTML = `
       <div class="stat-row">
         <div><div class="stat-big">${esc(jCnt)}</div><div class="stat-label">recent</div></div>
         <div><div class="stat-big" style="color:${pending>20?'var(--red)':'var(--text)'}">${esc(pending)}</div><div class="stat-label">pending</div></div>
       </div>
       <ul style="margin-top:8px">
-        ${cortex.map((d) => `<li>${esc((d.title||d.content||'').slice(0,70))}</li>`).join('')||'<li class="small">no cortex decisions</li>'}
-      </ul>`;
+        ${cortex.slice(0,5).map((d) => `<li>${esc((d.title||d.content||'').slice(0,70))} ${freshnessTag(_dTs(d))}</li>`).join('')||'<li class="small">no cortex decisions</li>'}
+      </ul>
+      ${staleBanner}`;
   }
 
   function renderDigest(data) {
@@ -623,25 +693,41 @@
     // data: array from GET /api/meetings/recent ; [] means "pipeline idle or db not mounted"
     const host = $('meetings'), card = $('meetings-card');
     if (!Array.isArray(data) || !data.length) {
-      host.innerHTML = `<div class="small" style="color:var(--muted)">drop audio into <code style="font-size:10px">data/audio_intake/incoming/</code></div>`;
+      host.innerHTML = emptyState('No recent meetings — pipeline idle');
       if (card) card.classList.remove('alert');
       return;
     }
-    const today = new Date().toISOString().slice(0,10);
-    const doneToday = data.filter((r) => r.status === 'done' && r.source_date === today).length;
-    const processing = data.filter((r) => r.status === 'transcribing' || r.status === 'analyzing' || r.status === 'pending').length;
-    const failed = data.filter((r) => r.status === 'failed').length;
+
+    // In normal mode, hide rows older than 7 days (STALE threshold).
+    // In-progress/pending rows are always shown regardless of age.
+    const _isActive = (r) => ['transcribing', 'analyzing', 'pending', 'failed'].includes(r.status);
+    const visible = _debugMode
+      ? data
+      : data.filter((r) => _isActive(r) || ageSeconds(r.source_date) < _FRESH_STALE_SECS);
+
+    const today      = new Date().toISOString().slice(0, 10);
+    const doneToday  = visible.filter((r) => r.status === 'done' && r.source_date === today).length;
+    const processing = visible.filter((r) => _isActive(r) && r.status !== 'failed').length;
+    const failed     = visible.filter((r) => r.status === 'failed').length;
+    const archived   = data.length - visible.length;
     if (card) { if (failed > 0) card.classList.add('alert'); else card.classList.remove('alert'); }
 
-    const recent = data.slice(0, 3);
-    const rows = recent.map((r) => {
-      const clients = Array.isArray(r.clients) ? r.clients.slice(0,2).join(', ') : '';
-      const sm = (r.summary || '').slice(0, 70);
-      const dotCls = r.status === 'done' ? 'healthy' : r.status === 'failed' ? 'down' : 'degraded';
+    if (!_debugMode && !visible.length) {
+      host.innerHTML = emptyState('No recent meetings in the last 7 days') +
+        (archived > 0 ? `<div class="small" style="margin-top:4px;color:var(--muted)">${archived} archived</div>` : '');
+      return;
+    }
+
+    const rows = visible.slice(0, 3).map((r) => {
+      const clients = Array.isArray(r.clients) ? r.clients.slice(0, 2).join(', ') : '';
+      const sm      = (r.summary || '').slice(0, 70);
+      const dotCls  = r.status === 'done' ? 'healthy' : r.status === 'failed' ? 'down' : 'degraded';
+      const ftag    = freshnessTag(r.source_date || r.created_at);
       return `<li style="padding:5px 0">
         <div style="display:flex;align-items:center;gap:6px">
           <span class="dot ${dotCls}"></span>
           <span class="small mono" style="color:var(--muted)">${esc(r.source_date||'')}</span>
+          ${ftag}
           <span class="small" style="margin-left:auto;color:var(--muted)">${esc(r.status||'')}</span>
         </div>
         <div class="small" style="margin-top:2px;color:var(--text)">${esc(sm || r.original_name || '—')}</div>
@@ -655,6 +741,7 @@
         <div><div class="stat-big" style="color:${processing>0?'var(--yellow)':'var(--muted)'}">${processing}</div><div class="stat-label">in queue</div></div>
       </div>
       ${failed ? `<div class="small" style="color:var(--red);margin-top:4px">${failed} failed</div>` : ''}
+      ${archived && !_debugMode ? `<div class="small" style="color:var(--muted);margin-top:2px">${archived} older meeting${archived!==1?'s':''} hidden (>7d) <span class="card-badge badge-debug">ARCHIVE</span></div>` : ''}
       <ul style="margin-top:8px">${rows}</ul>`;
   }
 
@@ -1400,6 +1487,7 @@
       emails, calendar, followups, goals, health, memories,
       decisions, digest, system, redeemer,
       xiStats, xiQueue, meetings, calls, watchdog, exposure, auditSummary,
+      dashConfig,
     ] = await Promise.all([
       fetchJson('/api/services'),
       fetchJson('/api/wallet'),
@@ -1423,7 +1511,13 @@
       fetchJson('/api/watchdog/status'),
       fetchJson('/api/polymarket/exposure'),
       fetchJson('/api/dashboard/audit-summary'),
+      fetchJson('/api/dashboard/config'),
     ]);
+
+    // Update global debug mode from server config (URL param ?debug=1 still overrides)
+    if (dashConfig && !_debugMode) {
+      _debugMode = Boolean(dashConfig.debug_mode);
+    }
 
     renderServices(services);
     renderEmails(emails);

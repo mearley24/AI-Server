@@ -518,3 +518,78 @@ def test_dashboard_js_has_today_and_safe_to_fund_renderers():
     assert "renderSafeToFund" in js, (
         "renderSafeToFund missing from dashboard.js"
     )
+
+
+# ── Data Freshness v2 — structural tests ────────────────────────────────────
+
+
+def test_dashboard_js_freshness_helpers():
+    """dashboard.js must define the freshness system helpers."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    assert "freshnessTier" in js, "freshnessTier helper missing from dashboard.js"
+    assert "freshnessTag" in js,  "freshnessTag helper missing from dashboard.js"
+    assert "ageSeconds" in js,    "ageSeconds helper missing from dashboard.js"
+    assert "emptyState" in js,    "emptyState helper missing from dashboard.js"
+    assert "_debugMode" in js,    "_debugMode flag missing from dashboard.js"
+
+
+def test_dashboard_js_activity_capped_at_ten():
+    """renderActivity must cap items at 10, not 5."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    # Ensure the function contains slice(0, 10) and NOT slice(0, 5) for activity
+    activity_start = js.find("function renderActivity(")
+    activity_end   = js.find("\n  function ", activity_start + 1)
+    activity_fn    = js[activity_start:activity_end]
+    assert "slice(0, 10)" in activity_fn, (
+        "renderActivity must cap at 10 items"
+    )
+    assert "slice(0, 5)" not in activity_fn, (
+        "renderActivity still uses old 5-item cap"
+    )
+
+
+def test_dashboard_js_decisions_respects_debug_mode():
+    """renderDecisions must check _debugMode before filtering."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    decisions_start = js.find("function renderDecisions(")
+    decisions_end   = js.find("\n  function ", decisions_start + 1)
+    decisions_fn    = js[decisions_start:decisions_end]
+    assert "_debugMode" in decisions_fn, (
+        "renderDecisions must check _debugMode to bypass freshness filtering"
+    )
+    assert "_FRESH_RECENT_SECS" in decisions_fn, (
+        "renderDecisions must apply the 24h RECENT threshold"
+    )
+
+
+def test_dashboard_js_meetings_filters_stale():
+    """renderMeetings must filter out archive-age rows in normal mode."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    meetings_start = js.find("function renderMeetings(")
+    meetings_end   = js.find("\n  function ", meetings_start + 1)
+    meetings_fn    = js[meetings_start:meetings_end]
+    assert "_FRESH_STALE_SECS" in meetings_fn, (
+        "renderMeetings must apply the 7-day STALE threshold"
+    )
+    assert "_debugMode" in meetings_fn, (
+        "renderMeetings must respect _debugMode to bypass filtering"
+    )
+
+
+def test_api_dashboard_config_returns_debug_flag():
+    """GET /api/dashboard/config must return debug_mode bool and thresholds."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/api/dashboard/config")
+    assert r.status_code == 200
+    data = r.json()
+    assert "debug_mode" in data, "debug_mode key missing from /api/dashboard/config"
+    assert isinstance(data["debug_mode"], bool), "debug_mode must be a bool"
+    thresholds = data.get("freshness_thresholds", {})
+    assert thresholds.get("active_secs") == 3_600, "active_secs must be 3600"
+    assert thresholds.get("recent_secs") == 86_400, "recent_secs must be 86400"

@@ -1616,6 +1616,24 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             "fixes_applied_count": 1,
         }
 
+    # ── Dashboard runtime config ─────────────────────────────────────────
+    @app.get("/api/dashboard/config", tags=["dashboard"])
+    async def api_dashboard_config():
+        """Returns runtime config flags that the frontend uses to gate behaviour.
+
+        ``debug_mode`` mirrors the server-side ``CORTEX_DEBUG`` env var and
+        tells the JS freshness system to disable pruning and show all data.
+        """
+        _debug = os.environ.get("CORTEX_DEBUG", "").lower() in {"1", "true", "yes"}
+        return {
+            "debug_mode": _debug,
+            "freshness_thresholds": {
+                "active_secs": 3_600,
+                "recent_secs": 86_400,
+                "stale_secs": 7 * 86_400,
+            },
+        }
+
 
 # ── Intel Briefing proxy ──────────────────────────────────────────────────────
 
