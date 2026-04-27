@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### P0: Polymarket bot locked into safe dry-run mode — 20260427T150000Z
+
+Live trading gate added — bot will NOT place real orders unless BOTH `POLY_DRY_RUN=false` AND `POLY_ALLOW_LIVE=I_UNDERSTAND_REAL_MONEY_RISK` are explicitly set. Five changes applied: (1) `_enforce_live_gate()` in main.py forces dry_run=True and logs CRITICAL if gate passphrase is absent; (2) config.yaml defaults corrected — dry_run=true everywhere (polymarket, kalshi, crypto); (3) `load_settings()` now properly flattens security/kalshi/crypto YAML sections into Settings fields (was silently ignored, limits never applied); (4) docker-compose.yml defaults hardened — `POLY_DRY_RUN` default changed false→true, `POLY_ALLOW_LIVE` added (empty default = gate blocked), `KRAKEN_DRY_RUN` default set true, `COPYTRADE_MAX_POSITIONS` 100→30, `MAX_POSITIONS_PER_CATEGORY` 50→15, security limit env vars added with conservative values (10/100/50); (5) Kraken market maker default fixed false→true. Conservative security limits now active: MAX_SINGLE_TRADE=$10, MAX_DAILY_VOLUME=$100, MAX_DAILY_LOSS=$50 kill-switch. Tests: ops/tests/test_live_gate.py (6 test cases covering all gate scenarios). Capital safety audit: ops/verification/20260427-142348-polymarket-audit.md — readiness score 51/100, SAFE TO FUND: NO. Remaining items before funding: sandbox coverage for 4 bypass strategies, signer.py EIP-712 fix.
+
+
 ### Launch agent cleanup — Pass 2 fix — 20260427T141312Z
 
 Fixed 4 failing agents by correcting interpreter paths and environment variables. notes-sync: updated plist PATH to homebrew (pyyaml was missing on system Python 3.9). voice-webhook: changed port from 8088 (conflict with markup-tool) to 8104, switched to homebrew python3 (has flask) — now running PID 8360. bob-maintenance: added PATH including /usr/local/bin so docker binary is reachable. daily-digest: changed interpreter from /usr/bin/python3 to /opt/homebrew/bin/python3 (aiohttp was missing). Documented 3 agents needing Matt decision: approval-drainer (decision_journal.db malformed inside openclaw container — identified as only DB with integrity failure); imessage-watcher (security_utils.py deleted — source gone, only .pyc remains — may be redundant with imessage-bridge); email-reply-agent (symphony.email module absent, currently harmless — needs auto-mode policy defined before module can be restored). All 1117 tests pass. Verification: ops/verification/20260427-141312-launch-agents-pass2.md.
@@ -4625,3 +4630,10 @@ inbox processed: 2, cards: 2 (0 auto-run / 0 needs-Matt / 0 deferred / 0 externa
 inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 34 inbox items had already been processed with existing archive copies and cards. No new processing required.
+
+
+### Self-improvement loop — 20260427T142848Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 34 existing inbox files already have corresponding archive copies and improvement cards. No new processing required.

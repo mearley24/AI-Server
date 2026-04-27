@@ -1,9 +1,13 @@
-# LIVE TRADING — switched from paper mode by hardening prompt
 # Polymarket Trading Bot — Strategy Configuration
 # Env vars override values set here.
+#
+# LIVE TRADING GATE: to enable live trading you must ALSO set:
+#   POLY_ALLOW_LIVE=I_UNDERSTAND_REAL_MONEY_RISK
+# Setting dry_run: false alone is NOT sufficient — the startup gate will
+# override it and force paper mode if POLY_ALLOW_LIVE is not set.
 
-# Observer mode — set to false for live trading
-dry_run: false
+# Observer mode — default true (paper trading). Requires explicit gate to go live.
+dry_run: true
 
 # Paper trade ledger (keep enabled alongside live for parallel tracking)
 paper_ledger:
@@ -86,14 +90,16 @@ order_flow:
   lookback_candles: 50
 
 # Security
+# Limits are conservative for a small test account (≤$500).
+# Raise these only after verifying live trading works correctly over ≥48h.
 security:
   vault_enabled: true
   vault_path: /data/vault.enc
-  max_single_trade: 10000.0
-  max_daily_volume: 50000.0
-  max_daily_loss: 2500.0  # halt everything if down $2,500 in a day
-  max_orders_per_minute: 10
-  max_api_calls_per_minute: 100
+  max_single_trade: 10.0        # $10 max per trade
+  max_daily_volume: 100.0       # $100 max daily trading volume
+  max_daily_loss: 50.0          # kill switch fires if down $50 in a day
+  max_orders_per_minute: 5
+  max_api_calls_per_minute: 60
   audit_retention_days: 90
   kill_switch_enabled: true
 
@@ -128,8 +134,8 @@ platforms_enabled: "kalshi,crypto"
 
 # Kalshi — CFTC-regulated prediction markets
 kalshi:
-  environment: production    # switched to production
-  dry_run: false
+  environment: production
+  dry_run: true
   scan_interval: 300.0       # market scan interval (seconds)
   edge_threshold: 0.08       # minimum edge to trade
   max_position_size: 20.0    # max contracts per position
@@ -139,7 +145,7 @@ kalshi:
 # Crypto — spot trading via CCXT
 crypto:
   exchange: kraken
-  dry_run: false
+  dry_run: true
   symbols:
     - XRP/USD
     - XCN/USD

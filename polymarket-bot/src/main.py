@@ -196,6 +196,49 @@ async def _start_redis_listener(settings, signal_bus, log) -> asyncio.Task | Non
     return asyncio.create_task(_listen())
 
 
+_LIVE_GATE_PASSPHRASE = "I_UNDERSTAND_REAL_MONEY_RISK"
+
+
+def _enforce_live_gate(settings: Any, log: Any) -> bool:
+    """Refuse to run strategies in live mode without an explicit opt-in gate.
+
+    Both conditions must be satisfied to allow live trading:
+      1. POLY_DRY_RUN=false  (settings.dry_run is False)
+      2. POLY_ALLOW_LIVE=I_UNDERSTAND_REAL_MONEY_RISK
+
+    If live mode is requested but the gate env var is absent or wrong,
+    settings.dry_run is forced True and all strategies run in paper mode.
+
+    Returns True if live mode was allowed, False if it was blocked.
+    """
+    if settings.dry_run:
+        log.info("live_gate_safe", message="dry_run=True — observer/paper mode")
+        return False  # not live, gate not relevant
+
+    allow_live = os.environ.get("POLY_ALLOW_LIVE", "").strip()
+    if allow_live == _LIVE_GATE_PASSPHRASE:
+        log.warning(
+            "live_gate_passed",
+            message="Live trading explicitly authorized. Real money at risk.",
+        )
+        return True  # gate passed, live allowed
+
+    # Gate not set or wrong — force paper mode
+    log.critical(
+        "live_gate_blocked",
+        dry_run_env=os.environ.get("POLY_DRY_RUN", "(not set)"),
+        allow_live_present=bool(allow_live),
+        message=(
+            "LIVE MODE BLOCKED: POLY_DRY_RUN=false but POLY_ALLOW_LIVE is not set "
+            "to the required passphrase. Forcing dry_run=True. "
+            "No real orders will be placed. "
+            "To enable live trading set POLY_ALLOW_LIVE=I_UNDERSTAND_REAL_MONEY_RISK."
+        ),
+    )
+    settings.dry_run = True
+    return False  # blocked, forced to paper
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown lifecycle."""
@@ -208,6 +251,9 @@ async def lifespan(app: FastAPI):
     _configure_logging(settings.poly_log_level)
     log = structlog.get_logger("main")
 
+    # ── Live trading gate — must be explicit; default is always paper mode ──
+    _enforce_live_gate(settings, log)
+
     # Ensure data directory exists
     Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
 
@@ -218,12 +264,12 @@ async def lifespan(app: FastAPI):
     )
 
     sandbox = ExecutionSandbox(
-        max_single_trade=getattr(settings, "security_max_single_trade", 10_000.0),
-        max_daily_volume=getattr(settings, "security_max_daily_volume", 50_000.0),
-        max_daily_loss=getattr(settings, "security_max_daily_loss", 2_500.0),
-        max_orders_per_minute=getattr(settings, "security_max_orders_per_minute", 10),
-        max_api_calls_per_minute=getattr(settings, "security_max_api_calls_per_minute", 100),
-        kill_switch_enabled=getattr(settings, "security_kill_switch_enabled", True),
+        max_single_trade=settings.security_max_single_trade,
+        max_daily_volume=settings.security_max_daily_volume,
+        max_daily_loss=settings.security_max_daily_loss,
+        max_orders_per_minute=settings.security_max_orders_per_minute,
+        max_api_calls_per_minute=settings.security_max_api_calls_per_minute,
+        kill_switch_enabled=settings.security_kill_switch_enabled,
     )
 
     # Initialise core components
@@ -414,7 +460,7 @@ async def lifespan(app: FastAPI):
             from strategies.crypto.avellaneda_market_maker import AvellanedaMarketMaker
             from src.platforms.crypto_client import CryptoClient
             kraken_pair = os.environ.get("KRAKEN_TRADING_PAIR", "XRP/USD")
-            _kraken_dry = os.environ.get("KRAKEN_DRY_RUN", "false").lower() in {
+            _kraken_dry = os.environ.get("KRAKEN_DRY_RUN", "true").lower() in {
                 "1",
                 "true",
                 "yes",

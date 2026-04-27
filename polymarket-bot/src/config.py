@@ -212,6 +212,16 @@ class Settings(BaseSettings):
     momentum_mr_max_trades_per_hour: int = Field(default=10)
     momentum_mr_max_inventory_usd: float = Field(default=500.0)
 
+    # --- Execution sandbox limits (account-appropriate; overridable via env) ---
+    # Defaults are conservative — right-size these for your actual account balance.
+    security_max_single_trade: float = Field(default=10.0, description="Max per-trade notional in USDC")
+    security_max_daily_volume: float = Field(default=100.0, description="Max daily trading volume in USDC")
+    security_max_daily_loss: float = Field(default=50.0, description="Daily P&L loss that fires the kill switch")
+    security_max_orders_per_minute: int = Field(default=5, description="Order rate cap")
+    security_max_api_calls_per_minute: int = Field(default=60, description="API call rate cap")
+    security_kill_switch_enabled: bool = Field(default=True, description="Enable automatic kill switch")
+    security_audit_retention_days: int = Field(default=90, description="Days to keep audit log files")
+
     @field_validator("poly_log_level")
     @classmethod
     def _normalise_log_level(cls, v: str) -> str:
@@ -224,6 +234,9 @@ class Settings(BaseSettings):
     }
 
 
+_YAML_FLATTENED_SECTIONS = ("strategies", "security", "kalshi", "crypto")
+
+
 def load_settings() -> Settings:
     """Build settings: env vars → YAML overrides where env is empty."""
     yaml_path = os.environ.get("POLY_CONFIG_YAML", "")
@@ -231,12 +244,27 @@ def load_settings() -> Settings:
 
     # Flatten YAML sections into env-compatible keys for Pydantic
     env_overrides: dict[str, Any] = {}
+
+    # strategies.stink_bid.size → stink_bid_size
     strategies_cfg = yaml_data.get("strategies", {})
     for strategy_name, params in strategies_cfg.items():
-        for k, v in params.items():
-            env_overrides[f"{strategy_name}_{k}"] = v
+        if isinstance(params, dict):
+            for k, v in params.items():
+                env_overrides[f"{strategy_name}_{k}"] = v
 
-    top_level = {k: v for k, v in yaml_data.items() if k != "strategies"}
+    # security.max_single_trade → security_max_single_trade
+    # kalshi.dry_run → kalshi_dry_run  (etc.)
+    for section in ("security", "kalshi", "crypto"):
+        section_data = yaml_data.get(section, {})
+        if isinstance(section_data, dict):
+            for k, v in section_data.items():
+                env_overrides[f"{section}_{k}"] = v
+
+    # All remaining top-level scalar keys (dry_run, redis_url, …)
+    top_level = {
+        k: v for k, v in yaml_data.items()
+        if k not in _YAML_FLATTENED_SECTIONS
+    }
     env_overrides.update(top_level)
 
     return Settings(**{k: v for k, v in env_overrides.items() if os.environ.get(k.upper(), "") == ""})
