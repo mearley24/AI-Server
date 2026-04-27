@@ -1,0 +1,5 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260427-001557
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
+[ai-dispatch] run-prompt file=.cursor/prompts/self-improvement/process-inbox.md model=claude-sonnet-4-20250514 bytes=    7880
+
+=== claude output ===
