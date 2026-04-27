@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Launch agent cleanup — Pass 2 fix — 20260427T141312Z
+
+Fixed 4 failing agents by correcting interpreter paths and environment variables. notes-sync: updated plist PATH to homebrew (pyyaml was missing on system Python 3.9). voice-webhook: changed port from 8088 (conflict with markup-tool) to 8104, switched to homebrew python3 (has flask) — now running PID 8360. bob-maintenance: added PATH including /usr/local/bin so docker binary is reachable. daily-digest: changed interpreter from /usr/bin/python3 to /opt/homebrew/bin/python3 (aiohttp was missing). Documented 3 agents needing Matt decision: approval-drainer (decision_journal.db malformed inside openclaw container — identified as only DB with integrity failure); imessage-watcher (security_utils.py deleted — source gone, only .pyc remains — may be redundant with imessage-bridge); email-reply-agent (symphony.email module absent, currently harmless — needs auto-mode policy defined before module can be restored). All 1117 tests pass. Verification: ops/verification/20260427-141312-launch-agents-pass2.md.
+
+
 ### Launch agent cleanup — Pass 1 retire — 20260427T135834Z
 
 Unloaded and archived 24 ghost launch agents (all referenced missing/deleted scripts). Plists moved to `_archive/launchagents-retired-20260427/`. 23 clean bootouts, 1 already unregistered (notes-watcher). All 7 protected agents confirmed untouched: trading-api (PID 98451 running), imessage-bridge (PID 2421 running), markup-app (PID 762 running), approval-drainer, voice-webhook, notes-sync, x-autoposter. Retired clusters: 13 trading/ scripts (all missing), 3 orchestrator/ scripts (all missing), 5 individual missing tools, 2 missing symphony.email modules, 1 missing Telegram script. Remaining failing agents (Pass 2): approval-drainer (malformed SQLite DB — needs Matt), voice-webhook (port 8088 conflict), notes-sync (pip install pyyaml), email-reply-agent (auto-send risk — needs Matt policy decision), imessage-watcher (log isolation needed), daily-digest + bob-maintenance (cosmetic exit 1).
