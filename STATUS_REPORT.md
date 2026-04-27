@@ -2,6 +2,108 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Launch agent cleanup — Pass 1 retire — 20260427T135834Z
+
+Unloaded and archived 24 ghost launch agents (all referenced missing/deleted scripts). Plists moved to `_archive/launchagents-retired-20260427/`. 23 clean bootouts, 1 already unregistered (notes-watcher). All 7 protected agents confirmed untouched: trading-api (PID 98451 running), imessage-bridge (PID 2421 running), markup-app (PID 762 running), approval-drainer, voice-webhook, notes-sync, x-autoposter. Retired clusters: 13 trading/ scripts (all missing), 3 orchestrator/ scripts (all missing), 5 individual missing tools, 2 missing symphony.email modules, 1 missing Telegram script. Remaining failing agents (Pass 2): approval-drainer (malformed SQLite DB — needs Matt), voice-webhook (port 8088 conflict), notes-sync (pip install pyyaml), email-reply-agent (auto-send risk — needs Matt policy decision), imessage-watcher (log isolation needed), daily-digest + bob-maintenance (cosmetic exit 1).
+
+
+### Self-improvement loop — 20260427T132353Z
+
+inbox processed: 5, cards: 5 (0 auto-run / 0 needs-Matt / 5 deferred / 0 external / 0 needs-fetch)
+
+All processed items were duplicate iMessage URL patterns already addressed in previous cards:
+- 20260427T132137Z-imessage-x-com-elora-khatun-status-2048251251629109429-card.md — reject/defer — duplicate iMessage X URL pattern
+- 20260427T132137Z-imessage-x-com-juliangoldieseo-status-2048633237539352750-card.md — reject/defer — duplicate iMessage X URL pattern
+- 20260427T132137Z-imessage-x-com-moondevonyt-status-2048723775332725228-card.md — reject/defer — duplicate iMessage X URL pattern
+- 20260427T132137Z-imessage-x-com-nosp321-status-2048402613159211218-card.md — reject/defer — duplicate iMessage X URL pattern
+- 20260427T132137Z-imessage-x-com-this-is-tasnim-status-2048612127192277241-card.md — reject/defer — duplicate iMessage X URL pattern
+
+### Self-improvement loop — 20260427T114538Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T111223Z
+
+inbox processed: 20, cards: 20 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 20 needs-fetch)
+
+All processed items were iMessage URL captures requiring external fetch:
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md — needs fetch — Twitter URL content required
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md — needs fetch — Twitter URL content required
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md — needs fetch — Twitter URL content required
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md — needs fetch — Twitter URL content required
+- 20260425T183940Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md — needs fetch — Twitter URL content required
+- 20260425T183940Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-moondevonyt-status-2047634331162800514-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-sharbel-status-2047672262963171774-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md — needs fetch — Twitter URL content required
+- 20260425T183941Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md — needs fetch — Twitter URL content required
+- 20260425T183942Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md — needs fetch — Twitter URL content required
+- 20260425T183942Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md — needs fetch — Twitter URL content required
+- 20260425T183942Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md — needs fetch — Twitter URL content required
+- 20260425T183942Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md — needs fetch — Twitter URL content required
+- 20260425T183942Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md — needs fetch — Twitter URL content required
+- 20260425T183942Z-imessage-x-com-talebm-status-2047581216178655536-card.md — needs fetch — Twitter URL content required
+- 20260425T204944Z-imessage-x-com-starmexxx-status-2047632009510481949-card.md — needs fetch — Twitter URL content required
+
+### Self-improvement loop — 20260427T093310Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T090024Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T075450Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 29 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T064914Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T054518Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T225530Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). First 20 oldest items verified with corresponding archive files and cards.
+
+### Self-improvement loop — 20260426T161527Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T040901Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items already processed (idempotency check). No new cards generated this run.
+
+### Self-improvement loop — 20260427T023239Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items already processed (idempotency check). No new cards generated this run.
+
 ### X Insight Extraction v1 — 20260427T010000Z
 
 Added structured insight extraction pipeline for eligible X items. `integrations/x_api/insight_extractor.py` — pure heuristic/keyword extraction (no LLM): topic detection (smart_home|av|ai_ml|engineering|business|general), insight_type classification (troubleshooting_tip|workflow_improvement|product_idea|general_knowledge), 1–2 sentence summary (max 150 chars), up to 3 key points, relevance_score (from existing work_relevance_score). `integrations/x_api/insight_models.py` — `x_insights.sqlite` schema with topic/type/score indexes. `integrations/x_api/insight_pipeline.py` — reads eligible x_items only, writes to x_insights, optionally creates self-improvement card stubs. Gate: score ≥ 0.7 AND summary ≥ 30 chars AND non-generic. Blocked/pending items never sourced. `scripts/x_api_extract_insights.py` — CLI with --dry-run/--apply/--si-cards/--limit. Cortex: `GET /api/x-api/insights` with ?topic= and ?insight_type= filters. Dashboard: "X Insights" card showing summary, topic badge, insight type, source link. 29 new tests (1117 total passing).
@@ -4441,3 +4543,80 @@ inbox processed: 20, cards: 20 (0 auto-run / 0 needs-Matt / 0 deferred / 0 exter
 inbox processed: 27, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
 
 All 27 inbox files already had matching archive copies and cards - no new processing required.
+
+### Self-improvement loop — 20260427T030543Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox items had already been processed previously. No new cards generated.
+
+### Self-improvement loop — 20260427T033719Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All first 20 inbox items already processed - no new work required.
+
+### Self-improvement loop — 20260427T051318Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 20 oldest inbox files were already processed from previous runs. No new items found requiring processing.
+
+### Self-improvement loop — 20260427T022729Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 28 inbox files already had matching archive copies and cards. No new processing required.
+
+
+### Self-improvement loop — 20260427T100527Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox files already had matching archive copies and cards. No new processing required.
+
+### Self-improvement loop — 20260427T103859Z
+
+inbox processed: 20, cards: 20 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 20 needs-fetch)
+
+- 20260422T111725Z-imessage-x-com-ihtesham2005-status-2046528187593830850-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260424T163001Z-imessage-x-com-jameszmsun-status-2047522852854026378-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260424T163001Z-imessage-x-com-nousresearch-status-2047495677651918885-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260424T163001Z-imessage-x-com-openswarm-status-2047034226806292493-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183940Z-imessage-x-com-alexfinn-status-2047854449943826568-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183940Z-imessage-x-com-hyperagentapp-status-2044086411951808699-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-aiwithyasir-status-2047589529650176333-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-divyansht91162-status-2047610118423126494-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-heygurisingh-status-2047900744960123050-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-moondevonyt-status-2047634331162800514-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-shanerobinett-status-2047692184518787185-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-sharbel-status-2047672262963171774-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183941Z-imessage-x-com-sprytixl-status-2047638854136451483-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183942Z-imessage-x-com-eng-khairallah1-status-2047693100118880488-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183942Z-imessage-x-com-juliangoldieseo-status-2047568300637364451-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183942Z-imessage-x-com-moondevonyt-status-2047755043559154033-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183942Z-imessage-x-com-rnaudbertrand-status-2047560630694183034-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183942Z-imessage-x-com-sprytixl-status-2047558635933348035-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T183942Z-imessage-x-com-talebm-status-2047581216178655536-card.md — needs fetch — X.com link requires content fetching for analysis
+- 20260425T204944Z-imessage-x-com-starmexxx-status-2047632009510481949-card.md — needs fetch — X.com link requires content fetching for analysis
+
+### Self-improvement loop — 20260427T121753Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 27 inbox items had already been processed with existing archive copies and cards. No new processing required.
+
+
+### Self-improvement loop — 20260427T125047Z
+
+inbox processed: 2, cards: 2 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 2 needs-fetch)
+
+- 20260427T124833Z-imessage-x-com-juliangoldieseo-status-2048440694382145776-card.md — needs fetch — Twitter URL content required  
+- 20260427T124833Z-imessage-x-com-warrenronsiek-status-2046984811055546468-card.md — needs fetch — Twitter URL content required
+
+
+### Self-improvement loop — 2026-04-27T13:56:41Z
+
+inbox processed: 0, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All 34 inbox items had already been processed with existing archive copies and cards. No new processing required.
