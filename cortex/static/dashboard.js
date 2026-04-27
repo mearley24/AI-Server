@@ -376,7 +376,15 @@
 
   function renderFollowups(data) {
     const host = $('followups');
-    if (!data || data.error) { host.innerHTML = unavail(); return; }
+    if (!data) { host.innerHTML = unavail(); return; }
+    // Explicit DB-unavailable state (follow_ups.db not mounted in container)
+    if (data.error) {
+      host.innerHTML = `
+        <div style="color:var(--yellow);font-size:12px;font-weight:600;">DB unavailable</div>
+        <div class="small" style="color:var(--muted);margin-top:4px;">follow_ups.db not mounted</div>
+        <div class="small" style="color:var(--muted);margin-top:2px;font-family:var(--mono);">data/openclaw/follow_ups.db</div>`;
+      return;
+    }
     const total   = data.total ?? 0;
     const overdue = data.overdue_count ?? 0;
     const next    = (data.followups || [])[0];
@@ -494,15 +502,35 @@
     const host = $('positions');
     if (!data) { host.innerHTML = unavail(); return; }
     const positions = Array.isArray(data) ? data : (data.positions || []);
-    if (!positions.length) { host.innerHTML = `<div class="small">no open positions</div>`; return; }
+    if (!positions.length) { host.innerHTML = emptyState('No open positions'); return; }
+
+    // Detect paper/simulation positions — order_ids starting with "paper-"
+    const paperCount = positions.filter((p) => String(p.order_id || '').startsWith('paper-')).length;
+    const isPaperOnly = paperCount === positions.length && paperCount > 0;
+    const hasPaper    = paperCount > 0;
+
     const exposure = positions.reduce((s, p) => s + Number(p.currentValue || p.current_value || 0), 0);
+    const paperBadge = hasPaper
+      ? `<span class="card-badge badge-stale" style="margin-left:4px;">PAPER</span>`
+      : '';
+    const paperNote = isPaperOnly && !_debugMode
+      ? `<div class="small" style="color:var(--yellow);margin-top:4px;">⚠ All ${paperCount} positions are paper simulation trades (cvd_arb). Real legacy positions → Polymarket Exposure card.</div>`
+      : (hasPaper && !_debugMode
+          ? `<div class="small" style="color:var(--yellow);margin-top:4px;">⚠ ${paperCount} paper simulation position${paperCount!==1?'s':''} included.</div>`
+          : '');
+
     host.innerHTML = `
       <div class="stat-row">
-        <div><div class="stat-big">${positions.length}</div><div class="stat-label">open</div></div>
+        <div><div class="stat-big">${positions.length}</div><div class="stat-label">open${isPaperOnly?' (paper)':''}</div></div>
         <div><div class="stat-big mono">${fmtUsd(exposure)}</div><div class="stat-label">exposure</div></div>
       </div>
+      ${paperNote}
       <ul style="margin-top:8px">
-        ${positions.slice(0,5).map((p) => `<li>${esc((p.title||p.market||'').slice(0,60))} <span class="small mono">${fmtUsd(p.currentValue||p.current_value||0)}</span></li>`).join('')}
+        ${positions.slice(0,5).map((p) => {
+          const isPaper = String(p.order_id || '').startsWith('paper-');
+          const pb = isPaper ? `<span class="card-badge badge-stale" style="font-size:8px;padding:0 3px;">P</span>` : '';
+          return `<li>${esc((p.title||p.market||'').slice(0,55))} ${pb} <span class="small mono">${fmtUsd(p.currentValue||p.current_value||0)}</span></li>`;
+        }).join('')}
       </ul>`;
   }
 
@@ -529,7 +557,15 @@
       host.innerHTML = emptyState('No recent activity — system is quiet');
       return;
     }
-    const items = data.slice(0, 10).map((e) => {
+    // In normal mode filter out health.checked system pings (noise — ~20% of feed)
+    const _isNoise = (e) => {
+      const p = e.payload || e;
+      const t = p.type || '';
+      return t === 'health.checked' || t === 'health.check';
+    };
+    const filtered = _debugMode ? data : data.filter((e) => !_isNoise(e));
+    const source = filtered.length ? filtered : data; // fall back to all if everything is noise
+    const items = source.slice(0, 10).map((e) => {
       const p    = e.payload || e;
       const t    = p.type || e.channel || 'event';
       const when = e.ts || e.timestamp || p.ts || p.timestamp || '';
@@ -537,7 +573,10 @@
       const ftag = when ? freshnessTag(when) : '';
       return `<li><span class="mono small">${esc(t)}</span> ${esc((msg||'').slice(0,50))} <span class="small">${esc(timeAgo(when))}</span>${ftag}</li>`;
     });
-    host.innerHTML = `<ul>${items.join('')}</ul>`;
+    const noiseNote = !_debugMode && filtered.length < data.length
+      ? `<div class="small" style="color:var(--muted);margin-top:4px;">${data.length - filtered.length} health.checked ping${data.length - filtered.length !== 1 ? 's' : ''} hidden</div>`
+      : '';
+    host.innerHTML = `<ul>${items.join('')}</ul>${noiseNote}`;
   }
 
   function renderRedeemer(data) {
@@ -650,24 +689,34 @@
     const allJournal = data.journal || [];
     const allCortex  = data.cortex  || [];
 
-    // In normal mode filter to RECENT (<24h); debug shows everything
-    const journal = _debugMode ? allJournal : allJournal.filter((d) => ageSeconds(_dTs(d)) < _FRESH_RECENT_SECS);
-    const cortex  = _debugMode ? allCortex  : allCortex.filter( (d) => ageSeconds(_dTs(d)) < _FRESH_RECENT_SECS);
+    // In normal mode filter to RECENT (<24h) AND exclude D-Tools automation noise (category=jobs)
+    const _isAutomation = (d) => (d.category || '').toLowerCase() === 'jobs';
+    const journal = _debugMode
+      ? allJournal
+      : allJournal.filter((d) => ageSeconds(_dTs(d)) < _FRESH_RECENT_SECS && !_isAutomation(d));
+    const cortex  = _debugMode
+      ? allCortex
+      : allCortex.filter((d) => ageSeconds(_dTs(d)) < _FRESH_RECENT_SECS);
 
     const jCnt    = journal.length;
     const pending = journal.filter((d) => (d.status||'').toLowerCase() === 'pending').length;
     if (card) { if (pending > 20) card.classList.add('alert'); else card.classList.remove('alert'); }
 
     if (!_debugMode && !jCnt && !cortex.length) {
-      const total = allJournal.length + allCortex.length;
-      host.innerHTML = emptyState(`No active decisions in the last 24h${total > 0 ? ` (${total} archived)` : ''}`) +
+      const totalAutomation = allJournal.filter(_isAutomation).length;
+      const totalOther      = allJournal.length - totalAutomation + allCortex.length;
+      const note = totalAutomation > 0
+        ? ` (${totalAutomation} D-Tools automation entries hidden)`
+        : (totalOther > 0 ? ` (${totalOther} archived)` : '');
+      host.innerHTML = emptyState(`No active decisions in the last 24h${note}`) +
         `<div class="small" style="margin-top:6px;color:var(--muted)">Full history → <a href="#" onclick="switchTab('debug');return false;" style="color:var(--muted)">Debug tab</a></div>`;
       return;
     }
 
+    const automationHidden = _debugMode ? 0 : allJournal.filter(_isAutomation).length;
     const staleBanner = !_debugMode
-      ? `<div class="small" style="margin-top:6px;color:var(--muted)">showing last 24h · <a href="#" onclick="switchTab('debug');return false;" style="color:var(--muted)">Debug tab for full history</a></div>`
-      : `<div class="small" style="margin-top:6px;color:var(--yellow)">debug mode — showing all ${allJournal.length + allCortex.length} items</div>`;
+      ? `<div class="small" style="margin-top:6px;color:var(--muted)">showing last 24h · D-Tools entries hidden (${automationHidden}) · <a href="#" onclick="switchTab('debug');return false;" style="color:var(--muted)">Debug tab for all</a></div>`
+      : `<div class="small" style="margin-top:6px;color:var(--yellow)">debug mode — showing all ${allJournal.length + allCortex.length} items (incl. ${automationHidden} automation)</div>`;
 
     host.innerHTML = `
       <div class="stat-row">

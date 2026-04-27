@@ -1616,6 +1616,107 @@ def register_dashboard_routes(app: FastAPI, engine_ref) -> None:
             "fixes_applied_count": 1,
         }
 
+    # ── Dashboard data-source audit ─────────────────────────────────────
+    @app.get("/api/dashboard/data-source-audit", tags=["dashboard"])
+    async def api_dashboard_data_source_audit():
+        """Structured audit of every Cortex dashboard data source.
+
+        Produced by the 2026-04-27 full audit (v3).  Updated when new issues
+        are discovered or existing ones are resolved.  The frontend can render
+        this on the Debug tab to give the operator a live overview of data
+        quality without opening the audit markdown file.
+        """
+        return {
+            "as_of": "2026-04-27T18:56:41Z",
+            "sources": [
+                # ── Live & accurate ──────────────────────────────────────
+                {"card": "Service Health", "tab": "today", "endpoint": "/api/services",
+                 "status": "live", "note": "13 services monitored"},
+                {"card": "Emails", "tab": "today", "endpoint": "/api/emails",
+                 "status": "live", "note": "Live, recent"},
+                {"card": "X Intake widget", "tab": "today", "endpoint": "/api/x-intake/stats",
+                 "status": "live", "note": "70 total, 0 pending"},
+                {"card": "Polymarket Exposure", "tab": "money", "endpoint": "/api/polymarket/exposure",
+                 "status": "live", "note": "78 positions, $397 value"},
+                {"card": "Redeemer", "tab": "money", "endpoint": "/api/redeemer",
+                 "status": "live", "note": "$3.72 USDC, 78 pending, 60 POL gas"},
+                {"card": "PnL Summary", "tab": "money", "endpoint": "/api/pnl-summary",
+                 "status": "live", "note": "$-1112 realized, 2450 paper trades"},
+                {"card": "Memory", "tab": "debug", "endpoint": "/health + /memories",
+                 "status": "live", "note": "100,816 total memories"},
+                {"card": "System", "tab": "footer", "endpoint": "/api/system",
+                 "status": "live", "note": "44% mem, 6% disk"},
+                {"card": "Dashboard Config", "tab": "debug", "endpoint": "/api/dashboard/config",
+                 "status": "live", "note": "CORTEX_DEBUG gate working"},
+                {"card": "Vault", "tab": "vault", "endpoint": "/api/vault/secrets",
+                 "status": "live", "note": "TEST_* hidden behind CORTEX_DEBUG — correct"},
+                {"card": "Client Intel", "tab": "clients", "endpoint": "/api/client-intel/*",
+                 "status": "live", "note": "5 profiles, queue active"},
+                {"card": "Autonomy", "tab": "autonomy", "endpoint": "/api/autonomy/overview",
+                 "status": "live", "note": "Gate summaries working"},
+                # ── Failing / broken ────────────────────────────────────
+                {"card": "Wallet", "tab": "money", "endpoint": "/api/wallet",
+                 "status": "failing", "priority": "P1",
+                 "reason": "Redis key portfolio:snapshot never pushed by bot; returns usdc=0 active=0. Real balance: $3.72 USDC on-chain (see Redeemer card)."},
+                {"card": "PnL Series", "tab": "money", "endpoint": "/api/pnl-series",
+                 "status": "failing", "priority": "P1",
+                 "reason": "Redis key portfolio:pnl_series never populated; returns []. Chart has never had data."},
+                {"card": "Trading Intel", "tab": "symphony", "endpoint": "/api/trading/intel",
+                 "status": "failing", "priority": "P2",
+                 "reason": "Returns valid JSON shape but all zeros (active_signals:0, market_boosts:0, top_authors:[]). X-intel not scoring."},
+                {"card": "Follow-ups", "tab": "today", "endpoint": "/api/followups",
+                 "status": "failing", "priority": "P1",
+                 "reason": "DB not mounted in container: error='unable to open database file'. Shown as '0 active' but is actually unavailable."},
+                {"card": "Reply Inbox", "tab": "reply-inbox", "endpoint": "/api/reply-inbox",
+                 "status": "failing", "priority": "P2",
+                 "reason": "Endpoint returns 404. loadReplyInbox() is calling a non-existent route."},
+                # ── Stale / misleading ───────────────────────────────────
+                {"card": "Decisions Journal", "tab": "debug", "endpoint": "/api/decisions/recent",
+                 "status": "stale", "priority": "P1",
+                 "reason": "100 entries: 77% D-Tools automation ('D-Tools sync: created=0'), 23% email events. Zero human decisions. cortex[] is empty. Misleadingly labelled 'Decisions'."},
+                {"card": "Meetings", "tab": "debug", "endpoint": "/api/meetings/recent",
+                 "status": "stale", "priority": "P2",
+                 "reason": "All 5 rows from 2024 (July/Aug), empty summaries. 2 years stale. v2 7-day filter should now hide these."},
+                {"card": "Activity Feed", "tab": "debug", "endpoint": "/api/activity",
+                 "status": "stale", "priority": "P2",
+                 "reason": "50 events: 20% are health.checked system pings, 30% have no channel. Noise:signal ~50%."},
+                {"card": "Watchdog (stale-ok)", "tab": "today", "endpoint": "/api/watchdog/status",
+                 "status": "stale", "priority": "P1",
+                 "reason": "4 'ok' services (Tailscale, VPN, Polymarket Bot, X Alpha Collector) not seen in 66-75h. Shown green but state is unknown. Docker 'degraded' is false alarm from recovery event."},
+                {"card": "Goals", "tab": "debug", "endpoint": "/goals",
+                 "status": "stale", "priority": "P3",
+                 "reason": "5 goals have NO updated_at timestamp; freshness cannot be determined. Trading profit goal at 10%, edge discovery at 0% — may be permanently stale."},
+                # ── Synthetic / paper (unlabelled) ────────────────────────
+                {"card": "Positions", "tab": "money", "endpoint": "/api/positions",
+                 "status": "synthetic", "priority": "P1",
+                 "reason": "All 13 positions have order_id='paper-*' from cvd_arb strategy simulation. No timestamps. Shown without PAPER label alongside real data. Real legacy positions are in /api/polymarket/exposure."},
+                {"card": "PnL Summary (paper)", "tab": "money", "endpoint": "/api/pnl-summary",
+                 "status": "synthetic", "priority": "P2",
+                 "reason": "$-1112 realized PnL, 2450 trades — these are from paper/simulation runs, not real money. No label distinguishing paper from live."},
+            ],
+            "totals": {
+                "live_sources": 12,
+                "stale_sources": 5,
+                "failing_sources": 5,
+                "synthetic_sources": 2,
+                "debug_only_sources": 1,
+                "hidden_recommended": 3,
+            },
+            "fixes_applied": [
+                "Positions: PAPER badge added when order_id starts with 'paper-'",
+                "Activity: health.checked noise filtered in normal mode",
+                "Decisions: category=jobs (D-Tools) filtered in normal mode",
+                "Follow-ups: explicit error state when DB unavailable",
+            ],
+            "fixes_pending_approval": [
+                "Watchdog: filter stale-ok entries (>48h) from main view",
+                "Follow-ups: fix docker-compose volume mount for follow_ups.db",
+                "Reply inbox: audit loadReplyInbox() endpoint URL (currently 404)",
+                "Wallet: bot must push portfolio:snapshot Redis key",
+                "Goals: add updated_at to goals endpoint",
+            ],
+        }
+
     # ── Dashboard runtime config ─────────────────────────────────────────
     @app.get("/api/dashboard/config", tags=["dashboard"])
     async def api_dashboard_config():

@@ -2,6 +2,11 @@
 
 Generated: 2026-04-11 | Last updated: 2026-04-27 MDT
 
+### Cortex full data source audit v3 — 20260427T220000Z
+
+Live audit of all 25 Cortex dashboard data sources via curl + source inspection. Findings: **12 live/accurate**, **5 stale/misleading**, **5 failing/broken**, **2 synthetic (unlabelled paper trades)**. Top issues: (P1) Wallet returns zeros (Redis key never pushed by bot; real balance $3.72 in Redeemer); (P1) All 13 Positions are paper-trades from cvd_arb with `order_id=paper-*`, shown without any PAPER label; (P1) Follow-ups DB not mounted in container (`unable to open database file`); (P1) Decisions journal 100% automation noise — 77% D-Tools sync events, 0% human decisions; (P1) Watchdog shows 4 "ok" services last seen 66-75h ago as green/healthy; (P2) Activity feed ~20% `health.checked` system pings; (P2) Trading Intel returns all zeros; (P2) Reply inbox endpoint is 404. Fixes applied: (1) `renderPositions()` — PAPER badge + warning note when all positions are paper trades; (2) `renderActivity()` — `health.checked` events filtered in normal mode (count shown); (3) `renderDecisions()` — `category=jobs` (D-Tools automation) filtered in normal mode, automation count shown in empty state; (4) `renderFollowups()` — explicit "DB unavailable / follow_ups.db not mounted" state instead of silent "0 active"; (5) `GET /api/dashboard/data-source-audit` — new endpoint returning structured source inventory (25 sources, statuses, totals, fixes_applied, fixes_pending); Audit report: `ops/verification/20260427T185641Z-cortex-data-source-audit-v3.md`. 8 new tests; ops/tests: **1167 passed**. Pending fixes needing approval: Watchdog stale-ok filter, follow_ups.db volume mount, reply inbox endpoint URL, wallet Redis key, goals timestamps.
+
+
 ### Cortex data freshness and auto-pruning (Cleanup v2) — 20260427T210000Z
 
 Added freshness system to Cortex dashboard. New helpers in dashboard.js: `ageSeconds(ts)`, `freshnessTier(ts)` (active/recent/stale/archive), `freshnessTag(ts)` (inline badge), `emptyState(msg)`. Global `_debugMode` flag seeded from `?debug=1` URL param and overwritten each refresh from new `GET /api/dashboard/config` endpoint (mirrors `CORTEX_DEBUG` env var server-side). Freshness thresholds: ACTIVE <1h (green LIVE badge), RECENT <24h (yellow RECENT), STALE <7d (gray STALE), ARCHIVE >7d (gray ARCHIVE). Per-section rules applied: **Decisions** — filters to <24h in normal mode; empty state "No active decisions in the last 24h" with link to Debug tab; debug mode shows all items with count. **Meetings** — archive-age rows (>7d) hidden in normal mode; in-progress/failed rows always shown; archived count displayed; empty state "No recent meetings — pipeline idle". **Activity** — cap raised 5→10 items; per-item freshness badge on each event timestamp. **Watchdog** — stale badge shown on status line when watchdog data is >1h old; degraded alerts always shown regardless. **Wallet** — freshness badge on snapshot age. Auto-pruning happens in each render function on every `refresh()` call; no data is deleted. `CORTEX_DEBUG=true` on the server disables all pruning (shows everything). 5 new tests: freshness helpers defined, activity capped at 10, decisions respects debug mode, meetings filters stale, config endpoint shape. ops/tests: **1159 passed**.
@@ -3044,6 +3049,14 @@ Secondary finding: `scripts/imessage-server.py::handle_reset_command` references
 | **symphonysh** | 🔴 REQUIRED | Contact form, appointment booking (read+write), confirmation emails, and Matterport upload all depend on Supabase Edge Functions + PostgREST. Turning it off breaks three user-facing flows. |
 
 symphonysh migration estimate (if needed): ~8–9h (stand up `website-api` on Bob + migrate edge functions + replace Storage with R2 + remove `@supabase/supabase-js`). Not urgent while free tier covers current load.
+
+---
+
+### Self-improvement loop — 2026-04-27T18:47:40Z
+
+inbox processed: 20, cards: 0 (0 auto-run / 0 needs-Matt / 0 deferred / 0 external / 0 needs-fetch)
+
+All oldest 20 inbox files had already been processed in previous runs — corresponding archive and card files already exist. No new processing required.
 
 ---
 

@@ -593,3 +593,132 @@ def test_api_dashboard_config_returns_debug_flag():
     thresholds = data.get("freshness_thresholds", {})
     assert thresholds.get("active_secs") == 3_600, "active_secs must be 3600"
     assert thresholds.get("recent_secs") == 86_400, "recent_secs must be 86400"
+
+
+# ── Data Source Audit v3 — new endpoint + JS fix tests ──────────────────────
+
+
+def test_api_data_source_audit_shape():
+    """GET /api/dashboard/data-source-audit must return sources[] and totals."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    r = client.get("/api/dashboard/data-source-audit")
+    assert r.status_code == 200
+    data = r.json()
+    assert "sources" in data, "sources array missing"
+    assert isinstance(data["sources"], list), "sources must be a list"
+    assert len(data["sources"]) > 0, "sources must not be empty"
+    assert "totals" in data, "totals object missing"
+    totals = data["totals"]
+    for key in ("live_sources", "stale_sources", "failing_sources"):
+        assert key in totals, f"totals.{key} missing"
+        assert isinstance(totals[key], int), f"totals.{key} must be int"
+
+
+def test_api_data_source_audit_source_schema():
+    """Each source entry must have card, tab, endpoint, and status fields."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/data-source-audit").json()
+    required = {"card", "tab", "endpoint", "status"}
+    valid_statuses = {"live", "failing", "stale", "synthetic", "debug_only"}
+    for src in data["sources"]:
+        assert required.issubset(src.keys()), f"missing keys on source: {src}"
+        assert src["status"] in valid_statuses, (
+            f"invalid status '{src['status']}' on {src['card']}"
+        )
+
+
+def test_api_data_source_audit_has_failing_sources():
+    """Audit must flag wallet and follow-ups as failing (known broken)."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/data-source-audit").json()
+    failing = {s["card"] for s in data["sources"] if s["status"] == "failing"}
+    assert "Wallet" in failing, "Wallet must be listed as failing"
+    assert "Follow-ups" in failing, "Follow-ups must be listed as failing"
+
+
+def test_api_data_source_audit_has_synthetic_positions():
+    """Audit must flag Positions as synthetic (paper trades)."""
+    try:
+        from fastapi import FastAPI  # noqa: F401
+    except ImportError:
+        import pytest
+        pytest.skip("fastapi not installed in this env")
+        return
+    client = _wire_bare_app()
+    data = client.get("/api/dashboard/data-source-audit").json()
+    synthetic = {s["card"] for s in data["sources"] if s["status"] == "synthetic"}
+    assert "Positions" in synthetic, "Positions must be listed as synthetic"
+
+
+def test_dashboard_js_positions_paper_badge():
+    """renderPositions must check for paper- order_id prefix."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    positions_start = js.find("function renderPositions(")
+    positions_end   = js.find("\n  function ", positions_start + 1)
+    positions_fn    = js[positions_start:positions_end]
+    assert "paper-" in positions_fn, (
+        "renderPositions must check for paper- order_id prefix"
+    )
+    assert "PAPER" in positions_fn or "paperNote" in positions_fn, (
+        "renderPositions must render a PAPER warning"
+    )
+
+
+def test_dashboard_js_activity_filters_health_checked():
+    """renderActivity must filter health.checked noise in normal mode."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    activity_start = js.find("function renderActivity(")
+    activity_end   = js.find("\n  function ", activity_start + 1)
+    activity_fn    = js[activity_start:activity_end]
+    assert "health.checked" in activity_fn, (
+        "renderActivity must filter health.checked events"
+    )
+    assert "_debugMode" in activity_fn, (
+        "renderActivity must respect _debugMode when filtering"
+    )
+
+
+def test_dashboard_js_decisions_filters_automation():
+    """renderDecisions must filter category=jobs (D-Tools automation) in normal mode."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    decisions_start = js.find("function renderDecisions(")
+    decisions_end   = js.find("\n  function ", decisions_start + 1)
+    decisions_fn    = js[decisions_start:decisions_end]
+    assert "jobs" in decisions_fn, (
+        "renderDecisions must filter category=jobs (D-Tools automation)"
+    )
+    assert "_isAutomation" in decisions_fn or "isAutomation" in decisions_fn, (
+        "renderDecisions must have automation filter helper"
+    )
+
+
+def test_dashboard_js_followups_db_error_state():
+    """renderFollowups must show a specific error when DB is unavailable."""
+    js = (STATIC_DIR / "dashboard.js").read_text()
+    followups_start = js.find("function renderFollowups(")
+    followups_end   = js.find("\n  function ", followups_start + 1)
+    followups_fn    = js[followups_start:followups_end]
+    assert "DB unavailable" in followups_fn or "db not mounted" in followups_fn.lower(), (
+        "renderFollowups must show explicit DB unavailable message"
+    )
+    assert "follow_ups.db" in followups_fn, (
+        "renderFollowups must name the missing DB file"
+    )
