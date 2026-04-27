@@ -1,0 +1,2 @@
+[ai-dispatch] mode=run-prompt role=bob ts=20260427-064833
+[ai-dispatch] 1M smoke failed — falling back to claude-sonnet-4-20250514
