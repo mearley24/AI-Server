@@ -97,3 +97,5 @@ ops/verification/*preflight*
 # Vault — key file lives outside repo; DB and audit log are local data
 data/vault/vault.key
 data/vault/*.key
+.env.backup*
+*.env.backup*
